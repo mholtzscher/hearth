@@ -43,7 +43,7 @@ func TestPercentageSensorPlanStateBoundary(t *testing.T) {
 		Key:        "humidity",
 		ExternalID: "0x1/root/humidity",
 		Name:       "Humidity",
-	}, "humidity", 0, 100, "%", false)
+	}, "humidity", 0, 100, "%", false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,14 @@ func TestDiscoverHumidityBatteryRegistersPercentSupport(t *testing.T) {
 	if got := entityKeys(discovered.Entities); !reflect.DeepEqual(got, []string{"humidity", "battery"}) {
 		t.Fatalf("Entity keys = %v", got)
 	}
-	wantSupport := json.RawMessage(`{"state":{"maximum":100,"minimum":0,"unit":"%"},"operations":{}}`)
+	wantSupport := []json.RawMessage{
+		json.RawMessage(
+			`{"state":{"maximum":100,"minimum":0,"quantity_kind":"relative_humidity","unit":"%"},"operations":{}}`,
+		),
+		json.RawMessage(
+			`{"state":{"maximum":100,"minimum":0,"quantity_kind":"battery_level","unit":"%"},"operations":{}}`,
+		),
+	}
 	for index, want := range []struct {
 		key        string
 		externalID string
@@ -130,7 +137,7 @@ func TestDiscoverHumidityBatteryRegistersPercentSupport(t *testing.T) {
 		if entity.Descriptor.Key != want.key ||
 			entity.Descriptor.ExternalID != want.externalID ||
 			entity.Descriptor.Name != want.name || entity.Descriptor.Type != "hearth.numericsensor/v1" ||
-			!reflect.DeepEqual(entity.Descriptor.Support, wantSupport) {
+			!reflect.DeepEqual(entity.Descriptor.Support, wantSupport[index]) {
 			t.Fatalf("percent descriptor %d = %#v", index, entity.Descriptor)
 		}
 		if !reflect.DeepEqual(entity.StateProperties, []string{want.key}) ||
@@ -388,7 +395,7 @@ func TestPercentageSensorDecodeAndValidationSeams(t *testing.T) {
 		Key:        "humidity",
 		ExternalID: "0x1/root/humidity",
 		Name:       "Humidity",
-	}, "humidity", 0, 100, "%", false)
+	}, "humidity", 0, 100, "%", false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +407,7 @@ func TestPercentageSensorDecodeAndValidationSeams(t *testing.T) {
 	if decodeErr == nil {
 		t.Fatal("non-numeric humidity was accepted")
 	}
-	incomplete, err := newNumericSensorPlan(adapter.EntityMetadata{}, "battery", 0, 100, "%", false)
+	incomplete, err := newNumericSensorPlan(adapter.EntityMetadata{}, "battery", 0, 100, "%", false, "")
 	if err != nil {
 		t.Fatal(err)
 	}

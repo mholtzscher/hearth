@@ -46,9 +46,11 @@ func TestDiscoverCapturedRelayPlug(t *testing.T) {
 			entityType: "hearth.power/v1", support: `{"state":{},"operations":{"set":{}}}`,
 		},
 		{
-			key: "linkquality", externalID: "0x00124b0024abcd01/root/linkquality", name: "Link Quality",
+			key:        "linkquality",
+			externalID: "0x00124b0024abcd01/root/linkquality",
+			name:       "Link Quality",
 			entityType: "hearth.numericsensor/v1",
-			support:    `{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`,
+			support:    `{"state":{"maximum":255,"minimum":0,"quantity_kind":"link_quality","unit":"lqi"},"operations":{}}`,
 		},
 	}
 	if len(device.Registration.Entities) != len(want) || len(device.Entities) != len(want) {
@@ -76,7 +78,9 @@ func assertRelayLinkquality(t *testing.T, device discoveredDevice) {
 	got := device.Registration.Entities[1]
 	if got.Key != "linkquality" || got.ExternalID != "0x00124b0024abcd01/root/linkquality" ||
 		got.Name != "Link Quality" || got.Type != "hearth.numericsensor/v1" ||
-		string(got.Support) != `{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}` {
+		string(
+			got.Support,
+		) != `{"state":{"maximum":255,"minimum":0,"quantity_kind":"link_quality","unit":"lqi"},"operations":{}}` {
 		t.Fatalf("linkquality descriptor = %#v", got)
 	}
 	plan := device.Entities[1]
@@ -168,7 +172,9 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 		t.Fatalf("Entities = %#v", device.Entities)
 	}
 	linkquality := device.Registration.Entities[3]
-	wantLinkquality := json.RawMessage(`{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`)
+	wantLinkquality := json.RawMessage(
+		`{"state":{"maximum":255,"minimum":0,"quantity_kind":"link_quality","unit":"lqi"},"operations":{}}`,
+	)
 	if linkquality.Key != "linkquality" ||
 		linkquality.ExternalID != "0x00124b0024abcd02/root/linkquality" ||
 		linkquality.Name != "Link Quality" || linkquality.Type != "hearth.numericsensor/v1" ||
@@ -194,12 +200,17 @@ func TestDiscoverCapturedTemperatureSensor(t *testing.T) {
 		plan.TranslateCommand != nil {
 		t.Fatalf("gettable temperature plan = %#v", plan)
 	}
-	wantPercentSupport := json.RawMessage(`{"state":{"maximum":100,"minimum":0,"unit":"%"},"operations":{}}`)
-	assertCapturedPercentPlan(
-		t, device, 1, "humidity", "0x00124b0024abcd02/root/humidity", "Humidity", wantPercentSupport,
+	wantHumiditySupport := json.RawMessage(
+		`{"state":{"maximum":100,"minimum":0,"quantity_kind":"relative_humidity","unit":"%"},"operations":{}}`,
+	)
+	wantBatterySupport := json.RawMessage(
+		`{"state":{"maximum":100,"minimum":0,"quantity_kind":"battery_level","unit":"%"},"operations":{}}`,
 	)
 	assertCapturedPercentPlan(
-		t, device, 2, "battery", "0x00124b0024abcd02/root/battery", "Battery", wantPercentSupport,
+		t, device, 1, "humidity", "0x00124b0024abcd02/root/humidity", "Humidity", wantHumiditySupport,
+	)
+	assertCapturedPercentPlan(
+		t, device, 2, "battery", "0x00124b0024abcd02/root/battery", "Battery", wantBatterySupport,
 	)
 }
 

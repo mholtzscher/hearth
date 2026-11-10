@@ -18,10 +18,11 @@ type State struct {
 type StateSupportChoices []string
 
 type StateSupport struct {
-	Choices StateSupportChoices `json:"choices"`
-	Maximum float64             `json:"maximum"`
-	Minimum float64             `json:"minimum"`
-	Unit    *string             `json:"unit,omitempty"`
+	Choices      StateSupportChoices `json:"choices"`
+	Maximum      float64             `json:"maximum"`
+	Minimum      float64             `json:"minimum"`
+	QuantityKind *string             `json:"quantity_kind,omitempty"`
+	Unit         *string             `json:"unit,omitempty"`
 }
 
 type SetSupport struct {

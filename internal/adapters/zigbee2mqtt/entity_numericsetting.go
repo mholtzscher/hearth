@@ -24,8 +24,12 @@ func newNumericSettingPlan(
 	property string,
 	minimum, maximum float64,
 	unit *string,
+	semanticKind string,
 ) (entityPlan, error) {
 	support := numericSettingSupport(minimum, maximum, unit)
+	if semanticKind != "" {
+		support.State.QuantityKind = &semanticKind
+	}
 	descriptor, descriptorErr := sdknumericsettingv1.NewEntityDescriptor(metadata, support)
 	if descriptorErr != nil {
 		return entityPlan{}, descriptorErr
@@ -191,7 +195,7 @@ func planNumericSetting(input devicePlanningInput, spec numericSettingMapping) *
 		Key:        key,
 		ExternalID: input.IEEE + "/" + entityLocation(root) + "/" + spec.key,
 		Name:       name,
-	}, expose.Property, minimum, maximum, unit)
+	}, expose.Property, minimum, maximum, unit, spec.quantityKind)
 	if err != nil {
 		return nil
 	}

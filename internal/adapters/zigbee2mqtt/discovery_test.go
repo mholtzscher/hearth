@@ -53,9 +53,13 @@ func TestDiscoverCapturedThirdRealityLight(t *testing.T) {
 			Type: "hearth.colormode/v1", Support: json.RawMessage(`{"state":{},"operations":{}}`),
 		},
 		{
-			Key: "linkquality", ExternalID: "0xa4c1380000000001/root/linkquality", Name: "Link Quality",
-			Type:    "hearth.numericsensor/v1",
-			Support: json.RawMessage(`{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`),
+			Key:        "linkquality",
+			ExternalID: "0xa4c1380000000001/root/linkquality",
+			Name:       "Link Quality",
+			Type:       "hearth.numericsensor/v1",
+			Support: json.RawMessage(
+				`{"state":{"maximum":255,"minimum":0,"quantity_kind":"link_quality","unit":"lqi"},"operations":{}}`,
+			),
 		},
 	}
 	if !reflect.DeepEqual(device.Registration.Entities, want) {

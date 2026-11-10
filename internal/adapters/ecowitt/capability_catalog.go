@@ -1,6 +1,7 @@
 package ecowitt
 
 import (
+	"github.com/mholtzscher/hearth/entitytypes/quantitykind"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -45,16 +46,17 @@ type normalizedState struct {
 // source decimal. The catalog is the one definition site for registration
 // order, field ownership, support, and decoder selection.
 type measurementPlan struct {
-	Slot       deviceSlot
-	Field      string
-	EntityKey  string
-	EntityName string
-	Kind       quantityKind
-	Unit       string // Generic numeric sensors only; fixed units belong to State schemas.
-	Minimum    float64
-	Maximum    float64
-	Descriptor adapter.EntityDescriptor
-	Decode     func(string) (normalizedState, error)
+	Slot         deviceSlot
+	Field        string
+	EntityKey    string
+	EntityName   string
+	Kind         quantityKind
+	QuantityKind string
+	Unit         string // Generic numeric sensors only; fixed units belong to State schemas.
+	Minimum      float64
+	Maximum      float64
+	Descriptor   adapter.EntityDescriptor
+	Decode       func(string) (normalizedState, error)
 }
 
 // Entity and Device external ID bounds from the identity contract.
@@ -88,46 +90,46 @@ func ecowittMeasurementCatalog() ([]measurementPlan, error) {
 		outdoorHumidityPlan(),
 		numericPlan(
 			"winddir", "wind-direction", "Wind Direction",
-			unitDegrees, 360, decodeCanonicalNumeric(360),
+			unitDegrees, quantitykind.WindDirection, 360, decodeCanonicalNumeric(360),
 		),
 		speedPlan(outdoorArraySlot, "windspeedmph", "wind-speed", "Wind Speed"),
 		speedPlan(outdoorArraySlot, "windgustmph", "wind-gust", "Wind Gust"),
 		speedPlan(outdoorArraySlot, "maxdailygust", "maximum-daily-gust", "Maximum Daily Gust"),
 		numericPlan(
 			"solarradiation", "solar-radiation", "Solar Radiation",
-			unitWattsPerSquareMetre, 10000, decodeCanonicalNumeric(10000),
+			unitWattsPerSquareMetre, quantitykind.SolarIrradiance, 10000, decodeCanonicalNumeric(10000),
 		),
 		numericPlan(
 			"uv", "uv-index", "UV Index",
-			unitIndex, 100, decodeCanonicalNumeric(100),
+			unitIndex, quantitykind.UVIndex, 100, decodeCanonicalNumeric(100),
 		),
 		numericPlan(
 			"rrain_piezo", "rain-rate", "Rain Rate",
-			unitMillimetresPerHour, 10000, decodeInchScaledNumeric(10000),
+			unitMillimetresPerHour, quantitykind.PrecipitationRate, 10000, decodeInchScaledNumeric(10000),
 		),
 		numericPlan(
 			"erain_piezo", "event-rain", "Event Rain",
-			unitMillimetres, 10000000, decodeInchScaledNumeric(10000000),
+			unitMillimetres, quantitykind.PrecipitationDepth, 10000000, decodeInchScaledNumeric(10000000),
 		),
 		numericPlan(
 			"hrain_piezo", "hourly-rain", "Hourly Rain",
-			unitMillimetres, 10000000, decodeInchScaledNumeric(10000000),
+			unitMillimetres, quantitykind.PrecipitationDepth, 10000000, decodeInchScaledNumeric(10000000),
 		),
 		numericPlan(
 			"drain_piezo", "daily-rain", "Daily Rain",
-			unitMillimetres, 10000000, decodeInchScaledNumeric(10000000),
+			unitMillimetres, quantitykind.PrecipitationDepth, 10000000, decodeInchScaledNumeric(10000000),
 		),
 		numericPlan(
 			"wrain_piezo", "weekly-rain", "Weekly Rain",
-			unitMillimetres, 10000000, decodeInchScaledNumeric(10000000),
+			unitMillimetres, quantitykind.PrecipitationDepth, 10000000, decodeInchScaledNumeric(10000000),
 		),
 		numericPlan(
 			"mrain_piezo", "monthly-rain", "Monthly Rain",
-			unitMillimetres, 10000000, decodeInchScaledNumeric(10000000),
+			unitMillimetres, quantitykind.PrecipitationDepth, 10000000, decodeInchScaledNumeric(10000000),
 		),
 		numericPlan(
 			"yrain_piezo", "yearly-rain", "Yearly Rain",
-			unitMillimetres, 10000000, decodeInchScaledNumeric(10000000),
+			unitMillimetres, quantitykind.PrecipitationDepth, 10000000, decodeInchScaledNumeric(10000000),
 		),
 	}
 	built, err := registerPlanDescriptors(plans)
@@ -214,13 +216,13 @@ func speedPlan(slot deviceSlot, field, key, name string) measurementPlan {
 // numericPlan registers one generic numeric-sensor measurement with its
 // canonical unit and validation envelope.
 func numericPlan(
-	field, key, name, unit string,
+	field, key, name, unit, semanticKind string,
 	maximum float64,
 	decode func(string) (normalizedState, error),
 ) measurementPlan {
 	return measurementPlan{
 		Slot: outdoorArraySlot, Field: field, EntityKey: key, EntityName: name,
-		Kind: quantityNumericSensor, Unit: unit, Minimum: 0, Maximum: maximum,
+		Kind: quantityNumericSensor, Unit: unit, QuantityKind: semanticKind, Minimum: 0, Maximum: maximum,
 		Decode: decode,
 	}
 }
@@ -235,7 +237,7 @@ func registerPlanDescriptors(plans []measurementPlan) ([]measurementPlan, error)
 			Key:        plan.EntityKey,
 			ExternalID: entityExternalID(plan.Slot, plan.EntityKey),
 			Name:       plan.EntityName,
-		}, plan.Unit, plan.Minimum, plan.Maximum)
+		}, plan.Unit, plan.Minimum, plan.Maximum, plan.QuantityKind)
 		if err != nil {
 			return nil, err
 		}

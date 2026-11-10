@@ -7,7 +7,7 @@
   "required": ["active", "hue", "saturation"],
   "properties": {
     "active": {"type": "boolean"},
-    "hue": {"type": "integer", "minimum": 0, "maximum": 359, "hearth": {"unit": "deg"}},
-    "saturation": {"type": "integer", "minimum": 0, "maximum": 100, "hearth": {"unit": "%", "range": {"minimum": 0, "maximum": 100}}}
+    "hue": {"type": "integer", "minimum": 0, "maximum": 359, "hearth": {"unit": "deg", "kind": "color_hue"}},
+    "saturation": {"type": "integer", "minimum": 0, "maximum": 100, "hearth": {"unit": "%", "kind": "color_saturation", "range": {"minimum": 0, "maximum": 100}}}
   }
 }

@@ -48,6 +48,9 @@ func TestStateFieldAnnotationsRejectInvalidShapesAndReferences(t *testing.T) {
 		{"unknown key", `{"type":"number","hearth":{"units":"V"}}`, "invalid hearth"},
 		{"null annotation", `{"type":"number","hearth":null}`, "invalid hearth"},
 		{"empty unit", `{"type":"number","hearth":{"unit":""}}`, "invalid hearth"},
+		{"unknown kind", `{"type":"number","hearth":{"unit":"%","kind":"unknown"}}`, "invalid quantity kind"},
+		{"incompatible kind", `{"type":"number","hearth":{"unit":"V","kind":"brightness"}}`, "invalid quantity kind"},
+		{"kind without unit", `{"type":"number","hearth":{"kind":"brightness"}}`, "invalid quantity kind"},
 		{"wrong unit", `{"type":"number","hearth":{"unit":42}}`, "invalid hearth"},
 		{
 			"unknown reference key",
@@ -99,6 +102,7 @@ func TestStateFieldAnnotationsRejectInvalidShapesAndReferences(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // The table compares fixed and optional schema interpretations.
 func TestStateFieldsDeriveRequiredAndOptionalInterpretation(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"numericsensor", "numericsetting", "brightness"} {
@@ -120,6 +124,22 @@ func TestStateFieldsDeriveRequiredAndOptionalInterpretation(t *testing.T) {
 		}
 		if name == "brightness" && numeric.Unit != "%" {
 			t.Fatalf("brightness unit = %v", numeric.Unit)
+		}
+		if name == "brightness" && numeric.Kind != "brightness" {
+			t.Fatalf("brightness kind = %v", numeric.Kind)
+		}
+		if name != "brightness" {
+			kind, ok := numeric.Kind.(referenceManifest)
+			if !ok || kind.Path != "/state/quantity_kind" || !numeric.KindOptional {
+				t.Fatalf("%s kind reference = %+v, optional %v", name, numeric.Kind, numeric.KindOptional)
+			}
+			behavior := string(renderBehavior(model).content)
+			if !strings.Contains(
+				behavior,
+				`quantitykind.ValidateSupport(support, "/state/quantity_kind", "/state/unit", "")`,
+			) {
+				t.Fatalf("%s missing generated kind validation: %s", name, behavior)
+			}
 		}
 	}
 }

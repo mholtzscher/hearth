@@ -1,5 +1,7 @@
 package zigbee2mqtt
 
+import "github.com/mholtzscher/hearth/entitytypes/quantitykind"
+
 // numericSensorMapping maps one exact Zigbee2MQTT numeric expose to a
 // read-only Hearth Entity. Upstream units must match exactly; an empty unit
 // is not a wildcard. The family planner decides root selection and bounds:
@@ -15,6 +17,7 @@ type numericSensorMapping struct {
 	displayName  string
 	upstreamUnit string
 	unit         string
+	quantityKind string
 	minimum      float64
 	maximum      float64
 }
@@ -27,18 +30,30 @@ type numericSensorMapping struct {
 func ambientNumericSensors() []numericSensorMapping {
 	return []numericSensorMapping{
 		{
-			exposeName: "humidity", key: "humidity", displayName: "Humidity",
-			upstreamUnit: "%", unit: "%", minimum: 0, maximum: 100,
+			exposeName:   "humidity",
+			key:          "humidity",
+			displayName:  "Humidity",
+			quantityKind: quantitykind.RelativeHumidity,
+			upstreamUnit: "%",
+			unit:         "%",
+			minimum:      0,
+			maximum:      100,
 		},
 		{
 			// The Third Reality 3RSNL02043Z night light reports a root
 			// illuminance expose in lux. The envelope is a validation bound,
 			// not a claimed operating range.
-			exposeName: "illuminance", key: "illuminance", displayName: "Illuminance",
-			upstreamUnit: "lx", unit: "lx", minimum: 0, maximum: 1e9,
+			exposeName:   "illuminance",
+			key:          "illuminance",
+			displayName:  "Illuminance",
+			quantityKind: quantitykind.Illuminance,
+			upstreamUnit: "lx",
+			unit:         "lx",
+			minimum:      0,
+			maximum:      1e9,
 		},
 		{
-			exposeName: "battery", key: "battery", displayName: "Battery",
+			exposeName: "battery", key: "battery", displayName: "Battery", quantityKind: quantitykind.BatteryLevel,
 			upstreamUnit: "%", unit: "%", minimum: 0, maximum: 100,
 		},
 	}
@@ -52,27 +67,45 @@ func ambientNumericSensors() []numericSensorMapping {
 func smartPlugElectricalSensors() []numericSensorMapping {
 	return []numericSensorMapping{
 		{
-			exposeName: "ac_frequency", key: "acfrequency", displayName: "AC Frequency",
-			upstreamUnit: "Hz", unit: "Hz", minimum: 0, maximum: 1000,
+			exposeName:   "ac_frequency",
+			key:          "acfrequency",
+			displayName:  "AC Frequency",
+			quantityKind: quantitykind.Frequency,
+			upstreamUnit: "Hz",
+			unit:         "Hz",
+			minimum:      0,
+			maximum:      1000,
 		},
 		{
-			exposeName: "power", key: "electricalpower", displayName: "Electrical Power",
-			upstreamUnit: "W", unit: "W", minimum: 0, maximum: 1e9,
+			exposeName:   "power",
+			key:          "electricalpower",
+			displayName:  "Electrical Power",
+			quantityKind: quantitykind.ElectricalPower,
+			upstreamUnit: "W",
+			unit:         "W",
+			minimum:      0,
+			maximum:      1e9,
 		},
 		{
-			exposeName: "power_factor", key: "powerfactor", displayName: "Power Factor",
-			upstreamUnit: "", unit: "ratio", minimum: 0, maximum: 1,
+			exposeName:   "power_factor",
+			key:          "powerfactor",
+			displayName:  "Power Factor",
+			quantityKind: quantitykind.PowerFactor,
+			upstreamUnit: "",
+			unit:         "ratio",
+			minimum:      0,
+			maximum:      1,
 		},
 		{
-			exposeName: "energy", key: "energy", displayName: "Energy",
+			exposeName: "energy", key: "energy", displayName: "Energy", quantityKind: quantitykind.Energy,
 			upstreamUnit: "kWh", unit: "kWh", minimum: 0, maximum: 1e15,
 		},
 		{
-			exposeName: "current", key: "current", displayName: "Current",
+			exposeName: "current", key: "current", displayName: "Current", quantityKind: quantitykind.ElectricCurrent,
 			upstreamUnit: "A", unit: "A", minimum: 0, maximum: 1e6,
 		},
 		{
-			exposeName: "voltage", key: "voltage", displayName: "Voltage",
+			exposeName: "voltage", key: "voltage", displayName: "Voltage", quantityKind: quantitykind.Voltage,
 			upstreamUnit: "V", unit: "V", minimum: 0, maximum: 1e6,
 		},
 	}
@@ -111,6 +144,7 @@ type numericSettingMapping struct {
 	key          string
 	displayName  string
 	expectedUnit string
+	quantityKind string
 }
 
 // smartPlugNumericSettings preserves relay setting order. All settings use
@@ -119,15 +153,15 @@ func smartPlugNumericSettings() []numericSettingMapping {
 	return []numericSettingMapping{
 		{
 			exposeName: "led_brightness", key: "ledbrightness", displayName: "LED Brightness",
-			expectedUnit: "%",
+			quantityKind: quantitykind.Brightness, expectedUnit: "%",
 		},
 		{
 			exposeName: "countdown_to_turn_off", key: "countdowntoturnoff",
-			displayName: "Countdown To Turn Off", expectedUnit: "s",
+			displayName: "Countdown To Turn Off", quantityKind: quantitykind.Duration, expectedUnit: "s",
 		},
 		{
 			exposeName: "countdown_to_turn_on", key: "countdowntoturnon",
-			displayName: "Countdown To Turn On", expectedUnit: "s",
+			displayName: "Countdown To Turn On", quantityKind: quantitykind.Duration, expectedUnit: "s",
 		},
 	}
 }

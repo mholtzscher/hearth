@@ -41,6 +41,13 @@ one percentage point of the request, including at the endpoints.
 Dynamic unit references become immutable for an Entity at first registration,
 including optional-unit presence.
 
+`kind` declares the quantity meaning as a fixed vocabulary name or a support
+reference. `quantitykind` owns the accepted kind/unit pairs. Generic numeric
+sensors and settings optionally declare `state.quantity_kind`; unknown generic
+measurements may omit it. An absent kind may become known on re-registration,
+but a known kind cannot subsequently be changed or omitted. This does not alter
+the stricter existing unit-presence rule or migrate stored unit strings.
+
 `state-field-annotations.schema.json` defines the closed annotation shape. The
 generator additionally checks numeric context, reference types and requiredness.
 This is not a new general State schema dialect.

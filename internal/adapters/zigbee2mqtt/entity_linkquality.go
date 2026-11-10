@@ -7,6 +7,7 @@ import (
 	"time"
 
 	contractnumericsensorv1 "github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
+	"github.com/mholtzscher/hearth/entitytypes/quantitykind"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdknumericsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsensorv1"
 )
@@ -71,11 +72,13 @@ func newLinkqualityPlan(
 }
 
 func linkqualitySupport() contractnumericsensorv1.Support {
+	kind := quantitykind.LinkQuality
 	return contractnumericsensorv1.Support{
 		State: contractnumericsensorv1.StateSupport{
-			Minimum: linkqualityMinimum,
-			Maximum: linkqualityMaximum,
-			Unit:    linkqualityUnit,
+			Minimum:      linkqualityMinimum,
+			Maximum:      linkqualityMaximum,
+			Unit:         linkqualityUnit,
+			QuantityKind: &kind,
 		},
 		Operations: contractnumericsensorv1.OperationSupport{},
 	}

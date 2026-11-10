@@ -206,7 +206,7 @@ func TestAmbientNumericSensorsMapCapturedIlluminance(t *testing.T) {
 		t.Fatalf("illuminance catalog entries = %d, want exactly one", matches)
 	}
 	want := numericSensorMapping{
-		exposeName: "illuminance", key: "illuminance", displayName: "Illuminance",
+		exposeName: "illuminance", key: "illuminance", displayName: "Illuminance", quantityKind: "illuminance",
 		upstreamUnit: "lx", unit: "lx", minimum: 0, maximum: 1e9,
 	}
 	if got != want {
