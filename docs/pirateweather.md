@@ -96,6 +96,12 @@ forecast remains, and current conditions and Adapter health are unaffected.
 Forecast Entities have no scalar State fields, so they have no numeric history
 charts, State change history, or automation triggers.
 
+Every forecast Observation is retained under Core's ordinary Observation history
+policy. A synthetic full forecast with every field present encodes to about
+16.8 KB (48 hours) plus 3.0 KB (8 days) per poll, about 1.9 MB per day at the
+15-minute default, or about 57 MB over a 30-day retention window. Real forecasts
+that omit fields are smaller.
+
 ## Polling
 
 The first poll runs immediately after registration. Later polls wait one interval
