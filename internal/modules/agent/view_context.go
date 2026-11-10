@@ -135,8 +135,9 @@ func retainedViewContext(messageJSON []byte) json.RawMessage {
 	return raw
 }
 
-// prepareModelMessage copies only user messages carrying our private context.
+// prepareModelMessage excludes usage diagnostics and expands selected user context.
 func prepareModelMessage(message *schema.Message) *schema.Message {
+	message = withoutModelUsage(message)
 	if message.Role != schema.User || message.Extra == nil {
 		return message
 	}

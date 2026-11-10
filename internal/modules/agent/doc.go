@@ -18,6 +18,9 @@
 // status before any response streams. Native continuation, including
 // provider reasoning, remains private message metadata. Public history exposes text, native tool activity,
 // view artifacts, and selected-view context.
+// Provider-reported cache usage is retained privately with each assistant batch
+// and diagnosed once per model call at Debug. Missing counters remain unknown;
+// these records measure reported usage, not total provider billing.
 // A committed presentation can be the entire answer: empty terminal text is
 // accepted only when this turn has presented an artifact. Tool-call preambles
 // remain in history but are not part of the browser's rendered reply.

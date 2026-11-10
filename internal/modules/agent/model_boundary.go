@@ -28,6 +28,7 @@ func (boundary turnModel) Generate(
 	if response == nil {
 		return nil, modelError{err: errModelResponseInvalid}
 	}
+	boundary.trace.logModelUsage(ctx, response)
 	// Providers validate completion syntax; the turn owns whether silence is a
 	// complete answer. Only a committed presentation in this turn permits it.
 	if response.Content == "" && len(response.ToolCalls) == 0 && !boundary.trace.hasArtifacts() {
