@@ -23,6 +23,8 @@ func registerPresentView(server *mcptools.Server, h *handler) {
 				"A StateTimeline shows each Entity field once; a WeekPattern needs a yes/no field. " +
 				"ToggleTile and ToggleList bind hearth.power/v1 roots; ToggleList rows are distinct. " +
 				"ToggleTile metric and detail sources are numeric fields from the power Entity's Device. " +
+				"Weather cards (OutsideNow, Rain, Wind, Pressure) bind named root slots; " +
+				"their hearth.numericsensor/v1 slots need mm/h rain rates, mm rain totals, or deg wind directions. " +
 				"Native power controls send Commands only on a browser gesture, never on presentation or save. " +
 				"A rejection names the violated rule; correct it before presenting again.",
 			Handler: h.presentView,

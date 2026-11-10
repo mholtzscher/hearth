@@ -11,6 +11,10 @@ import { BoundStateTimeline } from "../cards/state-timeline/StateTimeline";
 import { BoundWeekPattern } from "../cards/week-pattern/WeekPattern";
 import { BoundToggleTile } from "../cards/toggle-tile/ToggleTile";
 import { BoundToggleList } from "../cards/toggle-list/ToggleList";
+import { BoundOutsideNow } from "../cards/outside-now/OutsideNow";
+import { BoundRain } from "../cards/rain/Rain";
+import { BoundWind } from "../cards/wind/Wind";
+import { BoundPressure } from "../cards/pressure/Pressure";
 
 /** A validated element graph. A null element is preserved content this version cannot render. */
 type Graph = { root: string; elements: Record<string, ViewElement | null>; children: Record<string, string[]> };
@@ -53,6 +57,10 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
     case "WeekPattern": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "State"}><BoundWeekPattern {...node.props} /></CardBoundary>;
     case "ToggleTile": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Power"}><BoundToggleTile {...node.props} /></CardBoundary>;
     case "ToggleList": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundToggleList {...node.props} /></CardBoundary>;
+    case "OutsideNow": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Outside"}><BoundOutsideNow {...node.props} /></CardBoundary>;
+    case "Rain": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Rain"}><BoundRain {...node.props} /></CardBoundary>;
+    case "Wind": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Wind"}><BoundWind {...node.props} /></CardBoundary>;
+    case "Pressure": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Pressure"}><BoundPressure {...node.props} /></CardBoundary>;
   }
 }
 

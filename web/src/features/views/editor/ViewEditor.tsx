@@ -11,6 +11,10 @@ import { StateTimelineEditor } from "../cards/state-timeline/Editor";
 import { WeekPatternEditor } from "../cards/week-pattern/Editor";
 import { ToggleTileEditor } from "../cards/toggle-tile/Editor";
 import { ToggleListEditor } from "../cards/toggle-list/Editor";
+import { OutsideNowEditor } from "../cards/outside-now/Editor";
+import { RainEditor } from "../cards/rain/Editor";
+import { WindEditor } from "../cards/wind/Editor";
+import { PressureEditor } from "../cards/pressure/Editor";
 import { gridSchema } from "../layout/schema";
 import { TimeSeriesEditor, type SensorChoice } from "../cards/time-series/Editor";
 import { fieldTypes } from "../bindings/state-fields";
@@ -26,7 +30,8 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
   const [error, setError] = useState("");
   const version = useBaseUrlVersion();
   const readable = new Set<string>(fieldTypes);
-  const toggleCards = Object.values(definition.spec.elements).some(node => node.type === "ToggleTile" || node.type === "ToggleList");
+  // Entity names repeat across Devices ("Humidity"), so cards that pick sources by name also show the Device.
+  const deviceNames = Object.values(definition.spec.elements).some(node => ["ToggleTile", "ToggleList", "OutsideNow", "Rain", "Wind", "Pressure"].includes(node.type));
   useEffect(() => {
     const controller = new AbortController();
     setChoices([]);
@@ -39,7 +44,7 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
         all.push(...page.items.filter(item => readable.has(item.type)));
         cursor = page.next_cursor ?? undefined;
       } while (cursor && !controller.signal.aborted);
-      if (toggleCards) {
+      if (deviceNames) {
         const names = new Map<string, string>();
         cursor = undefined;
         do {
@@ -53,7 +58,7 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
       if (!controller.signal.aborted) setChoices(all);
     })().catch(() => { if (!controller.signal.aborted) setError("Sensor list unavailable; existing selections are preserved."); });
     return () => controller.abort();
-  }, [version, toggleCards]);
+  }, [version, deviceNames]);
   function update(candidate: ViewDefinition) {
     setWorking(candidate);
     const parsed = parseDefinition(candidate);
@@ -78,6 +83,10 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
       {node.type === "WeekPattern" && <WeekPatternEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
       {node.type === "ToggleTile" && <ToggleTileEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "ToggleList" && <ToggleListEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "OutsideNow" && <OutsideNowEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "Rain" && <RainEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "Wind" && <WindEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "Pressure" && <PressureEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "TimeSeries" && <TimeSeriesEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {(node.type === "Heading" || node.type === "Note") && <TextField label="Text" multiline value={node.props.text} onChange={text => element(key, { ...node, props: { text } })} schema={node.type === "Heading" ? headingSchema.shape.text : noteSchema.shape.text} errorMessage={`Use 1–${node.type === "Heading" ? 120 : 500} characters for this ${node.type.toLowerCase()}.`} />}
       {node.type === "Grid" && <label>Columns<select value={node.props.columns} onChange={event => element(key, { ...node, props: { columns: gridSchema.shape.columns.parse(Number(event.target.value)) } })}><option>1</option><option>2</option><option>3</option><option>4</option></select></label>}

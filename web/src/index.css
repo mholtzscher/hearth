@@ -482,6 +482,37 @@
 .view-switch-group p[data-failed] { color:var(--error); }
 .view-editor label.view-checkbox { display:flex; align-items:center; gap:8px; }
 .view-editor .view-checkbox input { width:auto; }
+/* Weather cards: words and derived values sit under the 40px reading; other readings follow as compact rows. */
+.view-weather { container-type:inline-size; }
+.view-weather .view-card-body { display:flex; flex-direction:column; gap:6px; }
+.view-weather-conditions { color:var(--gray-9); font-size:14px; line-height:1.5; text-wrap:balance; }
+.view-weather-detail, .view-weather-inline { color:var(--quiet); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; text-wrap:pretty; }
+.view-weather-detail[data-value=dimmed], .view-weather-tendency[data-value=dimmed], .view-weather-inline [data-value=dimmed] { color:var(--gray-7); }
+.view-weather-conditions[data-value=dimmed] { color:var(--gray-8); }
+.view-weather-inline { margin-top:4px; }
+.view-weather-rows { margin-top:10px; border-top:1px solid var(--edge); }
+.view-weather-rows .view-rows { margin-block:0 -4px; }
+.view-weather-slot-status { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; color:var(--quiet); font-size:14px; line-height:1.5; }
+.view-weather-slot-status .view-status { flex-basis:100%; }
+.view-weather-wind-lead { display:flex; align-items:center; gap:18px; }
+.view-weather-wind-lead > div { min-width:0; }
+.view-weather-compass { flex-shrink:0; width:104px; height:104px; overflow:visible; }
+.view-weather-compass-ring { fill:none; stroke:var(--gray-4); stroke-width:1; }
+.view-weather-compass-major { stroke:var(--gray-7); stroke-width:1.5; stroke-linecap:round; }
+.view-weather-compass-minor { stroke:var(--gray-5); stroke-width:1; stroke-linecap:round; }
+.view-weather-compass-letter { fill:var(--gray-8); font-size:11px; font-weight:500; text-anchor:middle; dominant-baseline:central; }
+.view-weather-compass-arrow { transition:transform 600ms cubic-bezier(.16,1,.3,1); }
+.view-weather-compass-arrow line { stroke:var(--gray-10); stroke-width:2; stroke-linecap:round; }
+.view-weather-compass-arrow path, .view-weather-compass-arrow circle { fill:var(--gray-10); }
+.view-weather-compass-calm { fill:none; stroke:var(--gray-7); stroke-width:1.5; }
+.view-weather-compass[data-value=dimmed] .view-weather-compass-arrow line { stroke:var(--gray-7); stroke-dasharray:3 3; }
+.view-weather-compass[data-value=dimmed] .view-weather-compass-arrow path, .view-weather-compass[data-value=dimmed] .view-weather-compass-arrow circle { fill:var(--gray-7); }
+@container(max-width:290px) { .view-weather-compass { width:76px; height:76px; } .view-weather-wind-lead { gap:14px; } }
+.view-weather-tendency { display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; color:var(--gray-9); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; }
+.view-weather-tendency svg { width:16px; height:16px; flex-shrink:0; }
+.view-weather-tendency span { color:var(--quiet); }
+.view-weather-tendency span::before { content:"·" / ""; margin-inline-end:6px; color:var(--gray-6); }
+@media(prefers-reduced-motion:reduce) { .view-weather-compass-arrow { transition:none; } }
 /*
  * Afterglow: a new observation lights the card's top edge orange, which fades
  * over a minute. Under reduced motion the edge stays lit for that minute

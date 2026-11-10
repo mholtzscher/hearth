@@ -246,6 +246,22 @@ and over 30 minutes true); future hours are outlined and hours with no known
 value are dashed. Each day states its changes into true and time true, hidden
 below a 420px card. A key names the levels.
 
+Weather cards (Outside now, Rain, Wind and Pressure) lead with one reading at
+the 40px scale. Conditions follow in words at 14px `--gray-9`, such as
+`Rain · Breezy` or `Moderate breeze`, and derived values follow in quiet 14px
+text, such as feels like, dew point, and the 24 h high and low. They describe
+only what the station measures, never sky conditions. Further readings use
+compact rows or one inline sentence. A reading with no row of its own states
+its statuses on a named line. Rain totals that share one status share one
+line. While a storm total is above zero, Rain leads with it; a zero rate reads
+**Dry**. Wind draws a 104px compass rose, 76px below a 290px card: neutral
+ring and ticks, N E S W letters, and a `--gray-10` arrow pointing where the
+wind blows. Calm draws a small ring instead. An unavailable or disabled direction
+keeps its last arrow, dashed in `--gray-7`; without a value there is no arrow.
+Derived values and words dim when any reading they use is dimmed. Pressure states its three-hour tendency with a
+16px arrow icon and the signed change, or says why there is no tendency.
+Method and thresholds belong in Source.
+
 Every data card in a view uses one frame. Future card types follow this contract rather than copying an existing card.
 
 The frame is the card surface (`--gray-1`, a 1px `--gray-3` border, 12px corners, 18px padding) with these slots, in order:

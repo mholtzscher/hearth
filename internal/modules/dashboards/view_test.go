@@ -33,92 +33,58 @@ var exampleSupport = map[string]string{
 	"hearth.enumsetting/v1":      `{"state":{"choices":["Auto"]},"operations":{"set":{}}}`,
 }
 
-// exampleEntities supplies each referenced Entity with matching type and a
-// supported stored envelope. Never-observed and disabled Entities stay valid.
+// exampleSensorUnits gives the weather example's numeric sensors the stored
+// units their slots require; other numeric sensors use exampleSupport.
+//
+//nolint:gochecknoglobals // Immutable test fixture keyed by Entity ID.
+var exampleSensorUnits = map[string]string{
+	"ent_01900000-0000-7000-8000-000000000104": "deg",
+	"ent_01900000-0000-7000-8000-000000000105": "mm/h",
+	"ent_01900000-0000-7000-8000-000000000106": "mm",
+	"ent_01900000-0000-7000-8000-000000000107": "mm",
+	"ent_01900000-0000-7000-8000-000000000108": "mm",
+	"ent_01900000-0000-7000-8000-000000000109": "mm",
+	"ent_01900000-0000-7000-8000-000000000110": "mm",
+}
+
+// exampleEntities supplies every Entity a definition references, wherever its
+// binding sits, with matching type and a supported stored envelope.
+// Never-observed and disabled Entities stay valid.
 func exampleEntities(definition json.RawMessage) chartReader {
-	var probe struct {
-		Spec struct {
-			Elements map[string]struct {
-				Type  string `json:"type"`
-				Props struct {
-					Source struct {
-						EntityID   string `json:"entity_id"`
-						EntityType string `json:"entity_type"`
-					} `json:"source"`
-					Series []struct {
-						Source struct {
-							EntityID   string `json:"entity_id"`
-							EntityType string `json:"entity_type"`
-						} `json:"source"`
-					} `json:"series"`
-					Rows []struct {
-						Source struct {
-							EntityID   string `json:"entity_id"`
-							EntityType string `json:"entity_type"`
-						} `json:"source"`
-					} `json:"rows"`
-					Metric *struct {
-						Source struct {
-							EntityID   string `json:"entity_id"`
-							EntityType string `json:"entity_type"`
-						} `json:"source"`
-						Detail *struct {
-							Source struct {
-								EntityID   string `json:"entity_id"`
-								EntityType string `json:"entity_type"`
-							} `json:"source"`
-						} `json:"detail"`
-					} `json:"metric"`
-				} `json:"props"`
-			} `json:"elements"`
-		} `json:"spec"`
-	}
 	result := chartReader{}
-	if err := json.Unmarshal(definition, &probe); err != nil {
+	var tree any
+	if err := json.Unmarshal(definition, &tree); err != nil {
 		return result
 	}
-	for _, node := range probe.Spec.Elements {
-		if metric := node.Props.Metric; metric != nil {
-			result[devices.EntityID(metric.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
-				ID: devices.EntityID(metric.Source.EntityID), TypeID: devices.EntityTypeID(metric.Source.EntityType),
-				Support: devices.EntitySupport(exampleSupport[metric.Source.EntityType]),
-			}}
-			if detail := metric.Detail; detail != nil {
-				result[devices.EntityID(detail.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
+	var visit func(node any)
+	visit = func(node any) {
+		switch value := node.(type) {
+		case map[string]any:
+			id, _ := value["entity_id"].(string)
+			entityType, _ := value["entity_type"].(string)
+			if id != "" && entityType != "" {
+				support := exampleSupport[entityType]
+				if unit, ok := exampleSensorUnits[id]; ok {
+					support = `{"state":{"minimum":0,"maximum":10000,"unit":"` + unit + `"},"operations":{}}`
+				}
+				result[devices.EntityID(id)] = devices.EntityWithState{Entity: devices.Entity{
 					ID: devices.EntityID(
-						detail.Source.EntityID,
+						id,
 					),
-					TypeID:  devices.EntityTypeID(detail.Source.EntityType),
-					Support: devices.EntitySupport(exampleSupport[detail.Source.EntityType]),
+					TypeID:  devices.EntityTypeID(entityType),
+					Support: devices.EntitySupport(support),
 				}}
 			}
-		}
-		for _, row := range node.Props.Rows {
-			result[devices.EntityID(row.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
-				ID: devices.EntityID(
-					row.Source.EntityID,
-				),
-				TypeID:  devices.EntityTypeID(row.Source.EntityType),
-				Support: devices.EntitySupport(exampleSupport[row.Source.EntityType]),
-			}}
-		}
-		if node.Props.Source.EntityType != "" {
-			result[devices.EntityID(node.Props.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
-				ID:      devices.EntityID(node.Props.Source.EntityID),
-				TypeID:  devices.EntityTypeID(node.Props.Source.EntityType),
-				Support: devices.EntitySupport(exampleSupport[node.Props.Source.EntityType]),
-			}}
-		}
-		for _, series := range node.Props.Series {
-			if series.Source.EntityType != "" {
-				result[devices.EntityID(series.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
-					ID:      devices.EntityID(series.Source.EntityID),
-					TypeID:  devices.EntityTypeID(series.Source.EntityType),
-					Support: devices.EntitySupport(exampleSupport[series.Source.EntityType]),
-				}}
+			for _, child := range value {
+				visit(child)
+			}
+		case []any:
+			for _, child := range value {
+				visit(child)
 			}
 		}
 	}
+	visit(tree)
 	return result
 }
 
@@ -176,6 +142,9 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		orphan   = "every element must be reachable from root"
 	)
 	want := map[string]string{
+		"outside-now-wrong-type":           schema,
+		"rain-total-field":                 schema,
+		"wind-unknown-slot":                schema,
 		"toggle-tile-binary-sensor":        schema,
 		"toggle-tile-boolean-metric":       "ToggleTile metrics and details need numeric State fields",
 		"toggle-list-duplicate-row":        "a ToggleList shows each power Entity once",

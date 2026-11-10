@@ -56,6 +56,19 @@ export function displayUnit(canonicalUnit: string, valueType: ValueType, system:
   return result;
 }
 
+/** Converts between two UCUM units, or returns null when no positive affine conversion exists. */
+export function convertUnit(value: number, from: string, to: string): number | null {
+  const convert = from === to ? identity : converter(from, to);
+  return convert ? convert(value) : null;
+}
+
+/** Recovers a canonical value from its displayed form: the inverse of displayUnit's conversion. */
+export function canonicalValue(displayed: number, canonicalUnit: string, valueType: ValueType, system: UnitSystem): number {
+  const { convert } = displayUnit(canonicalUnit, valueType, system);
+  const zero = convert(0);
+  return (displayed - zero) / (convert(1) - zero);
+}
+
 /** Converts one canonical value for display under the household system. */
 export function present(value: number, canonicalUnit: string, valueType: ValueType, system: UnitSystem): Measurement {
   const unit = displayUnit(canonicalUnit, valueType, system);

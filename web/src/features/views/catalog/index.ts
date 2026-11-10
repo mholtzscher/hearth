@@ -10,6 +10,10 @@ import { stateTimelineSchema } from "../cards/state-timeline/schema";
 import { weekPatternSchema } from "../cards/week-pattern/schema";
 import { toggleTileSchema } from "../cards/toggle-tile/schema";
 import { toggleListSchema } from "../cards/toggle-list/schema";
+import { outsideNowSchema } from "../cards/outside-now/schema";
+import { rainSchema } from "../cards/rain/schema";
+import { windSchema } from "../cards/wind/schema";
+import { pressureSchema } from "../cards/pressure/schema";
 import { childrenSchema, elementKey, plainText } from "./primitives";
 
 // The view catalog: the only components a definition may name. Each node shape
@@ -28,6 +32,10 @@ export const elementSchemas = {
   WeekPattern: z.strictObject({ type: z.literal("WeekPattern"), props: weekPatternSchema }),
   ToggleTile: z.strictObject({ type: z.literal("ToggleTile"), props: toggleTileSchema }),
   ToggleList: z.strictObject({ type: z.literal("ToggleList"), props: toggleListSchema }),
+  OutsideNow: z.strictObject({ type: z.literal("OutsideNow"), props: outsideNowSchema }),
+  Rain: z.strictObject({ type: z.literal("Rain"), props: rainSchema }),
+  Wind: z.strictObject({ type: z.literal("Wind"), props: windSchema }),
+  Pressure: z.strictObject({ type: z.literal("Pressure"), props: pressureSchema }),
 };
 export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.Stack, elementSchemas.Grid, elementSchemas.Heading,
@@ -35,6 +43,7 @@ export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.State, elementSchemas.ReadingList, elementSchemas.Device,
   elementSchemas.StateTimeline, elementSchemas.WeekPattern,
   elementSchemas.ToggleTile, elementSchemas.ToggleList,
+  elementSchemas.OutsideNow, elementSchemas.Rain, elementSchemas.Wind, elementSchemas.Pressure,
 ]);
 export const definitionSchema = z.strictObject({
   schema_version: z.literal(1), catalog_version: z.literal("hearth.dashboard/v1"), title: plainText(80),

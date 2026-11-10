@@ -35,7 +35,7 @@ export function rowSources(rows: ReadingRow[]): SourceItem[] {
   const sources = new Map<string, SourceItem>();
   for (const row of rows) {
     const metadata = row.resource.metadata;
-    if (metadata && !sources.has(metadata.id)) sources.set(metadata.id, { entityId: metadata.id, label: metadata.label === row.name ? row.name : `${row.name} · ${metadata.label}`, availability: metadata.availability, enabled: metadata.enabled });
+    if (metadata && !sources.has(metadata.id)) sources.set(metadata.id, { entityId: metadata.id, label: metadata.label.toLowerCase() === row.name.toLowerCase() ? row.name : `${row.name} · ${metadata.label}`, availability: metadata.availability, enabled: metadata.enabled });
   }
   return [...sources.values()];
 }
