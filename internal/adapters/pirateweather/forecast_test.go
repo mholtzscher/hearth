@@ -3,9 +3,19 @@ package pirateweather //nolint:testpackage // Exercises forecast conversion at t
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/contracts/functionschema"
+	dailytype "github.com/mholtzscher/hearth/entitytypes/dailyforecastv1"
+	hourlytype "github.com/mholtzscher/hearth/entitytypes/hourlyforecastv1"
+	"github.com/mholtzscher/hearth/sdk/adapter"
+	"github.com/mholtzscher/hearth/sdk/adapter/dailyforecastv1"
+	"github.com/mholtzscher/hearth/sdk/adapter/hourlyforecastv1"
 )
 
 func TestForecastConditionVocabulary(t *testing.T) {
@@ -19,6 +29,110 @@ func TestForecastConditionVocabulary(t *testing.T) {
 	for _, icon := range []*string{nil, &unknown, &empty} {
 		if got := forecastCondition(icon); got != nil {
 			t.Errorf("unknown condition: %v", *got)
+		}
+	}
+}
+
+func TestForecastSDKObservationsUseNeutralKeysAndPreserveZero(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	zero := 0.0
+	hourly, err := hourlyforecastv1.NewObservation(hourlyforecastv1.ObservationInput{
+		EntityID: "ent_019a68f8-0000-7000-8000-000000000001", AdapterReceivedAt: now,
+		State: hourlyforecastv1.State{Periods: hourlytype.StatePeriods{{StartsAt: now.Format(time.RFC3339),
+			Temperature: &zero, ApparentTemperature: &zero, Humidity: &zero, PrecipitationProbability: &zero}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	daily, err := dailyforecastv1.NewObservation(dailyforecastv1.ObservationInput{
+		EntityID:          "ent_019a68f8-0000-7000-8000-000000000002",
+		AdapterReceivedAt: now,
+		State: dailyforecastv1.State{
+			Periods: dailytype.StatePeriods{{StartsAt: now.Format(time.RFC3339), Date: "2026-11-09",
+				TemperatureMin: &zero, TemperatureMax: &zero, Humidity: &zero, PrecipitationProbability: &zero}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		value json.RawMessage
+		want  map[string]any
+	}{
+		{hourly.Value, map[string]any{"starts_at": "2026-11-09T12:00:00Z", "temperature": 0.0,
+			"apparent_temperature": 0.0, "humidity": 0.0, "precipitation_probability": 0.0}},
+		{daily.Value, map[string]any{"starts_at": "2026-11-09T12:00:00Z", "date": "2026-11-09", "temperature_min": 0.0,
+			"temperature_max": 0.0, "humidity": 0.0, "precipitation_probability": 0.0}},
+	} {
+		var state struct {
+			Periods []map[string]any `json:"periods"`
+		}
+		if unmarshalErr := json.Unmarshal(tc.value, &state); unmarshalErr != nil {
+			t.Fatal(unmarshalErr)
+		}
+		if len(state.Periods) != 1 || !reflect.DeepEqual(state.Periods[0], tc.want) {
+			t.Errorf("observation = %s, want period %v", tc.value, tc.want)
+		}
+	}
+}
+
+func TestForecastFunctionResultContracts(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	body := fullForecastBody(t, now, 1, 1)
+	c := testClient(t, roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return response(http.StatusOK, body), nil
+	}))
+	c.now = func() time.Time { return now }
+	common := map[string]any{"starts_at": "2026-11-09T12:00:00Z", "summary": "Rain expected", "icon": "rain",
+		"precipitation_type": "rain", "humidity": 42.0, "pressure": 1013.0, "wind_speed": 3.0,
+		"wind_gust": 5.0, "wind_direction": 180.0, "precipitation_rate": 0.5,
+		"precipitation_probability": 70.0, "cloud_cover": 30.0, "uv_index": 2.0}
+	for i, function := range c.functions() {
+		args := `{"hours":1}`
+		want := make(map[string]any, len(common)+3)
+		maps.Copy(want, common)
+		if i == 0 {
+			want["temperature"], want["apparent_temperature"] = 12.5, 11.5
+		} else {
+			args = `{"days":1}`
+			want["date"], want["temperature_min"], want["temperature_max"] = "2026-11-09", 4.0, 15.0
+		}
+		result, ok := function.Handler(t.Context(), adapter.FunctionRequest{Arguments: json.RawMessage(args)}).(adapter.FunctionSucceeded)
+		if !ok {
+			t.Fatalf("%s failed", function.Descriptor.Key)
+		}
+		schema, err := functionschema.Compile(function.Descriptor.OutputSchema)
+		if err != nil || schema.Validate(result.Result) != nil {
+			t.Fatalf("%s result schema validation: %v", function.Descriptor.Key, err)
+		}
+		var document struct {
+			Periods []map[string]any `json:"periods"`
+		}
+		if unmarshalErr := json.Unmarshal(result.Result, &document); unmarshalErr != nil {
+			t.Fatal(unmarshalErr)
+		}
+		if len(document.Periods) != 1 || !reflect.DeepEqual(document.Periods[0], want) {
+			t.Fatalf("%s period = %v, want %v", function.Descriptor.Key, document.Periods, want)
+		}
+		assertFunctionRejectsLegacyKeys(t, schema, result.Result, function.Descriptor.Key)
+	}
+}
+
+func assertFunctionRejectsLegacyKeys(t *testing.T, schema *functionschema.Schema, result json.RawMessage, name string) {
+	t.Helper()
+	for _, legacy := range []string{"temperature_c", "temperature_min_c", "temperature_max_c", "apparent_temperature_c",
+		"humidity_percent", "pressure_hpa", "wind_speed_mps", "wind_gust_mps", "wind_direction_degrees",
+		"precipitation_rate_mmh", "precipitation_probability_percent", "cloud_cover_percent"} {
+		var payload map[string]any
+		if err := json.Unmarshal(result, &payload); err != nil {
+			t.Fatal(err)
+		}
+		payload["periods"].([]any)[0].(map[string]any)[legacy] = 0
+		encoded, err := json.Marshal(payload)
+		if err != nil || schema.Validate(encoded) == nil {
+			t.Errorf("%s accepted legacy key %s", name, legacy)
 		}
 	}
 }

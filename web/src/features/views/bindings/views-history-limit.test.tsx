@@ -10,7 +10,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const id = "ent_019a3e6a-4111-7000-8000-000000000001";
 const entity = {
   id, name: "Outdoor", type: "hearth.temperature/v1", enabled: true, availability: { status: "available" },
-  state: { value: 12500, observed_at: "2026-11-01T10:00:00Z" },
+  quantities: { "": { unit: "Cel", label: "°C", fraction_digits: 1 } }, state: { value: 12.5, observed_at: "2026-11-01T10:00:00Z" },
 };
 
 /** Core answers State reads, and refuses history with the given problem. */

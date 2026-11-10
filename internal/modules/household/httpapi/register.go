@@ -24,7 +24,7 @@ func Register(api huma.API, settings household.Settings) {
 			Method:      http.MethodGet,
 			Path:        "/household",
 			Summary:     "Get household settings",
-			Description: "Household-wide settings fixed by Core configuration. Presentation layers use unit_system to choose display units; canonical State is unchanged.",
+			Description: "Household-wide settings fixed by Core configuration. Core uses unit_system for numeric read responses; canonical stored State is unchanged.",
 			Errors:      []int{http.StatusInternalServerError},
 		},
 		func(context.Context, *struct{}) (*householdOutput, error) {

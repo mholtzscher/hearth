@@ -44,8 +44,8 @@ it("offers canonical brightness percentages without support maximum or step", as
 
 it("summarizes a forecast snapshot instead of printing its State inline", async () => {
   const value = { periods: [
-    { starts_at: "2026-11-09T06:00:00Z", date: "2026-11-09", condition: "rain", temperature_min_c: 1, temperature_max_c: 9 },
-    { starts_at: "2026-11-10T06:00:00Z", date: "2026-11-10", condition: "clear-day", temperature_min_c: -2, temperature_max_c: 5 },
+    { starts_at: "2026-11-09T06:00:00Z", date: "2026-11-09", condition: "rain", temperature_min: 1, temperature_max: 9 },
+    { starts_at: "2026-11-10T06:00:00Z", date: "2026-11-10", condition: "clear-day", temperature_min: -2, temperature_max: 5 },
   ] };
   const entity = {
     id: "ent_daily", type: "hearth.dailyforecast/v1", name: "Daily forecast",

@@ -23,6 +23,7 @@ func newNumericSensorPlan(
 	minimum, maximum float64,
 	unit string,
 	gettable bool,
+	semanticKind string,
 ) (entityPlan, error) {
 	support := contractnumericsensorv1.Support{
 		State: contractnumericsensorv1.StateSupport{
@@ -31,6 +32,9 @@ func newNumericSensorPlan(
 			Unit:    unit,
 		},
 		Operations: contractnumericsensorv1.OperationSupport{},
+	}
+	if semanticKind != "" {
+		support.State.QuantityKind = &semanticKind
 	}
 	descriptor, err := sdknumericsensorv1.NewEntityDescriptor(metadata, support)
 	if err != nil {
@@ -93,7 +97,7 @@ func planNumericSensorRoot(input devicePlanningInput, root indexedExpose, mappin
 		Key:        key,
 		ExternalID: input.IEEE + "/" + entityLocation(root) + "/" + mapping.key,
 		Name:       name,
-	}, expose.Property, mapping.minimum, mapping.maximum, mapping.unit, exposeCanGet(expose))
+	}, expose.Property, mapping.minimum, mapping.maximum, mapping.unit, exposeCanGet(expose), mapping.quantityKind)
 	if err != nil {
 		return nil
 	}

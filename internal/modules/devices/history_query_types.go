@@ -86,9 +86,10 @@ func (HistorySummaryResult) historyResult()         {}
 func (HistoryBucketedSummaryResult) historyResult() {}
 
 const (
-	HistoryMaxMetrics     = 16
-	HistoryMaxBuckets     = 1000
-	HistoryMaxResultBytes = 4 * 1024 * 1024
+	HistoryMaxRequestBytes = 1024 * 1024
+	HistoryMaxMetrics      = 16
+	HistoryMaxBuckets      = 1000
+	HistoryMaxResultBytes  = 4 * 1024 * 1024
 )
 
 // HistoryQueryError carries safe query diagnostics. Code is fixed by the owner;

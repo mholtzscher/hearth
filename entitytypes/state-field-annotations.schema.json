@@ -5,6 +5,12 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "quantity_kind": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"$ref": "#/$defs/supportReference"}
+      ]
+    },
     "unit": {
       "oneOf": [
         {"type": "string", "minLength": 1},

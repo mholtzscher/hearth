@@ -1,4 +1,3 @@
-//nolint:dupl // Each operation owns its registration, request, and domain translation.
 package httpapi
 
 import (
@@ -21,6 +20,7 @@ func registerGetEntity(api huma.API, handler *handler) {
 
 type GetEntityInput struct {
 	EntityID string `path:"entity_id" doc:"Canonical Hearth Entity ID"`
+	Units    string `                 doc:"Omit for household units; canonical returns canonical values" query:"units"`
 }
 
 type GetEntityOutput struct {
@@ -28,6 +28,10 @@ type GetEntityOutput struct {
 }
 
 func (handler *handler) getEntity(ctx context.Context, input *GetEntityInput) (*GetEntityOutput, error) {
+	units, err := devices.ParseReadUnits(input.Units)
+	if err != nil {
+		return nil, huma.NewError(http.StatusBadRequest, "invalid units")
+	}
 	entityID, err := devices.ParseEntityID(input.EntityID)
 	if err != nil {
 		return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
@@ -39,7 +43,7 @@ func (handler *handler) getEntity(ctx context.Context, input *GetEntityInput) (*
 	if err != nil {
 		return nil, handler.internalAPIError(ctx, "get-entity", "service", err)
 	}
-	body, err := entityBody(view)
+	body, err := handler.entityBody(view, units)
 	if err != nil {
 		return nil, handler.internalAPIError(ctx, "get-entity", "mapping", err)
 	}

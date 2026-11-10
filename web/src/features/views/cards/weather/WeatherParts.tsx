@@ -1,7 +1,6 @@
 import { useNumericReads } from "../../bindings/registry";
 import type { MetricData, NumericSource, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
-import { StatusList } from "../CardFrame";
-import { cardStatus, type CardStatus } from "../status";
+import type { CardStatus } from "../status";
 import type { ReadingRow } from "../reading-list/ReadingRows";
 
 export type WeatherRead = { source: NumericSource; window?: SeriesWindow };
@@ -30,19 +29,12 @@ export function useWeatherReads<K extends string>(slots: Array<[K, WeatherRead |
   return { current: slot => current.get(slot), history: slot => history.get(slot) };
 }
 
-/** The fixed 40px reading, or words such as Dry at the same scale. Dimmed or empty by the card state table. */
-export function WeatherReading({ data, status, words }: { data?: MetricData; status: CardStatus; words?: string }) {
-  return <p className={`view-metric-value${words ? " view-state-value" : ""}`} data-value={status.value}>
-    {words ?? (data ? data.value.toFixed(data.format.fraction_digits) : "—")}
-    {!words && data?.format.unit_label && <small>{data.format.unit_label}</small>}
+/** The supplied reading, dimmed or empty by the card state table. */
+export function WeatherReading({ data, status }: { data?: MetricData; status: CardStatus }) {
+  return <p className="view-metric-value" data-value={status.value}>
+    {data ? data.value.toFixed(data.format.fraction_digits) : "—"}
+    {data?.format.unit_label && <small>{data.format.unit_label}</small>}
   </p>;
-}
-
-/** Statuses of a reading that has no row of its own, named so readers know which value they describe. */
-export function SlotStatus({ name, resource }: { name: string; resource?: Resolved<unknown> }) {
-  const entries = resource ? cardStatus(resource).entries : [];
-  if (entries.length === 0) return null;
-  return <div className="view-weather-slot-status"><span>{name}</span><StatusList entries={entries} /></div>;
 }
 
 /** A row for each bound slot, in order, so the footer, afterglow, and Source cover every reading the card uses. */

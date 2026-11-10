@@ -9,14 +9,15 @@ State fields are derived from the schemas, not a manifest allowlist.
 Numeric scalar schemas may carry one `hearth` object:
 
 ```json
-{"type":"integer","minimum":0,"maximum":100,"hearth":{"unit":"%"}}
+{"type":"integer","minimum":0,"maximum":100,"hearth":{"unit":"%","quantity_kind":"brightness"}}
 ```
 
 `unit` is a nonempty fixed unit code or a closed support reference
 `{"root":"support","path":"/state/unit"}`. Omission means dimensionless `1`.
 Referenced units must be nonempty strings. An absent optional unit resolves to
-`1`; an empty or wrongly typed value is invalid. Fixed codes are checked against
-the presentation UCUM catalog; dynamic device codes may be opaque labels.
+`1`; an empty or wrongly typed value is invalid. Dynamic device codes may be
+opaque labels. Fixed kind/unit pairs are validated against the Go-owned
+`quantitykind` vocabulary, not a UCUM runtime engine.
 
 `range` declares a meaningful presentation extent in the field's canonical unit:
 
@@ -40,6 +41,15 @@ one percentage point of the request, including at the endpoints.
 
 Dynamic unit references become immutable for an Entity at first registration,
 including optional-unit presence.
+
+`quantity_kind` declares the quantity meaning as a fixed vocabulary name or a
+support reference. `quantitykind` owns the accepted kind/unit pairs. Generic numeric
+sensors and settings optionally declare `state.quantity_kind`; unknown generic
+measurements may omit it. An absent kind may become known on re-registration,
+but a known kind cannot subsequently be changed or omitted. This does not alter
+the stricter existing unit-presence rule or migrate stored unit strings. A fixed
+kind requires a fixed unit; references to a dynamic unit are not supported in
+that combination. A support path cannot serve as both a kind and a unit.
 
 `state-field-annotations.schema.json` defines the closed annotation shape. The
 generator additionally checks numeric context, reference types and requiredness.

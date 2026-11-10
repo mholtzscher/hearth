@@ -8,6 +8,8 @@ import (
 	"io"
 	"regexp"
 	"strings"
+
+	"github.com/mholtzscher/hearth/entitytypes/quantitykind"
 )
 
 // ErrEntityInterpretationImmutable rejects changes that would reinterpret retained State.
@@ -42,6 +44,7 @@ const (
 type NumericField struct {
 	ValueType NumericValueType
 	Unit      UnitSource
+	Kind      KindSource
 	// Range is the field's meaningful extent in its canonical unit, when the
 	// type declares one. It describes presentation, not admissible State.
 	Range *QuantityRange
@@ -64,6 +67,18 @@ type SupportReference struct{ Path string }
 
 func (FixedUnit) unitSource()   {}
 func (SupportUnit) unitSource() {}
+
+// KindSource identifies a fixed quantity meaning or a support declaration.
+// A nil source means the field is unclassified.
+type KindSource interface{ kindSource() }
+type FixedKind struct{ Code string }
+type SupportKind struct {
+	Reference SupportReference
+	Optional  bool
+}
+
+func (FixedKind) kindSource()   {}
+func (SupportKind) kindSource() {}
 
 type QuantityRange struct {
 	Minimum RangeBound
@@ -114,6 +129,7 @@ func copyStateField(field StateField) StateField {
 
 type ResolvedQuantity struct {
 	Unit string
+	Kind string
 }
 
 // ResolveQuantity resolves canonical interpretation; household conversion belongs
@@ -126,7 +142,38 @@ func ResolveQuantity(field NumericField, support json.RawMessage) (ResolvedQuant
 	if err != nil {
 		return ResolvedQuantity{}, err
 	}
-	return ResolvedQuantity{Unit: unit}, nil
+	var kind string
+	switch source := field.Kind.(type) {
+	case nil:
+	case FixedKind:
+		kind = source.Code
+		if kind == "" {
+			return ResolvedQuantity{}, errors.New("fixed kind is empty")
+		}
+	case SupportKind:
+		value, present, referenceErr := supportReferenceValue(support, source.Reference.Path)
+		if referenceErr != nil {
+			return ResolvedQuantity{}, referenceErr
+		}
+		if !present && !source.Optional {
+			return ResolvedQuantity{}, fmt.Errorf("required kind %q is absent", source.Reference.Path)
+		}
+		if present {
+			var ok bool
+			kind, ok = value.(string)
+			if !ok || kind == "" {
+				return ResolvedQuantity{}, fmt.Errorf("kind %q must be a nonempty string", source.Reference.Path)
+			}
+		}
+	default:
+		return ResolvedQuantity{}, errors.New("invalid kind source")
+	}
+	if kind != "" {
+		if validationErr := quantitykind.Validate(kind, unit); validationErr != nil {
+			return ResolvedQuantity{}, validationErr
+		}
+	}
+	return ResolvedQuantity{Unit: unit, Kind: kind}, nil
 }
 
 func resolveUnit(source UnitSource, support json.RawMessage) (string, error) {
@@ -165,6 +212,11 @@ type ResolvedRange struct {
 // ErrNoQuantityRange reports a field whose type declares no range.
 var ErrNoQuantityRange = errors.New("quantity has no declared range")
 
+// ErrEmptyQuantityRange identifies valid support that declares a single value,
+// not a usable presentation extent. Reads may omit that extent; Range cards
+// still require a strictly increasing range.
+var ErrEmptyQuantityRange = errors.New("range minimum equals its maximum")
+
 // ResolveRange resolves a field's declared range against an Entity's support,
 // in the field's canonical unit. Support that cannot bound the field is an error.
 func ResolveRange(field NumericField, support json.RawMessage) (ResolvedRange, error) {
@@ -178,6 +230,9 @@ func ResolveRange(field NumericField, support json.RawMessage) (ResolvedRange, e
 	maximum, err := resolveBound(field.Range.Maximum, support)
 	if err != nil {
 		return ResolvedRange{}, err
+	}
+	if minimum == maximum {
+		return ResolvedRange{}, ErrEmptyQuantityRange
 	}
 	if !(minimum < maximum) {
 		return ResolvedRange{}, errors.New("range minimum must be below its maximum")
@@ -205,12 +260,16 @@ func resolveBound(bound RangeBound, support json.RawMessage) (float64, error) {
 }
 
 type interpretationReference struct {
-	Path     string
-	Optional bool
+	Path         string
+	Optional     bool
+	AllowInitial bool
 }
 
 // ValidateInterpretationUnchanged compares only generated interpretation paths.
-// Optional absence is frozen independently of its effective dimensionless unit.
+// Unit absence is frozen independently of its effective dimensionless unit.
+// Transition errors take precedence over incompatible incoming quantity pairs.
+//
+//nolint:gocognit // Each transition is checked explicitly for generated references.
 func ValidateInterpretationUnchanged(id EntityTypeID, previous, next json.RawMessage) error {
 	for _, reference := range builtinInterpretationReferences[id] {
 		before, beforePresent, err := supportReferenceValue(previous, reference.Path)
@@ -224,8 +283,14 @@ func ValidateInterpretationUnchanged(id EntityTypeID, previous, next json.RawMes
 		if (!beforePresent || !afterPresent) && !reference.Optional {
 			return fmt.Errorf("required interpretation %q is absent", reference.Path)
 		}
-		if beforePresent != afterPresent {
+		if beforePresent != afterPresent && (!reference.AllowInitial || beforePresent || !afterPresent) {
 			return fmt.Errorf("%w: %s", ErrEntityInterpretationImmutable, reference.Path)
+		}
+		if !beforePresent && afterPresent {
+			if _, valueErr := equalInterpretation(reference, after, after); valueErr != nil {
+				return valueErr
+			}
+			continue
 		}
 		if !beforePresent {
 			continue
@@ -236,6 +301,15 @@ func ValidateInterpretationUnchanged(id EntityTypeID, previous, next json.RawMes
 		}
 		if !equal {
 			return fmt.Errorf("%w: %s", ErrEntityInterpretationImmutable, reference.Path)
+		}
+	}
+	for _, field := range builtinStateFields[id] {
+		numeric, ok := field.Value.(NumericField)
+		if !ok {
+			continue
+		}
+		if _, err := ResolveQuantity(numeric, next); err != nil {
+			return fmt.Errorf("next quantity %q: %w", field.Path, err)
 		}
 	}
 	return nil

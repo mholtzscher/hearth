@@ -1,10 +1,8 @@
 import { Link } from "react-router-dom";
 import { ApiError } from "../../../../api/client";
-import { useUnitSystem } from "../../../units/household";
 import { useRead } from "../../data/provider";
 import { deviceReading, deviceRequest, lightEntities, lightReading, MAX_DEVICE_ROWS, type FieldDevice, type LightReading } from "../../bindings/device";
 import type { Resolved } from "../../bindings/types";
-import type { UnitSystem } from "../../../units/units";
 import { CardFrame, StatusList } from "../CardFrame";
 import { statusEntry } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates, type ReadingRow } from "../reading-list/ReadingRows";
@@ -43,6 +41,7 @@ function Light({ light, rows, name }: { light: LightReading; rows: ReturnType<ty
       {detailLevel && <span data-dimmed={brightness.status.value === "dimmed" || undefined}>Brightness {level} %{light.colorText ? " · " : ""}</span>}
       <span data-dimmed={colorDimmed || undefined}>{light.colorText}</span>
     </p>}
+    {light.colorPreviewUnavailable && <p className="view-chart-note">Color preview unavailable; canonical reading is missing or out of date.</p>}
     {dimmable && <BrightnessSlider key={light.brightness.id} entity={light.brightness} label={`${name} brightness`} />}
     {rows.filter(row => row.status.entries.length).map(row => <div className="view-light-status" key={row.key}>
       <span>{row.name}</span><StatusList entries={row.status.entries} />
@@ -50,13 +49,13 @@ function Light({ light, rows, name }: { light: LightReading; rows: ReturnType<ty
   </>;
 }
 
-export function DeviceCard({ deviceId, label, resource, system }: { deviceId: string; label?: string; resource: Resolved<FieldDevice>; system: UnitSystem }) {
+export function DeviceCard({ deviceId, label, resource, canonical, canonicalError }: { deviceId: string; label?: string; resource: Resolved<FieldDevice>; canonical?: FieldDevice; canonicalError?: string }) {
   const device = resource.status === "missing" ? undefined : resource.data;
   const allRows: ReadingRow[] = device?.entities.map(entity => {
-    const reading = deviceReading(entity, system);
+    const reading = deviceReading(entity);
     return { key: entity.id, name: entity.name, resource: reading };
   }) ?? [];
-  const light = device ? lightReading(device.entities, system) : undefined;
+  const light = device ? lightReading(device.entities, canonicalError ? undefined : canonical?.entities) : undefined;
   const used = light && device ? lightEntities(light, device.entities) : new Set<string>();
   const additional = allRows.filter(row => !used.has(row.key));
   const shown = additional.slice(0, MAX_DEVICE_ROWS);
@@ -78,7 +77,7 @@ export function DeviceCard({ deviceId, label, resource, system }: { deviceId: st
     }
   }
   const title = label ?? device?.name ?? "Device";
-  const status = device ? resource.refreshFailed ? [statusEntry("refresh-failed")] : [] : [statusEntry(resource.status === "missing" ? "device-missing" : resource.status === "loading" ? "loading" : "error", resource.error)];
+  const status = device ? [...(resource.refreshFailed ? [statusEntry("refresh-failed")] : []), ...(canonicalError ? [statusEntry("error", `Couldn't load canonical light State: ${canonicalError}`)] : [])] : [statusEntry(resource.status === "missing" ? "device-missing" : resource.status === "loading" ? "loading" : "error", resource.error)];
   return <CardFrame title={title} className="view-device" status={status}
     observedAt={oldestObservation(displayed)} observedLabel="Oldest reading" arrivals={arrivals} sources={rowSources(allRows)}
     sourceExtra={<p><Link to={`/devices/${deviceId}`}>Device details</Link> <code>{deviceId}</code></p>}>
@@ -92,11 +91,13 @@ export function DeviceCard({ deviceId, label, resource, system }: { deviceId: st
 
 export function BoundDevice({ device, label }: { device: { kind: "device"; device_id: string }; label?: string }) {
   const snapshot = useRead(deviceRequest(device.device_id));
-  const system = useUnitSystem();
-  const missing = snapshot.error instanceof ApiError && snapshot.error.status === 404;
   const data = snapshot.data as FieldDevice | undefined;
-  return <DeviceCard deviceId={device.device_id} label={label} system={system ?? "metric"} resource={{
-    status: system === undefined ? "loading" : missing ? "missing" : data ? "ready" : snapshot.error ? "error" : "loading",
-    data: system === undefined ? undefined : data, error: snapshot.error?.message, refreshFailed: !!snapshot.error,
+  const color = data && lightReading(data.entities)?.color;
+  const needsCanonical = color?.type === "hearth.colorxy/v1" && !!color.state;
+  const canonical = useRead(needsCanonical ? deviceRequest(device.device_id, "canonical") : null);
+  const missing = snapshot.error instanceof ApiError && snapshot.error.status === 404;
+  return <DeviceCard deviceId={device.device_id} label={label} canonical={canonical.data as FieldDevice | undefined} canonicalError={canonical.error?.message} resource={{
+    status: missing ? "missing" : data ? "ready" : snapshot.error ? "error" : "loading",
+    data, error: snapshot.error?.message, refreshFailed: !!snapshot.error,
   }} />;
 }

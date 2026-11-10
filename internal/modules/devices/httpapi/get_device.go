@@ -21,8 +21,9 @@ func registerGetDevice(api huma.API, handler *handler) {
 
 type GetDeviceInput struct {
 	DeviceID     string `path:"device_id" doc:"Canonical Hearth Device ID"`
-	EntityLimit  int    `                                                  query:"entity_limit"  default:"50" minimum:"1" maximum:"200"`
-	EntityCursor string `                                                  query:"entity_cursor"`
+	EntityLimit  int    `                                                                                    query:"entity_limit"  default:"50" minimum:"1" maximum:"200"`
+	EntityCursor string `                                                                                    query:"entity_cursor"`
+	Units        string `                 doc:"Omit for household units; canonical returns canonical values" query:"units"`
 }
 
 type GetDeviceOutput struct {
@@ -30,6 +31,10 @@ type GetDeviceOutput struct {
 }
 
 func (handler *handler) getDevice(ctx context.Context, input *GetDeviceInput) (*GetDeviceOutput, error) {
+	units, err := devices.ParseReadUnits(input.Units)
+	if err != nil {
+		return nil, huma.NewError(http.StatusBadRequest, "invalid units")
+	}
 	deviceID, err := devices.ParseDeviceID(input.DeviceID)
 	if err != nil {
 		return nil, huma.NewError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
@@ -51,7 +56,7 @@ func (handler *handler) getDevice(ctx context.Context, input *GetDeviceInput) (*
 	case err != nil:
 		return nil, handler.internalAPIError(ctx, "get-device", "service", err)
 	}
-	body, err := deviceDetailBody(aggregate)
+	body, err := handler.deviceDetailBody(aggregate, units)
 	if err != nil {
 		return nil, handler.internalAPIError(ctx, "get-device", "mapping", err)
 	}
@@ -77,14 +82,17 @@ type DeviceDetailBody struct {
 	NextEntityCursor *string      `json:"next_entity_cursor,omitempty"`
 }
 
-func deviceDetailBody(aggregate devices.DeviceAggregate) (DeviceDetailBody, error) {
+func (handler *handler) deviceDetailBody(
+	aggregate devices.DeviceAggregate,
+	units devices.ReadUnits,
+) (DeviceDetailBody, error) {
 	body := DeviceDetailBody{
 		AdapterName: aggregate.Device.AdapterName, NameOverride: aggregate.Device.NameOverride,
 		ID: string(aggregate.Device.ID), Kind: string(aggregate.Device.Kind), Name: aggregate.Device.Name,
 		Entities: make([]EntityBody, len(aggregate.Entities.Items)),
 	}
 	for index, entity := range aggregate.Entities.Items {
-		mapped, err := entityBody(entity)
+		mapped, err := handler.entityBody(entity, units)
 		if err != nil {
 			return DeviceDetailBody{}, err
 		}

@@ -253,7 +253,7 @@ func TestDiscoverWandaBulbAttributes(t *testing.T) {
 			Name:       "Startup Color Temperature",
 			Type:       "hearth.numericsetting/v1",
 			Support: json.RawMessage(
-				`{"state":{"choices":["previous"],"maximum":454,"minimum":142,"unit":"mired"},"operations":{"set":{}}}`,
+				`{"state":{"choices":["previous"],"maximum":454,"minimum":142,"quantity_kind":"color_temperature","unit":"mired"},"operations":{"set":{}}}`,
 			),
 		},
 		{
@@ -271,9 +271,13 @@ func TestDiscoverWandaBulbAttributes(t *testing.T) {
 			),
 		},
 		{
-			Key: "linkquality", ExternalID: ieee + "/root/linkquality", Name: "Link Quality",
-			Type:    "hearth.numericsensor/v1",
-			Support: json.RawMessage(`{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`),
+			Key:        "linkquality",
+			ExternalID: ieee + "/root/linkquality",
+			Name:       "Link Quality",
+			Type:       "hearth.numericsensor/v1",
+			Support: json.RawMessage(
+				`{"state":{"maximum":255,"minimum":0,"quantity_kind":"link_quality","unit":"lqi"},"operations":{}}`,
+			),
 		},
 	}
 	if !reflect.DeepEqual(device.Registration.Entities, want) {

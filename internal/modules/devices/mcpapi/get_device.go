@@ -23,6 +23,7 @@ type GetDeviceInput struct {
 	DeviceID     deviceID  `json:"device_id"               doc:"canonical Hearth Device ID"`
 	EntityLimit  pageLimit `json:"entity_limit,omitempty"  doc:"embedded Entity page size from 1 to 200; defaults to 50"`
 	EntityCursor string    `json:"entity_cursor,omitempty" doc:"opaque cursor from a previous page's next_entity_cursor"`
+	Units        string    `json:"units,omitempty"         doc:"Omit for household units"                                enum:",canonical"`
 }
 
 type DeviceDetail struct {
@@ -34,11 +35,15 @@ type DeviceDetail struct {
 }
 
 func (h *handler) getDevice(ctx context.Context, input GetDeviceInput) (DeviceDetail, error) {
+	units, err := devices.ParseReadUnits(input.Units)
+	if err != nil {
+		return DeviceDetail{}, invalidRequestFailure("invalid units")
+	}
 	id := devices.DeviceID(input.DeviceID)
 	params := devices.GetDeviceParams{ID: id, EntityLimit: pageSize(input.EntityLimit)}
 	if input.EntityCursor != "" {
-		after, err := apicursor.DecodeDeviceEntitiesCursor(input.EntityCursor, id)
-		if err != nil {
+		after, cursorErr := apicursor.DecodeDeviceEntitiesCursor(input.EntityCursor, id)
+		if cursorErr != nil {
 			return DeviceDetail{}, invalidRequestFailure("invalid entity cursor")
 		}
 		params.AfterEntityID = after
@@ -54,7 +59,10 @@ func (h *handler) getDevice(ctx context.Context, input GetDeviceInput) (DeviceDe
 		Entities: make([]EntitySummary, len(aggregate.Entities.Items)),
 	}
 	for i, entity := range aggregate.Entities.Items {
-		result.Entities[i] = entitySummary(entity)
+		result.Entities[i], err = h.entitySummary(entity, units)
+		if err != nil {
+			return DeviceDetail{}, mcptools.InternalToolError(err)
+		}
 	}
 	if aggregate.Entities.HasMore && len(aggregate.Entities.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeDeviceEntitiesCursor(

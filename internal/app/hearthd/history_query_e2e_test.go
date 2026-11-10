@@ -147,6 +147,12 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 		{parse(n0.Observed), 10}, {parse(n1.Observed), 20}, {parse(n2.Observed), 20},
 	})
 	want := envelope(numeric, nr)
+	want["quantity"] = map[string]any{
+		"unit":            "lx",
+		"label":           "lx",
+		"fraction_digits": 1,
+		"range":           map[string]any{"minimum": 0, "maximum": 1000},
+	}
 	want["bucket"] = map[string]any{"duration": "1m0s", "alignment": "range_start"}
 	want["buckets"] = buckets
 	historyJourneyQuery(ctx, t, client, address, numeric, map[string]any{
@@ -158,6 +164,12 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 		},
 	}, want)
 	want = envelope(numeric, nr)
+	want["quantity"] = map[string]any{
+		"unit":            "lx",
+		"label":           "lx",
+		"fraction_digits": 1,
+		"range":           map[string]any{"minimum": 0, "maximum": 1000},
+	}
 	want["metrics"] = map[string]any{"minimum": 10, "maximum": 20, "average": float64(50) / 3}
 	historyJourneyQuery(ctx, t, client, address, numeric, map[string]any{
 		"range": nr, "select_field": "", "result": map[string]any{"kind": "summary", "metrics": metrics},
@@ -167,6 +179,12 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 		"from": stamp(parse(c0.Observed).Truncate(time.Minute)), "to": stamp(parse(c1.Observed).Add(time.Nanosecond)),
 	}
 	want = envelope(color, cr)
+	want["quantity"] = map[string]any{
+		"unit":            "%",
+		"label":           "%",
+		"fraction_digits": 0,
+		"range":           map[string]any{"minimum": 0, "maximum": 100},
+	}
 	want["metrics"] = map[string]any{"minimum": 40, "maximum": 60, "average": 50}
 	historyJourneyQuery(ctx, t, client, address, color, map[string]any{
 		"range": cr, "select_field": "/saturation", "result": map[string]any{"kind": "summary", "metrics": metrics},

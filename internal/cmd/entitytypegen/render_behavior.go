@@ -18,6 +18,9 @@ func renderBehavior(model entityTypeModel) output {
 	}
 	isComparable := schemaComparable(model.StateSchema)
 	var imports []string
+	if hasQuantityReference(model.StateFields) {
+		imports = append(imports, "github.com/mholtzscher/hearth/entitytypes/quantitykind")
+	}
 	if hasValidation {
 		imports = append(imports, "errors")
 	}
@@ -43,6 +46,7 @@ func renderBehavior(model entityTypeModel) output {
 	source.WriteString("\treturn nil\n}\n\n")
 	source.WriteString("func ValidateSupport(support Support) error {\n")
 	writeValidationRules(&source, model.SupportValidation, "\t")
+	writeQuantityValidation(&source, model.StateFields)
 	source.WriteString("\treturn nil\n}\n\n")
 	if isComparable {
 		source.WriteString("func EqualState(left, right State) bool { return left == right }\n\n")
@@ -92,6 +96,43 @@ func renderBehavior(model entityTypeModel) output {
 	return output{
 		path:    filepath.Join(model.Directory, "zz_generated_behavior.go"),
 		content: []byte(source.String()),
+	}
+}
+
+func hasQuantityReference(fields []stateFieldModel) bool {
+	for _, field := range fields {
+		if field.Quantity != nil {
+			if _, ok := field.Quantity.Kind.(referenceManifest); ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func writeQuantityValidation(source *strings.Builder, fields []stateFieldModel) {
+	for _, field := range fields {
+		if field.Quantity == nil {
+			continue
+		}
+		kind, ok := field.Quantity.Kind.(referenceManifest)
+		if !ok {
+			continue
+		}
+		var unitPath, fixedUnit string
+		switch unit := field.Quantity.Unit.(type) {
+		case referenceManifest:
+			unitPath = unit.Path
+		case string:
+			fixedUnit = unit
+		}
+		fmt.Fprintf(
+			source,
+			"\tif err := quantitykind.ValidateSupport(support, %q, %q, %q); err != nil { return err }\n",
+			kind.Path,
+			unitPath,
+			fixedUnit,
+		)
 	}
 }
 

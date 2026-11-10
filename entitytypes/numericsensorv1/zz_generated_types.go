@@ -8,9 +8,10 @@ const TypeID = "hearth.numericsensor/v1"
 type State float64
 
 type StateSupport struct {
-	Maximum float64 `json:"maximum"`
-	Minimum float64 `json:"minimum"`
-	Unit    string  `json:"unit"`
+	Maximum      float64 `json:"maximum"`
+	Minimum      float64 `json:"minimum"`
+	QuantityKind *string `json:"quantity_kind,omitempty"`
+	Unit         string  `json:"unit"`
 }
 
 type OperationSupport struct {

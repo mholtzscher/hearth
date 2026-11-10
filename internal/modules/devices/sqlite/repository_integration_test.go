@@ -1174,6 +1174,12 @@ func openMigratedDatabase(t *testing.T, path string) *sql.DB {
 func openRegistrationDatabase(t *testing.T, path string) *sql.DB {
 	t.Helper()
 	database := openMigratedDatabase(t, path)
+	claimRegistrationAdapters(t, database)
+	return database
+}
+
+func claimRegistrationAdapters(t *testing.T, database *sql.DB) {
+	t.Helper()
 	repository := NewDeviceRepository(database, nil)
 	claimedAt := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 	for _, adapterID := range []string{"zigbee2mqtt", "simulator"} {
@@ -1185,7 +1191,6 @@ func openRegistrationDatabase(t *testing.T, path string) *sql.DB {
 		}
 		applyPendingAdapterHealth(t, repository)
 	}
-	return database
 }
 
 func testAdapterClaim(adapterID string, claimedAt time.Time) adapters.ClaimRuntimeWrite {

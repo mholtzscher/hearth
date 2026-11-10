@@ -11,7 +11,7 @@ func TestPhysicalQuantitySupportHasNoDuplicatedUnit(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []quantityKind{quantityTemperature, quantityRelativeHumidity, quantityPressure, quantitySpeed} {
 		metadata := adapter.EntityMetadata{Key: "entity", ExternalID: "slot/entity", Name: "Quantity"}
-		descriptor, err := newQuantityDescriptor(kind, metadata, "", 0, 1)
+		descriptor, err := newQuantityDescriptor(kind, metadata, "", 0, 1, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func TestPhysicalQuantitySupportHasNoDuplicatedUnit(t *testing.T) {
 func TestNumericSensorUnitRemainsConfigurable(t *testing.T) {
 	t.Parallel()
 	metadata := adapter.EntityMetadata{Key: "level", ExternalID: "slot/level", Name: "Level"}
-	descriptor, err := newQuantityDescriptor(quantityNumericSensor, metadata, "widgets", 2, 9)
+	descriptor, err := newQuantityDescriptor(quantityNumericSensor, metadata, "widgets", 2, 9, "")
 	if err != nil {
 		t.Fatal(err)
 	}

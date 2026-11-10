@@ -4,6 +4,8 @@ package numericsensorv1
 
 import (
 	"errors"
+
+	"github.com/mholtzscher/hearth/entitytypes/quantitykind"
 )
 
 func ValidateState(support Support, state State) error {
@@ -19,6 +21,9 @@ func ValidateState(support Support, state State) error {
 func ValidateSupport(support Support) error {
 	if !(float64(support.State.Maximum) >= float64(support.State.Minimum)) {
 		return errors.New("support/state/maximum must be greater than or equal to support/state/minimum")
+	}
+	if err := quantitykind.ValidateSupport(support, "/state/quantity_kind", "/state/unit", ""); err != nil {
+		return err
 	}
 	return nil
 }

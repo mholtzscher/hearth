@@ -5,6 +5,8 @@ import (
 	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 type AvailabilitySummary struct {
@@ -18,13 +20,14 @@ type StateSummary struct {
 }
 
 type EntitySummary struct {
-	EntityID     string              `json:"entity_id"`
-	DeviceID     string              `json:"device_id"`
-	Name         string              `json:"name"`
-	Type         string              `json:"type"`
-	Enabled      bool                `json:"enabled"`
-	Availability AvailabilitySummary `json:"availability"`
-	State        *StateSummary       `json:"state"`
+	EntityID     string                              `json:"entity_id"`
+	DeviceID     string                              `json:"device_id"`
+	Name         string                              `json:"name"`
+	Type         string                              `json:"type"`
+	Enabled      bool                                `json:"enabled"`
+	Availability AvailabilitySummary                 `json:"availability"`
+	State        *StateSummary                       `json:"state"`
+	Quantities   map[string]devices.QuantityMetadata `json:"quantities"`
 }
 
 func (EntitySummary) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {

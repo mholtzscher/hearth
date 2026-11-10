@@ -19,7 +19,7 @@ func TestOptionalIDNullRejectionsCarryFieldCodes(t *testing.T) {
 			t.Parallel()
 			server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
 			// Any service call panics; null cannot become an omitted filter.
-			Register(server, &stubDevices{})
+			Register(server, &stubDevices{}, testPresenter())
 			result := callWire(t, server.HTTPHandler(), test.tool, test.arguments)
 			var failure struct {
 				Code    string `json:"failure_code"`
@@ -46,7 +46,7 @@ func TestTypeMismatchRejectionsIdentifyFields(t *testing.T) {
 			t.Parallel()
 			server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
 			// Every service call panics; type mismatches must stop at the boundary.
-			Register(server, &stubDevices{})
+			Register(server, &stubDevices{}, testPresenter())
 			result := callWire(t, server.HTTPHandler(), test.tool, test.arguments)
 			var failure struct {
 				Code        string `json:"failure_code"`
@@ -90,7 +90,7 @@ func TestOptionalIDFilterOmissionRemainsUnfiltered(t *testing.T) {
 				},
 			}
 			server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
-			Register(server, service)
+			Register(server, service, testPresenter())
 			assertWireJSON(t, callWire(t, server.HTTPHandler(), tool, `{}`), `{"items":[]}`)
 			if calls != 1 {
 				t.Fatalf("service calls=%d, want=1", calls)
@@ -120,7 +120,7 @@ func TestPageLimitExactIntegerSpellings(t *testing.T) {
 				return devices.Page[devices.EntityWithState]{}, nil
 			}}
 			server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
-			Register(server, service)
+			Register(server, service, testPresenter())
 			result := callWire(t, server.HTTPHandler(), "list_entities", `{"limit":`+test.raw+`}`)
 			if test.want {
 				assertWireJSON(t, result, `{"items":[]}`)

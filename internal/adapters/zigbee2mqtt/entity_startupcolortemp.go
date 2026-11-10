@@ -9,6 +9,7 @@ import (
 	"time"
 
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
+	"github.com/mholtzscher/hearth/entitytypes/quantitykind"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdknumericsettingv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsettingv1"
 	"github.com/mholtzscher/hearth/sdk/adapter/typed"
@@ -128,12 +129,14 @@ func startupColorTempSupport(
 	choices []string,
 ) contractnumericsettingv1.Support {
 	unit := startupTempUnit
+	kind := quantitykind.ColorTemperature
 	return contractnumericsettingv1.Support{
 		State: contractnumericsettingv1.StateSupport{
-			Minimum: float64(minimum),
-			Maximum: float64(maximum),
-			Unit:    &unit,
-			Choices: choices,
+			Minimum:      float64(minimum),
+			Maximum:      float64(maximum),
+			Unit:         &unit,
+			QuantityKind: &kind,
+			Choices:      choices,
 		},
 		Operations: contractnumericsettingv1.OperationSupport{Set: contractnumericsettingv1.SetSupport{}},
 	}

@@ -36,11 +36,11 @@ func hourlyObservation(id string, forecast HourlyForecast) (adapter.Observation,
 	for _, p := range forecast.Periods {
 		state.Periods = append(state.Periods, hourlytype.StatePeriodsItem{
 			StartsAt: p.StartsAt.UTC().Format(time.RFC3339), Condition: forecastCondition(p.Icon),
-			Summary: forecastSummary(p.Summary), TemperatureC: p.TemperatureC,
-			ApparentTemperatureC: p.ApparentTemperatureC, HumidityPercent: p.HumidityPercent,
-			PressureHpa: p.PressureHPa, WindSpeedMps: p.WindSpeedMPS, WindGustMps: p.WindGustMPS,
-			WindDirectionDegrees: p.WindDirectionDegrees, PrecipitationRateMmh: p.PrecipitationRateMMH,
-			PrecipitationProbabilityPercent: p.PrecipitationProbability, CloudCoverPercent: p.CloudCoverPercent,
+			Summary: forecastSummary(p.Summary), Temperature: p.TemperatureC,
+			ApparentTemperature: p.ApparentTemperatureC, Humidity: p.HumidityPercent,
+			Pressure: p.PressureHPa, WindSpeed: p.WindSpeedMPS, WindGust: p.WindGustMPS,
+			WindDirection: p.WindDirectionDegrees, PrecipitationRate: p.PrecipitationRateMMH,
+			PrecipitationProbability: p.PrecipitationProbability, CloudCover: p.CloudCoverPercent,
 			UvIndex: p.UVIndex,
 		})
 	}
@@ -54,11 +54,11 @@ func dailyObservation(id string, forecast DailyForecast) (adapter.Observation, e
 	for _, p := range forecast.Periods {
 		state.Periods = append(state.Periods, dailytype.StatePeriodsItem{
 			StartsAt: p.StartsAt.UTC().Format(time.RFC3339), Date: p.Date, Condition: forecastCondition(p.Icon),
-			Summary: forecastSummary(p.Summary), TemperatureMinC: p.TemperatureMinC, TemperatureMaxC: p.TemperatureMaxC,
-			HumidityPercent: p.HumidityPercent, PressureHpa: p.PressureHPa, WindSpeedMps: p.WindSpeedMPS,
-			WindGustMps: p.WindGustMPS, WindDirectionDegrees: p.WindDirectionDegrees,
-			PrecipitationRateMmh: p.PrecipitationRateMMH, PrecipitationProbabilityPercent: p.PrecipitationProbability,
-			CloudCoverPercent: p.CloudCoverPercent, UvIndex: p.UVIndex,
+			Summary: forecastSummary(p.Summary), TemperatureMin: p.TemperatureMinC, TemperatureMax: p.TemperatureMaxC,
+			Humidity: p.HumidityPercent, Pressure: p.PressureHPa, WindSpeed: p.WindSpeedMPS,
+			WindGust: p.WindGustMPS, WindDirection: p.WindDirectionDegrees,
+			PrecipitationRate: p.PrecipitationRateMMH, PrecipitationProbability: p.PrecipitationProbability,
+			CloudCover: p.CloudCoverPercent, UvIndex: p.UVIndex,
 		})
 	}
 	return dailyforecastv1.NewObservation(dailyforecastv1.ObservationInput{

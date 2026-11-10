@@ -23,6 +23,7 @@ type ListEntitiesInput struct {
 	Limit    int    `query:"limit"     default:"50" minimum:"1" maximum:"200"`
 	Cursor   string `query:"cursor"`
 	DeviceID string `query:"device_id"                                        doc:"Canonical Hearth Device ID"`
+	Units    string `query:"units"                                            doc:"Omit for household units; canonical returns canonical values"`
 }
 
 type ListEntitiesOutput struct {
@@ -35,18 +36,22 @@ type EntityCollectionBody struct {
 }
 
 func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInput) (*ListEntitiesOutput, error) {
+	units, err := devices.ParseReadUnits(input.Units)
+	if err != nil {
+		return nil, huma.NewError(http.StatusBadRequest, "invalid units")
+	}
 	var deviceID *devices.DeviceID
 	if input.DeviceID != "" {
-		parsed, err := devices.ParseDeviceID(input.DeviceID)
-		if err != nil {
+		parsed, parseErr := devices.ParseDeviceID(input.DeviceID)
+		if parseErr != nil {
 			return nil, huma.NewError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
 		}
 		deviceID = &parsed
 	}
 	var afterID *devices.EntityID
 	if input.Cursor != "" {
-		parsed, err := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID)
-		if err != nil {
+		parsed, cursorErr := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID)
+		if cursorErr != nil {
 			return nil, huma.NewError(http.StatusBadRequest, "invalid cursor")
 		}
 		afterID = parsed
@@ -62,7 +67,7 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 	}
 	body := EntityCollectionBody{Items: make([]EntityBody, len(page.Items))}
 	for index, entity := range page.Items {
-		mapped, mappingErr := entityBody(entity)
+		mapped, mappingErr := handler.entityBody(entity, units)
 		if mappingErr != nil {
 			return nil, handler.internalAPIError(ctx, "list-entities", "mapping", mappingErr)
 		}

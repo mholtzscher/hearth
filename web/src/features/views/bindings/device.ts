@@ -2,10 +2,10 @@ import { z } from "zod";
 import { apiFetch } from "../../../api/client";
 import type { ReadRequest } from "../data/cache";
 import { entityMetadata, parseFieldEntity, type FieldEntity } from "./entity";
-import { isQuantityField, isTextField, pointer, resolveQuantity, stateFields } from "./state-fields";
+import { isQuantityField, isTextField, pointer, stateFields } from "./state-fields";
 import { stateWords } from "./words";
 import type { EntitySource, MetricData, ResourceMetadata, TextData } from "./types";
-import { displayUnit, type UnitSystem } from "../../units/units";
+import { quantityFormat } from "./quantity";
 
 /** A Device card shows at most this many rows; Source still lists every Entity. */
 export const MAX_DEVICE_ROWS = 12;
@@ -20,14 +20,14 @@ export function parseDevice(raw: unknown, deviceId: string): FieldDevice {
   return { id: data.id, name: data.name, entities: data.entities.filter(entity => Object.prototype.hasOwnProperty.call(stateFields, entity.type)).map(parseFieldEntity) };
 }
 
-export function deviceRequest(deviceId: string): ReadRequest {
-  return { key: `device:${deviceId}`, kind: "state",
+export function deviceRequest(deviceId: string, units: "household" | "canonical" = "household"): ReadRequest {
+  return { key: `device:${deviceId}:${units}`, kind: "state",
     load: async signal => {
       const entities: FieldEntity[] = [];
       let cursor: string | undefined;
       let name = "Device";
       do {
-        const query = new URLSearchParams({ entity_limit: "200", ...(cursor ? { entity_cursor: cursor } : {}) });
+        const query = new URLSearchParams({ entity_limit: "200", ...(units === "canonical" ? { units } : {}), ...(cursor ? { entity_cursor: cursor } : {}) });
         const page = await apiFetch(`/v1/devices/${encodeURIComponent(deviceId)}?${query}`, { signal }, text => deviceBody.parse(JSON.parse(text)));
         const device = parseDevice(page, deviceId);
         name = device.name;
@@ -54,13 +54,14 @@ function title(path: string): string {
   return name.length <= 1 ? name.toUpperCase() : name[0].toUpperCase() + name.slice(1);
 }
 
-function numeric(entity: FieldEntity, path: string, system: UnitSystem): MetricData | undefined {
+function numeric(entity: FieldEntity, path: string): MetricData | undefined {
   const field = stateFields[entity.type][path];
   if (!field || !isQuantityField(field) || !entity.state) return undefined;
   const value = pointer(entity.state.value, path);
   if (typeof value !== "number") return undefined;
-  const display = displayUnit(resolveQuantity(field, entity.support).unit, field.value_type, system);
-  return { value: display.convert(value), observed_at: entity.state.observed_at, format: { unit_label: display.label, fraction_digits: display.fraction_digits } };
+  const quantity = entity.quantities?.[path];
+  if (!quantity) throw new Error("Missing quantity metadata");
+  return { value, observed_at: entity.state.observed_at, format: quantityFormat(quantity), ...(quantity.range ? { range: quantity.range } : {}) };
 }
 function formatted(reading: MetricData): string {
   return reading.value.toFixed(reading.format.fraction_digits) + (reading.format.unit_label ? ` ${reading.format.unit_label}` : "");
@@ -82,7 +83,7 @@ function primaryPaths(entity: FieldEntity): string[] {
 }
 
 /** An Entity's primary reading in the household's units. */
-export function deviceReading(entity: FieldEntity, system: UnitSystem): DeviceReading {
+export function deviceReading(entity: FieldEntity): DeviceReading {
   const source: EntitySource = { entity_id: entity.id, entity_type: entity.type };
   const metadata = { ...entityMetadata(entity, source), label: entity.name };
   if (!entity.state) return { metadata, status: "unobserved" };
@@ -90,7 +91,7 @@ export function deviceReading(entity: FieldEntity, system: UnitSystem): DeviceRe
   const parts = primaryPaths(entity).flatMap<{ path: string; reading: MetricData | TextData }>(path => {
     const field = stateFields[entity.type][path];
     if (isQuantityField(field)) {
-      const reading = numeric(entity, path, system);
+      const reading = numeric(entity, path);
       return reading ? [{ path, reading }] : [];
     }
     if (!isTextField(field)) return [];
@@ -106,7 +107,7 @@ export function deviceReading(entity: FieldEntity, system: UnitSystem): DeviceRe
 /** A light's power, brightness and color in one line, built from its Entities. */
 export type LightReading = {
   power: FieldEntity; brightness: FieldEntity; color?: FieldEntity; mode?: FieldEntity;
-  on?: boolean; level?: MetricData; colorText?: string; swatch?: string;
+  on?: boolean; level?: MetricData; colorText?: string; swatch?: string; colorPreviewUnavailable?: boolean;
 };
 
 const colorTypes = ["hearth.colorhs/v1", "hearth.colorxy/v1", "hearth.colortemp/v1"] as const;
@@ -127,7 +128,7 @@ export function lightEntities(light: LightReading, all: FieldEntity[]): Set<stri
   return new Set(used.map(entity => entity.id));
 }
 
-export function lightReading(entities: FieldEntity[], system: UnitSystem): LightReading | undefined {
+export function lightReading(entities: FieldEntity[], canonicalEntities: FieldEntity[] = []): LightReading | undefined {
   if (entities.filter(entity => entity.type === "hearth.power/v1").length !== 1 || entities.filter(entity => entity.type === "hearth.brightness/v1").length !== 1) return undefined;
   const power = entities.find(entity => entity.type === "hearth.power/v1");
   const brightness = entities.find(entity => entity.type === "hearth.brightness/v1");
@@ -135,10 +136,17 @@ export function lightReading(entities: FieldEntity[], system: UnitSystem): Light
   const color = activeColor(entities);
   const mode = entities.find(entity => entity.type === "hearth.colormode/v1");
   const on = typeof power.state?.value === "boolean" ? power.state.value : undefined;
-  const level = numeric(brightness, "", system);
-  const reading = color ? deviceReading(color, system) : undefined;
+  const level = numeric(brightness, "");
+  const reading = color ? deviceReading(color) : undefined;
   const colorText = reading?.data ? colorWords(color!, reading.data) : undefined;
-  return { power, brightness, color, mode, on, level, colorText, swatch: color ? swatchColor(color) : undefined };
+  // Only xy coordinates have a different household representation. A stale
+  // canonical read must never supply a swatch for a newer displayed observation.
+  const canonicalColor = color && canonicalEntities.find(entity => entity.id === color.id && entity.type === color.type);
+  const matchingXY = color?.state?.observation_id && color.state.observation_id === canonicalColor?.state?.observation_id ? canonicalColor : undefined;
+  const swatchSource = color?.type === "hearth.colorxy/v1" ? matchingXY : color;
+  return { power, brightness, color, mode, on, level, colorText,
+    swatch: swatchSource ? swatchColor(swatchSource) : undefined,
+    colorPreviewUnavailable: color?.type === "hearth.colorxy/v1" && !!color.state && !matchingXY };
 }
 
 function colorWords(entity: FieldEntity, data: MetricData | TextData): string {

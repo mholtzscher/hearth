@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"github.com/mholtzscher/hearth/entitytypes/quantitykind"
 )
 
 var fieldTokenPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -28,6 +30,8 @@ type stateFieldModel struct {
 type quantityModel struct {
 	Unit         any         `json:"unit"` // A fixed string or a validated support reference.
 	UnitOptional bool        `json:"unit_optional,omitempty"`
+	Kind         any         `json:"quantity_kind,omitempty"`
+	KindOptional bool        `json:"quantity_kind_optional,omitempty"`
 	Range        *rangeModel `json:"range,omitempty"`
 }
 
@@ -40,6 +44,7 @@ type rangeModel struct {
 
 type fieldAnnotation struct {
 	Unit  json.RawMessage `json:"unit"`
+	Kind  json.RawMessage `json:"quantity_kind"`
 	Range *struct {
 		Minimum json.RawMessage `json:"minimum"`
 		Maximum json.RawMessage `json:"maximum"`
@@ -116,7 +121,33 @@ func deriveStateFields(root string, state, support schemaNode, stateless bool) (
 	if err := walk(state, "", true); err != nil {
 		return nil, err
 	}
+	if err := validateInterpretationRoles(fields); err != nil {
+		return nil, err
+	}
 	return fields, nil
+}
+
+// A support reference cannot be both immutable from registration and add-once.
+func validateInterpretationRoles(fields []stateFieldModel) error {
+	units := map[string]bool{}
+	kinds := map[string]bool{}
+	for _, field := range fields {
+		if field.Quantity == nil {
+			continue
+		}
+		if unit, ok := field.Quantity.Unit.(referenceManifest); ok {
+			units[unit.Path] = true
+		}
+		if kind, ok := field.Quantity.Kind.(referenceManifest); ok {
+			kinds[kind.Path] = true
+		}
+	}
+	for path := range units {
+		if kinds[path] {
+			return fmt.Errorf("support reference %q cannot be both unit and quantity kind", path)
+		}
+	}
+	return nil
 }
 
 func compileAnnotationSchema(root string) (*jsonschema.Schema, error) {
@@ -290,6 +321,7 @@ func hasFieldAnnotation(node schemaNode) bool {
 	return false
 }
 
+//nolint:nestif // Kind and unit source validation follows the annotation shape.
 func deriveQuantity(
 	raw json.RawMessage,
 	support schemaNode,
@@ -316,6 +348,22 @@ func deriveQuantity(
 	}
 	quantity.Unit = unit
 	quantity.UnitOptional = optional
+	if len(annotation.Kind) > 0 {
+		kind, optionalKind, err := deriveUnitSource(annotation.Kind, support)
+		if err != nil {
+			return nil, fmt.Errorf("kind: %w", err)
+		}
+		quantity.Kind, quantity.KindOptional = kind, optionalKind
+		if fixedKind, ok := kind.(string); ok {
+			fixedUnit, fixed := unit.(string)
+			if !fixed {
+				return nil, errors.New("fixed kind requires a fixed unit")
+			}
+			if validationErr := quantitykind.Validate(fixedKind, fixedUnit); validationErr != nil {
+				return nil, validationErr
+			}
+		}
+	}
 	if annotation.Range != nil {
 		bounds, rangeErr := deriveRange(annotation.Range.Minimum, annotation.Range.Maximum, support)
 		if rangeErr != nil {
@@ -494,6 +542,22 @@ func renderStateField(source *strings.Builder, field stateFieldModel, immutable 
 				quantity.UnitOptional,
 			)
 			immutable[unit.Path] = fmt.Sprintf("{Path: %q, Optional: %t}", unit.Path, quantity.UnitOptional)
+		}
+		switch kind := quantity.Kind.(type) {
+		case string:
+			fmt.Fprintf(source, ", Kind: FixedKind{Code: %q}", kind)
+		case referenceManifest:
+			fmt.Fprintf(
+				source,
+				", Kind: SupportKind{Reference: SupportReference{Path: %q}, Optional: %t}",
+				kind.Path,
+				quantity.KindOptional,
+			)
+			immutable[kind.Path] = fmt.Sprintf(
+				"{Path: %q, Optional: %t, AllowInitial: true}",
+				kind.Path,
+				quantity.KindOptional,
+			)
 		}
 		if quantity.Range != nil {
 			fmt.Fprintf(

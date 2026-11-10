@@ -35,15 +35,19 @@ _Avoid_: Manifest reading, Observation, captured value
 
 **Quantity field**:
 A numeric State field with a canonical unit (dimensionless `1` by default).
-State-schema `hearth` annotations declare the unit; referenced support units
-are immutable on re-registration. Brightness uses canonical integer percentages.
+State-schema `hearth` annotations declare the unit and optional quantity kind,
+either fixed or referenced from support. Referenced units are immutable on
+re-registration; a missing kind can become known once, then cannot change or
+disappear. Brightness uses canonical integer percentages.
 Current Metric and TimeSeries cards accept only Quantity fields.
 _Avoid_: Device class, statistical class, display unit
 
 **Household unit system**:
 The household-wide choice, `metric` or `us`, of which units people see.
-Presentation layers convert canonical State for display; stored State, Commands
-and automations stay in canonical units.
+The backend projects ordinary numeric read responses into these units and returns
+formatting metadata; clients render without reconversion. Explicit
+`units=canonical` reads, stored State, Commands, and Automation operands remain
+canonical. See [read units](docs/units.md).
 _Avoid_: Display unit per card, locale
 
 **Functional replacement**:

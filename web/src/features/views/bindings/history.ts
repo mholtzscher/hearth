@@ -3,6 +3,7 @@ import { ApiError, apiFetch } from "../../../api/client";
 import type { NumericSource, SeriesWindow } from "./types";
 import type { ReadRequest } from "../data/cache";
 import { quantityField } from "./state-fields";
+import { quantitySchema, type Quantity } from "./quantity";
 
 // One shared history read owns admission: the window's requested interval is
 // computed here, and the response's bucket count is checked before the cache
@@ -16,11 +17,13 @@ const windows = {
 
 export type HistorySeries = {
   from: string; to: string;
+  quantity: Quantity;
   buckets: Array<{ start: string; end: string; min: number | null; max: number | null; mean: number | null }>;
 };
 const timestamp = z.string().datetime({ offset: true });
 const bucketRange = z.object({ from: timestamp, to: timestamp });
 const summary = z.object({
+  quantity: quantitySchema,
   range: bucketRange,
   buckets: z.array(z.object({
     range: bucketRange,
@@ -51,18 +54,18 @@ function readSummary(raw: unknown, window: SeriesWindow): HistorySeries {
   const data = summary.parse(raw);
   if (data.buckets.length !== windows[window].count) throw new Error("Invalid series resolution");
   return {
-    from: data.range.from, to: data.range.to,
+    from: data.range.from, to: data.range.to, quantity: data.quantity,
     buckets: data.buckets.map(({ range, metrics }) => ({ start: range.from, end: range.to, ...metrics })),
   };
 }
 
-export function historySeriesRequest(source: NumericSource, window: SeriesWindow): ReadRequest {
+export function historySeriesRequest(source: NumericSource, window: SeriesWindow, units: "household" | "canonical" = "household"): ReadRequest {
   const field = quantityField(source);
   if (!field) throw new Error("Unsupported quantity field");
   const path = source.field ?? "";
   const nulls = field.presence === "sometimes" ? "gap" : "reject";
   return {
-    key: `entity-series:${source.entity_id}:${path}:${window}:${nulls}`, kind: "series",
+    key: `entity-series:${source.entity_id}:${path}:${window}:${nulls}:${units}`, kind: "series",
     load: (signal: AbortSignal, to: Date) => {
       const range = windowRange(window, to);
       const body = JSON.stringify({
@@ -70,7 +73,7 @@ export function historySeriesRequest(source: NumericSource, window: SeriesWindow
         select_field: path,
         result: { kind: "summary", ...(nulls === "gap" ? { nulls } : {}), metrics: { min: { operation: "min" }, max: { operation: "max" }, mean: { operation: "sample_mean" } }, bucket: { duration: windows[window].bucket, alignment: "range_start" } },
       });
-      return apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}/state/history`, { method: "POST", body, signal },
+      return apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}/state/history${units === "canonical" ? "?units=canonical" : ""}`, { method: "POST", body, signal },
         text => readSummary(JSON.parse(text), window));
     },
   };

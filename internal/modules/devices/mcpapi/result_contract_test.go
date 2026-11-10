@@ -114,7 +114,7 @@ func TestRegisteredToolsReturnIndependentProjections(t *testing.T) {
 	projectionHistoryFixture(t, stub, calls, now)
 
 	server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
-	Register(server, stub)
+	Register(server, stub, testPresenter())
 	replace := strings.NewReplacer(
 		"$E",
 		string(apiEntityID),
@@ -129,11 +129,11 @@ func TestRegisteredToolsReturnIndependentProjections(t *testing.T) {
 		"$T",
 		timestamp,
 	)
-	const entitySummary = `{"entity_id":"$E","device_id":"$D","name":"Power","type":"hearth.power/v1","enabled":true,"availability":{"status":"unavailable","reason_code":"hearth.external_system_unavailable"},"state":{"value":` + opaque + `,"observed_at":"$T"}}`
+	const entitySummary = `{"entity_id":"$E","device_id":"$D","name":"Power","type":"hearth.power/v1","enabled":true,"availability":{"status":"unavailable","reason_code":"hearth.external_system_unavailable"},"state":{"value":` + opaque + `,"observed_at":"$T"},"quantities":{}}`
 	const commandSummary = `{"command_id":"$C","entity_id":"$E","operation":"set","status":"satisfied","requested_at":"$T","completed_at":"$T"}`
 	for _, test := range []struct{ tool, arguments, want string }{
 		{"list_entities", `{}`, `{"items":[` + entitySummary + `]}`},
-		{"get_entity", `{"entity_id":"$E"}`, `{"entity_id":"$E","device_id":"$D","name":"Power","type":"hearth.power/v1","enabled":true,"adapter_id":"simulator","support":{"state":{},"operations":{"set":{}}},"availability":{"status":"unavailable","reason_code":"hearth.external_system_unavailable","source":"adapter_health","since":"$T","evidence_at":"$T","source_observed_at":"$T"},"state":{"value":` + opaque + `,"observed_at":"$T","observation_id":"$O","adapter_received_at":"$T","source_updated_at":"$T"}}`},
+		{"get_entity", `{"entity_id":"$E"}`, `{"entity_id":"$E","device_id":"$D","name":"Power","type":"hearth.power/v1","enabled":true,"adapter_id":"simulator","support":{"state":{},"operations":{"set":{}}},"availability":{"status":"unavailable","reason_code":"hearth.external_system_unavailable","source":"adapter_health","since":"$T","evidence_at":"$T","source_observed_at":"$T"},"state":{"value":` + opaque + `,"observed_at":"$T","observation_id":"$O","adapter_received_at":"$T","source_updated_at":"$T"},"quantities":{}}`},
 		{"update_entity", `{"entity_id":"$E","enabled":false}`, `{"entity_id":"$E","enabled":true}`},
 		{"execute_entity_command", `{"entity_id":"$E","operation":"set","parameters":` + opaque + `}`, `{"command_id":"$C","status":"satisfied","observation_id":"$O","value":null}`},
 		{"list_entity_commands", `{"entity_id":"$E"}`, `{"items":[` + commandSummary + `]}`},
@@ -166,7 +166,7 @@ func TestRegisteredToolsReturnIndependentProjections(t *testing.T) {
 func TestNullArgumentsNeverReachService(t *testing.T) {
 	t.Parallel()
 	server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
-	Register(server, &stubDevices{})
+	Register(server, &stubDevices{}, testPresenter())
 	for _, test := range []struct{ tool, arguments string }{
 		{"get_entity", `{"entity_id":null}`},
 		{"get_device", `{"device_id":null}`},

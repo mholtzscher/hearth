@@ -8,8 +8,6 @@ import { entityMetadata, entityStateRequest, readEntity } from "./entity";
 import { quantityField, quantityTypes, textField } from "./state-fields";
 import { textReading } from "./words";
 import { readTimeline, readWeekPattern, timelineRequest, weekPatternRequest, weekStart } from "./changes";
-import { useUnitSystem } from "../../units/household";
-import type { UnitSystem } from "../../units/units";
 import type { ReadRequest } from "../data/cache";
 import { type EntitySource, type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow, type TextData, type TimelineData, type WeekPatternData, type Words } from "./types";
 
@@ -23,7 +21,6 @@ export function useNumericRead(source: NumericSource, window?: SeriesWindow): Re
 }
 export function useNumericReads(bindings: Array<{ source: NumericSource; window?: SeriesWindow }>): Resolved<MetricData | SeriesData>[] {
   const adapters = useContext(NumericAdapters);
-  const system = useUnitSystem();
   const requests = bindings.flatMap(({ source, window }) => {
     const adapter = adapters[source.entity_type];
     return adapter ? [adapter.stateRequest(source), ...(window ? [adapter.seriesRequest(source, window)] : [])] : [];
@@ -35,9 +32,7 @@ export function useNumericReads(bindings: Array<{ source: NumericSource; window?
     if (!adapter) return { status: "error", error: "Unsupported resource binding" };
     const state = snapshots[index++];
     const history = window ? snapshots[index++] : emptySnapshot;
-    // Hold readings until the household unit system is known, so cards never flash the wrong unit.
-    if (system === undefined) return { status: "loading" };
-    return resolve(adapter, source, system, state, history, window);
+    return resolve(adapter, source, state, history, window);
   });
 }
 /** One card reading: a numeric field with its unit, or a yes/no or text field in words. */
@@ -77,7 +72,6 @@ export function useWeekPattern(binding: ReadingBinding): Resolved<{ current?: Te
 /** Current readings for State, numeric or text, sharing one Entity read per Entity. */
 export function useReadings(bindings: ReadingBinding[]): Resolved<Reading>[] {
   const adapters = useContext(NumericAdapters);
-  const system = useUnitSystem();
   const requests = bindings.map(({ source }): ReadRequest | undefined => {
     if (quantityField(source)) return adapters[source.entity_type]?.stateRequest(source);
     return textField(source) ? entityStateRequest(source) : undefined;
@@ -88,8 +82,7 @@ export function useReadings(bindings: ReadingBinding[]): Resolved<Reading>[] {
     if (!requests[i]) return { status: "error", error: "Unsupported resource binding" };
     const state = snapshots[index++];
     if (quantityField(source)) {
-      if (system === undefined) return { status: "loading" };
-      const result = resolve(adapters[source.entity_type], source, system, state, emptySnapshot);
+      const result = resolve(adapters[source.entity_type], source, state, emptySnapshot);
       return { ...result, data: result.data && "value" in result.data ? result.data : undefined };
     }
     return resolveText(source, state, words);
@@ -109,7 +102,7 @@ function resolveText(source: EntitySource, state: ReadSnapshot, words?: Words): 
     return { status: "error", error: "The resource returned incompatible data." };
   }
 }
-function resolve(adapter: NumericAdapter, source: NumericSource, system: UnitSystem, state: ReadSnapshot, history: ReadSnapshot, window?: SeriesWindow): Resolved<MetricData | SeriesData> {
+function resolve(adapter: NumericAdapter, source: NumericSource, state: ReadSnapshot, history: ReadSnapshot, window?: SeriesWindow): Resolved<MetricData | SeriesData> {
   const error = state.error ?? (window ? history.error : undefined);
   const missing = error instanceof ApiError && error.status === 404;
   if (state.data === undefined || (window && history.data === undefined)) {
@@ -117,9 +110,9 @@ function resolve(adapter: NumericAdapter, source: NumericSource, system: UnitSys
   }
   try {
     const metadata = adapter.metadata(state.data, source);
-    const current = adapter.metric(state.data, source, system);
+    const current = adapter.metric(state.data, source);
     const absent = current !== null && "absent" in current;
-    const data = window ? adapter.series(history.data as HistorySeries, source, system, state.data) : absent ? null : current;
+    const data = window ? adapter.series(history.data as HistorySeries, source, state.data) : absent ? null : current;
     return { status: missing ? "missing" : data ? "ready" : absent ? "absent" : "unobserved", unobserved: current === null, metadata, data: data ?? undefined, error: readErrorMessage(error), refreshFailed: !!error };
   } catch {
     return { status: "error", error: "The resource returned incompatible data." };

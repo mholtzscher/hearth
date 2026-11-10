@@ -1,4 +1,3 @@
-//nolint:dupl // Each operation owns its registration, request, and domain translation.
 package httpapi
 
 import (

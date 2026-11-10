@@ -32,7 +32,7 @@ SQLite repository operations at 1x, 10x, 100x, and 1000x with isolated relationa
 fixtures, separate profiles, preregistered before/after comparisons, and an offline
 visual report. Start with `mise run dbload -- explore -out .data/dbload/study`.
 
-`hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart. Optional `household_unit_system` (`metric`, the default, or `us`) chooses the units dashboards show; changing it also requires a restart.
+`hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart. Optional `household_unit_system` (`metric`, the default, or `us`) chooses numeric read-response units, including dashboards and agents; changing it also requires a restart. Use `units=canonical` to read stored-unit values. See [quantity metadata and read units](docs/units.md) for the breaking default-read change, canonical writes, and coordinated deployment/rollback requirements.
 
 SQLite timestamp normalization in #248 requires a fresh development database;
 there is no retained-row backfill. See [SQLite timestamps](docs/sqlite-timestamps.md)
@@ -209,7 +209,7 @@ for v3 HTTP examples, bounds, history, failure handling, and rollback constraint
 
 Core serves stateless Streamable HTTP at `/mcp` on its existing listener.
 The implementation version remains `1.0.0`. The external endpoint and built-in
-agent use one catalog of 33 tools. Tool discovery publishes complete input
+agent use one catalog of 34 tools. Tool discovery publishes complete input
 schemas, but no output schemas, resources, or resource templates. Core still
 validates every successful result before sending its original JSON bytes.
 

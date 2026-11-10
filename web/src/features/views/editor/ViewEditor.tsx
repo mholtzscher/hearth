@@ -20,10 +20,11 @@ import { forecastTypes } from "../cards/forecast/schema";
 import { gridSchema } from "../layout/schema";
 import { TimeSeriesEditor, type SensorChoice } from "../cards/time-series/Editor";
 import { fieldTypes } from "../bindings/state-fields";
+import { quantitySchema } from "../bindings/quantity";
 import { headingSchema, noteSchema } from "../cards/text/schema";
 import { TextField } from "./TextField";
 
-const entityPage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string(), type: z.string(), support: z.unknown().optional(), device_id: z.string().optional() })), next_cursor: z.string().nullish() });
+const entityPage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string(), type: z.string(), support: z.unknown().optional(), quantities: z.record(z.string(), quantitySchema).optional(), device_id: z.string().optional() })), next_cursor: z.string().nullish() });
 const devicePage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string() })), next_cursor: z.string().nullish() });
 export function ViewEditor({ definition, onChange, onValidityChange }: { definition: ViewDefinition; onChange: (definition: ViewDefinition) => void; onValidityChange?: (valid: boolean) => void }) {
   const [working, setWorking] = useState(definition);

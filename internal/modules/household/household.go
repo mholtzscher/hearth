@@ -5,7 +5,7 @@ package household
 import "fmt"
 
 // UnitSystem is the household's display preference for measurements.
-// Canonical State never changes; presentation layers convert for display.
+// Canonical State never changes; Core projects read responses for display.
 type UnitSystem string
 
 const (

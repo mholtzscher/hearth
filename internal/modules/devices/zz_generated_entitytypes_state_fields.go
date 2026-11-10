@@ -8,24 +8,24 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 		{Path: "", Presence: "always", Value: BooleanField{}},
 	},
 	EntityTypeBrightnessV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}, Kind: FixedKind{Code: "brightness"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
 	},
 	EntityTypeColorhsV1: {
 		{Path: "/active", Presence: "always", Value: BooleanField{}},
-		{Path: "/hue", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "deg"}}},
-		{Path: "/saturation", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
+		{Path: "/hue", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "deg"}, Kind: FixedKind{Code: "color_hue"}}},
+		{Path: "/saturation", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}, Kind: FixedKind{Code: "color_saturation"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
 	},
 	EntityTypeColormodeV1: {
 		{Path: "", Presence: "always", Value: StringField{Enum: []string{"xy", "hs", "color_temp"}}},
 	},
 	EntityTypeColortempV1: {
 		{Path: "/active", Presence: "always", Value: BooleanField{}},
-		{Path: "/value", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "/MK"}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
+		{Path: "/value", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "/MK"}, Kind: FixedKind{Code: "color_temperature"}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
 	},
 	EntityTypeColorxyV1: {
 		{Path: "/active", Presence: "always", Value: BooleanField{}},
-		{Path: "/x", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "10*-4"}}},
-		{Path: "/y", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "10*-4"}}},
+		{Path: "/x", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "10*-4"}, Kind: FixedKind{Code: "chromaticity"}}},
+		{Path: "/y", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "10*-4"}, Kind: FixedKind{Code: "chromaticity"}}},
 	},
 	EntityTypeDailyforecastV1: {},
 	EntityTypeEnumactionV1:    {},
@@ -35,32 +35,32 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 	},
 	EntityTypeHourlyforecastV1: {},
 	EntityTypeNumericsensorV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: false}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: false}, Kind: SupportKind{Reference: SupportReference{Path: "/state/quantity_kind"}, Optional: true}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
 	},
 	EntityTypeNumericsettingV1: {
 		{Path: "/choice", Presence: "sometimes", Value: StringField{Enum: []string(nil)}},
 		{Path: "/mode", Presence: "always", Value: StringField{Enum: []string{"value", "choice"}}},
-		{Path: "/value", Presence: "sometimes", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: true}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
+		{Path: "/value", Presence: "sometimes", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: true}, Kind: SupportKind{Reference: SupportReference{Path: "/state/quantity_kind"}, Optional: true}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
 	},
 	EntityTypePowerV1: {
 		{Path: "", Presence: "always", Value: BooleanField{}},
 	},
 	EntityTypePressureV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "hPa"}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "hPa"}, Kind: FixedKind{Code: "atmospheric_pressure"}}},
 	},
 	EntityTypeRelativehumidityV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "%"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "%"}, Kind: FixedKind{Code: "relative_humidity"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
 	},
 	EntityTypeSpeedV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "m/s"}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "m/s"}, Kind: FixedKind{Code: "speed"}}},
 	},
 	EntityTypeTemperatureV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "mCel"}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "mCel"}, Kind: FixedKind{Code: "temperature"}}},
 	},
 }
 
 //nolint:gochecknoglobals // Generated immutable interpretation references.
 var builtinInterpretationReferences = map[EntityTypeID][]interpretationReference{
-	EntityTypeNumericsensorV1:  {{Path: "/state/unit", Optional: false}},
-	EntityTypeNumericsettingV1: {{Path: "/state/unit", Optional: true}},
+	EntityTypeNumericsensorV1:  {{Path: "/state/quantity_kind", Optional: true, AllowInitial: true}, {Path: "/state/unit", Optional: false}},
+	EntityTypeNumericsettingV1: {{Path: "/state/quantity_kind", Optional: true, AllowInitial: true}, {Path: "/state/unit", Optional: true}},
 }

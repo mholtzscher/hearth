@@ -8,7 +8,7 @@
   "required": ["mode"],
   "properties": {
     "mode": {"type": "string", "enum": ["value", "choice"]},
-    "value": {"type": "number", "hearth": {"unit": {"root": "support", "path": "/state/unit"}, "range": {"minimum": {"root": "support", "path": "/state/minimum"}, "maximum": {"root": "support", "path": "/state/maximum"}}}},
+    "value": {"type": "number", "hearth": {"quantity_kind": {"root": "support", "path": "/state/quantity_kind"}, "unit": {"root": "support", "path": "/state/unit"}, "range": {"minimum": {"root": "support", "path": "/state/minimum"}, "maximum": {"root": "support", "path": "/state/maximum"}}}},
     "choice": {"type": "string", "minLength": 1, "maxLength": 128}
   },
   "oneOf": [

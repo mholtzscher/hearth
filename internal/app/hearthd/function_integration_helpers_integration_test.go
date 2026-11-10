@@ -107,7 +107,7 @@ func newFunctionIntegrationFixture(t *testing.T) functionIntegrationFixture {
 	}
 	t.Cleanup(func() { _ = registrations.Close(context.Background()) })
 	devices, automations, notifications := &stubDevices{}, &stubAutomations{}, &stubNotifications{}
-	mcpServer := newMCPServer(devices, automations, notifications, runtimes, service, nil, nil)
+	mcpServer := newMCPServer(devices, automations, notifications, runtimes, service, nil, nil, testDevicesPresenter())
 	bridgeContext, stopBridge := context.WithCancel(t.Context())
 	t.Cleanup(stopBridge)
 	bridged, err := agent.MCPTools(bridgeContext, mcpServer)

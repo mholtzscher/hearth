@@ -126,6 +126,7 @@ func TestCurrentRejectsInvalidWholeResponse(t *testing.T) {
 	}
 }
 
+//nolint:gocyclo,cyclop // Checks the two Function results and invalid argument matrix together.
 func TestForecastFunctions(t *testing.T) {
 	t.Parallel()
 	var calls int
@@ -135,12 +136,12 @@ func TestForecastFunctions(t *testing.T) {
 		case r.URL.Query().Get("exclude") == "currently,minutely,daily,alerts":
 			return response(
 				200,
-				`{"flags":{"units":"si"},"timezone":"America/Toronto","hourly":{"data":[{"time":1794225600,"temperature":0,"humidity":0.42},{"time":1794229200,"temperature":2},{"time":1794232800,"temperature":3}]}}`,
+				`{"flags":{"units":"si"},"timezone":"America/Toronto","hourly":{"data":[{"time":1794225600,"temperature":0,"humidity":0.42,"precipProbability":0},{"time":1794229200,"temperature":2},{"time":1794232800,"temperature":3}]}}`,
 			), nil
 		case r.URL.Query().Get("exclude") == "currently,minutely,hourly,alerts":
 			return response(
 				200,
-				`{"flags":{"units":"si"},"timezone":"America/Toronto","daily":{"data":[{"time":1794225600,"temperatureMin":-3,"temperatureMax":5,"precipProbability":0.5}]}}`,
+				`{"flags":{"units":"si"},"timezone":"America/Toronto","daily":{"data":[{"time":1794225600,"temperatureMin":-3,"temperatureMax":0,"humidity":0,"precipProbability":0.5}]}}`,
 			), nil
 		default:
 			t.Fatal("no selected block")
@@ -166,7 +167,10 @@ func TestForecastFunctions(t *testing.T) {
 	}
 	if len(hourly.Periods) != 2 || hourly.Periods[0].TemperatureC == nil || *hourly.Periods[0].TemperatureC != 0 ||
 		hourly.Periods[0].HumidityPercent == nil ||
-		*hourly.Periods[0].HumidityPercent != 42 {
+		*hourly.Periods[0].HumidityPercent != 42 || hourly.Periods[0].PrecipitationProbability == nil ||
+		*hourly.Periods[0].PrecipitationProbability != 0 ||
+		!strings.Contains(string(success.Result), `"temperature":0`) ||
+		!strings.Contains(string(success.Result), `"precipitation_probability":0`) {
 		t.Fatalf("hourly: %+v", hourly)
 	}
 	result = functions[1].Handler(
@@ -182,7 +186,10 @@ func TestForecastFunctions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(daily.Periods) != 1 || daily.Periods[0].Date != "2026-11-09" || *daily.Periods[0].TemperatureMinC != -3 ||
-		*daily.Periods[0].PrecipitationProbability != 50 {
+		*daily.Periods[0].PrecipitationProbability != 50 || daily.Periods[0].TemperatureMaxC == nil ||
+		*daily.Periods[0].TemperatureMaxC != 0 || daily.Periods[0].HumidityPercent == nil ||
+		*daily.Periods[0].HumidityPercent != 0 || !strings.Contains(string(success.Result), `"humidity":0`) ||
+		!strings.Contains(string(success.Result), `"temperature_max":0`) {
 		t.Fatalf("daily: %+v", daily)
 	}
 	for _, args := range []string{`{}`, `{"hours":0}`, `{"hours":49}`, `{"hours":1,"extra":true}`, `{"hours":"1"}`} {

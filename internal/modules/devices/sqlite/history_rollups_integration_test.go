@@ -19,6 +19,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/internal/platform/numstats"
 )
 
@@ -226,7 +227,9 @@ func TestObservationRollupFailureRollsBackProjection(t *testing.T) {
 func TestObservationRollupBackfillMatchesIngest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	// Exercise the rollup backfill without crossing migration 32's rollback guard.
+	database := dbtest.OpenAtVersion(t, filepath.Join(t.TempDir(), "hearth.db"), 31)
+	claimRegistrationAdapters(t, database)
 	service := openHistoryService(t, database)
 	entities := registerRollupEntities(t, service)
 	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
@@ -435,7 +438,8 @@ func TestPruneHistoryKeepsTheRollupCellContainingCutoff(t *testing.T) {
 func TestHistoryExactRollupsSurviveOverflowCancellationAndBackfill(t *testing.T) {
 	t.Parallel()
 	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
-	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := dbtest.OpenAtVersion(t, filepath.Join(t.TempDir(), "hearth.db"), 31)
+	claimRegistrationAdapters(t, database)
 	catalog := firstLightCatalog(t)
 	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{
 		Now: func() time.Time { return base.Add(time.Hour) },

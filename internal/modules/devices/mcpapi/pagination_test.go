@@ -31,7 +31,7 @@ func TestEveryCollectionContinuesItsOwnDomainPosition(t *testing.T) {
 	stub := &stubDevices{}
 	paginationFixture(stub, positions, calls)
 	server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
-	Register(server, stub)
+	Register(server, stub, testPresenter())
 	entityArgs := `{"entity_id":"` + string(apiEntityID) + `","limit":1}`
 	command := listableCommand()
 	beforeTime := command.RequestedAt
@@ -65,7 +65,7 @@ func TestEveryCollectionContinuesItsOwnDomainPosition(t *testing.T) {
 func TestWrongCursorScopeNeverReachesService(t *testing.T) {
 	t.Parallel()
 	server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
-	Register(server, &stubDevices{})
+	Register(server, &stubDevices{}, testPresenter())
 	wrongDevice := devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ac")
 	wrongEntity := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
 	entityCursor, err := apicursor.EncodeEntitiesCursor(apiEntityID, &wrongDevice)

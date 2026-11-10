@@ -405,7 +405,7 @@ func TestDashboardProductionJourney(t *testing.T) {
 		client,
 		core,
 		http.MethodPost,
-		"/v1/entities/"+entityID+"/state/history",
+		"/v1/entities/"+entityID+"/state/history?units=canonical",
 		seriesBody,
 		http.StatusOK,
 	)

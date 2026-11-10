@@ -145,7 +145,7 @@ function renderObservationValue(
     case "hearth.binarysensor/v1":
       return typeof value === "boolean" ? (value ? "True" : "False") : compactJson(value);
     case "hearth.temperature/v1":
-      return typeof value === "number" ? `${(value / 1000).toFixed(2)} °C` : compactJson(value);
+      return typeof value === "number" ? `${value} mCel` : compactJson(value);
     case "hearth.numericsensor/v1":
       if (typeof value !== "number") return compactJson(value);
       return unit ? `${value} ${unit}` : String(value);
@@ -164,7 +164,7 @@ function renderObservationValue(
       const x = value.x;
       const y = value.y;
       if (typeof x !== "number" || typeof y !== "number") return compactJson(value);
-      return `x ${x} (${(x / 10000).toFixed(4)}), y ${y} (${(y / 10000).toFixed(4)})`;
+      return `x ${x}, y ${y} (10*-4)`;
     }
     case "hearth.colorhs/v1": {
       if (!isPlainObject(value)) return compactJson(value);

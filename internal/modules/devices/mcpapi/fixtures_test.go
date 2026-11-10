@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 )
 
 const (
@@ -15,6 +16,7 @@ const (
 )
 
 type stubDevices struct {
+	queryHistory                  func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
 	getEntity                     func(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	setEntityEnabled              func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	listDevices                   func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
@@ -39,6 +41,20 @@ type stubDevices struct {
 		context.Context,
 		devices.CommandInput,
 	) (devices.CommandResult, error)
+}
+
+func testPresenter() *devices.Presenter {
+	return devices.NewPresenter(household.UnitSystemMetric, devices.TableConverter{})
+}
+
+func (stub *stubDevices) QueryHistory(
+	ctx context.Context,
+	query devices.HistoryQuery,
+) (devices.HistoryQueryResult, error) {
+	if stub.queryHistory == nil {
+		panic("unexpected QueryHistory call")
+	}
+	return stub.queryHistory(ctx, query)
 }
 
 func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {

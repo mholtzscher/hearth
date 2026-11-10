@@ -153,10 +153,70 @@ func TestInterpretationRejectionRollsBackEntireBatchAndRetainsEvidence(t *testin
 	}
 }
 
+func TestKindRegistrationIsAddOnceAndRejectsBatchAtomically(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
+	registration := multiEntityRegistration()
+	registration.Entities[1].TypeID = devices.EntityTypeNumericsensorV1
+	registration.Entities[1].Support = devices.EntitySupport(
+		`{"state":{"minimum":0,"maximum":100,"unit":"%"},"operations":{}}`,
+	)
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	result, err := service.ProjectObservation(
+		ctx,
+		"simulator",
+		testRuntimeID,
+		newObservation(t, binding.Entities[1].EntityID, `50`, at),
+		at,
+	)
+	if err != nil || result.Disposition != devices.DispositionApplied {
+		t.Fatalf("observation = %+v, %v", result, err)
+	}
+	registration.Entities[1].Support = devices.EntitySupport(
+		`{"state":{"minimum":0,"maximum":100,"unit":"%","quantity_kind":"battery_level"},"operations":{}}`,
+	)
+	if _, registerErr := service.Register(ctx, "simulator", testRuntimeID, registration); registerErr != nil {
+		t.Fatal(registerErr)
+	}
+	before := registrationSnapshot(t, database)
+	registration.Device.Name = "must roll back"
+	registration.Entities[0].Name = "must roll back"
+	for _, support := range []string{
+		`{"state":{"minimum":0,"maximum":100,"unit":"%"},"operations":{}}`,
+		`{"state":{"minimum":0,"maximum":100,"unit":"%","quantity_kind":"brightness"},"operations":{}}`,
+	} {
+		registration.Entities[1].Support = devices.EntitySupport(support)
+		_, registerErr := service.Register(ctx, "simulator", testRuntimeID, registration)
+		assertRegistrationRejection(t, registerErr, devices.RegistrationImmutableInterpretationChange)
+		if after := registrationSnapshot(t, database); !reflect.DeepEqual(before, after) {
+			t.Fatalf("rejected batch changed persisted data: before=%v after=%v", before, after)
+		}
+	}
+	for _, support := range []string{
+		`{"state":{"minimum":0,"maximum":100,"unit":"%","quantity_kind":"unknown"},"operations":{}}`,
+		`{"state":{"minimum":0,"maximum":100,"unit":"%","quantity_kind":"voltage"},"operations":{}}`,
+	} {
+		registration.Entities[1].Support = devices.EntitySupport(support)
+		if _, registerErr := service.Register(ctx, "simulator", testRuntimeID, registration); registerErr == nil {
+			t.Fatalf("invalid kind/unit accepted: %s", support)
+		}
+		if after := registrationSnapshot(t, database); !reflect.DeepEqual(before, after) {
+			t.Fatalf("invalid support changed persisted data: before=%v after=%v", before, after)
+		}
+	}
+}
+
 func registrationSnapshot(t *testing.T, database *sql.DB) map[string]string {
 	t.Helper()
 	snapshot := map[string]string{}
-	for _, table := range []string{"devices", "entities", "adapter_bindings", "adapter_entity_mappings", "entity_states", "observations", "commands"} {
+	for _, table := range []string{"devices", "entities", "adapter_bindings", "adapter_entity_mappings", "entity_states", "observations", "observation_rollups", "commands"} {
 		snapshot[table] = registrationTableSnapshot(t, database, table)
 	}
 	return snapshot
@@ -164,8 +224,12 @@ func registrationSnapshot(t *testing.T, database *sql.DB) map[string]string {
 
 func registrationTableSnapshot(t *testing.T, database *sql.DB, table string) string {
 	t.Helper()
+	order := "rowid"
+	if table == "observation_rollups" {
+		order = "entity_id, field_path, cell_start"
+	}
 	//nolint:unqueryvet // Snapshot every persisted column; schema additions must be covered by rollback too.
-	rows, err := database.QueryContext(context.Background(), "SELECT * FROM "+table+" ORDER BY rowid")
+	rows, err := database.QueryContext(context.Background(), "SELECT * FROM "+table+" ORDER BY "+order)
 	if err != nil {
 		t.Fatal(err)
 	}

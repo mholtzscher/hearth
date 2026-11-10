@@ -15,6 +15,27 @@ func catalog(t *testing.T) []measurementPlan {
 	return plans
 }
 
+func TestCatalogQuantityKindDeclarations(t *testing.T) {
+	t.Parallel()
+	want := map[string]string{
+		"wind-direction":  "wind_direction",
+		"solar-radiation": "solar_irradiance",
+		"uv-index":        "uv_index",
+		"rain-rate":       "precipitation_rate",
+		"event-rain":      "precipitation_depth",
+		"hourly-rain":     "precipitation_depth",
+		"daily-rain":      "precipitation_depth",
+		"weekly-rain":     "precipitation_depth",
+		"monthly-rain":    "precipitation_depth",
+		"yearly-rain":     "precipitation_depth",
+	}
+	for _, plan := range catalog(t) {
+		if plan.QuantityKind != want[plan.EntityKey] {
+			t.Errorf("%s kind = %q", plan.EntityKey, plan.QuantityKind)
+		}
+	}
+}
+
 // planByKey returns one catalog plan by Entity key.
 func planByKey(t *testing.T, plans []measurementPlan, key string) measurementPlan {
 	t.Helper()
@@ -238,8 +259,8 @@ func TestCatalogSupportMatchesEntityTypeContracts(t *testing.T) {
 				expected.key, state["minimum"], state["maximum"], expected.minimum, expected.maximum,
 			)
 		}
-		if len(state) != 3 {
-			t.Fatalf("%s state support = %v, want unit, minimum, and maximum", expected.key, state)
+		if state["quantity_kind"] != plan.QuantityKind || len(state) != 4 {
+			t.Fatalf("%s state support = %v, want kind, unit, minimum, and maximum", expected.key, state)
 		}
 	}
 }

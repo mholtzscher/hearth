@@ -6,7 +6,6 @@ import { MemoryRouter } from "react-router-dom";
 import { BoundToggleTile } from "./ToggleTile";
 import { BoundToggleList } from "../toggle-list/ToggleList";
 import { ViewDataProvider } from "../../data/provider";
-import { UnitSystemOverride } from "../../../units/household";
 import type { FieldEntity } from "../../bindings/entity";
 import type { PowerSource } from "../../bindings/schema";
 import { ViewRenderer } from "../../renderer/ViewRenderer";
@@ -19,7 +18,7 @@ const deviceId = "dev_019a3e6a-4111-7000-8000-000000000001";
 const source = (number = 1): PowerSource => ({ kind: "entity-state", entity_id: id(number), entity_type: "hearth.power/v1" });
 type Entity = FieldEntity & { device_id: string };
 const power = (number = 1, on: boolean | null = true): Entity => ({ id: id(number), device_id: deviceId, name: `Power ${number}`, type: "hearth.power/v1", enabled: true, availability: { status: "available" }, support: { state: {}, operations: { set: {} } }, state: on === null ? null : { value: on, observed_at: at } });
-const numeric = (number = 20, unit = "W", value = 7.9): Entity => ({ id: id(number), device_id: deviceId, name: unit === "W" ? "Electrical Power" : "Voltage", type: "hearth.numericsensor/v1", enabled: true, availability: { status: "available" }, support: { state: { minimum: 0, maximum: 10000, unit }, operations: {} }, state: { value, observed_at: at } });
+const numeric = (number = 20, unit = "W", value = 7.9): Entity => ({ id: id(number), device_id: deviceId, name: unit === "W" ? "Electrical Power" : "Voltage", type: "hearth.numericsensor/v1", enabled: true, availability: { status: "available" }, support: { state: { minimum: 0, maximum: 10000, unit }, operations: {} }, quantities: { "": { unit, label: unit, fraction_digits: 1, range: { minimum: 0, maximum: 10000 } } }, state: { value, observed_at: at } });
 const metricSource = (number = 20) => ({ kind: "entity-state" as const, entity_id: id(number), entity_type: "hearth.numericsensor/v1" });
 type Post = { id: string; body: { operation: string; parameters: { value: boolean } }; respond: (response: Response) => void };
 
@@ -30,7 +29,7 @@ function core(values: Entity[], options: { failChanges?: boolean; failGet?: numb
   const histories: string[] = [], gets: string[] = [];
   const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const url = String(input), entityId = url.split("/")[3], entity = entities.get(entityId);
+    const url = String(input), entityId = url.split("/")[3].split("?")[0], entity = entities.get(entityId);
     if (url.endsWith("/commands")) return new Promise<Response>(respond => posts.push({ id: entityId, body: JSON.parse(String(init?.body)), respond }));
     if (url.endsWith("/state/changes")) {
       if (options.failChanges) return response({ detail: "History unavailable" }, 503);
@@ -50,7 +49,7 @@ function core(values: Entity[], options: { failChanges?: boolean; failGet?: numb
         const value = index === 20 ? null : Number(entity?.state?.value ?? 0);
         return { range: { from: new Date(from + index * step).toISOString(), to: new Date(Math.min(to, from + (index + 1) * step)).toISOString() }, metrics: { min: value, max: value, mean: value } };
       });
-      return response({ range: body.range, buckets });
+      return response({ range: body.range, quantity: entity?.quantities?.[""], buckets });
     }
     gets.push(entityId);
     return response(entity ?? {}, options.failGet ?? (entity ? 200 : 404));
@@ -64,7 +63,7 @@ function core(values: Entity[], options: { failChanges?: boolean; failGet?: numb
 }
 const flush = () => act(() => vi.advanceTimersByTimeAsync(0));
 async function mount(children: ReactNode) {
-  render(<StrictMode><UnitSystemOverride.Provider value="metric"><ViewDataProvider>{children}</ViewDataProvider></UnitSystemOverride.Provider></StrictMode>, { wrapper: MemoryRouter });
+  render(<StrictMode><ViewDataProvider>{children}</ViewDataProvider></StrictMode>, { wrapper: MemoryRouter });
   await flush();
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-09T10:00:30Z")); });

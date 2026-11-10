@@ -4,7 +4,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { BoundDevice } from "../cards/device/Device";
 import { ViewDataProvider } from "../data/provider";
-import { UnitSystemOverride } from "../../units/household";
 import { KEYBOARD_SETTLE_MS } from "./BrightnessSlider";
 
 const deviceId = "dev_019a3e6a-4111-7000-8000-000000000001";
@@ -12,7 +11,7 @@ const powerId = "ent_019a3e6a-4111-7000-8000-000000000001";
 const brightnessId = "ent_019a3e6a-4111-7000-8000-000000000002";
 const settable = { state: {}, operations: { set: {} } };
 
-type Light = { on: boolean; level: number; observedAt: string; powerSupport?: unknown; powerEnabled?: boolean };
+type Light = { on: boolean; level: number; observedAt: string; powerSupport?: unknown; powerEnabled?: boolean; xy?: boolean; canonical?: { on: boolean; level: number; fail?: boolean } };
 type Post = { entityId: string; body: { operation: string; parameters: { value: unknown } }; respond: (response: Response) => void };
 
 /**
@@ -22,11 +21,14 @@ type Post = { entityId: string; body: { operation: string; parameters: { value: 
 function fakeCore(light: Light) {
   const posts: Post[] = [];
   const gets: string[] = [];
-  const device = () => ({ id: deviceId, name: "Lamp", next_entity_cursor: null, entities: [
+  const device = (canonical: boolean) => ({ id: deviceId, name: "Lamp", next_entity_cursor: null, entities: [
     { id: powerId, type: "hearth.power/v1", name: "Power", enabled: light.powerEnabled ?? true, availability: { status: "available" },
-      support: light.powerSupport ?? settable, state: { value: light.on, observed_at: light.observedAt } },
+      support: light.powerSupport ?? settable, state: { value: canonical && light.canonical ? light.canonical.on : light.on, observed_at: light.observedAt } },
     { id: brightnessId, type: "hearth.brightness/v1", name: "Brightness", enabled: true, availability: { status: "available" },
-      support: settable, state: { value: light.level, observed_at: light.observedAt } },
+      support: settable, quantities: { "": { unit: "%", label: "%", fraction_digits: 0, range: { minimum: 0, maximum: 100 } } }, state: { value: canonical && light.canonical ? light.canonical.level : light.level, observed_at: light.observedAt } },
+    ...(light.xy ? [{ id: "ent_color", type: "hearth.colorxy/v1", name: "Color", enabled: true, availability: { status: "available" }, support: {},
+      quantities: { "/x": { unit: canonical ? "10*-4" : "1", label: canonical ? "10*-4" : "", fraction_digits: canonical ? 0 : 4 }, "/y": { unit: canonical ? "10*-4" : "1", label: canonical ? "10*-4" : "", fraction_digits: canonical ? 0 : 4 } },
+      state: { value: canonical ? { active: true, x: 3127, y: 3290 } : { active: true, x: 0.3127, y: 0.329 }, observation_id: "obs_color", observed_at: light.observedAt } }] : []),
   ] });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
@@ -35,7 +37,9 @@ function fakeCore(light: Light) {
       return new Promise<Response>(respond => posts.push({ entityId, body: JSON.parse(String(init.body)), respond }));
     }
     gets.push(url);
-    return new Response(JSON.stringify(device()));
+    const canonical = url.includes("units=canonical");
+    if (canonical && light.canonical?.fail) return new Response("{}", { status: 503 });
+    return new Response(JSON.stringify(device(canonical)));
   });
   const satisfy = (post: Post) => {
     if (post.entityId === powerId) light.on = post.body.parameters.value as boolean;
@@ -53,9 +57,9 @@ const flush = () => act(() => vi.advanceTimersByTimeAsync(0));
 
 /** Rendered under StrictMode, as the app is. The queue unit tests cover reuse after disposal. */
 async function renderLight(cards = 1) {
-  render(<StrictMode><UnitSystemOverride.Provider value="metric"><ViewDataProvider>
+  render(<StrictMode><ViewDataProvider>
     {Array.from({ length: cards }, (_, i) => <BoundDevice key={i} device={{ kind: "device", device_id: deviceId }} />)}
-  </ViewDataProvider></UnitSystemOverride.Provider></StrictMode>, { wrapper: MemoryRouter });
+  </ViewDataProvider></StrictMode>, { wrapper: MemoryRouter });
   await flush();
 }
 
@@ -63,15 +67,40 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-06T10:
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 it("offers a power switch and a brightness slider for a light whose Entities support set", async () => {
-  fakeCore({ on: false, level: 64, observedAt: "2026-11-06T10:00:00Z" });
+  const core = fakeCore({ on: false, level: 64, observedAt: "2026-11-06T10:00:00Z" });
   await renderLight();
   const power = screen.getByRole("switch", { name: "Lamp power" });
   expect(power.getAttribute("aria-checked")).toBe("false");
   const slider = screen.getByRole("slider", { name: "Lamp brightness" });
   expect(slider.getAttribute("aria-valuetext")).toBe("64 %");
   expect(slider.getAttribute("min")).toBe("1");
+  expect(core.gets.some(url => url.includes("units=canonical"))).toBe(false);
   // The slider states the level, so the detail line doesn't repeat it.
   expect(screen.queryByText(/Brightness 64 %/)).toBeNull();
+});
+
+it("uses displayed power and brightness when a canonical color read is stale or fails", async () => {
+  const light: Light = { on: true, level: 75, observedAt: "2026-11-06T10:00:00Z", xy: true, canonical: { on: false, level: 25 } };
+  const core = fakeCore(light);
+  await renderLight();
+  expect(core.gets.some(url => url.includes("units=canonical"))).toBe(true);
+  const power = screen.getByRole("switch", { name: "Lamp power" });
+  const slider = screen.getByRole("slider", { name: "Lamp brightness" });
+  expect(power.getAttribute("aria-checked")).toBe("true");
+  expect(slider.getAttribute("aria-valuetext")).toBe("75 %");
+  light.canonical!.fail = true;
+  light.level = 80;
+  await act(() => vi.advanceTimersByTimeAsync(10_000));
+  expect(power.getAttribute("aria-checked")).toBe("true");
+  expect(slider.getAttribute("aria-valuetext")).toBe("80 %");
+  expect(screen.getByText(/Couldn't load canonical light State/)).toBeTruthy();
+  expect(screen.getByText("Color preview unavailable; canonical reading is missing or out of date.")).toBeTruthy();
+  fireEvent.click(power);
+  await flush();
+  expect(core.posts[0].body.parameters.value).toBe(false);
+  fireEvent.change(slider, { target: { value: "25" } });
+  await act(() => vi.advanceTimersByTimeAsync(KEYBOARD_SETTLE_MS));
+  expect(core.posts[1].body.parameters.value).toBe(25);
 });
 
 it("leaves out a switch the power Entity doesn't support, and disables one for a disabled Entity", async () => {

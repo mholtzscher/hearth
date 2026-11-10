@@ -30,9 +30,14 @@ type ListEntitiesInput struct {
 	PageInput
 
 	DeviceID *deviceID `json:"device_id,omitempty" doc:"canonical Hearth Device ID; omit to list every Device" nullable:"true"`
+	Units    string    `json:"units,omitempty"     doc:"Omit for household units"                                              enum:",canonical"`
 }
 
 func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInput) (entityPage, error) {
+	units, err := devices.ParseReadUnits(input.Units)
+	if err != nil {
+		return entityPage{}, invalidRequestFailure("invalid units")
+	}
 	var deviceID *devices.DeviceID
 	if input.DeviceID != nil {
 		value := devices.DeviceID(*input.DeviceID)
@@ -40,8 +45,8 @@ func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInpu
 	}
 	var afterID *devices.EntityID
 	if input.Cursor != "" {
-		parsed, err := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID)
-		if err != nil {
+		parsed, cursorErr := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID)
+		if cursorErr != nil {
 			return entityPage{}, invalidRequestFailure("invalid cursor")
 		}
 		afterID = parsed
@@ -57,7 +62,10 @@ func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInpu
 	}
 	body := entityPage{Items: make([]EntitySummary, len(page.Items))}
 	for index, entity := range page.Items {
-		body.Items[index] = entitySummary(entity)
+		body.Items[index], err = handler.entitySummary(entity, units)
+		if err != nil {
+			return entityPage{}, mcptools.InternalToolError(err)
+		}
 	}
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeEntitiesCursor(page.Items[len(page.Items)-1].Entity.ID, deviceID)

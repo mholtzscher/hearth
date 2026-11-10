@@ -77,13 +77,14 @@ State schemas derive selectable scalar fields, including numeric fields inside
 objects. The optional binding `field` is a JSON Pointer; omission and `""` select
 the root. The asserted `entity_type` must match the actual Entity. Numeric fields
 use the schema's `hearth` unit annotation, or dimensionless `1` by default.
-Dynamic units reference support and cannot change on
-re-registration. Cards never store
-a display unit. The household's `household_unit_system` (`metric` or `us`,
-served by `GET /v1/household`) chooses it, and the web units module converts
-with UCUM: temperature shows °C or °F, wind speed m/s or mi/h, pressure hPa or
-in Hg. Rain stays in mm and mm/h in both systems. Units that aren't UCUM codes
-show as stored. Current State and
+Dynamic units reference support and cannot change on re-registration. Cards never
+store a display unit. Core projects readings according to the household's
+`household_unit_system` (`metric` or `us`) and supplies units, labels, precision,
+and declared bounds in `quantities`, or `quantity` for aggregate history. The
+web displays those numbers without converting them again or waiting for a
+separate household-settings read. US precipitation is shown in inches or
+inches per hour. Canonical-only consumers request
+`units=canonical`; raw observation audit remains canonical. Current State and
 historical Observations are distinct. History uses one-minute rollups through
 the Entity history query: 1h has 60 one-minute buckets, 6h has 360 one-minute
 buckets, 24h has 288 five-minute buckets, and 7d has 336 thirty-minute buckets.
@@ -97,8 +98,10 @@ away. No seed or inferred interval fills a gap. Pruned observations are not
 reconstructed, and current State is never inserted into history. Sample means
 are neither time-weighted nor circular means (including hue).
 
-One chart shares a type, field, window and resolved canonical unit. Brightness
-State and Commands use integer percentages from 0–100; cards display the actual
+One chart shares a type, field, window and resolved canonical unit. Series whose
+delivered unit codes differ are not plotted together, even when
+their canonical units match; the incompatible series reports an error.
+Brightness State and Commands use integer percentages from 0–100; cards display the actual
 normalized observations without device-specific scaling. Adapters round Commands
 to native levels, and Core satisfaction allows a one-percentage-point difference.
 Hue/saturation share one current Entity read but use distinct history requests.
@@ -134,7 +137,6 @@ failure indicator and observation time.
 | `web/src/features/views/catalog` | Composed schemas and read compatibility |
 | `web/src/features/views/cards` | Numeric/text rendering and local controls |
 | `web/src/features/views/bindings` | One field adapter driven by the generated catalog |
-| `web/src/features/units` | UCUM conversion and the household unit-system policy |
 | `internal/modules/household` | Read-only household settings (`GET /v1/household`) |
 | `web/src/features/views/data` | Shared cache, refresh lifecycle, and the provider that owns the Command queue |
 | `web/src/features/views/controls` | Light and power controls, the connection-scoped Command queue, and pending and failure lines |
@@ -241,28 +243,20 @@ view is presented or saved: `mm/h` for rain rates, `mm` for rain totals, and
 
 - OutsideNow requires an outdoor `temperature` and optionally binds `humidity`,
   `wind`, `wind_direction`, `rain_rate`, and `rain_today`. It reads 24 hours of
-  temperature for the high and low. Feels like uses the NWS heat index or wind
-  chill only where that formula applies, and dew point uses the Magnus formula.
-  Conditions come from measurements: AMS rain intensity from the rate, and wind
-  words from the Beaufort scale. If temperature history fails to refresh, a
+  temperature for the sampled high and low. If temperature history fails to refresh, a
   warning appears and retained extrema are labelled **Last loaded 24 h**, not
   the current rolling window. Source states the history interval's exact start
   and end; current readings keep their independent observation times.
 - Rain requires a `rate` and optionally binds `storm`, `totals` (`day`, `week`,
-  `month`, `year`), and a `trend` window for the rate. While the storm total is
-  above zero it leads; otherwise the rate does, and a zero rate reads **Dry**.
+  `month`, `year`), and a `trend` window for the rate. The rate leads, including
+  when it is zero.
   Totals are the station's own counters; the card never sums the rate.
 - Wind requires `speed` and optionally binds `gust`, `direction`, and
-  `max_gust`. Direction is where the wind comes from. It has no history,
-  because history means aren't circular.
-- Pressure binds one `hearth.pressure/v1` `source` and an optional `trend`. It
-  always reads 6 hours of history to compare the latest minute with the one
-  nearest three hours earlier, within ten minutes, and words the change with Met
-  Office thresholds. The latest historical sample must also be within ten
-  minutes of the current time, checked each minute even if history refreshes
-  fail. A failed refresh shows a warning independently of the optional trend;
-  expired history shows no tendency while the live pressure reading remains.
+  `max_gust`. Direction is shown as the selected Entity's reading, not a compass.
+- Pressure binds one `hearth.pressure/v1` `source` and an optional `trend`; no
+  history is requested when the trend is omitted.
 
+Weather cards do not derive feels-like, dew point, conditions, or tendencies.
 Each reading keeps its own statuses; the footer states the oldest displayed
 reading. Weather cards count toward the 16-reference budget like other cards.
 
@@ -281,8 +275,11 @@ forecasts, not station readings:
   no temperature, precipitation-chance bars, and icons and temperatures every 1,
   2, 3, or 6 hours for up to 6, 12, 24, or 48 hours. Below 22px per hour the plot
   scrolls inside the card.
-- Precipitation chance shows only at 10% or more. Temperatures convert to the
-  household unit system and round to whole degrees.
+- Precipitation chance shows only at 10% or more. Core returns forecast values
+  in household units with per-period quantity metadata. The card formats those
+  values without conversion or a household-settings read; forecast temperature
+  metadata recommends whole degrees. `units=canonical` returns canonical values
+  under the same field names; see [forecast read representations](units.md#forecast-snapshots).
 - Periods that have ended drop at each minute without a refetch: an hour once it
   is over, a day once the viewer's local date passes it. With none left, the card
   says the last forecast has passed.
@@ -297,9 +294,6 @@ Each metering card uses its content height rather than stretching to a neighbor
 with an additional reading. Narrow ordinary ToggleTiles use the compact
 reading scale and omit only the visual observation-label prefix; their time's
 accessible label and Source retain the full evidence.
-
-To change which
-units a household system prefers, edit `web/src/features/units/systems.ts`.
 
 The view catalog advertises scalar field/type pairs and Device references, and rejects actions,
 expressions, URLs and arbitrary properties. Definitions never declare arbitrary
@@ -364,11 +358,19 @@ and unchanged. See [agent skills](agent-skills.md) for provider migration.
 
 ## Persistence and deployment
 
-The State-field cutover requires a fresh database and coordinated Core, SDK and
+Household-default Entity and history reads change the numeric representation at
+existing JSON paths. Deploy Core and web together; older web clients would apply
+their own conversion to the projected numbers. Request `units=canonical` for
+canonical readers. This units change does not rewrite stored observations or
+require a database reset. See [quantity metadata and read units](units.md) for
+the Core-first Adapter rollout and rollback constraints.
+
+The earlier State-field cutover required a fresh database and coordinated Core, SDK and
 Adapter versions. Fixed units no longer appear in support JSON, and brightness
 support contains neither native maximum nor step. Old support data
-is unsupported; there is no compatibility decoder or migration. The operator
-must stop writers and reset the database before restarting the new runtime (or
+is unsupported; there is no compatibility decoder or migration for that historical
+cutover. An operator upgrading from before that cutover must stop writers and
+reset the database before restarting the new runtime (or
 choose a separate fresh fixture path). Do not delete `.data/` wholesale: preserve
 design assets, screenshots, recordings, verification evidence and local specs.
 Recreate fixture Entities and explicitly seed saved dashboards; generated drafts

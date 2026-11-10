@@ -100,9 +100,13 @@ func TestDiscoverCapturedNightLight3RSNL02043Z(t *testing.T) {
 			),
 		},
 		{
-			Key: "illuminance", ExternalID: nightLightIEEE + "/root/illuminance", Name: "Illuminance",
-			Type:    "hearth.numericsensor/v1",
-			Support: json.RawMessage(`{"state":{"maximum":1000000000,"minimum":0,"unit":"lx"},"operations":{}}`),
+			Key:        "illuminance",
+			ExternalID: nightLightIEEE + "/root/illuminance",
+			Name:       "Illuminance",
+			Type:       "hearth.numericsensor/v1",
+			Support: json.RawMessage(
+				`{"state":{"maximum":1000000000,"minimum":0,"quantity_kind":"illuminance","unit":"lx"},"operations":{}}`,
+			),
 		},
 		{
 			Key: "occupancy", ExternalID: nightLightIEEE + "/root/occupancy", Name: "Occupancy",
@@ -110,9 +114,13 @@ func TestDiscoverCapturedNightLight3RSNL02043Z(t *testing.T) {
 			Support: json.RawMessage(`{"state":{},"operations":{}}`),
 		},
 		{
-			Key: "linkquality", ExternalID: nightLightIEEE + "/root/linkquality", Name: "Link Quality",
-			Type:    "hearth.numericsensor/v1",
-			Support: json.RawMessage(`{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`),
+			Key:        "linkquality",
+			ExternalID: nightLightIEEE + "/root/linkquality",
+			Name:       "Link Quality",
+			Type:       "hearth.numericsensor/v1",
+			Support: json.RawMessage(
+				`{"state":{"maximum":255,"minimum":0,"quantity_kind":"link_quality","unit":"lqi"},"operations":{}}`,
+			),
 		},
 	}
 	if !reflect.DeepEqual(device.Registration.Entities, want) {

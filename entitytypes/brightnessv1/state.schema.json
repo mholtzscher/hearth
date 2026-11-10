@@ -3,7 +3,7 @@
   "$id": "urn:hearth:schema:entity-type:brightness:v1:state",
   "title": "Hearth brightness/v1 State",
   "type": "integer",
-  "hearth": {"unit": "%", "range": {"minimum": 0, "maximum": 100}},
+  "hearth": {"unit": "%", "quantity_kind": "brightness", "range": {"minimum": 0, "maximum": 100}},
   "minimum": 0,
   "maximum": 100
 }

@@ -75,7 +75,7 @@ function parseHistoryValue(type: string | undefined, value: unknown, support?: R
     }
     case "hearth.temperature/v1":
       return isBoundedInteger(value, -273150, 1000000)
-        ? { numeric: value / 1000, label: `${value / 1000} °C` }
+        ? { numeric: value, label: `${value} mCel` }
         : null;
     case "hearth.numericsensor/v1":
       return typeof value === "number" ? { numeric: value, label: String(value) } : null;
@@ -112,7 +112,7 @@ function formatStructuredHistoryValue(type: string | undefined, value: unknown):
       if (typeof value !== "object" || value === null) return null;
       const v = value as { active?: unknown; x?: unknown; y?: unknown };
       if (typeof v.active !== "boolean" || typeof v.x !== "number" || typeof v.y !== "number") return null;
-      return `x ${v.x} (${(v.x / 10000).toFixed(4)}), y ${v.y} (${(v.y / 10000).toFixed(4)}), ${v.active ? "active" : "inactive"}`;
+      return `x ${v.x}, y ${v.y} (10*-4), ${v.active ? "active" : "inactive"}`;
     }
     case "hearth.colorhs/v1": {
       if (typeof value !== "object" || value === null) return null;
@@ -189,7 +189,7 @@ function tickLabel(type: string | undefined, tick: number, min: number): string 
   // Power and binary sensor charts always span [0, 1], so their ticks are the bounds.
   if (type === "hearth.power/v1") return tick === min ? "Off" : "On";
   if (type === "hearth.binarysensor/v1") return tick === min ? "False" : "True";
-  if (type === "hearth.temperature/v1") return `${tick} °C`;
+  if (type === "hearth.temperature/v1") return `${tick} mCel`;
   if (type === "hearth.brightness/v1") return `${tick}%`;
   return String(tick);
 }

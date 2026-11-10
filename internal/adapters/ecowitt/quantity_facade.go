@@ -27,6 +27,7 @@ func newQuantityDescriptor(
 	metadata adapter.EntityMetadata,
 	unit string,
 	minimum, maximum float64,
+	semanticKind string,
 ) (adapter.EntityDescriptor, error) {
 	switch kind {
 	case quantityTemperature:
@@ -38,7 +39,11 @@ func newQuantityDescriptor(
 	case quantitySpeed:
 		return sdkspeedv1.NewEntityDescriptor(metadata, sdkspeedv1.Support{})
 	case quantityNumericSensor:
-		return sdknumericsensorv1.NewEntityDescriptor(metadata, numericSensorSupport(unit, minimum, maximum))
+		support := numericSensorSupport(unit, minimum, maximum)
+		if semanticKind != "" {
+			support.State.QuantityKind = &semanticKind
+		}
+		return sdknumericsensorv1.NewEntityDescriptor(metadata, support)
 	}
 	return adapter.EntityDescriptor{}, fmt.Errorf("%w: %d", errUnsupportedKind, kind)
 }

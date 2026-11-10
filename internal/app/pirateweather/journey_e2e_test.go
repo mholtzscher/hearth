@@ -148,8 +148,8 @@ func assertForecastStates(t *testing.T, coreURL string, hourly, daily devicesapi
 		kind, field string
 		value       float64
 	}{
-		{hourly, "hearth.hourlyforecast/v1", "temperature_c", 12.5},
-		{daily, "hearth.dailyforecast/v1", "temperature_min_c", 4},
+		{hourly, "hearth.hourlyforecast/v1", "temperature", 12.5},
+		{daily, "hearth.dailyforecast/v1", "temperature_min", 4},
 	} {
 		var got devicesapi.EntityBody
 		weatherJSON(t, coreURL, http.MethodGet, "/v1/entities/"+forecast.entity.ID, "", &got)
@@ -167,6 +167,9 @@ func assertForecastStates(t *testing.T, coreURL string, hourly, daily devicesapi
 		period, ok := periods[0].(map[string]any)
 		if !ok || period[forecast.field] != forecast.value || period["condition"] != "rain" {
 			t.Fatalf("forecast period: %+v", periods[0])
+		}
+		if quantity := got.Quantities["/periods/0/"+forecast.field]; quantity.Unit != "Cel" {
+			t.Fatalf("forecast quantity: %+v", quantity)
 		}
 	}
 }
@@ -246,11 +249,11 @@ func weatherProviderFixture(mode *atomic.Int32, entered, returned chan struct{})
 func assertRetainedWeatherForecasts(t *testing.T, coreURL string, mode *atomic.Int32) {
 	t.Helper()
 	hourly := invokeWeather(t, coreURL, "get_hourly_forecast", `{"hours":48}`)
-	if hourly.Status != "succeeded" || !strings.Contains(string(hourly.Result), `"temperature_c":12.5`) {
+	if hourly.Status != "succeeded" || !strings.Contains(string(hourly.Result), `"temperature":12.5`) {
 		t.Fatalf("hourly=%+v", hourly)
 	}
 	daily := invokeWeather(t, coreURL, "get_daily_forecast", `{"days":8}`)
-	if daily.Status != "succeeded" || !strings.Contains(string(daily.Result), `"temperature_min_c":4`) {
+	if daily.Status != "succeeded" || !strings.Contains(string(daily.Result), `"temperature_min":4`) {
 		t.Fatalf("daily=%+v", daily)
 	}
 	var persisted adaptersapi.InvocationBody
@@ -379,7 +382,7 @@ func waitWeatherEntities(t *testing.T, base string) []devicesapi.EntityBody {
 		Items []devicesapi.EntityBody `json:"items"`
 	}
 	waitWeatherCondition(t, func() bool {
-		weatherJSON(t, base, http.MethodGet, "/v1/entities", "", &page)
+		weatherJSON(t, base, http.MethodGet, "/v1/entities?units=canonical", "", &page)
 		if len(page.Items) != 13 {
 			return false
 		}
@@ -448,7 +451,7 @@ func assertWeatherMCP(t *testing.T, base, adapterID string) {
 		t.Fatalf("MCP forecast: %+v %v", invocation, err)
 	}
 	data, err = json.Marshal(invocation.StructuredContent)
-	if err != nil || !strings.Contains(string(data), `"temperature_c":12.5`) {
+	if err != nil || !strings.Contains(string(data), `"temperature":12.5`) {
 		t.Fatalf("MCP forecast data: %s %v", data, err)
 	}
 }

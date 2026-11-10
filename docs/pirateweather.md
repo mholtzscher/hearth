@@ -78,7 +78,7 @@ The same Device also contains two read-only forecast Entities:
 | `hourly-forecast` | `hearth.hourlyforecast/v1` | Up to 48 hourly periods, starting with the provider's current hour |
 | `daily-forecast` | `hearth.dailyforecast/v1` | Up to 8 daily periods, starting with today at the location |
 
-Each State is one forecast snapshot, `{"periods": [...]}`, and the newest
+Each canonical State is one forecast snapshot, `{"periods": [...]}`, and the newest
 snapshot replaces the previous one. Period fields match the Function results
 below, with two differences: the provider `icon` becomes the Hearth `condition`
 (`clear-day`, `clear-night`, `partly-cloudy-day`, `partly-cloudy-night`,
@@ -86,6 +86,13 @@ below, with two differences: the provider `icon` becomes the Hearth `condition`
 icon omits it), and State has no `icon`, `precipitation_type`, location name,
 retrieval time, or timezone. An empty provider summary is omitted. The Forecast
 dashboard card reads these Entities; see [Dashboards](dashboards.md).
+
+Ordinary Entity reads project forecast measurements into household units.
+Both read modes use the same unit-neutral period fields, such as `temperature`;
+per-period `quantities` metadata describes the returned numbers. Request
+`units=canonical` for values in the contract's canonical units. Ingestion,
+retained State, raw audit, and Function results remain canonical. See
+[forecast read representations](units.md#forecast-snapshots).
 
 Forecast Observations carry the response receive time and no source time: the
 provider gives no forecast issue time, and `currently.time` describes current
@@ -98,8 +105,8 @@ charts, State change history, or automation triggers.
 
 Every forecast Observation is retained under Core's ordinary Observation history
 policy. A synthetic full forecast with every field present encodes to about
-16.8 KB (48 hours) plus 3.0 KB (8 days) per poll, about 1.9 MB per day at the
-15-minute default, or about 57 MB over a 30-day retention window. Real forecasts
+14.2 KB (48 hours) plus 2.5 KB (8 days) per poll, about 1.6 MB per day at the
+15-minute default, or about 48 MB over a 30-day retention window. Real forecasts
 that omit fields are smaller.
 
 ## Polling
@@ -131,12 +138,14 @@ use `list_adapter_functions`, `get_adapter_function`, and `invoke_adapter_functi
 Every successful invocation uses a fresh API response, not a local forecast cache.
 Shorter provider horizons remain shorter. Results contain `location_name`,
 `retrieved_at`, an IANA `timezone`, and `periods`. Period timestamps are UTC;
-daily `date` is local to the returned timezone. Unit-bearing measurement fields
-include `temperature_c`, `humidity_percent`, and `wind_speed_mps`. Optional missing
+daily `date` is local to the returned timezone. Unit-neutral measurement fields
+include `temperature` (degrees Celsius), `humidity` (percent, 0–100), and
+`wind_speed` (m/s). The published output schema documents each canonical unit;
+Function results do not use household projection. Optional missing
 measurements and text are omitted. A malformed or empty requested block fails instead
 of returning an empty successful forecast.
 
-Daily `temperature_min_c` and `temperature_max_c` describe midnight-to-midnight
+Daily `temperature_min` and `temperature_max` describe midnight-to-midnight
 extremes, not the daytime high and overnight low. Daily precipitation probability is the
 provider's maximum; today's value may concern only the remaining hours. A
 precipitation rate is liquid-water equivalent, not accumulated depth. Function

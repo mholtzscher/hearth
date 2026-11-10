@@ -17,6 +17,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	dashboardshttp "github.com/mholtzscher/hearth/internal/modules/dashboards/httpapi"
 	dashboardsmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 	deviceshttp "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
 	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/household"
@@ -59,11 +60,12 @@ func newMCPServer(
 	functions adaptersmcp.Functions,
 	logger *slog.Logger,
 	views dashboardsmcp.Presenter,
+	presenter *devices.Presenter,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
 	// Module tools own their arguments and result projections over domain services.
 	// This same catalog is used by the external endpoint and the agent bridge.
-	devicesmcp.Register(mcpServer, devices)
+	devicesmcp.Register(mcpServer, devices, presenter)
 	automationsmcp.Register(mcpServer, automations)
 	notificationsmcp.Register(mcpServer, notifications)
 	adaptersmcp.Register(mcpServer, adapters, functions)
@@ -120,7 +122,12 @@ func newHTTPHandler(
 
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	v1 := huma.NewGroup(api, "/v1")
-	deviceshttp.Register(v1, devices, logger.With(slog.String("component", "devices")))
+	deviceshttp.Register(
+		v1,
+		devices,
+		newDevicesPresenter(householdSettings),
+		logger.With(slog.String("component", "devices")),
+	)
 	automationshttp.Register(v1, automations, logger.With(slog.String("component", "automations")))
 	notificationshttp.Register(v1, notifications, logger.With(slog.String("component", "notifications")))
 	adaptershttp.Register(v1, adapters, functions, logger.With(slog.String("component", "adapters")))
@@ -135,4 +142,8 @@ func newHTTPHandler(
 	agent.RegisterHTTPStream(router, agentOperations, agentLogger)
 	mcpecho.Mount(router, mcpPath, mcpServer)
 	return router, api
+}
+
+func newDevicesPresenter(settings household.Settings) *devices.Presenter {
+	return devices.NewPresenter(settings.UnitSystem, devices.TableConverter{})
 }

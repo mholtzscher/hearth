@@ -13,6 +13,7 @@
       "properties": {
         "minimum": {"type": "number"},
         "maximum": {"type": "number"},
+        "quantity_kind": {"type": "string", "minLength": 1, "maxLength": 32},
         "unit": {"type": "string", "minLength": 1, "maxLength": 32}
       }
     },

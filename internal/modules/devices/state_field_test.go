@@ -199,6 +199,35 @@ func TestInterpretationChangesUseOnlyReferencedPaths(t *testing.T) {
 		},
 		{"optional added", devices.EntityTypeNumericsettingV1, `{"state":{}}`, `{"state":{"unit":"1"}}`, true},
 		{"optional removed", devices.EntityTypeNumericsettingV1, `{"state":{"unit":"1"}}`, `{"state":{}}`, true},
+		{"kind absent", devices.EntityTypeNumericsensorV1, `{"state":{"unit":"%"}}`, `{"state":{"unit":"%"}}`, false},
+		{
+			"kind added",
+			devices.EntityTypeNumericsensorV1,
+			`{"state":{"unit":"%"}}`,
+			`{"state":{"unit":"%","quantity_kind":"brightness"}}`,
+			false,
+		},
+		{
+			"kind same",
+			devices.EntityTypeNumericsensorV1,
+			`{"state":{"unit":"%","quantity_kind":"brightness"}}`,
+			`{"state":{"unit":"%","quantity_kind":"brightness"}}`,
+			false,
+		},
+		{
+			"kind removed",
+			devices.EntityTypeNumericsensorV1,
+			`{"state":{"unit":"%","quantity_kind":"brightness"}}`,
+			`{"state":{"unit":"%"}}`,
+			true,
+		},
+		{
+			"kind changed",
+			devices.EntityTypeNumericsensorV1,
+			`{"state":{"unit":"%","quantity_kind":"brightness"}}`,
+			`{"state":{"unit":"%","quantity_kind":"battery_level"}}`,
+			true,
+		},
 		{"fixed support mutable", devices.EntityTypeColorhsV1, `{"state":{"hue":10}}`, `{"state":{"hue":20}}`, false},
 	}
 	for _, test := range tests {
@@ -214,5 +243,56 @@ func TestInterpretationChangesUseOnlyReferencedPaths(t *testing.T) {
 				t.Fatalf("error=%v changed=%v", err, test.changed)
 			}
 		})
+	}
+}
+
+func TestResolveQuantityKind(t *testing.T) {
+	t.Parallel()
+	field, _ := devices.BuiltinStateField(devices.EntityTypeNumericsensorV1, "")
+	for _, test := range []struct {
+		support, kind string
+		invalid       bool
+	}{
+		{`{"state":{"unit":"%"}}`, "", false},
+		{`{"state":{"unit":"%","quantity_kind":"battery_level"}}`, "battery_level", false},
+		{`{"state":{"unit":"V","quantity_kind":"battery_level"}}`, "", true},
+		{`{"state":{"unit":"%","quantity_kind":"unknown"}}`, "", true},
+		{`{"state":{"unit":"%","quantity_kind":null}}`, "", true},
+	} {
+		got, err := devices.ResolveQuantity(field.Value.(devices.NumericField), json.RawMessage(test.support))
+		if (err != nil) != test.invalid || (!test.invalid && got.Kind != test.kind) {
+			t.Errorf("%s: %+v, %v", test.support, got, err)
+		}
+	}
+	fixed, _ := devices.BuiltinStateField(devices.EntityTypeTemperatureV1, "")
+	got, err := devices.ResolveQuantity(fixed.Value.(devices.NumericField), json.RawMessage(`{}`))
+	if err != nil || got.Kind != "temperature" {
+		t.Fatalf("fixed kind: %+v, %v", got, err)
+	}
+}
+
+func TestInterpretationValidatesIncomingQuantityAfterTransitions(t *testing.T) {
+	t.Parallel()
+	id := devices.EntityTypeNumericsensorV1
+	before := json.RawMessage(`{"state":{"unit":"%"}}`)
+	for _, next := range []string{
+		`{"state":{"unit":"%","quantity_kind":"unknown"}}`,
+		`{"state":{"unit":"%","quantity_kind":"voltage"}}`,
+	} {
+		err := devices.ValidateInterpretationUnchanged(id, before, json.RawMessage(next))
+		if err == nil || errors.Is(err, devices.ErrEntityInterpretationImmutable) {
+			t.Errorf("invalid new pair %s: %v", next, err)
+		}
+	}
+	known := json.RawMessage(`{"state":{"unit":"%","quantity_kind":"battery_level"}}`)
+	for _, next := range []string{
+		`{"state":{"unit":"%"}}`,
+		`{"state":{"unit":"%","quantity_kind":"voltage"}}`,
+		`{"state":{"unit":"V","quantity_kind":"battery_level"}}`,
+	} {
+		err := devices.ValidateInterpretationUnchanged(id, known, json.RawMessage(next))
+		if !errors.Is(err, devices.ErrEntityInterpretationImmutable) {
+			t.Errorf("changed interpretation %s: %v", next, err)
+		}
 	}
 }

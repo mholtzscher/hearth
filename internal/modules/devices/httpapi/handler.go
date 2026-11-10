@@ -38,6 +38,7 @@ type Devices interface {
 }
 
 type handler struct {
-	devices Devices
-	logger  *slog.Logger
+	devices   Devices
+	presenter *devices.Presenter
+	logger    *slog.Logger
 }

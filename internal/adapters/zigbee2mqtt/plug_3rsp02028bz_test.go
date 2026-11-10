@@ -124,47 +124,63 @@ func plugExpectedDescriptors(ieee string) []plugExpectedDescriptor {
 		{
 			key: "acfrequency", externalID: ieee + "/root/acfrequency",
 			name: "AC Frequency", entityType: "hearth.numericsensor/v1",
-			support: `{"state":{"maximum":1000,"minimum":0,"unit":"Hz"},"operations":{}}`,
+			support: `{"state":{"maximum":1000,"minimum":0,"quantity_kind":"frequency","unit":"Hz"},"operations":{}}`,
 		},
 		{
-			key: "electricalpower", externalID: ieee + "/root/electricalpower",
-			name: "Electrical Power", entityType: "hearth.numericsensor/v1",
-			support: `{"state":{"maximum":1000000000,"minimum":0,"unit":"W"},"operations":{}}`,
-		},
-		{
-			key: "powerfactor", externalID: ieee + "/root/powerfactor",
-			name: "Power Factor", entityType: "hearth.numericsensor/v1",
-			support: `{"state":{"maximum":1,"minimum":0,"unit":"ratio"},"operations":{}}`,
-		},
-		{
-			key: "energy", externalID: ieee + "/root/energy", name: "Energy",
+			key:        "electricalpower",
+			externalID: ieee + "/root/electricalpower",
+			name:       "Electrical Power",
 			entityType: "hearth.numericsensor/v1",
-			support:    `{"state":{"maximum":1000000000000000,"minimum":0,"unit":"kWh"},"operations":{}}`,
+			support:    `{"state":{"maximum":1000000000,"minimum":0,"quantity_kind":"electrical_power","unit":"W"},"operations":{}}`,
 		},
 		{
-			key: "current", externalID: ieee + "/root/current", name: "Current",
+			key:        "powerfactor",
+			externalID: ieee + "/root/powerfactor",
+			name:       "Power Factor",
 			entityType: "hearth.numericsensor/v1",
-			support:    `{"state":{"maximum":1000000,"minimum":0,"unit":"A"},"operations":{}}`,
+			support:    `{"state":{"maximum":1,"minimum":0,"quantity_kind":"power_factor","unit":"ratio"},"operations":{}}`,
 		},
 		{
-			key: "voltage", externalID: ieee + "/root/voltage", name: "Voltage",
+			key:        "energy",
+			externalID: ieee + "/root/energy",
+			name:       "Energy",
 			entityType: "hearth.numericsensor/v1",
-			support:    `{"state":{"maximum":1000000,"minimum":0,"unit":"V"},"operations":{}}`,
+			support:    `{"state":{"maximum":1000000000000000,"minimum":0,"quantity_kind":"energy","unit":"kWh"},"operations":{}}`,
 		},
 		{
-			key: "ledbrightness", externalID: ieee + "/root/ledbrightness",
-			name: "LED Brightness", entityType: "hearth.numericsetting/v1",
-			support: `{"state":{"choices":[],"maximum":100,"minimum":0,"unit":"%"},"operations":{"set":{}}}`,
+			key:        "current",
+			externalID: ieee + "/root/current",
+			name:       "Current",
+			entityType: "hearth.numericsensor/v1",
+			support:    `{"state":{"maximum":1000000,"minimum":0,"quantity_kind":"electric_current","unit":"A"},"operations":{}}`,
 		},
 		{
-			key: "countdowntoturnoff", externalID: ieee + "/root/countdowntoturnoff",
-			name: "Countdown To Turn Off", entityType: "hearth.numericsetting/v1",
-			support: `{"state":{"choices":[],"maximum":65535,"minimum":0,"unit":"s"},"operations":{"set":{}}}`,
+			key:        "voltage",
+			externalID: ieee + "/root/voltage",
+			name:       "Voltage",
+			entityType: "hearth.numericsensor/v1",
+			support:    `{"state":{"maximum":1000000,"minimum":0,"quantity_kind":"voltage","unit":"V"},"operations":{}}`,
 		},
 		{
-			key: "countdowntoturnon", externalID: ieee + "/root/countdowntoturnon",
-			name: "Countdown To Turn On", entityType: "hearth.numericsetting/v1",
-			support: `{"state":{"choices":[],"maximum":65535,"minimum":0,"unit":"s"},"operations":{"set":{}}}`,
+			key:        "ledbrightness",
+			externalID: ieee + "/root/ledbrightness",
+			name:       "LED Brightness",
+			entityType: "hearth.numericsetting/v1",
+			support:    `{"state":{"choices":[],"maximum":100,"minimum":0,"quantity_kind":"brightness","unit":"%"},"operations":{"set":{}}}`,
+		},
+		{
+			key:        "countdowntoturnoff",
+			externalID: ieee + "/root/countdowntoturnoff",
+			name:       "Countdown To Turn Off",
+			entityType: "hearth.numericsetting/v1",
+			support:    `{"state":{"choices":[],"maximum":65535,"minimum":0,"quantity_kind":"duration","unit":"s"},"operations":{"set":{}}}`,
+		},
+		{
+			key:        "countdowntoturnon",
+			externalID: ieee + "/root/countdowntoturnon",
+			name:       "Countdown To Turn On",
+			entityType: "hearth.numericsetting/v1",
+			support:    `{"state":{"choices":[],"maximum":65535,"minimum":0,"quantity_kind":"duration","unit":"s"},"operations":{"set":{}}}`,
 		},
 		{
 			key: "resettotalenergy", externalID: ieee + "/root/resettotalenergy",
@@ -172,9 +188,11 @@ func plugExpectedDescriptors(ieee string) []plugExpectedDescriptor {
 			support: `{"state":{},"operations":{"trigger":{"values":["Reset"]}}}`,
 		},
 		{
-			key: "linkquality", externalID: ieee + "/root/linkquality",
-			name: "Link Quality", entityType: "hearth.numericsensor/v1",
-			support: `{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}`,
+			key:        "linkquality",
+			externalID: ieee + "/root/linkquality",
+			name:       "Link Quality",
+			entityType: "hearth.numericsensor/v1",
+			support:    `{"state":{"maximum":255,"minimum":0,"quantity_kind":"link_quality","unit":"lqi"},"operations":{}}`,
 		},
 	}
 }
@@ -663,7 +681,9 @@ func assertPlugVoltagePrefersValidUpstreamBounds(testingT *testing.T) {
 	}
 	for _, entity := range discovered.Registration.Entities {
 		if entity.Key == "voltage" {
-			if string(entity.Support) != `{"state":{"maximum":250,"minimum":100,"unit":"V"},"operations":{}}` {
+			if string(
+				entity.Support,
+			) != `{"state":{"maximum":250,"minimum":100,"quantity_kind":"voltage","unit":"V"},"operations":{}}` {
 				testingT.Fatalf("voltage support = %s", entity.Support)
 			}
 			return

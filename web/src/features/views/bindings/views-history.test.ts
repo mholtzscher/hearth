@@ -22,6 +22,7 @@ function summary(window: keyof typeof millis, patch?: (payload: {
   const from = new Date(Math.ceil(at.getTime() / step) * step - span);
   const payload: any = {
     entity_id: source.entity_id,
+    quantity: { unit: "Cel", label: "°C", fraction_digits: 1 },
     range: { from: from.toISOString(), to: at.toISOString() },
     bucket: { duration: duration[window], alignment: "range_start" },
     buckets: Array.from({ length: seriesBuckets }, (_, i) => {
@@ -78,6 +79,15 @@ describe("shared history loader", () => {
     body = JSON.parse(vi.mocked(fetch).mock.calls[1][1]!.body as string);
     expect(body.select_field).toBe("/value");
     expect(body.result.nulls).toBe("gap");
+  });
+
+  it("uses only the query option for a canonical history request", async () => {
+    post(summary("6h"));
+    await historySeriesRequest(source, "6h").load(new AbortController().signal, to);
+    await historySeriesRequest(source, "6h", "canonical").load(new AbortController().signal, to);
+    const calls = vi.mocked(fetch).mock.calls;
+    expect(calls[1][0]).toBe(`/v1/entities/${source.entity_id}/state/history?units=canonical`);
+    expect(calls[1][1]!.body).toBe(calls[0][1]!.body);
   });
 
   it("clips the final bucket and aligns starts for every window at off-grid times", async () => {

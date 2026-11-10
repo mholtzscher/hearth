@@ -10,8 +10,8 @@ export type RainPeriod = typeof rainPeriods[number];
 
 export const rainSchema = z.strictObject({
   label: plainText(120).optional(),
-  rate: sensorReading(sensorUnits.rainRate).describe("Rain rate in mm/h: Rain or Dry, and the trend's source."),
-  storm: total.describe("The station's storm (event) rain total in mm. It leads the card while above zero.").optional(),
+  rate: sensorReading(sensorUnits.rainRate).describe("Rain rate, also the trend's source."),
+  storm: total.describe("The station's storm (event) rain total.").optional(),
   totals: z.strictObject({ day: total.optional(), week: total.optional(), month: total.optional(), year: total.optional() })
     .describe("The station's own rain counters in mm, shown in this order. Never sum the rate.").optional(),
   trend: z.enum(seriesWindows).describe("Draw the rain rate over this window.").optional(),
