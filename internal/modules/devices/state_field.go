@@ -212,6 +212,11 @@ type ResolvedRange struct {
 // ErrNoQuantityRange reports a field whose type declares no range.
 var ErrNoQuantityRange = errors.New("quantity has no declared range")
 
+// ErrEmptyQuantityRange identifies valid support that declares a single value,
+// not a usable presentation extent. Reads may omit that extent; Range cards
+// still require a strictly increasing range.
+var ErrEmptyQuantityRange = errors.New("range minimum equals its maximum")
+
 // ResolveRange resolves a field's declared range against an Entity's support,
 // in the field's canonical unit. Support that cannot bound the field is an error.
 func ResolveRange(field NumericField, support json.RawMessage) (ResolvedRange, error) {
@@ -225,6 +230,9 @@ func ResolveRange(field NumericField, support json.RawMessage) (ResolvedRange, e
 	maximum, err := resolveBound(field.Range.Maximum, support)
 	if err != nil {
 		return ResolvedRange{}, err
+	}
+	if minimum == maximum {
+		return ResolvedRange{}, ErrEmptyQuantityRange
 	}
 	if !(minimum < maximum) {
 		return ResolvedRange{}, errors.New("range minimum must be below its maximum")

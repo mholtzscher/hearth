@@ -28,8 +28,11 @@ use [State changes](state-changes.md).
 `select_field` is required: `""` selects a numeric root, and a path such as
 `"/value"` selects a numeric field in the Entity type's generated field catalog.
 Boolean, string, unknown, and stateless sources are not numeric sources.
-Values stay in their canonical units. Household unit conversion belongs to the
-dashboard, not to this query.
+Core aggregates in canonical units, then returns household-unit metrics by
+default. Add `?units=canonical` to retain canonical metrics. Each response has a
+single `quantity` object describing the returned unit, label, precision, and
+declared range when available. Clients format without reconversion; see
+[quantity metadata and read units](units.md).
 
 Ranges use UTC RFC3339 instants, with `from < to` and `to` no later than query
 evaluation. Offsets are normalized to UTC. `from` must be on a whole-minute
@@ -51,11 +54,13 @@ including unchanged reports. `sample_mean` is an arithmetic sample mean, not a
 time-weighted or circular mean. Empty buckets render every metric as JSON null.
 No current State or prior report fills a bucket without samples.
 
-Integer extrema retain integer JSON encoding. A shared Go accumulator keeps
+Canonical integer extrema retain integer JSON encoding. A shared Go accumulator keeps
 exact rational sums for decoded integers and finite floating-point samples,
 including sums beyond int64 and cancellation between large values. It rounds
 only when returning the mean. Migration, ingest, and query merging use the same
 accumulator; SQLite stores the sum as text and performs no numeric aggregation.
+Household projection happens after these reductions. It uses positive-affine
+float64 conversion without rounding to display precision. Gaps remain gaps.
 
 Omit `bucket` for overall `metrics`. With `bucket`, its `duration` is a positive
 Go duration and a whole number of minutes, and `alignment` is `range_start`.
@@ -122,6 +127,20 @@ Problems use Huma's format and a machine-readable `code`:
 
 Framework errors, such as `408` for slow bodies and `413` for oversized bodies,
 may omit a code. Error details never echo State or request contents.
+
+## MCP aggregate queries
+
+`query_entity_state_history` exposes the same canonical aggregation, range,
+metric, bucket, and null semantics to agents. Supply `entity_id` alongside the
+HTTP request's `range`, `select_field`, and `result` fields. Omit `units` for
+household units or pass `"units":"canonical"`. The tool returns the same
+summary/bucket structure and single `quantity` object, not raw audit observations.
+
+MCP arguments are limited to 1 MiB and the final encoded aggregate result to
+4 MiB. Invalid arguments are rejected before aggregation. Tool failures use
+MCP's structured error codes instead of HTTP statuses; cancellation, missing
+Entity, invalid query, unsupported source, value type, and query limit remain
+distinct. `list_entity_state_history` remains the separate canonical audit tool.
 
 ## Compatibility
 

@@ -324,7 +324,7 @@ func assertCanonicalSupports(t *testing.T, observed []devices.EntityWithState) {
 		"Wind Speed":          `{"state":{},"operations":{}}`,
 		"Wind Gust":           `{"state":{},"operations":{}}`,
 		"Maximum Daily Gust":  `{"state":{},"operations":{}}`,
-		"Wind Direction":      `{"state":{"maximum":360,"minimum":0,"unit":"deg"},"operations":{}}`,
+		"Wind Direction":      `{"state":{"maximum":360,"minimum":0,"quantity_kind":"wind_direction","unit":"deg"},"operations":{}}`,
 	}
 	seen := make(map[string]bool, len(supports))
 	for _, entity := range observed {

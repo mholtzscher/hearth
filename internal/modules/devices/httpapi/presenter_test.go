@@ -95,3 +95,26 @@ func TestEntityReadRepresentationsAcrossHTTP(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.NotContains(t, body.State.Value, "value")
 }
+
+func TestEntityWithEqualBoundsRemainsReadable(t *testing.T) {
+	t.Parallel()
+	view := apiEntityWithState(&devices.State{Value: []byte(`7`)})
+	view.Entity.TypeID = devices.EntityTypeNumericsensorV1
+	view.Entity.Support = []byte(
+		`{"state":{"unit":"W","quantity_kind":"electrical_power","minimum":7,"maximum":7},"operations":{}}`,
+	)
+	stub := &stubDevices{
+		getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) { return view, nil },
+		listEntities: func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error) {
+			return devices.Page[devices.EntityWithState]{Items: []devices.EntityWithState{view}}, nil
+		},
+	}
+	router, _ := testAPI(t, stub)
+	for _, path := range []string{"/v1/entities/" + string(apiEntityID), "/v1/entities"} {
+		rec := performRequest(router, path)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		require.Contains(t, rec.Body.String(), `"value":7`)
+		require.Contains(t, rec.Body.String(), `"unit":"W"`)
+		require.NotContains(t, rec.Body.String(), `"range"`)
+	}
+}

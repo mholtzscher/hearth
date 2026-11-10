@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	historyRequestMaxBytes    = 1024 * 1024
+	historyRequestMaxBytes    = devices.HistoryMaxRequestBytes
 	historyRequestReadTimeout = 5 * time.Second
 	historySummaryKind        = "summary"
 )

@@ -9,7 +9,8 @@ availability. The [Adapters module](../adapters/README.md) owns runtime and heal
 | Package | Owns |
 | --- | --- |
 | `devices` | Domain types, Entity-type catalog, use cases, persistence interfaces, Command admission and in-memory outcome waits |
-| `devices/api` | HTTP operations, request/response models, cursors, and error mapping |
+| `devices/httpapi` | HTTP operations, request/response models, cursors, and error mapping |
+| `devices/mcpapi` | Agent tool contracts, compact read models, receipts, and error mapping |
 | `devices/nats` | Device wire payloads and mapping, request/reply, durable consumption policy, and Device Fact publication |
 | `devices/sqlite` | Transaction coordination, persistence reads/writes, SQL row mapping, query sources, and generated query code |
 
@@ -22,6 +23,16 @@ Within the domain and SQLite packages, files are grouped by concern. A filename
 split does not create a separate service, repository, or transaction boundary.
 Shared SQL conversions remain inside SQLite; pure domain decisions operate on
 domain values rather than generated query rows.
+
+Quantity presentation is pure Devices behavior shared by HTTP and MCP. The
+application injects the household setting and bounded affine converter. Services,
+State, support, history rollups, observations, and Commands remain canonical;
+transports request a projected copy at delivery. Ordinary Entity and numeric
+history reads use household units; `units=canonical` bypasses conversion and
+preserves numeric tokens. Returned `quantities` metadata is keyed by State JSON
+Pointer and describes that response's readings and bounds. Raw audit history
+remains canonical. Neither a response-unit option nor formatting precision
+changes write-input interpretation.
 
 SQLite row decoders and column encoders follow the
 [mapping standards](../../../docs/sqlite-mapping-standards.md). Resource mapping

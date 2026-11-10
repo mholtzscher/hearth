@@ -138,3 +138,22 @@ func TestQueryEntityStateHistoryLimitIncludesQuantity(t *testing.T) {
 	require.True(t, result.IsError)
 	require.Contains(t, string(result.Structured), `"query_limit"`)
 }
+
+func TestQueryEntityStateHistoryRejectsOversizedArguments(t *testing.T) {
+	t.Parallel()
+	stub := &stubDevices{queryHistory: func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+		t.Fatal("oversized arguments reached history service")
+		return devices.HistoryQueryResult{}, nil
+	}}
+	server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
+	Register(server, stub, testPresenter())
+	args := `{"entity_id":"` + string(
+		apiEntityID,
+	) + `","range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"select_field":"","result":{"kind":"summary","metrics":{"` + strings.Repeat(
+		"a",
+		devices.HistoryMaxRequestBytes,
+	) + `":{"operation":"min"}}}}`
+	result := callWire(t, server.HTTPHandler(), "query_entity_state_history", args)
+	require.True(t, result.IsError)
+	require.Contains(t, string(result.Structured), `"invalid_request"`)
+}

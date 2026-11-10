@@ -56,7 +56,7 @@ type QueryEntityStateHistoryInput struct {
 //nolint:gocognit // The checks mirror the nested request shape.
 func (input *QueryEntityStateHistoryInput) UnmarshalJSON(data []byte) error {
 	invalid := invalidRequestFailure("invalid history query")
-	if !jsontext.Value(data).IsValid() {
+	if len(data) > devices.HistoryMaxRequestBytes || !jsontext.Value(data).IsValid() {
 		return invalid
 	}
 	var raw any

@@ -437,7 +437,9 @@ func assertProofFlowLinkquality(
 	if linkquality.Entity.TypeID != "hearth.numericsensor/v1" {
 		t.Fatalf("%s linkquality type = %s", name, linkquality.Entity.TypeID)
 	}
-	if string(linkquality.Entity.Support) != `{"state":{"maximum":255,"minimum":0,"unit":"lqi"},"operations":{}}` {
+	if string(
+		linkquality.Entity.Support,
+	) != `{"state":{"maximum":255,"minimum":0,"quantity_kind":"link_quality","unit":"lqi"},"operations":{}}` {
 		t.Fatalf("%s linkquality support = %s", name, linkquality.Entity.Support)
 	}
 	if string(linkquality.State.Value) != wantState {
@@ -515,8 +517,15 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	}
 	assertProofFlowLinkquality(t, "relay", proof.relayLinkquality, "120")
 	assertProofFlowLinkquality(t, "temperature", proof.temperatureLinkquality, "105")
-	for _, entity := range []devices.EntityWithState{proof.humidity, proof.battery} {
-		if string(entity.Entity.Support) != `{"state":{"maximum":100,"minimum":0,"unit":"%"},"operations":{}}` {
+	for _, test := range []struct {
+		entity  devices.EntityWithState
+		support string
+	}{
+		{proof.humidity, `{"state":{"maximum":100,"minimum":0,"quantity_kind":"relative_humidity","unit":"%"},"operations":{}}`},
+		{proof.battery, `{"state":{"maximum":100,"minimum":0,"quantity_kind":"battery_level","unit":"%"},"operations":{}}`},
+	} {
+		entity := test.entity
+		if string(entity.Entity.Support) != test.support {
 			t.Fatalf("percentage sensor support = %s", entity.Entity.Support)
 		}
 		if _, commandErr := service.ExecuteCommand(ctx, devices.CommandInput{

@@ -379,7 +379,7 @@ func waitWeatherEntities(t *testing.T, base string) []devicesapi.EntityBody {
 		Items []devicesapi.EntityBody `json:"items"`
 	}
 	waitWeatherCondition(t, func() bool {
-		weatherJSON(t, base, http.MethodGet, "/v1/entities", "", &page)
+		weatherJSON(t, base, http.MethodGet, "/v1/entities?units=canonical", "", &page)
 		if len(page.Items) != 13 {
 			return false
 		}
