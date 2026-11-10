@@ -60,7 +60,8 @@ function Hourly({ periods, count, system }: { periods: HourlyPeriod[]; count: nu
   const summary = `Next ${periods.length} hours: ${known.length ? `low ${Math.round(low)}${unit}, high ${Math.round(high)}${unit}` : "temperature unavailable"}; ${precipitation}.`;
   const width = Math.max(264, periods.length * 22), step = chartLabelStep(count);
   const x = (i: number) => 14 + i * ((width - 28) / Math.max(1, periods.length - 1));
-  const y = (v: number) => 46 + (1 - (v - low) / (high - low || 1)) * 78;
+  // Icons occupy y 8–32; the line starts at 58 so a label 8px above the highest point clears them.
+  const y = (v: number) => 58 + (1 - (v - low) / (high - low || 1)) * 70;
   let drawing = false;
   const path = values.map((v, i) => {
     if (v === undefined) { drawing = false; return ""; }
