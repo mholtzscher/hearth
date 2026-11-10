@@ -22,7 +22,10 @@ const modeledToolFailureKey = "hearth_mcp_modeled_failure"
 // The MCP bridge records modeled failures without changing their model-visible
 // output. The status is scoped to this invocation and never exposed publicly.
 type toolResultStatusKey struct{}
-type toolResultStatus struct{ modeledFailure bool }
+type toolResultStatus struct {
+	modeledFailure bool
+	completeTurn   bool
+}
 
 // turnTrace is scoped to one runner. Model hooks commit the original assistant
 // batch before tools run; tool hooks commit results using ADK's call identity.
@@ -30,15 +33,18 @@ type toolResultStatus struct{ modeledFailure bool }
 type turnTrace struct {
 	*adk.BaseChatModelAgentMiddleware
 
-	service        *Service
-	conversationID string
-	emit           func(TurnEvent)
-	mu             sync.Mutex
-	failures       []error
-	artifacts      []committedArtifact
-	emitMu         sync.Mutex
-	tools          []string
-	final          *schema.Message
+	service         *Service
+	conversationID  string
+	emit            func(TurnEvent)
+	mu              sync.Mutex
+	failures        []error
+	artifacts       []committedArtifact
+	emitMu          sync.Mutex
+	tools           []string
+	final           *schema.Message
+	completeTurn    bool
+	incompleteBatch bool
+	requiresReply   bool
 }
 
 type committedArtifact struct {
@@ -68,6 +74,15 @@ func (trace *turnTrace) AfterModelRewriteState(
 	_ *adk.ModelContext,
 ) (context.Context, *adk.ChatModelAgentState, error) {
 	message := state.Messages[len(state.Messages)-1]
+	if len(message.ToolCalls) > 0 {
+		trace.mu.Lock()
+		trace.completeTurn = false
+		trace.incompleteBatch = false
+		for _, call := range message.ToolCalls {
+			trace.requiresReply = trace.requiresReply || requiresOutcomeReply(call.Function.Name)
+		}
+		trace.mu.Unlock()
+	}
 	if err := trace.service.persistMessage(ctx, trace.conversationID, message); err != nil {
 		return ctx, state, tracePersistError{err: err}
 	}
@@ -121,26 +136,44 @@ func (trace *turnTrace) WrapInvokableToolCall(
 				Result: truncateEventResult(result),
 			},
 		)
-		if err == nil && !status.modeledFailure && call.Name == "present_view" {
-			if artifact, parseErr := dashboards.ParseArtifact([]byte(output)); parseErr == nil {
-				projected := viewArtifact(artifact)
-				trace.mu.Lock()
-				trace.artifacts = append(trace.artifacts, committedArtifact{rowID: rowID, artifact: projected})
-				trace.mu.Unlock()
-				trace.emitEvent(TurnEvent{Type: EventViewPresented, CallID: call.CallID, Artifact: &projected})
-			}
+		presented := false
+		if err == nil && !status.modeledFailure {
+			presented = trace.presentArtifact(rowID, call, output, status.completeTurn)
 		}
-		if err == nil && !status.modeledFailure && call.Name == "present_automation" {
-			if artifact, parseErr := automations.ParseArtifact([]byte(output)); parseErr == nil {
-				projected := automationArtifact(artifact)
-				trace.mu.Lock()
-				trace.artifacts = append(trace.artifacts, committedArtifact{rowID: rowID, artifact: projected})
-				trace.mu.Unlock()
-				trace.emitEvent(TurnEvent{Type: EventAutomationPresented, CallID: call.CallID, Artifact: &projected})
-			}
+		if err != nil || status.modeledFailure || (isPresentationTool(call.Name) && !presented) {
+			trace.mu.Lock()
+			trace.incompleteBatch = true
+			trace.mu.Unlock()
 		}
 		return output, err
 	}, nil
+}
+
+func (trace *turnTrace) presentArtifact(rowID int64, call *adk.ToolContext, output string, complete bool) bool {
+	var projected Artifact
+	var eventType string
+	switch call.Name {
+	case presentViewTool:
+		artifact, err := dashboards.ParseArtifact([]byte(output))
+		if err != nil {
+			return false
+		}
+		projected, eventType = viewArtifact(artifact), EventViewPresented
+	case presentAutomationTool:
+		artifact, err := automations.ParseArtifact([]byte(output))
+		if err != nil {
+			return false
+		}
+		projected, eventType = automationArtifact(artifact), EventAutomationPresented
+	default:
+		return false
+	}
+	trace.mu.Lock()
+	trace.artifacts = append(trace.artifacts, committedArtifact{rowID: rowID, artifact: projected})
+	trace.completeTurn = trace.completeTurn || complete
+	trace.mu.Unlock()
+	trace.emitEvent(TurnEvent{Type: eventType, CallID: call.CallID, Artifact: &projected})
+	return true
 }
 
 // toolPreparingKey carries the turn's callback for tool calls the model has

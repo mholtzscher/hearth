@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -24,15 +25,20 @@ func TestVisualOnlyCompletion(t *testing.T) {
 	for _, provider := range []Provider{ProviderOpenCodeGo, ProviderOpenAI} {
 		t.Run(string(provider), func(t *testing.T) {
 			t.Parallel()
-			testVisualOnlyCompletion(t, provider)
+			for _, complete := range []bool{false, true} {
+				t.Run(strconv.FormatBool(complete), func(t *testing.T) {
+					t.Parallel()
+					testVisualOnlyCompletion(t, provider, complete)
+				})
+			}
 		})
 	}
 }
 
-func testVisualOnlyCompletion(t *testing.T, provider Provider) {
+func testVisualOnlyCompletion(t *testing.T, provider Provider, complete bool) {
 	t.Helper()
 	definition := dashboardDefinitionFixture(t, "Temperatures", false)
-	arguments, err := json.Marshal(map[string]json.RawMessage{"definition": definition})
+	arguments, err := json.Marshal(map[string]any{"definition": definition, "complete_turn": complete})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +63,11 @@ func testVisualOnlyCompletion(t *testing.T, provider Provider) {
 	if err != nil {
 		t.Fatalf("visual-only turn failed: %v", err)
 	}
-	if turn.Reply != "" || len(turn.Artifacts) != 1 || requests.Load() != 2 {
+	wantRequests := int32(2)
+	if complete {
+		wantRequests = 1
+	}
+	if turn.Reply != "" || len(turn.Artifacts) != 1 || requests.Load() != wantRequests {
 		t.Fatalf("turn=%+v requests=%d", turn, requests.Load())
 	}
 	terminal := events[len(events)-1]
@@ -69,13 +79,20 @@ func testVisualOnlyCompletion(t *testing.T, provider Provider) {
 		len(history[2].Artifacts) != 1 || history[2].Artifacts[0].ArtifactID != turn.Artifacts[0].ArtifactID {
 		t.Fatalf("history=%+v error=%v", history, err)
 	}
+	retained, err := service.loadModelMessages(t.Context(), conversation.ID)
+	if err != nil || isVisualCompletion(retained[len(retained)-1]) != complete {
+		t.Fatalf("local completion attribution missing: history=%+v err=%v", retained, err)
+	}
+	if complete && retained[len(retained)-1].ResponseMeta != nil {
+		t.Fatal("local completion claimed provider usage")
+	}
 	// An artifact from an earlier turn must not authorize a new empty answer.
 	_, err = service.SendMessage(
 		t.Context(),
 		conversation.ID,
 		MessageInput{Text: "Now answer without a visual"},
 	)
-	if !errors.Is(err, errModelResponseInvalid) || requests.Load() != 3 {
+	if !errors.Is(err, errModelResponseInvalid) || requests.Load() != wantRequests+1 {
 		t.Fatalf("empty next turn error=%v requests=%d", err, requests.Load())
 	}
 }
@@ -119,7 +136,7 @@ func TestVisualOnlyCompletionRequiresSuccessfulPresentation(t *testing.T) {
 			if calls == 1 {
 				return schema.AssistantMessage(
 					"",
-					[]schema.ToolCall{nativeTestCall("bad-view", "present_view", `{}`)},
+					[]schema.ToolCall{nativeTestCall("bad-view", "present_view", `{"complete_turn":true}`)},
 				), nil
 			}
 			return schema.AssistantMessage("", nil), nil

@@ -21,6 +21,16 @@ func (boundary turnModel) Generate(
 	messages []*schema.Message,
 	options ...model.Option,
 ) (*schema.Message, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, modelError{err: err}
+	}
+	// ADK reaches the next model node only after every tool wrapper has joined.
+	// Keep normal assistant persistence and finalization, but skip the provider.
+	if boundary.trace.canCompletePresentation() {
+		response := schema.AssistantMessage("", nil)
+		response.Extra = map[string]any{visualCompletionKey: true}
+		return response, nil
+	}
 	response, err := boundary.BaseChatModel.Generate(ctx, messages, options...)
 	if err != nil {
 		return nil, modelError{err: err}

@@ -5,6 +5,7 @@ package agent //nolint:testpackage // Shared real dashboard MCP fixtures.
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -78,6 +79,22 @@ func dashboardAdvertisedSchema(t *testing.T, server *platformmcp.Server) map[str
 		t.Fatal(err)
 	}
 	return decoded
+}
+
+func assertAgentPresentationSchema(t *testing.T, got, advertised map[string]any) {
+	t.Helper()
+	properties, ok := got["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("missing model properties")
+	}
+	flag, ok := properties["complete_turn"].(map[string]any)
+	if !ok || flag["type"] != "boolean" {
+		t.Fatal("missing boolean completion flag")
+	}
+	delete(properties, "complete_turn")
+	if !reflect.DeepEqual(got, advertised) {
+		t.Fatal("MCP schema changed beyond agent-only completion flag")
+	}
 }
 
 type coordinatedPresenter struct {

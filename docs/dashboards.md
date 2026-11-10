@@ -44,6 +44,20 @@ or rendered markup. **Jump to latest** appears when the message viewport is
 scrolled away from the bottom. These controls do not save dashboards or send
 household Commands.
 
+For a visual-only answer, the agent can set `complete_turn: true` on its final
+`present_view` or `present_automation` call. This agent-only argument is removed
+before MCP validation; external MCP contracts are unchanged. After every sibling
+call succeeds and its result is committed, Core records an empty terminal
+assistant row without another provider generation. The row is local completion
+evidence, not provider output or token usage.
+
+Intermediate or unmarked presentations continue normally. A failed sibling
+requires a fresh completion decision. Turns that attempt a Command, Function,
+Notification, Automation run/deletion, or Entity update continue through the
+provider for an outcome reply even if a presentation is marked complete.
+Cancellation, persistence failures, and the existing runner iteration limit still apply. The browser
+continues to reconcile history before admitting the next message.
+
 ## Drafts and saves
 
 `present_view` returns an immutable `hearth.view` artifact. Its successful agent

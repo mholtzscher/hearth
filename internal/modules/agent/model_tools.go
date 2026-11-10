@@ -9,8 +9,8 @@ import (
 
 const functionToolType = "function"
 
-// Both provider protocols receive the complete MCP schema without normalizing
-// optional properties or changing the contract's validation vocabulary.
+// Both provider protocols receive the bridge's schema, including agent-only
+// presentation completion, without normalizing optional properties or validation.
 func toolParameters(info *schema.ToolInfo) (map[string]any, error) {
 	parameters, err := info.ParamsOneOf.ToJSONSchema()
 	if err != nil {

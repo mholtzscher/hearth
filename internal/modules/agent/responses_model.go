@@ -116,6 +116,9 @@ func (*responsesModel) Stream(
 func responsesInput(messages []*schema.Message) (responses.ResponseInputParam, error) {
 	var input responses.ResponseInputParam
 	for _, message := range messages {
+		if isVisualCompletion(message) {
+			continue
+		}
 		switch message.Role {
 		case schema.System:
 			input = append(

@@ -296,9 +296,14 @@ func assertDashboardResponsesRequest(
 	for _, info := range request.Tools {
 		if info["name"] == "present_view" {
 			found = true
-			if info["strict"] != false || !reflect.DeepEqual(info["parameters"], wantSchema) {
-				t.Errorf("step %d dashboard schema mismatch: got %v want %v", step, info["parameters"], wantSchema)
+			if info["strict"] != false {
+				t.Errorf("step %d dashboard tool must remain non-strict", step)
 			}
+			parameters, ok := info["parameters"].(map[string]any)
+			if !ok {
+				t.Fatal("missing model parameters")
+			}
+			assertAgentPresentationSchema(t, parameters, wantSchema)
 		}
 	}
 	if !found {

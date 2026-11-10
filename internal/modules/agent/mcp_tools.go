@@ -65,8 +65,8 @@ func MCPTools(ctx context.Context, server *mcpapi.Server) ([]tool.BaseTool, erro
 }
 
 // mcpTool converts one advertised MCP tool into an Eino tool. The advertised
-// input schema becomes the model's parameter schema, so the model sees what
-// any other MCP client sees; the server re-validates arguments per call.
+// input schema becomes the model's parameter schema, with an agent-only
+// completion flag on presentation tools. The server re-validates MCP arguments.
 func mcpTool(advertised *mcp.Tool, session *mcp.ClientSession) (tool.BaseTool, error) {
 	params, err := mcpParams(advertised)
 	if err != nil {
@@ -102,6 +102,12 @@ func mcpParams(advertised *mcp.Tool) (*schema.ParamsOneOf, error) {
 		return nil, fmt.Errorf("agent MCP tool %s: input schema: %w", advertised.Name, err)
 	}
 	var converted einojsonschema.Schema
+	if isPresentationTool(advertised.Name) {
+		raw, err = presentationCompletionSchema(raw)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if unmarshalErr := json.Unmarshal(raw, &converted); unmarshalErr != nil {
 		return nil, fmt.Errorf("agent MCP tool %s: input schema: %w", advertised.Name, unmarshalErr)
 	}
@@ -133,21 +139,44 @@ func callMCPTool(
 	session *mcp.ClientSession,
 	name, argsJSON string,
 ) (string, error) {
+	status, _ := ctx.Value(toolResultStatusKey{}).(*toolResultStatus)
+	if status != nil {
+		// Local argument failures also need model recovery, just like MCP errors.
+		status.modeledFailure = true
+	}
 	if err := ctx.Err(); err != nil {
 		return "", fmt.Errorf("agent tool %s: %w", name, err)
 	}
-	var decoded any
+	var decoded json.RawMessage
 	decoder := json.NewDecoder(bytes.NewBufferString(argsJSON))
-	decoder.UseNumber()
 	if err := decoder.Decode(&decoded); err != nil {
 		return fmt.Sprintf("agent tool %s: invalid arguments: %v", name, err), nil
 	}
 	if decoder.Decode(&struct{}{}) != io.EOF {
 		return fmt.Sprintf("agent tool %s: invalid arguments: expected one JSON object", name), nil
 	}
-	_, ok := decoded.(map[string]any)
-	if !ok {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(decoded, &object); err != nil {
+		return fmt.Sprintf("agent tool %s: invalid arguments: expected a JSON object: %v", name, err), nil
+	}
+	if object == nil {
 		return fmt.Sprintf("agent tool %s: invalid arguments: expected a JSON object", name), nil
+	}
+	complete := false
+	if value, exists := object[completeTurnArgument]; exists && isPresentationTool(name) {
+		flag := string(bytes.TrimSpace(value))
+		if flag != "true" && flag != "false" {
+			return "invalid arguments: complete_turn must be a boolean", nil
+		}
+		complete = flag == "true"
+		delete(object, completeTurnArgument)
+		var raw bytes.Buffer
+		encoder := json.NewEncoder(&raw)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(object); err != nil {
+			return "", err
+		}
+		argsJSON = raw.String()
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: json.RawMessage(argsJSON)})
 	if contextErr := ctx.Err(); contextErr != nil {
@@ -156,10 +185,9 @@ func callMCPTool(
 	if err != nil {
 		return "", fmt.Errorf("agent tool %s: %w", name, err)
 	}
-	if result.IsError {
-		if status, hasStatus := ctx.Value(toolResultStatusKey{}).(*toolResultStatus); hasStatus {
-			status.modeledFailure = true
-		}
+	if status != nil {
+		status.modeledFailure = result.IsError
+		status.completeTurn = complete && !result.IsError
 	}
 	return mcpResultText(result), nil
 }

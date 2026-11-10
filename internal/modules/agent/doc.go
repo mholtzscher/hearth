@@ -7,7 +7,8 @@
 // (user, assistant with tool calls, tool results), rebuilt on every turn. The
 // household tools are the MCP catalog itself: MCPTools dials the application's
 // MCP server over an in-memory transport, so the agent and every other MCP
-// client share one tool definition. Household effects stay durable in the
+// client share the household contract. Agent presentation tools add an optional
+// complete_turn flag, removed before MCP validation. Household effects stay durable in the
 // commands tables exactly as REST and MCP see them: this history owns the
 // conversation only, never the outcome. An inline embedded automation skill is
 // available only to this agent, not external MCP clients. Model/tool hooks commit
@@ -21,6 +22,11 @@
 // A committed presentation can be the entire answer: empty terminal text is
 // accepted only when this turn has presented an artifact. Tool-call preambles
 // remain in history but are not part of the browser's rendered reply.
+// An explicitly final presentation can skip the next provider generation after
+// all sibling tool hooks succeed and join. A local empty assistant row records completion;
+// it carries no provider usage or native continuation. Modeled failures require a
+// fresh completion decision, and action turns continue through the provider for an outcome reply.
+// The terminal response still consumes the normal ADK iteration allowance.
 //
 // Deliberate decisions, each still a graduation question:
 //   - Conversation history uses the sqlc pipeline the devices and automations

@@ -50,7 +50,7 @@ func TestAutomationArtifactStreamHistoryAndSelectedContext(t *testing.T) {
 				}
 				return schema.AssistantMessage(
 					"",
-					[]schema.ToolCall{nativeTestCall("auto-call", "present_automation", `{}`)},
+					[]schema.ToolCall{nativeTestCall("auto-call", "present_automation", `{"complete_turn":true}`)},
 				), nil
 			}
 			return schema.AssistantMessage("Done", nil), nil
@@ -85,7 +85,8 @@ func TestAutomationArtifactStreamHistoryAndSelectedContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != 4 || len(history[2].Artifacts) != 1 || history[2].ToolCallID != "auto-call" ||
+	if calls != 1 || len(history) != 4 || history[3].Content != "" || len(history[2].Artifacts) != 1 ||
+		history[2].ToolCallID != "auto-call" ||
 		!strings.Contains(string(history[0].AutomationContext), "9007199254740993") {
 		t.Fatalf("history: %+v", history)
 	}
