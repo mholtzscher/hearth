@@ -41,3 +41,33 @@ it("offers canonical brightness percentages without support maximum or step", as
   // Selecting a preset only edits the form; it never dispatches a Command.
   expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
 });
+
+it("summarizes a forecast snapshot instead of printing its State inline", async () => {
+  const value = { periods: [
+    { starts_at: "2026-11-09T06:00:00Z", date: "2026-11-09", condition: "rain", temperature_min_c: 1, temperature_max_c: 9 },
+    { starts_at: "2026-11-10T06:00:00Z", date: "2026-11-10", condition: "clear-day", temperature_min_c: -2, temperature_max_c: 5 },
+  ] };
+  const entity = {
+    id: "ent_daily", type: "hearth.dailyforecast/v1", name: "Daily forecast",
+    device_id: "dev_weather", adapter_id: "pirateweather", enabled: true,
+    support: { state: {}, operations: {} },
+    availability: { status: "available", source: "adapter", since: "2026-11-09T12:00:00Z" },
+    state: { value, observation_id: "obs_daily", observed_at: "2026-11-09T12:00:00Z" },
+  };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = new URL(String(input), "http://localhost").pathname;
+    if (path.endsWith("/state/history")) return new Response(JSON.stringify({ items: [{
+      observation_id: "obs_daily", value, disposition: "applied",
+      observed_at: "2026-11-09T12:00:00Z", adapter_received_at: "2026-11-09T12:00:00Z",
+    }] }));
+    return new Response(JSON.stringify(path === "/v1/entities/ent_daily" ? entity : { items: [], next_cursor: null }));
+  }));
+  render(<MemoryRouter initialEntries={["/entities/ent_daily"]}>
+    <Routes><Route path="/entities/:entityId" element={<EntityDetailPage />} /></Routes>
+  </MemoryRouter>);
+  await screen.findByRole("heading", { name: "Daily forecast" });
+  await screen.findByRole("cell", { name: "2 daily periods from Mon, Nov 9" });
+  expect(screen.getByText(/^2 daily periods from Mon, Nov 9 obs=obs_daily/)).toBeTruthy();
+  expect(screen.getByText("Forecast snapshots are listed below; no chart.")).toBeTruthy();
+  expect(screen.queryByText(/"periods"/)).toBeNull();
+});

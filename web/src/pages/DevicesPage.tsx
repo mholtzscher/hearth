@@ -12,6 +12,7 @@ import {
   Section,
   StatusChip,
 } from "../components/common.tsx";
+import { stateCellText } from "../components/forecast-summary.ts";
 import { Button } from "../components/ui/button.tsx";
 import NameEditor from "../components/NameEditor.tsx";
 import {
@@ -137,7 +138,7 @@ export default function DevicesPage() {
                         <StatusChip status={e.availability.status} />
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        {e.state ? JSON.stringify(e.state.value) : "—"}
+                        {e.state ? stateCellText(e.type, e.state.value) : "—"}
                       </TableCell>
                     </TableRow>
                   ))}

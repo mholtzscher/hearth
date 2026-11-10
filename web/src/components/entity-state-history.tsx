@@ -3,6 +3,7 @@ import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, EntityStateHistoryEntry } from "../api/types.ts";
 import { ErrorBox, MonoId, StatusChip } from "./common.tsx";
+import { forecastSummary } from "./forecast-summary.ts";
 import { Button } from "./ui/button.tsx";
 import {
   Table,
@@ -104,6 +105,8 @@ function colorTempHistoryMireds(value: unknown): number | null {
     mode activity; null for malformed values (the caller falls back to raw
     JSON) and for types without a structured form. */
 function formatStructuredHistoryValue(type: string | undefined, value: unknown): string | null {
+  const forecast = forecastSummary(type, value);
+  if (forecast !== null) return forecast;
   switch (type) {
     case "hearth.colorxy/v1": {
       if (typeof value !== "object" || value === null) return null;
@@ -273,6 +276,13 @@ function StateHistoryChart({
       return (
         <p className="mt-3 text-sm text-muted-foreground">
           Stateless actions record no State; triggers appear in command history.
+        </p>
+      );
+    case "hearth.hourlyforecast/v1":
+    case "hearth.dailyforecast/v1":
+      return (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Forecast snapshots are listed below; no chart.
         </p>
       );
     default:
@@ -523,7 +533,9 @@ function HistoryScope({
                     <TableRow key={entry.observation_id}>
                       <TableCell
                         className="font-mono text-xs"
-                        title={entry.value === undefined ? undefined : JSON.stringify(entry.value)}
+                        title={entry.value === undefined || forecastSummary(entityType, entry.value) !== null
+                          ? undefined
+                          : JSON.stringify(entry.value)}
                       >
                         {entry.disposition === "rejected"
                           ? "—"

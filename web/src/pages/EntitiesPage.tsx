@@ -4,6 +4,7 @@ import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, Entity } from "../api/types.ts";
 import { EmptyRow, ErrorBox, linkClass, MonoId, RawJson, StatusChip } from "../components/common.tsx";
+import { stateCellText } from "../components/forecast-summary.ts";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import {
@@ -95,7 +96,7 @@ export default function EntitiesPage() {
                     <StatusChip status={e.availability.status} />
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    {e.state ? JSON.stringify(e.state.value) : "—"}
+                    {e.state ? stateCellText(e.type, e.state.value) : "—"}
                   </TableCell>
                 </TableRow>
               ))}
