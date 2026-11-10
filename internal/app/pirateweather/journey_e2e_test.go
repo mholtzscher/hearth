@@ -148,8 +148,8 @@ func assertForecastStates(t *testing.T, coreURL string, hourly, daily devicesapi
 		kind, field string
 		value       float64
 	}{
-		{hourly, "hearth.hourlyforecast/v1", "temperature_c", 12.5},
-		{daily, "hearth.dailyforecast/v1", "temperature_min_c", 4},
+		{hourly, "hearth.hourlyforecast/v1", "temperature", 12.5},
+		{daily, "hearth.dailyforecast/v1", "temperature_min", 4},
 	} {
 		var got devicesapi.EntityBody
 		weatherJSON(t, coreURL, http.MethodGet, "/v1/entities/"+forecast.entity.ID, "", &got)
@@ -167,6 +167,9 @@ func assertForecastStates(t *testing.T, coreURL string, hourly, daily devicesapi
 		period, ok := periods[0].(map[string]any)
 		if !ok || period[forecast.field] != forecast.value || period["condition"] != "rain" {
 			t.Fatalf("forecast period: %+v", periods[0])
+		}
+		if quantity := got.Quantities["/periods/0/"+forecast.field]; quantity.Unit != "Cel" {
+			t.Fatalf("forecast quantity: %+v", quantity)
 		}
 	}
 }

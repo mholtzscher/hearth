@@ -34,6 +34,12 @@ Pointer and describes that response's readings and bounds. Raw audit history
 remains canonical. Neither a response-unit option nor formatting precision
 changes write-input interpretation.
 
+Forecast snapshot presentation is also Devices-owned, with an explicit mapping
+from source-schema unit-suffixed period properties to unit-neutral household
+read properties. It reuses the affine engine/policy without turning arrays into
+scalar history fields. Canonical reads retain source names and numeric tokens;
+metadata uses concrete period-index pointers in either representation.
+
 SQLite row decoders and column encoders follow the
 [mapping standards](../../../docs/sqlite-mapping-standards.md). Resource mapping
 files own conversion; operation files retain SQL and transaction-dependent checks.

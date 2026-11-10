@@ -135,7 +135,7 @@ func quantityFormat(unit string, valueType NumericValueType) QuantityMetadata {
 		meta.Label = ""
 	case "/MK":
 		meta.Label, meta.FractionDigits = "mired", 0
-	case "deg":
+	case unitDegrees:
 		meta.Label = "°"
 	case unitCelsius:
 		meta.Label = "°C"
@@ -163,6 +163,9 @@ func (presenter *Presenter) Entity(
 		return EntityWithState{}, nil, err
 	}
 	metadata := make(map[string]QuantityMetadata)
+	if view.Entity.TypeID == EntityTypeHourlyforecastV1 || view.Entity.TypeID == EntityTypeDailyforecastV1 {
+		return presenter.forecast(view, units)
+	}
 	for _, field := range BuiltinStateFields(view.Entity.TypeID) {
 		numeric, ok := field.Value.(NumericField)
 		if !ok {

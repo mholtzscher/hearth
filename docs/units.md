@@ -57,6 +57,45 @@ the fixed temperature schema has validation limits but no declared range.
 History selects one field and returns one `quantity` metadata object beside its
 metrics or buckets. Null metrics remain gaps, never zero.
 
+### Forecast snapshots
+
+Hourly and daily forecast Entities also use backend household projection.
+Their source schemas encode units in property names, so default reads rename
+numeric period fields instead of putting Fahrenheit under `temperature_c`.
+The response still contains one set of values:
+
+| Canonical source property | Household read property |
+| --- | --- |
+| `temperature_c`, `apparent_temperature_c` | `temperature`, `apparent_temperature` |
+| `temperature_min_c`, `temperature_max_c` | `temperature_min`, `temperature_max` |
+| `precipitation_probability_percent` | `precipitation_probability` |
+| `precipitation_rate_mmh` | `precipitation_rate` |
+| `humidity_percent`, `cloud_cover_percent` | `humidity`, `cloud_cover` |
+| `pressure_hpa` | `pressure` |
+| `wind_speed_mps`, `wind_gust_mps` | `wind_speed`, `wind_gust` |
+| `wind_direction_degrees` | `wind_direction` |
+| `uv_index` | `uv_index` |
+
+Metadata uses concrete period pointers, such as
+`quantities["/periods/0/temperature"]`. Each entry describes that returned field;
+there are no wildcard pointers or duplicate readings. Omitted measurements stay
+absent. Timestamps, dates, conditions, source summaries, period order, and
+Observation evidence are unchanged. A null forecast State has an empty quantities
+map because there are no period indices yet.
+
+For forecasts, `units=canonical` retains the original unit-suffixed properties
+and numeric tokens, with metadata keyed by those source pointers. This is a
+forecast-specific difference in field names between the two read modes. SDK
+ingestion, retained State, and raw audit also keep the original source format;
+there is no data migration. Existing forecast consumers can request canonical
+reads while migrating. Forecast Function results remain unchanged.
+
+Forecast canonical temperatures use `Cel`, unlike current-condition temperature
+Entities' `mCel`. Both use the shared affine engine and household policy. Forecast
+temperature and precipitation-probability metadata recommend zero fraction digits
+for compact card labels without rounding API values. Forecast arrays do not
+become selectable scalar fields or aggregate-history sources.
+
 ## Writes are always canonical
 
 The `units` option controls responses only. Command parameters and Automation
@@ -114,8 +153,9 @@ calculation service is introduced by this change.
 
 ## Deployment and rollback
 
-This is a breaking default-read contract change even though JSON field paths
-stay the same. Deploy the matching Core and web client together, and update
+This is a breaking default-read contract change. Scalar field paths stay the
+same; household forecast reads also replace unit-suffixed measurement names.
+Deploy the matching Core and web client together, and update
 external numeric consumers to use returned metadata or `units=canonical`.
 Older clients that still perform household conversion can convert twice.
 

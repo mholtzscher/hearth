@@ -17,14 +17,17 @@ type Affine struct {
 }
 
 const (
-	unitMilliCelsius  = "mCel"
-	unitCelsius       = "Cel"
-	unitFahrenheit    = "[degF]"
-	unitMilesPerHour  = "[mi_i]/h"
-	unitInchesMercury = "[in_i'Hg]"
-	unitInches        = "[in_i]"
-	unitInchesPerHour = "[in_i]/h"
-	unitChromaticity  = "10*-4"
+	unitMilliCelsius    = "mCel"
+	unitCelsius         = "Cel"
+	unitFahrenheit      = "[degF]"
+	unitMilesPerHour    = "[mi_i]/h"
+	unitInchesMercury   = "[in_i'Hg]"
+	unitInches          = "[in_i]"
+	unitInchesPerHour   = "[in_i]/h"
+	unitChromaticity    = "10*-4"
+	unitMetersPerSecond = "m/s"
+	unitHectopascal     = "hPa"
+	unitDegrees         = "deg"
 )
 
 func (conversion Affine) Apply(value float64) (float64, error) {
@@ -52,9 +55,11 @@ func (TableConverter) Affine(from, to string) (Affine, error) {
 		return Affine{Scale: 1.0 / 1000}, nil
 	case [2]string{unitMilliCelsius, unitFahrenheit}:
 		return Affine{Scale: 9.0 / 5000, Offset: 32}, nil
-	case [2]string{"m/s", unitMilesPerHour}:
+	case [2]string{unitCelsius, unitFahrenheit}:
+		return Affine{Scale: 9.0 / 5, Offset: 32}, nil
+	case [2]string{unitMetersPerSecond, unitMilesPerHour}:
 		return Affine{Scale: 3600 / 1609.344}, nil
-	case [2]string{"hPa", unitInchesMercury}:
+	case [2]string{unitHectopascal, unitInchesMercury}:
 		return Affine{Scale: 1 / 33.863788}, nil
 	case [2]string{"mm", unitInches}, [2]string{"mm/h", unitInchesPerHour}:
 		return Affine{Scale: 1 / 25.4}, nil

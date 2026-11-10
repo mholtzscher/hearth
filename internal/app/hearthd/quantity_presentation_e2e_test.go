@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -53,6 +55,20 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 					`{"state":{"minimum":-100000,"maximum":100000,"unit":"mCel","quantity_kind":"temperature"},"operations":{}}`,
 				),
 			},
+			{
+				Key:        "hourly",
+				ExternalID: "quantity.hourly",
+				Name:       "Hourly forecast",
+				Type:       "hearth.hourlyforecast/v1",
+				Support:    json.RawMessage(`{"state":{},"operations":{}}`),
+			},
+			{
+				Key:        "daily",
+				ExternalID: "quantity.daily",
+				Name:       "Daily forecast",
+				Type:       "hearth.dailyforecast/v1",
+				Support:    json.RawMessage(`{"state":{},"operations":{}}`),
+			},
 		},
 	})
 	require.NoError(t, err)
@@ -69,6 +85,21 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 	report := historyJourneyAwait(ctx, t, client, core.address, entity, string(id))
 	require.Equal(t, "applied", report.Disposition)
 	require.InDelta(t, 21500, report.Value, 0)
+	forecastReports := []struct{ key, field, value string }{
+		{"hourly", "temperature_c", `{"periods":[{"starts_at":"2026-11-10T12:00:00Z","temperature_c":2.150e1}]}`},
+		{
+			"daily",
+			"temperature_min_c",
+			`{"periods":[{"starts_at":"2026-11-10T00:00:00Z","date":"2026-11-10","temperature_min_c":2.150e1}]}`,
+		},
+	}
+	for _, forecast := range forecastReports {
+		_, publishErr := session.PublishObservation(ctx, adapter.Observation{
+			EntityID: string(bindingEntityID(t, binding, forecast.key)), Value: json.RawMessage(forecast.value),
+			AdapterReceivedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		})
+		require.NoError(t, publishErr)
+	}
 
 	check := func(core *functionCoreRun, expected float64, unit string, minimum, maximum float64) {
 		t.Helper()
@@ -124,6 +155,67 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 			"",
 		)
 		require.Contains(t, string(audit), `"value":21500`)
+		for _, forecast := range forecastReports {
+			forecastEntity := string(bindingEntityID(t, binding, forecast.key))
+			type forecastRead struct {
+				State *struct {
+					Value struct {
+						Periods []map[string]json.RawMessage `json:"periods"`
+					} `json:"value"`
+				} `json:"state"`
+				Quantities map[string]devices.QuantityMetadata `json:"quantities"`
+			}
+			var httpForecast, mcpForecast forecastRead
+			require.Eventually(t, func() bool {
+				raw := successfulFunctionCoreRequest(
+					t,
+					client,
+					core,
+					http.MethodGet,
+					"/v1/entities/"+forecastEntity,
+					"",
+				)
+				require.NoError(t, json.Unmarshal(raw, &httpForecast))
+				return httpForecast.State != nil
+			}, 5*time.Second, 10*time.Millisecond)
+			raw := automationFunctionsMCP(t, mcp, "get_entity", `{"entity_id":"`+forecastEntity+`"}`)
+			require.NoError(t, json.Unmarshal(raw, &mcpForecast))
+			require.Equal(t, httpForecast, mcpForecast)
+			field := strings.TrimSuffix(forecast.field, "_c")
+			var number float64
+			require.NoError(t, json.Unmarshal(httpForecast.State.Value.Periods[0][field], &number))
+			require.InDelta(t, expected, number, 1e-9)
+			require.Equal(t, unit, httpForecast.Quantities["/periods/0/"+field].Unit)
+			require.NotContains(t, httpForecast.State.Value.Periods[0], forecast.field)
+			forecastCanonical := successfulFunctionCoreRequest(
+				t,
+				client,
+				core,
+				http.MethodGet,
+				"/v1/entities/"+forecastEntity+"?units=canonical",
+				"",
+			)
+			var source forecastRead
+			require.NoError(t, json.Unmarshal(forecastCanonical, &source))
+			require.Contains(t, source.State.Value.Periods[0], forecast.field)
+			// Forecast ingestion normalizes the typed float to this canonical token;
+			// neither household projection nor the preference restart may rewrite it.
+			require.Equal(t, "21.5", string(source.State.Value.Periods[0][forecast.field]))
+			require.Equal(t, "Cel", source.Quantities["/periods/0/"+forecast.field].Unit)
+			forecastAudit := successfulFunctionCoreRequest(
+				t,
+				client,
+				core,
+				http.MethodGet,
+				"/v1/entities/"+forecastEntity+"/state/history?disposition=all",
+				"",
+			)
+			require.Contains(
+				t,
+				string(forecastAudit),
+				`"`+forecast.field+`":`+string(source.State.Value.Periods[0][forecast.field]),
+			)
+		}
 	}
 	check(core, 70.7, "[degF]", -148, 212)
 	require.NoError(t, session.Close())

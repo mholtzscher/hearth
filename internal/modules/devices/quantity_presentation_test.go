@@ -203,7 +203,7 @@ func TestQuantityConverterRejectsInvalidMathematics(t *testing.T) {
 			t.Fatal("invalid/overflowing result accepted")
 		}
 	}
-	for _, pair := range [][2]string{{"Cel", "[degF]"}, {"mm/h", "[mi_i]/h"}, {"/MK", "K"}} {
+	for _, pair := range [][2]string{{"[degF]", "Cel"}, {"mm/h", "[mi_i]/h"}, {"/MK", "K"}} {
 		if _, err := (devices.TableConverter{}).Affine(pair[0], pair[1]); err == nil {
 			t.Fatal("unsupported table pair accepted", pair)
 		}

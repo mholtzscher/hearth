@@ -40,7 +40,7 @@ const (
 // Validate rejects unknown meanings and incompatible canonical stored unit codes.
 func Validate(kind, unit string) error {
 	units := map[string][]string{
-		Temperature: {"mCel"}, AtmosphericPressure: {"hPa"}, Speed: {"m/s"},
+		Temperature: {"mCel", "Cel"}, AtmosphericPressure: {"hPa"}, Speed: {"m/s"},
 		PrecipitationDepth: {"mm"}, PrecipitationRate: {"mm/h"}, RelativeHumidity: {"%"},
 		WindDirection: {"deg"}, PrecipitationProbability: {"%"}, CloudCover: {"%"}, UVIndex: {"index"},
 		SolarIrradiance: {"W/m²"}, Brightness: {"%"}, Illuminance: {"lx"}, ColorHue: {"deg"},

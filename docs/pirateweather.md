@@ -78,7 +78,7 @@ The same Device also contains two read-only forecast Entities:
 | `hourly-forecast` | `hearth.hourlyforecast/v1` | Up to 48 hourly periods, starting with the provider's current hour |
 | `daily-forecast` | `hearth.dailyforecast/v1` | Up to 8 daily periods, starting with today at the location |
 
-Each State is one forecast snapshot, `{"periods": [...]}`, and the newest
+Each canonical State is one forecast snapshot, `{"periods": [...]}`, and the newest
 snapshot replaces the previous one. Period fields match the Function results
 below, with two differences: the provider `icon` becomes the Hearth `condition`
 (`clear-day`, `clear-night`, `partly-cloudy-day`, `partly-cloudy-night`,
@@ -86,6 +86,13 @@ below, with two differences: the provider `icon` becomes the Hearth `condition`
 icon omits it), and State has no `icon`, `precipitation_type`, location name,
 retrieval time, or timezone. An empty provider summary is omitted. The Forecast
 dashboard card reads these Entities; see [Dashboards](dashboards.md).
+
+Ordinary Entity reads project forecast measurements into household units and use
+unit-neutral period fields, for example `temperature` instead of `temperature_c`.
+Per-period `quantities` metadata describes the returned numbers. Request
+`units=canonical` for the original source format described here. Ingestion,
+retained State, raw audit, and Function results remain canonical. See
+[forecast read representations](units.md#forecast-snapshots).
 
 Forecast Observations carry the response receive time and no source time: the
 provider gives no forecast issue time, and `currently.time` describes current
