@@ -6,21 +6,21 @@ package dailyforecastv1
 const TypeID = "hearth.dailyforecast/v1"
 
 type StatePeriodsItem struct {
-	CloudCoverPercent               *float64 `json:"cloud_cover_percent,omitempty"`
-	Condition                       *string  `json:"condition,omitempty"`
-	Date                            string   `json:"date"`
-	HumidityPercent                 *float64 `json:"humidity_percent,omitempty"`
-	PrecipitationProbabilityPercent *float64 `json:"precipitation_probability_percent,omitempty"`
-	PrecipitationRateMmh            *float64 `json:"precipitation_rate_mmh,omitempty"`
-	PressureHpa                     *float64 `json:"pressure_hpa,omitempty"`
-	StartsAt                        string   `json:"starts_at"`
-	Summary                         *string  `json:"summary,omitempty"`
-	TemperatureMaxC                 *float64 `json:"temperature_max_c,omitempty"`
-	TemperatureMinC                 *float64 `json:"temperature_min_c,omitempty"`
-	UvIndex                         *float64 `json:"uv_index,omitempty"`
-	WindDirectionDegrees            *float64 `json:"wind_direction_degrees,omitempty"`
-	WindGustMps                     *float64 `json:"wind_gust_mps,omitempty"`
-	WindSpeedMps                    *float64 `json:"wind_speed_mps,omitempty"`
+	CloudCover               *float64 `json:"cloud_cover,omitempty"`
+	Condition                *string  `json:"condition,omitempty"`
+	Date                     string   `json:"date"`
+	Humidity                 *float64 `json:"humidity,omitempty"`
+	PrecipitationProbability *float64 `json:"precipitation_probability,omitempty"`
+	PrecipitationRate        *float64 `json:"precipitation_rate,omitempty"`
+	Pressure                 *float64 `json:"pressure,omitempty"`
+	StartsAt                 string   `json:"starts_at"`
+	Summary                  *string  `json:"summary,omitempty"`
+	TemperatureMax           *float64 `json:"temperature_max,omitempty"`
+	TemperatureMin           *float64 `json:"temperature_min,omitempty"`
+	UvIndex                  *float64 `json:"uv_index,omitempty"`
+	WindDirection            *float64 `json:"wind_direction,omitempty"`
+	WindGust                 *float64 `json:"wind_gust,omitempty"`
+	WindSpeed                *float64 `json:"wind_speed,omitempty"`
 }
 
 type StatePeriods []StatePeriodsItem

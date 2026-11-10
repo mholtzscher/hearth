@@ -23,31 +23,65 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			t.Fatalf("support: %v", err)
 		}
 		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"temperature_min_c\": 0\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 1 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 1 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
 			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"temperature_max_c\": 0\n              }\n            ]\n          }")
 			state, _, codecErr := codecs.State.Decode(raw)
-			if codecErr != nil {
-				t.Errorf("State example 1 marked valid but rejected by State codec: %v", codecErr)
-			}
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
 			if codecErr == nil {
-				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
-					t.Errorf("State example 1 marked valid but rejected by Observation constructor: %v", observationErr)
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 2 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 2 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
 				}
 			}
 		}
 		{
-			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-10T06:00:00Z\",\n                \"date\": \"2026-11-10\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-11T06:00:00Z\",\n                \"date\": \"2026-11-11\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-12T06:00:00Z\",\n                \"date\": \"2026-11-12\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-13T06:00:00Z\",\n                \"date\": \"2026-11-13\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-14T06:00:00Z\",\n                \"date\": \"2026-11-14\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-15T06:00:00Z\",\n                \"date\": \"2026-11-15\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-16T06:00:00Z\",\n                \"date\": \"2026-11-16\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              }\n            ]\n          }")
-			state, _, codecErr := codecs.State.Decode(raw)
-			if codecErr != nil {
-				t.Errorf("State example 2 marked valid but rejected by State codec: %v", codecErr)
-			}
-			if codecErr == nil {
-				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
-					t.Errorf("State example 2 marked valid but rejected by Observation constructor: %v", observationErr)
-				}
-			}
-		}
-		{
-			raw := json.RawMessage("{\n            \"periods\": []\n          }")
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"precipitation_probability_percent\": 0\n              }\n            ]\n          }")
 			state, _, codecErr := codecs.State.Decode(raw)
 			var plainState State
 			plainErr := json.Unmarshal(raw, &plainState)
@@ -76,7 +110,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 		{
-			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-10T06:00:00Z\",\n                \"date\": \"2026-11-10\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-11T06:00:00Z\",\n                \"date\": \"2026-11-11\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-12T06:00:00Z\",\n                \"date\": \"2026-11-12\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-13T06:00:00Z\",\n                \"date\": \"2026-11-13\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-14T06:00:00Z\",\n                \"date\": \"2026-11-14\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-15T06:00:00Z\",\n                \"date\": \"2026-11-15\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-16T06:00:00Z\",\n                \"date\": \"2026-11-16\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-17T06:00:00Z\",\n                \"date\": \"2026-11-17\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min_c\": -1.5,\n                \"temperature_max_c\": 9.2,\n                \"precipitation_probability_percent\": 20,\n                \"precipitation_rate_mmh\": 0.1,\n                \"humidity_percent\": 70,\n                \"pressure_hpa\": 1012,\n                \"wind_speed_mps\": 3.4,\n                \"wind_gust_mps\": 7.7,\n                \"wind_direction_degrees\": 270,\n                \"cloud_cover_percent\": 45,\n                \"uv_index\": 2\n              }\n            ]\n          }")
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"precipitation_rate_mmh\": 0\n              }\n            ]\n          }")
 			state, _, codecErr := codecs.State.Decode(raw)
 			var plainState State
 			plainErr := json.Unmarshal(raw, &plainState)
@@ -105,7 +139,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 		{
-			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"temperature_max_c\": 5\n              }\n            ]\n          }")
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"humidity_percent\": 0\n              }\n            ]\n          }")
 			state, _, codecErr := codecs.State.Decode(raw)
 			var plainState State
 			plainErr := json.Unmarshal(raw, &plainState)
@@ -134,7 +168,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 		{
-			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"Nov 9\",\n                \"temperature_max_c\": 5\n              }\n            ]\n          }")
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"pressure_hpa\": 0\n              }\n            ]\n          }")
 			state, _, codecErr := codecs.State.Decode(raw)
 			var plainState State
 			plainErr := json.Unmarshal(raw, &plainState)
@@ -163,7 +197,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 		{
-			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"condition\": \"hail\"\n              }\n            ]\n          }")
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"wind_speed_mps\": 0\n              }\n            ]\n          }")
 			state, _, codecErr := codecs.State.Decode(raw)
 			var plainState State
 			plainErr := json.Unmarshal(raw, &plainState)
@@ -192,7 +226,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 		{
-			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"uv_index\": -1\n              }\n            ]\n          }")
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"wind_gust_mps\": 0\n              }\n            ]\n          }")
 			state, _, codecErr := codecs.State.Decode(raw)
 			var plainState State
 			plainErr := json.Unmarshal(raw, &plainState)
@@ -220,6 +254,262 @@ func TestGeneratedObservationConformance(t *testing.T) {
 				}
 			}
 		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"wind_direction_degrees\": 0\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 9 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 9 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"cloud_cover_percent\": 0\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 10 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 10 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"temperature_max\": 0,\n                \"humidity\": 0,\n                \"precipitation_probability\": 0\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			if codecErr != nil {
+				t.Errorf("State example 11 marked valid but rejected by State codec: %v", codecErr)
+			}
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
+					t.Errorf("State example 11 marked valid but rejected by Observation constructor: %v", observationErr)
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-10T06:00:00Z\",\n                \"date\": \"2026-11-10\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-11T06:00:00Z\",\n                \"date\": \"2026-11-11\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-12T06:00:00Z\",\n                \"date\": \"2026-11-12\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-13T06:00:00Z\",\n                \"date\": \"2026-11-13\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-14T06:00:00Z\",\n                \"date\": \"2026-11-14\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-15T06:00:00Z\",\n                \"date\": \"2026-11-15\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-16T06:00:00Z\",\n                \"date\": \"2026-11-16\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			if codecErr != nil {
+				t.Errorf("State example 12 marked valid but rejected by State codec: %v", codecErr)
+			}
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
+					t.Errorf("State example 12 marked valid but rejected by Observation constructor: %v", observationErr)
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": []\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 13 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 13 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-10T06:00:00Z\",\n                \"date\": \"2026-11-10\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-11T06:00:00Z\",\n                \"date\": \"2026-11-11\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-12T06:00:00Z\",\n                \"date\": \"2026-11-12\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-13T06:00:00Z\",\n                \"date\": \"2026-11-13\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-14T06:00:00Z\",\n                \"date\": \"2026-11-14\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-15T06:00:00Z\",\n                \"date\": \"2026-11-15\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-16T06:00:00Z\",\n                \"date\": \"2026-11-16\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              },\n              {\n                \"starts_at\": \"2026-11-17T06:00:00Z\",\n                \"date\": \"2026-11-17\",\n                \"condition\": \"partly-cloudy-day\",\n                \"summary\": \"Partly cloudy until afternoon.\",\n                \"temperature_min\": -1.5,\n                \"temperature_max\": 9.2,\n                \"precipitation_probability\": 20,\n                \"precipitation_rate\": 0.1,\n                \"humidity\": 70,\n                \"pressure\": 1012,\n                \"wind_speed\": 3.4,\n                \"wind_gust\": 7.7,\n                \"wind_direction\": 270,\n                \"cloud_cover\": 45,\n                \"uv_index\": 2\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 14 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 14 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"temperature_max\": 5\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 15 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 15 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"Nov 9\",\n                \"temperature_max\": 5\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 16 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 16 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"condition\": \"hail\"\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 17 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 17 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"uv_index\": -1\n              }\n            ]\n          }")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 18 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 18 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
 	})
 }
 
@@ -232,7 +522,7 @@ func TestGeneratedObservationMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("support: %v", err)
 	}
-	state, _, err := codecs.State.Decode(json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"temperature_max_c\": 0\n              }\n            ]\n          }"))
+	state, _, err := codecs.State.Decode(json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"temperature_max\": 0,\n                \"humidity\": 0,\n                \"precipitation_probability\": 0\n              }\n            ]\n          }"))
 	if err != nil {
 		t.Fatalf("State: %v", err)
 	}
@@ -245,7 +535,7 @@ func TestGeneratedObservationMetadata(t *testing.T) {
 	if observation.EntityID != "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab" {
 		t.Errorf("observation entity ID = %q", observation.EntityID)
 	}
-	if entitytypetest.CanonicalJSON(t, observation.Value) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"temperature_max_c\": 0\n              }\n            ]\n          }")) {
+	if entitytypetest.CanonicalJSON(t, observation.Value) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"temperature_max\": 0,\n                \"humidity\": 0,\n                \"precipitation_probability\": 0\n              }\n            ]\n          }")) {
 		t.Errorf("observation value = %s", observation.Value)
 	}
 	if received := adaptertest.ParseAdapterTime(t, "adapter received time", observation.AdapterReceivedAt); !received.Equal(receivedAt) {
@@ -276,7 +566,7 @@ func TestGeneratedObservationValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("support: %v", err)
 	}
-	state, _, err := codecs.State.Decode(json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"temperature_max_c\": 0\n              }\n            ]\n          }"))
+	state, _, err := codecs.State.Decode(json.RawMessage("{\n            \"periods\": [\n              {\n                \"starts_at\": \"2026-11-09T06:00:00Z\",\n                \"date\": \"2026-11-09\",\n                \"temperature_max\": 0,\n                \"humidity\": 0,\n                \"precipitation_probability\": 0\n              }\n            ]\n          }"))
 	if err != nil {
 		t.Fatalf("State: %v", err)
 	}

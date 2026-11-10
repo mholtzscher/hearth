@@ -7,7 +7,7 @@ import (
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 )
 
-//nolint:mnd,goconst // Schema literals describe the published contract.
+//nolint:mnd,goconst,funlen // Schema literals describe the published contract.
 func compileFunctionSchemas() (*functionschema.Schema, *functionschema.Schema, *functionschema.Schema, *functionschema.Schema, error) {
 	input := func(key string, maximum int) map[string]any {
 		return map[string]any{
@@ -20,12 +20,12 @@ func compileFunctionSchemas() (*functionschema.Schema, *functionschema.Schema, *
 		}
 	}
 	stringSchema := func(maximum int) map[string]any { return map[string]any{"type": "string", "maxLength": maximum} }
-	numeric := func(minimum, maximum float64) map[string]any {
+	numeric := func(minimum, maximum float64, description string) map[string]any {
 		return map[string]any{
 			"type":        "number",
 			"minimum":     minimum,
 			"maximum":     maximum,
-			"description": "Omitted when unavailable.",
+			"description": description + " Omitted when unavailable.",
 		}
 	}
 	output := func(daily bool) map[string]any {
@@ -36,33 +36,44 @@ func compileFunctionSchemas() (*functionschema.Schema, *functionschema.Schema, *
 			"summary":            stringSchema(512),
 			"icon":               stringSchema(64),
 			"precipitation_type": stringSchema(32),
-			"humidity_percent": numeric(
+			"humidity":           numeric(0, 100, "Relative humidity in percent, from 0 to 100."),
+			"pressure":           numeric(0, 2000, "Sea-level pressure in hPa."),
+			"wind_speed":         numeric(0, 200, "Wind speed in meters per second."),
+			"wind_gust":          numeric(0, 200, "Wind gust speed in meters per second."),
+			"wind_direction":     numeric(0, 360, "Direction the wind comes from, in degrees."),
+			"precipitation_rate": numeric(
 				0,
-				100,
+				10000,
+				"Liquid-water-equivalent rate in mm/h; not an accumulation.",
 			),
-			"pressure_hpa":   numeric(0, 2000),
-			"wind_speed_mps": numeric(0, 200),
-			"wind_gust_mps":  numeric(0, 200),
-			"wind_direction_degrees": numeric(
-				0,
-				360,
-			),
-			"precipitation_rate_mmh":            numeric(0, 10000),
-			"precipitation_probability_percent": numeric(0, 100),
-			"cloud_cover_percent":               numeric(0, 100),
-			"uv_index":                          numeric(0, 100),
+			"precipitation_probability": numeric(0, 100, "Chance of precipitation in percent, from 0 to 100."),
+			"cloud_cover":               numeric(0, 100, "Cloud cover in percent, from 0 to 100."),
+			"uv_index":                  numeric(0, 100, "Dimensionless UV index."),
 		}
 		required := []string{"starts_at"}
 		maximum := 48
 		if daily {
 			props["date"] = stringSchema(10)
-			props["temperature_min_c"] = numeric(-273.15, 1000)
-			props["temperature_max_c"] = numeric(-273.15, 1000)
+			props["temperature_min"] = numeric(
+				-273.15,
+				1000,
+				"Lowest temperature from midnight to midnight, in degrees Celsius.",
+			)
+			props["temperature_max"] = numeric(
+				-273.15,
+				1000,
+				"Highest temperature from midnight to midnight, in degrees Celsius.",
+			)
+			props["precipitation_probability"] = numeric(
+				0,
+				100,
+				"The day's maximum chance of precipitation in percent, from 0 to 100; today's value may cover only the remaining hours.",
+			)
 			required = append(required, "date")
 			maximum = 8
 		} else {
-			props["temperature_c"] = numeric(-273.15, 1000)
-			props["apparent_temperature_c"] = numeric(-273.15, 1000)
+			props["temperature"] = numeric(-273.15, 1000, "Air temperature in degrees Celsius.")
+			props["apparent_temperature"] = numeric(-273.15, 1000, "Feels-like temperature in degrees Celsius.")
 		}
 		return map[string]any{
 			"type":                 "object",

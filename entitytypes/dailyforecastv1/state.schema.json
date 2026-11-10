@@ -54,66 +54,71 @@
             "maxLength": 512,
             "description": "Source summary text for display."
           },
-          "temperature_min_c": {
+          "temperature_min": {
             "type": "number",
             "minimum": -273.15,
             "maximum": 1000,
             "description": "Lowest temperature from midnight to midnight, in degrees Celsius; not the overnight low."
           },
-          "temperature_max_c": {
+          "temperature_max": {
             "type": "number",
             "minimum": -273.15,
             "maximum": 1000,
             "description": "Highest temperature from midnight to midnight, in degrees Celsius; not the daytime high."
           },
-          "precipitation_probability_percent": {
+          "precipitation_probability": {
             "type": "number",
             "minimum": 0,
             "maximum": 100,
-            "description": "The day's maximum chance of precipitation; today's value may cover only the remaining hours."
+            "description": "The day's maximum chance of precipitation in percent, from 0 to 100; today's value may cover only the remaining hours."
           },
-          "precipitation_rate_mmh": {
+          "precipitation_rate": {
             "type": "number",
             "minimum": 0,
             "maximum": 10000,
             "description": "Liquid-water-equivalent rate in mm/h; not an accumulation."
           },
-          "humidity_percent": {
+          "humidity": {
             "type": "number",
             "minimum": 0,
-            "maximum": 100
+            "maximum": 100,
+            "description": "Relative humidity in percent, from 0 to 100."
           },
-          "pressure_hpa": {
+          "pressure": {
             "type": "number",
             "minimum": 0,
             "maximum": 2000,
             "description": "Sea-level pressure in hPa."
           },
-          "wind_speed_mps": {
+          "wind_speed": {
             "type": "number",
             "minimum": 0,
-            "maximum": 200
+            "maximum": 200,
+            "description": "Wind speed in meters per second."
           },
-          "wind_gust_mps": {
+          "wind_gust": {
             "type": "number",
             "minimum": 0,
-            "maximum": 200
+            "maximum": 200,
+            "description": "Wind gust speed in meters per second."
           },
-          "wind_direction_degrees": {
+          "wind_direction": {
             "type": "number",
             "minimum": 0,
             "maximum": 360,
             "description": "Direction the wind comes from, in degrees."
           },
-          "cloud_cover_percent": {
+          "cloud_cover": {
             "type": "number",
             "minimum": 0,
-            "maximum": 100
+            "maximum": 100,
+            "description": "Cloud cover in percent, from 0 to 100."
           },
           "uv_index": {
             "type": "number",
             "minimum": 0,
-            "maximum": 100
+            "maximum": 100,
+            "description": "Dimensionless UV index."
           }
         }
       }

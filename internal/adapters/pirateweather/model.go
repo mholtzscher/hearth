@@ -62,14 +62,14 @@ type ForecastWeather struct {
 	Summary                  *string  `json:"summary,omitempty"`
 	Icon                     *string  `json:"icon,omitempty"`
 	PrecipitationType        *string  `json:"precipitation_type,omitempty"`
-	HumidityPercent          *float64 `json:"humidity_percent,omitempty"`
-	PressureHPa              *float64 `json:"pressure_hpa,omitempty"`
-	WindSpeedMPS             *float64 `json:"wind_speed_mps,omitempty"`
-	WindGustMPS              *float64 `json:"wind_gust_mps,omitempty"`
-	WindDirectionDegrees     *float64 `json:"wind_direction_degrees,omitempty"`
-	PrecipitationRateMMH     *float64 `json:"precipitation_rate_mmh,omitempty"`
-	PrecipitationProbability *float64 `json:"precipitation_probability_percent,omitempty"`
-	CloudCoverPercent        *float64 `json:"cloud_cover_percent,omitempty"`
+	HumidityPercent          *float64 `json:"humidity,omitempty"`
+	PressureHPa              *float64 `json:"pressure,omitempty"`
+	WindSpeedMPS             *float64 `json:"wind_speed,omitempty"`
+	WindGustMPS              *float64 `json:"wind_gust,omitempty"`
+	WindDirectionDegrees     *float64 `json:"wind_direction,omitempty"`
+	PrecipitationRateMMH     *float64 `json:"precipitation_rate,omitempty"`
+	PrecipitationProbability *float64 `json:"precipitation_probability,omitempty"`
+	CloudCoverPercent        *float64 `json:"cloud_cover,omitempty"`
 	UVIndex                  *float64 `json:"uv_index,omitempty"`
 }
 
@@ -77,8 +77,8 @@ type HourlyPeriod struct {
 	ForecastWeather
 
 	StartsAt             time.Time `json:"starts_at"`
-	TemperatureC         *float64  `json:"temperature_c,omitempty"`
-	ApparentTemperatureC *float64  `json:"apparent_temperature_c,omitempty"`
+	TemperatureC         *float64  `json:"temperature,omitempty"`
+	ApparentTemperatureC *float64  `json:"apparent_temperature,omitempty"`
 }
 
 type DailyPeriod struct {
@@ -86,8 +86,8 @@ type DailyPeriod struct {
 
 	StartsAt        time.Time `json:"starts_at"`
 	Date            string    `json:"date"`
-	TemperatureMinC *float64  `json:"temperature_min_c,omitempty"`
-	TemperatureMaxC *float64  `json:"temperature_max_c,omitempty"`
+	TemperatureMinC *float64  `json:"temperature_min,omitempty"`
+	TemperatureMaxC *float64  `json:"temperature_max,omitempty"`
 }
 
 type HourlyForecast struct {

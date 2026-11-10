@@ -246,16 +246,16 @@ func assertFullForecastPublication(t *testing.T, session *recordingSession, now 
 			t.Fatal(err)
 		}
 		if len(state.Periods) != count || state.Periods[0]["condition"] != "rain" ||
-			state.Periods[0]["humidity_percent"] != float64(
+			state.Periods[0]["humidity"] != float64(
 				42,
-			) || state.Periods[0]["precipitation_probability_percent"] != float64(70) ||
+			) || state.Periods[0]["precipitation_probability"] != float64(70) ||
 			state.Periods[0]["icon"] != nil || state.Periods[0]["precipitation_type"] != nil ||
 			o.SourceUpdatedAt != nil || o.AdapterReceivedAt != now.Format(time.RFC3339Nano) {
 			t.Fatalf("forecast: %+v periods=%+v", o, state.Periods)
 		}
-		if i == 0 && state.Periods[0]["temperature_c"] != 12.5 ||
+		if i == 0 && state.Periods[0]["temperature"] != 12.5 ||
 			i == 1 &&
-				(state.Periods[0]["date"] != "2026-11-09" || state.Periods[0]["temperature_min_c"] != float64(4)) {
+				(state.Periods[0]["date"] != "2026-11-09" || state.Periods[0]["temperature_min"] != float64(4)) {
 			t.Fatalf("forecast values: %+v", state.Periods[0])
 		}
 		assertFullForecastFields(t, state.Periods[0], i == 0)
@@ -270,14 +270,14 @@ func assertFullForecastPublication(t *testing.T, session *recordingSession, now 
 func assertFullForecastFields(t *testing.T, period map[string]any, hourly bool) {
 	t.Helper()
 	want := map[string]any{
-		"starts_at": "2026-11-09T12:00:00Z", "summary": "Rain expected", "pressure_hpa": float64(1013),
-		"wind_speed_mps": float64(3), "wind_gust_mps": float64(5), "wind_direction_degrees": float64(180),
-		"precipitation_rate_mmh": 0.5, "cloud_cover_percent": float64(30), "uv_index": float64(2),
+		"starts_at": "2026-11-09T12:00:00Z", "summary": "Rain expected", "pressure": float64(1013),
+		"wind_speed": float64(3), "wind_gust": float64(5), "wind_direction": float64(180),
+		"precipitation_rate": 0.5, "cloud_cover": float64(30), "uv_index": float64(2),
 	}
 	if hourly {
-		want["apparent_temperature_c"] = 11.5
+		want["apparent_temperature"] = 11.5
 	} else {
-		want["temperature_max_c"] = float64(15)
+		want["temperature_max"] = float64(15)
 	}
 	for key, value := range want {
 		if period[key] != value {

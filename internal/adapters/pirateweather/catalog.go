@@ -52,7 +52,17 @@ func measurements() []measurement {
 			"",
 		},
 		{"relative-humidity", "humidity", "Relative Humidity", humidity, "", 0, 100, 100, ""},
-		{"pressure", "pressure", "Sea-level Pressure", pressure, "", 0, 2000, 1, ""},
+		{
+			"pressure", //nolint:goconst // Entity key and provider field are separate contracts.
+			"pressure",
+			"Sea-level Pressure",
+			pressure,
+			"",
+			0,
+			2000,
+			1,
+			"",
+		},
 		{"wind-speed", "windSpeed", "Wind Speed", speed, "", 0, 200, 1, ""},
 		{"wind-gust", "windGust", "Wind Gust", speed, "", 0, 200, 1, ""},
 		{"wind-direction", "windBearing", "Wind Direction", numeric, "deg", 0, 360, 1, quantitykind.WindDirection},
