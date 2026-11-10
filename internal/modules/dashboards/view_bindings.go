@@ -36,6 +36,8 @@ const (
 	// textValueKind marks a binding that reads a yes/no or text field.
 	textValueKind        = "text"
 	powerMetricValueKind = "power-metric"
+	// forecastValueKind reads a whole forecast State, which has no scalar fields.
+	forecastValueKind = "forecast"
 )
 
 // collectBindings runs only after schema and graph validation. Extractors are
@@ -61,6 +63,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		"Rain":          rainBindings,
 		"Wind":          windBindings,
 		"Pressure":      pressureBindings,
+		"Forecast":      forecastBindings,
 	}
 	var all []binding
 	ids := map[string]bool{}
@@ -86,7 +89,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 				all = append(all, b)
 				continue
 			}
-			if fieldErr := validateFieldBinding(b); fieldErr != nil {
+			if fieldErr := validateBindingShape(b); fieldErr != nil {
 				return nil, fieldErr
 			}
 			if _, idErr := devices.ParseEntityID(b.EntityID); idErr != nil {
@@ -391,6 +394,9 @@ func validateDeviceBinding(ctx context.Context, reader DeviceReader, id string) 
 func bindingUnit(b binding, entity devices.Entity) (string, error) {
 	if string(entity.TypeID) != b.EntityType || (b.Kind != "entity-state" && b.Kind != seriesBindingKind) {
 		return "", invalidDefinition("entity_type must match the Entity, with kind entity-state or entity-series")
+	}
+	if b.ValueKind == forecastValueKind {
+		return "", nil
 	}
 	field, found := devices.BuiltinStateField(entity.TypeID, b.Field)
 	if !found {

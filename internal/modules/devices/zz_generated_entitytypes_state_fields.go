@@ -27,11 +27,13 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 		{Path: "/x", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "10*-4"}}},
 		{Path: "/y", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "10*-4"}}},
 	},
-	EntityTypeEnumactionV1: {},
-	EntityTypeEnumeventV1:  {},
+	EntityTypeDailyforecastV1: {},
+	EntityTypeEnumactionV1:    {},
+	EntityTypeEnumeventV1:     {},
 	EntityTypeEnumsettingV1: {
 		{Path: "", Presence: "always", Value: StringField{Enum: []string(nil)}},
 	},
+	EntityTypeHourlyforecastV1: {},
 	EntityTypeNumericsensorV1: {
 		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: false}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
 	},

@@ -760,3 +760,33 @@
     color: var(--gray-10);
     }
 }
+.forecast-icon { width: 28px; height: 28px; color: var(--gray-9); flex: none; }
+.forecast-sun { color: var(--chart-5); }
+.forecast-precip, .forecast-chance { color: var(--info); }
+.forecast-daily-wrap { container-type: inline-size; }
+.forecast-daily { list-style: none; padding: 0; margin: 0; display: grid; }
+.forecast-daily li { display: grid; grid-template-columns: 4.2em 28px 3.2em 2.6em 1fr 2.6em; align-items: center; gap: 10px; min-height: 44px; border-top: 1px solid var(--gray-3); font-variant-numeric: tabular-nums; }
+.forecast-daily li:first-child { border-top: 0; }
+.forecast-day { color: var(--gray-10); }
+.forecast-chance { font-size: 13px; }
+.forecast-temp { font-size: 20px; letter-spacing: -.02em; text-align: right; }
+.forecast-low, .forecast-note { color: var(--gray-8); }
+.forecast-range { position: relative; height: 4px; border-radius: 2px; background: var(--gray-3); }
+.forecast-range span { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--gray-9); }
+.forecast-note { margin-bottom: 8px; }
+@container (max-width: 300px) { .forecast-daily li { grid-template-columns: 3.4em 24px 2.8em 2.4em 1fr 2.4em; gap: 6px; } }
+.forecast-legend { display: flex; flex-wrap: wrap; gap: 16px; color: var(--gray-8); font-size: 13px; margin-bottom: 6px; }
+.forecast-legend span::before { content: ""; display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 6px; background: var(--gray-10); }
+.forecast-legend span + span::before { width: 8px; height: 8px; background: var(--info); opacity: .55; }
+.forecast-chart { width: 100%; height: auto; display: block; overflow: visible; font-variant-numeric: tabular-nums; }
+.forecast-chart text { fill: var(--gray-8); font-size: 12px; }
+.forecast-chart .forecast-temp-label { fill: var(--gray-10); font-size: 13px; }
+.forecast-chart .forecast-line { fill: none; stroke: var(--gray-10); stroke-width: 2; }
+.forecast-chart .forecast-bar { fill: var(--info); opacity: .55; }
+.forecast-grid { stroke: var(--gray-3); }
+.forecast-midnight { stroke: var(--gray-5); stroke-dasharray: 2 3; }
+.forecast-body[data-value="dimmed"] .forecast-icon, .forecast-body[data-value="dimmed"] .forecast-icon *, .forecast-body[data-value="dimmed"] .forecast-chance, .forecast-body[data-value="dimmed"] .forecast-day, .forecast-body[data-value="dimmed"] .forecast-temp { color: var(--gray-8); }
+.forecast-body[data-value="dimmed"] .forecast-chart .forecast-bar { fill: var(--gray-8); }
+.forecast-body[data-value="dimmed"] .forecast-chart .forecast-line { stroke: var(--gray-8); }
+.forecast-body[data-value="dimmed"] .forecast-chart .forecast-temp-label { fill: var(--gray-8); }
+.forecast-body[data-value="dimmed"] .forecast-range span { background: var(--gray-8); }

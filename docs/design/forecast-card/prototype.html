@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearth forecast card prototype</title>
+<style>
+  :root {
+    --gray-0:#000; --gray-1:#0c0c0c; --gray-2:#151515; --gray-3:#1f1f1f; --gray-4:#2c2c2c;
+    --gray-5:#3d3d3d; --gray-6:#575757; --gray-7:#7d7d7d; --gray-8:#a6a6a6; --gray-9:#d1d1d1; --gray-10:#f4f4f4;
+    --violet:#a77bff; --violet-text:#c4a8ff; --warn:#f2c94c; --error:#ff5c7a; --info:#7fb4ff;
+    --pale-gold:#f2d38a; --ice:#9fe3f0;
+    --ink:var(--gray-10); --quiet:var(--gray-8); --edge:var(--gray-3);
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--gray-0); color:var(--ink); font:14px/1.5 "Figtree Variable", sans-serif; padding:24px; }
+  button { font:inherit; color:inherit; }
+  :focus-visible { outline:2px solid var(--violet); outline-offset:2px; }
+
+  /* Prototype chrome (not part of the card) */
+  .proto { max-width:1440px; margin:0 auto; display:grid; gap:24px; }
+  .proto-head h1 { font-size:26px; font-weight:500; letter-spacing:-.03em; }
+  .proto-head p { color:var(--quiet); max-width:80ch; }
+  .controls { display:flex; flex-wrap:wrap; gap:16px 24px; padding:12px 16px; border:1px dashed var(--gray-4); border-radius:12px; }
+  .controls fieldset { border:0; padding:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .controls legend { float:left; color:var(--quiet); margin-right:4px; }
+  .seg { display:inline-flex; border:1px solid var(--gray-4); border-radius:8px; overflow:hidden; }
+  .seg button { background:var(--gray-1); border:0; padding:6px 10px; cursor:pointer; color:var(--gray-9); }
+  .seg button + button { border-left:1px solid var(--gray-4); }
+  .seg button[aria-pressed="true"] { background:color-mix(in oklch, #a77bff 16%, transparent); color:var(--violet-text); }
+
+  .stage { transition: max-width .2s; }
+  .stage[data-width="phone"] { max-width:390px; border:1px dashed var(--gray-4); border-radius:20px; padding:12px; }
+  .view-title { font-size:18px; font-weight:600; margin-bottom:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(248px, 1fr)); gap:12px; align-items:stretch; }
+  .grid .wide { grid-column: span 2; }
+  .stage[data-width="phone"] .grid { grid-template-columns:1fr; }
+  .stage[data-width="phone"] .grid .wide { grid-column:auto; }
+  @media (max-width:720px) { body { padding:12px; } .grid { grid-template-columns:1fr; } .grid .wide { grid-column:auto; } }
+
+  /* Card frame (mirrors web/src/index.css .view-card) */
+  .view-card { position:relative; display:flex; flex-direction:column; gap:12px; min-width:0; overflow:hidden; padding:18px; background:var(--gray-1); border:1px solid var(--edge); border-radius:12px; }
+  .view-card-header { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; }
+  .view-card-title { font-size:14px; font-weight:500; color:var(--ink); }
+  .view-status { list-style:none; padding:0; display:flex; flex-wrap:wrap; gap:4px 8px; margin-inline-start:auto; justify-content:flex-end; }
+  .view-status li { display:inline-flex; align-items:center; gap:6px; color:var(--gray-9); }
+  .view-status li[data-tone="warn"] { color:var(--warn); } .view-status li[data-tone="error"] { color:var(--error); }
+  .view-status .dot { width:6px; height:6px; border-radius:50%; background:var(--gray-7); }
+  .view-status li[data-tone="warn"] .dot { background:var(--warn); } .view-status li[data-tone="error"] .dot { background:var(--error); }
+  .view-card-body { min-width:0; }
+  .view-card-footer { display:flex; align-items:center; gap:12px; margin-top:auto; color:var(--quiet); font-variant-numeric:tabular-nums; position:relative; }
+  .view-card-footer time { white-space:nowrap; }
+  .source-btn { margin-inline-start:auto; background:none; border:0; color:var(--quiet); cursor:pointer; padding:2px 4px; border-radius:6px; text-decoration:underline; text-underline-offset:3px; text-decoration-color:var(--gray-5); }
+  .source-pop { position:absolute; right:0; bottom:calc(100% + 8px); z-index:5; width:min(320px, 80vw); background:var(--gray-2); border:1px solid var(--gray-4); border-radius:12px; padding:14px; box-shadow:0 18px 60px #0008; color:var(--gray-9); display:grid; gap:6px; }
+  .source-pop dt { color:var(--quiet); } .source-pop dd { margin:0 0 4px; font-variant-numeric:tabular-nums; }
+  .source-pop code { font-size:12px; color:var(--gray-9); }
+
+  .is-dim .fc-value, .is-dim .fc-temp, .is-dim .fc-day, .is-dim .fc-hour, .is-dim .icon, .is-dim .icon * { color:var(--gray-8) !important; }
+  .is-dim .pop { color:var(--gray-7) !important; }
+  .is-dim svg.fc-chart .pop-bar { fill:var(--gray-6) !important; }
+  .is-dim .fc-bar-fill { background:var(--gray-6) !important; }
+  .is-dim svg.fc-chart .temp-line { stroke:var(--gray-7); }
+  .empty { color:var(--gray-6); font-size:40px; font-weight:350; line-height:1.15; }
+  .note { color:var(--quiet); }
+
+  /* Shared forecast bits */
+  .icon { width:28px; height:28px; color:var(--gray-9); flex:none; }
+  [data-tint="on"] .icon[data-c^="clear-day"], [data-tint="on"] .icon .sun { color:var(--pale-gold); }
+  [data-tint="on"] .icon .drops, [data-tint="on"] .icon .flakes { color:var(--info); }
+  [data-tint="on"] .icon .bolt { color:var(--pale-gold); }
+  .pop { color:var(--info); font-variant-numeric:tabular-nums; font-size:13px; }
+  .pop[hidden] { display:block; visibility:hidden; }
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+  /* Daily list */
+  .fc-daily { list-style:none; padding:0; display:grid; }
+  .fc-daily li { display:grid; grid-template-columns: 4.2em 28px 3.2em 2.6em 1fr 2.6em; align-items:center; gap:10px; min-height:44px; border-top:1px solid var(--gray-3); font-variant-numeric:tabular-nums; }
+  .fc-daily li:first-child { border-top:0; }
+  .fc-day { font-size:14px; color:var(--ink); }
+  .fc-temp { font-size:20px; letter-spacing:-.02em; text-align:right; }
+  .fc-temp.lo { color:var(--quiet); }
+  .fc-bar { position:relative; height:4px; border-radius:2px; background:var(--gray-3); }
+  .fc-bar-fill { position:absolute; top:0; bottom:0; border-radius:2px; background:var(--gray-9); }
+  .fc-daily .pop { text-align:left; }
+  @container (max-width: 300px) { .fc-daily li { grid-template-columns: 3.4em 24px 2.8em 2.4em 1fr 2.4em; gap:6px; } }
+  .daily-wrap { container-type:inline-size; }
+
+  /* Hourly strip */
+  .fc-strip { display:grid; grid-auto-flow:column; grid-auto-columns:56px; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; padding-bottom:6px; margin:0 -4px; }
+  .fc-strip > div { scroll-snap-align:start; display:grid; justify-items:center; gap:6px; padding:4px 0 2px; border-radius:8px; font-variant-numeric:tabular-nums; }
+  .fc-strip .fc-hour { color:var(--quiet); font-size:13px; }
+  .fc-strip .fc-hour.now { color:var(--ink); font-weight:500; }
+  .fc-strip .fc-value { font-size:20px; letter-spacing:-.02em; }
+  .fc-strip .day-break { border-left:1px solid var(--gray-4); border-radius:0; }
+  .fc-strip-day { font-size:12px; color:var(--gray-7); height:16px; }
+
+  /* Hourly chart */
+  svg.fc-chart { width:100%; height:auto; display:block; overflow:visible; font-variant-numeric:tabular-nums; }
+  svg.fc-chart text { fill:var(--gray-8); font-size:12px; }
+  svg.fc-chart .temp-label { fill:var(--ink); font-size:13px; }
+  svg.fc-chart .temp-line { fill:none; stroke:var(--gray-10); stroke-width:2; }
+  svg.fc-chart .pop-bar { fill:var(--info); opacity:.55; }
+  svg.fc-chart .grid-line { stroke:var(--gray-3); }
+  svg.fc-chart .midnight { stroke:var(--gray-5); stroke-dasharray:2 3; }
+  .fc-legend { display:flex; gap:16px; color:var(--quiet); font-size:13px; margin-bottom:6px; }
+  .fc-legend span::before { content:""; display:inline-block; width:10px; height:2px; vertical-align:middle; margin-right:6px; background:var(--gray-10); }
+  .fc-legend span.p::before { height:8px; width:8px; background:var(--info); opacity:.55; }
+
+  .now-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+  .now-row .reading { font-size:40px; font-weight:350; line-height:1.15; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+  .now-row .unit { font-size:20px; color:var(--quiet); }
+  .now-row .summary { color:var(--quiet); }
+
+  .notes { color:var(--quiet); border-top:1px solid var(--gray-3); padding-top:16px; display:grid; gap:6px; max-width:90ch; }
+  .notes strong { color:var(--gray-9); font-weight:500; }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; scroll-behavior:auto !important; } }
+</style>
+</head>
+<body>
+<div class="proto">
+  <header class="proto-head">
+    <h1>Forecast card — prototype</h1>
+    <p>Static mockup for review. One <code>Forecast</code> card type bound to one forecast Entity; layout follows the Entity type. Data is synthetic (a Chicago-area November week). The toggles below are prototype controls, not card features.</p>
+  </header>
+
+  <div class="controls" role="group" aria-label="Prototype controls">
+    <fieldset><legend>Card state</legend><span class="seg" data-key="state">
+      <button data-v="ready" aria-pressed="true">Ready</button><button data-v="unavailable">Unavailable</button><button data-v="expired">Expired forecast</button><button data-v="never">Never observed</button><button data-v="loading">Loading</button></span></fieldset>
+    <fieldset><legend>Hourly style</legend><span class="seg" data-key="hourly">
+      <button data-v="strip" aria-pressed="true">Strip</button><button data-v="chart">Chart</button></span></fieldset>
+    <fieldset><legend>Hours shown</legend><span class="seg" data-key="hours">
+      <button data-v="6">6</button><button data-v="12">12</button><button data-v="24" aria-pressed="true">24</button><button data-v="48">48</button></span></fieldset>
+    <fieldset><legend>Days shown</legend><span class="seg" data-key="days">
+      <button data-v="3">3</button><button data-v="5">5</button><button data-v="8" aria-pressed="true">8</button></span></fieldset>
+    <fieldset><legend>Precipitation chance</legend><span class="seg" data-key="precip">
+      <button data-v="0">Always</button><button data-v="10" aria-pressed="true">≥ 10%</button><button data-v="20">≥ 20%</button></span></fieldset>
+    <fieldset><legend>Units</legend><span class="seg" data-key="units">
+      <button data-v="us" aria-pressed="true">US</button><button data-v="metric">Metric</button></span></fieldset>
+    <fieldset><legend>Icon tint</legend><span class="seg" data-key="tint">
+      <button data-v="off" aria-pressed="true">Neutral</button><button data-v="on">Tinted</button></span></fieldset>
+    <fieldset><legend>Width</legend><span class="seg" data-key="width">
+      <button data-v="desktop" aria-pressed="true">Desktop</button><button data-v="phone">Phone (390px)</button></span></fieldset>
+  </div>
+
+  <section class="stage" id="stage" data-width="desktop" data-tint="off" aria-label="Dashboard view">
+    <h3 class="view-title">Weather</h3>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="notes" aria-label="Review questions">
+    <p><strong>Decisions this mockup should answer</strong></p>
+    <p>Every toggle is independent, so any combination can be compared.</p>
+    <p>1. Hourly: scrollable strip or chart? (Chart labels every 2, 3 or 6 hours depending on hours shown.)</p>
+    <p>2. Hours and days shown: should the card definition choose these, or should the horizon be fixed?</p>
+    <p>3. Precipitation chance: always, at 10% or more, or at 20% or more? Hidden values keep their space so rows stay aligned; chart bars follow the same threshold.</p>
+    <p>4. Icons: neutral ink (DESIGN.md default) or lightly tinted (pale gold sun, dusk-blue precipitation)?</p>
+    <p>5. Past periods are dropped at render time. When none remain, the card says so instead of showing an old forecast.</p>
+    <p>6. Footer uses the existing "Observed 14m ago" wording; Source shows issue time, timezone and Entity ID.</p>
+  </section>
+</div>
+
+<script>
+const TZ = "America/Chicago";
+const state = { state:"ready", hourly:"strip", units:"us", tint:"off", width:"desktop", hours:"24", days:"8", precip:"10" };
+const showPop = p => p >= Number(state.precip);
+const now = new Date();
+now.setSeconds(0,0);
+
+// ---------- Synthetic forecast (canonical: Celsius, percent) ----------
+const hourStart = new Date(now); hourStart.setMinutes(0);
+function localHour(d) { return Number(new Intl.DateTimeFormat("en-US",{hour:"numeric",hourCycle:"h23",timeZone:TZ}).format(d)); }
+function condFor(h, i) {
+  const night = h < 7 || h >= 17;
+  if (i >= 14 && i <= 19) return "rain";
+  if (i === 20) return "thunderstorm";
+  if (i >= 21 && i <= 23) return night ? "partly-cloudy-night" : "partly-cloudy-day";
+  if (i >= 30 && i <= 33) return "fog";
+  if (i % 9 === 4) return "cloudy";
+  return night ? (i % 3 ? "clear-night" : "partly-cloudy-night") : (i % 4 ? "clear-day" : "partly-cloudy-day");
+}
+const hourly = Array.from({length:48}, (_, i) => {
+  const t = new Date(hourStart.getTime() + i*3600e3);
+  const h = localHour(t);
+  const temp = 6 + 6*Math.sin((h-9)/24*2*Math.PI) - (i>24? 2:0) + (i>=14&&i<=20? -1.5:0);
+  const pop = i>=12&&i<=21 ? [15,25,45,70,85,90,80,60,40,20][i-12] : (i>=30&&i<=33?10:2);
+  return { starts_at:t.toISOString(), condition:condFor(h,i), temperature_c:Math.round(temp*10)/10, precipitation_probability_percent:pop };
+});
+const dayNames = ["clear-day","rain","partly-cloudy-day","cloudy","snow","sleet","clear-day","wind"];
+const daily = Array.from({length:8}, (_, i) => {
+  const d = new Date(now.getTime() + i*86400e3);
+  const lo = [1,3,-1,0,-4,-2,-5,2][i], hi = [11,9,7,5,1,2,4,10][i];
+  return { starts_at:d.toISOString(), condition:dayNames[i], temperature_min_c:lo, temperature_max_c:hi, precipitation_probability_percent:[5,90,20,30,70,55,0,15][i] };
+});
+
+// ---------- Icons ----------
+const CLOUD_LOW = "M7 19h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 12.1 3.5 3.5 0 0 0 7 19z";
+const CLOUD_HIGH = "M7 15h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 8.1 3.5 3.5 0 0 0 7 15z";
+const SUN = `<g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></g>`;
+const MOON = `<path d="M19.5 14.6A7.8 7.8 0 1 1 9.4 4.5a6.2 6.2 0 0 0 10.1 10.1z"/>`;
+const SMALL_SUN = `<g class="sun"><circle cx="8.5" cy="8" r="3"/><path d="M8.5 2.2v1.3M2.7 8h1.3M4.4 3.9l.9.9M12.6 3.9l-.9.9"/></g>`;
+const SMALL_MOON = `<path d="M11.8 9.3A4.6 4.6 0 1 1 6 3.5a3.7 3.7 0 0 0 5.8 5.8z"/>`;
+const ICONS = {
+  "clear-day": SUN,
+  "clear-night": MOON,
+  "partly-cloudy-day": SMALL_SUN + `<path d="M8.5 20h9a3.6 3.6 0 0 0 .5-7.15A5.4 5.4 0 0 0 7.7 13.8 3.1 3.1 0 0 0 8.5 20z" fill="var(--gray-1)"/>`,
+  "partly-cloudy-night": SMALL_MOON + `<path d="M8.5 20h9a3.6 3.6 0 0 0 .5-7.15A5.4 5.4 0 0 0 7.7 13.8 3.1 3.1 0 0 0 8.5 20z" fill="var(--gray-1)"/>`,
+  "cloudy": `<path d="${CLOUD_LOW}"/>`,
+  "rain": `<path d="${CLOUD_HIGH}"/><g class="drops"><path d="M8.5 17.5l-1 3M12.5 17.5l-1 3M16.5 17.5l-1 3"/></g>`,
+  "snow": `<path d="${CLOUD_HIGH}"/><g class="flakes"><circle cx="8" cy="19" r=".9" fill="currentColor"/><circle cx="12" cy="20.5" r=".9" fill="currentColor"/><circle cx="16" cy="19" r=".9" fill="currentColor"/></g>`,
+  "sleet": `<path d="${CLOUD_HIGH}"/><g class="drops"><path d="M8.5 17.5l-1 3M15.5 17.5l-1 3"/><circle cx="12" cy="19.5" r=".9" fill="currentColor"/></g>`,
+  "thunderstorm": `<path d="${CLOUD_HIGH}"/><path class="bolt" d="M12.5 15.5l-2 3.5h3l-2 3.5"/>`,
+  "wind": `<path d="M3 9h11a2.5 2.5 0 1 0-2.5-2.5M3 13h15a2.5 2.5 0 1 1-2.5 2.5M3 17h8"/>`,
+  "fog": `<path d="M4 8h16M3 12h18M5 16h14M7 20h10"/>`,
+};
+const WORDS = { "clear-day":"Clear","clear-night":"Clear","partly-cloudy-day":"Partly cloudy","partly-cloudy-night":"Partly cloudy","cloudy":"Cloudy","rain":"Rain","snow":"Snow","sleet":"Sleet","thunderstorm":"Thunderstorm","wind":"Windy","fog":"Fog" };
+const icon = c => `<svg class="icon" data-c="${c}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[c]}</svg>`;
+
+// ---------- Formatting ----------
+const toUnit = c => state.units === "us" ? c*9/5+32 : c;
+const deg = c => `${Math.round(toUnit(c))}°`;
+const unitWord = () => state.units === "us" ? "°F" : "°C";
+const fmtHour = d => new Intl.DateTimeFormat("en-US",{hour:"numeric",timeZone:TZ}).format(d).replace(" "," ");
+const fmtDay = (d, i) => i === 0 ? "Today" : new Intl.DateTimeFormat("en-US",{weekday:"short",timeZone:TZ}).format(d);
+const fmtLong = d => new Intl.DateTimeFormat("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit",timeZone:TZ,timeZoneName:"short"}).format(d);
+function age(ms) { const m = Math.round(ms/60000); if (m < 1) return "just now"; if (m < 60) return `${m}m ago`; const h = Math.round(m/60); if (h < 48) return `${h}h ago`; return `${Math.round(h/24)}d ago`; }
+
+// ---------- Scenario per card state ----------
+function scenario() {
+  switch (state.state) {
+    case "ready": return { observedAt:new Date(now - 14*60e3), status:[] };
+    case "unavailable": return { observedAt:new Date(now - 3*3600e3), status:[{tone:"warn",text:"Unavailable"}], dim:true };
+    case "expired": return { observedAt:new Date(now - 3*86400e3), status:[{tone:"warn",text:"Unavailable"}], dim:true, expired:true };
+    case "never": return { status:[{tone:"neutral",text:"Never observed"}], empty:true };
+    case "loading": return { status:[{tone:"neutral",text:"Loading…"}], empty:true };
+  }
+}
+
+function frame({ title, cls = "", body, sc, entity }) {
+  const status = sc.status.length ? `<ul class="view-status">${sc.status.map(s => `<li data-tone="${s.tone}"><span class="dot" aria-hidden="true"></span>${s.text}</li>`).join("")}</ul>` : "";
+  const footer = sc.observedAt ? `<footer class="view-card-footer"><time datetime="${sc.observedAt.toISOString()}" aria-label="Observed ${age(now - sc.observedAt)}">Observed ${age(now - sc.observedAt)}</time>
+    <button class="source-btn" aria-expanded="false" data-entity="${entity}" data-at="${sc.observedAt.toISOString()}">Source</button></footer>` : "";
+  return `<article class="view-card ${cls} ${sc.dim ? "is-dim" : ""}" aria-label="${title}"><header class="view-card-header"><h4 class="view-card-title">${title}</h4>${status}</header><div class="view-card-body">${body}</div>${footer}</article>`;
+}
+
+// Periods still relevant: hourly drops hours that have ended; daily drops past local days.
+function liveHourly(sc) {
+  if (sc.expired) return [];
+  const shift = state.state === "unavailable" ? 3 : 0; // a 3h-old forecast: its first 3 hours have passed
+  return hourly.slice(shift).filter(p => new Date(p.starts_at).getTime() + 3600e3 > now.getTime()).slice(0, Number(state.hours));
+}
+function liveDaily(sc) { return (sc.expired ? daily.slice(3) : daily).slice(0, Number(state.days)); }
+
+function dailyCard() {
+  const sc = scenario();
+  let body;
+  if (sc.empty) body = `<p class="empty" aria-hidden="true">—</p>`;
+  else {
+    const days = liveDaily(sc);
+    const lo = Math.min(...days.map(d => d.temperature_min_c)), hi = Math.max(...days.map(d => d.temperature_max_c));
+    const pct = v => ((v - lo) / (hi - lo)) * 100;
+    body = (sc.expired ? `<p class="note" style="margin-bottom:8px">Showing the remaining days of a 3-day-old forecast.</p>` : "") +
+      `<div class="daily-wrap"><ul class="fc-daily">${days.map((d, i) => {
+        const p = d.precipitation_probability_percent;
+        const label = `${fmtDay(new Date(d.starts_at), sc.expired ? 1 : i)}: ${WORDS[d.condition]}, low ${deg(d.temperature_min_c)}, high ${deg(d.temperature_max_c)}${showPop(p) ? `, ${p}% chance of precipitation` : ""}`;
+        return `<li aria-label="${label}"><span class="fc-day" aria-hidden="true">${fmtDay(new Date(d.starts_at), sc.expired ? 1 : i)}</span>${icon(d.condition)}
+          <span class="pop" aria-hidden="true" ${showPop(p) ? "" : "hidden"}>${p}%</span>
+          <span class="fc-temp lo" aria-hidden="true">${deg(d.temperature_min_c)}</span>
+          <span class="fc-bar" aria-hidden="true"><span class="fc-bar-fill" style="left:${pct(d.temperature_min_c)}%;right:${100 - pct(d.temperature_max_c)}%"></span></span>
+          <span class="fc-temp" aria-hidden="true">${deg(d.temperature_max_c)}</span></li>`;
+      }).join("")}</ul></div>`;
+  }
+  return frame({ title:`Next ${state.days} days`, body, sc, entity:"ent_01JD4…daily-forecast" });
+}
+
+function hourlyCard() {
+  const sc = scenario();
+  let body;
+  const hours = sc.empty ? [] : liveHourly(sc);
+  if (sc.empty) body = `<p class="empty" aria-hidden="true">—</p>`;
+  else if (hours.length === 0) body = `<p class="note">Every hour in the last forecast has passed.</p>`;
+  else if (state.hourly === "strip") {
+    let prevDay;
+    body = `<div class="fc-strip" tabindex="0" role="list" aria-label="Next ${hours.length} hours">${hours.map((p, i) => {
+      const d = new Date(p.starts_at);
+      const day = new Intl.DateTimeFormat("en-US",{weekday:"short",timeZone:TZ}).format(d);
+      const brk = prevDay !== undefined && day !== prevDay; prevDay = day;
+      const pp = p.precipitation_probability_percent;
+      const isNow = i === 0 && d <= now;
+      return `<div role="listitem" class="${brk ? "day-break" : ""}" aria-label="${isNow ? "Now" : fmtHour(d)}: ${WORDS[p.condition]}, ${deg(p.temperature_c)}${showPop(pp) ? `, ${pp}% chance of precipitation` : ""}">
+        <span class="fc-strip-day" aria-hidden="true">${brk ? day : ""}</span>
+        <span class="fc-hour ${isNow ? "now" : ""}" aria-hidden="true">${isNow ? "Now" : fmtHour(d)}</span>${icon(p.condition)}
+        <span class="fc-value" aria-hidden="true">${deg(p.temperature_c)}</span>
+        <span class="pop" aria-hidden="true" ${showPop(pp) ? "" : "hidden"}>${pp}%</span></div>`;
+    }).join("")}</div>`;
+  } else {
+    const W = 600, top = 46, plotH = 78, popTop = 150, popH = 26, H = popTop + popH + 36;
+    const temps = hours.map(p => toUnit(p.temperature_c));
+    const tmin = Math.min(...temps), tmax = Math.max(...temps);
+    const x = i => 14 + i * ((W - 28) / (hours.length - 1));
+    const y = t => top + (1 - (t - tmin) / (tmax - tmin || 1)) * plotH;
+    const path = temps.map((t, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(t).toFixed(1)}`).join("");
+    let marks = "";
+    const n = hours.length, every = n <= 6 ? 1 : n <= 12 ? 2 : n <= 24 ? 3 : 6;
+    const barW = Math.min(16, ((W - 28) / Math.max(1, n - 1)) * 0.7);
+    hours.forEach((p, i) => {
+      const d = new Date(p.starts_at);
+      if (localHour(d) === 0) marks += `<line class="midnight" x1="${x(i)}" x2="${x(i)}" y1="10" y2="${popTop + popH}"/><text x="${x(i)}" y="${H}" text-anchor="middle">${new Intl.DateTimeFormat("en-US",{weekday:"short",timeZone:TZ}).format(d)}</text>`;
+      const pp = p.precipitation_probability_percent;
+      if (showPop(pp)) marks += `<rect class="pop-bar" x="${x(i) - barW / 2}" y="${popTop + popH - popH * pp / 100}" width="${barW}" height="${popH * pp / 100}" rx="2"/>`;
+      if (i % every === 0) {
+        marks += `<g transform="translate(${x(i) - 11},${top - 38}) scale(.9)" class="icon-g"><svg class="icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[p.condition]}</svg></g>`;
+        marks += `<text class="temp-label" x="${x(i)}" y="${y(temps[i]) - 8}" text-anchor="middle">${Math.round(temps[i])}°</text>`;
+        marks += `<text x="${x(i)}" y="${popTop + popH + 16}" text-anchor="middle">${i === 0 ? "Now" : fmtHour(d)}</text>`;
+      }
+    });
+    const summary = `Next ${hours.length} hours: low ${Math.round(tmin)}${unitWord()}, high ${Math.round(tmax)}${unitWord()}; precipitation chance peaks at ${Math.max(...hours.map(p => p.precipitation_probability_percent))}%.`;
+    body = `<div class="fc-legend" aria-hidden="true"><span>Temperature ${unitWord()}</span><span class="p">Chance of precipitation</span></div>
+      <div tabindex="0" role="img" aria-label="${summary}"><svg class="fc-chart" viewBox="0 0 ${W} ${H + 4}" aria-hidden="true"><line class="grid-line" x1="0" x2="${W}" y1="${popTop + popH}" y2="${popTop + popH}"/>${marks}<path class="temp-line" d="${path}"/></svg></div>`;
+  }
+  return frame({ title:`Next ${state.hours} hours`, cls:"wide", body, sc, entity:"ent_01JD4…hourly-forecast" });
+}
+
+function currentCard() {
+  const sc = { observedAt:new Date(now - 6*60e3), status:[] };
+  const body = `<div class="now-row">${icon("partly-cloudy-day")}<span class="reading">${Math.round(toUnit(8.4))}<span class="unit">${unitWord()}</span></span></div><p class="summary">Existing Metric card for current temperature, shown for context.</p>`;
+  return frame({ title:"Outside (Pirate Weather)", body, sc, entity:"ent_01JD4…temperature" });
+}
+
+function render() {
+  document.getElementById("grid").innerHTML = currentCard() + dailyCard() + hourlyCard();
+  const stage = document.getElementById("stage");
+  stage.dataset.width = state.width; stage.dataset.tint = state.tint;
+}
+
+// ---------- Controls ----------
+document.querySelectorAll(".seg").forEach(seg => seg.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  state[seg.dataset.key] = b.dataset.v;
+  seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  render();
+}));
+
+// ---------- Source popover ----------
+let openPop;
+function closePop(restore) { if (!openPop) return; const btn = openPop.btn; openPop.el.remove(); btn.setAttribute("aria-expanded","false"); openPop = undefined; if (restore) btn.focus(); }
+document.addEventListener("click", e => {
+  const btn = e.target.closest(".source-btn");
+  if (!btn) { if (openPop && !e.target.closest(".source-pop")) closePop(false); return; }
+  if (openPop?.btn === btn) { closePop(true); return; }
+  closePop(false);
+  const at = new Date(btn.dataset.at);
+  const el = document.createElement("div");
+  el.className = "source-pop"; el.setAttribute("role","dialog"); el.setAttribute("aria-label","Source");
+  el.innerHTML = `<dl><dt>Entity</dt><dd><a href="#" style="color:var(--violet-text)">Pirate Weather · Home</a><br><code>${btn.dataset.entity}</code></dd>
+    <dt>Observed</dt><dd>${fmtLong(at)} (${age(now - at).replace("ago","ago")})</dd>
+    <dt>Forecast timezone</dt><dd>${TZ}</dd>
+    <dt>Availability</dt><dd>${state.state === "ready" ? "Available · Enabled" : "Unavailable · Enabled"}</dd></dl>
+    <button class="source-btn" style="margin:0" data-close>Close</button>`;
+  btn.parentElement.appendChild(el); btn.setAttribute("aria-expanded","true");
+  openPop = { el, btn }; el.querySelector("a").focus();
+  el.querySelector("[data-close]").addEventListener("click", ev => { ev.stopPropagation(); closePop(true); });
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") closePop(true); });
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:hourlyforecast:v1:state",
+  "title": "Hearth hourlyforecast/v1 State",
+  "description": "One hourly forecast snapshot. Periods are consecutive hours in strictly increasing UTC start order; the first is the source's current hour. Values are modeled predictions, not measurements. Omitted measurements are unavailable, never zero.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "periods"
+  ],
+  "properties": {
+    "periods": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 48,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "starts_at"
+        ],
+        "properties": {
+          "starts_at": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+            "description": "Period start in UTC, RFC 3339 with a Z suffix."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "clear-day",
+              "clear-night",
+              "partly-cloudy-day",
+              "partly-cloudy-night",
+              "cloudy",
+              "rain",
+              "snow",
+              "sleet",
+              "thunderstorm",
+              "wind",
+              "fog"
+            ],
+            "description": "Hearth sky condition. Omitted when the source condition has no Hearth equivalent."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Source summary text for display."
+          },
+          "temperature_c": {
+            "type": "number",
+            "minimum": -273.15,
+            "maximum": 1000,
+            "description": "Air temperature in degrees Celsius."
+          },
+          "apparent_temperature_c": {
+            "type": "number",
+            "minimum": -273.15,
+            "maximum": 1000,
+            "description": "Feels-like temperature in degrees Celsius."
+          },
+          "precipitation_probability_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "precipitation_rate_mmh": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000,
+            "description": "Liquid-water-equivalent rate in mm/h; not an accumulation."
+          },
+          "humidity_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "pressure_hpa": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2000,
+            "description": "Sea-level pressure in hPa."
+          },
+          "wind_speed_mps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 200
+          },
+          "wind_gust_mps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 200
+          },
+          "wind_direction_degrees": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 360,
+            "description": "Direction the wind comes from, in degrees."
+          },
+          "cloud_cover_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "uv_index": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,12 +1,13 @@
 # Pirate Weather Adapter
 
-`hearth-adapter-pirateweather` publishes modeled current conditions for one
-configured location and exposes fresh hourly and daily forecasts as Adapter Functions.
-It runs separately from Core and uses the public Hearth Adapter SDK.
+`hearth-adapter-pirateweather` publishes modeled current conditions and hourly and
+daily forecasts for one configured location, and exposes fresh forecasts on demand
+as Adapter Functions. It runs separately from Core and uses the public Hearth
+Adapter SDK.
 
 Pirate Weather is a modeled weather source, not your Ecowitt station. Keep its
 Device and Entities separate from station measurements. Forecast Functions never
-publish current or future Entity State.
+publish Entity State; the polled forecast Entities do.
 
 ## Configure and run
 
@@ -66,10 +67,47 @@ One virtual Device of kind `sensor` contains these read-only Entities:
 
 The companion requests SI data; household presentation converts canonical values
 for display. Existing numeric cards, State history, and automations can use the
-Entities. There are no Commands or new forecast cards.
+Entities. There are no Commands.
+
+## Forecast Entities
+
+The same Device also contains two read-only forecast Entities:
+
+| Entity key | Entity type | State |
+| --- | --- | --- |
+| `hourly-forecast` | `hearth.hourlyforecast/v1` | Up to 48 hourly periods, starting with the provider's current hour |
+| `daily-forecast` | `hearth.dailyforecast/v1` | Up to 8 daily periods, starting with today at the location |
+
+Each State is one forecast snapshot, `{"periods": [...]}`, and the newest
+snapshot replaces the previous one. Period fields match the Function results
+below, with two differences: the provider `icon` becomes the Hearth `condition`
+(`clear-day`, `clear-night`, `partly-cloudy-day`, `partly-cloudy-night`,
+`cloudy`, `rain`, `snow`, `sleet`, `thunderstorm`, `wind`, or `fog`; any other
+icon omits it), and State has no `icon`, `precipitation_type`, location name,
+retrieval time, or timezone. An empty provider summary is omitted. The Forecast
+dashboard card reads these Entities; see [Dashboards](dashboards.md).
+
+Forecast Observations carry the response receive time and no source time: the
+provider gives no forecast issue time, and `currently.time` describes current
+conditions. A missing or invalid `hourly` or `daily` block publishes nothing for
+that Entity and reports it unavailable with `forecast_unavailable`; its last
+forecast remains, and current conditions and Adapter health are unaffected.
+
+Forecast Entities have no scalar State fields, so they have no numeric history
+charts, State change history, or automation triggers.
+
+Every forecast Observation is retained under Core's ordinary Observation history
+policy. A synthetic full forecast with every field present encodes to about
+16.8 KB (48 hours) plus 3.0 KB (8 days) per poll, about 1.9 MB per day at the
+15-minute default, or about 57 MB over a 30-day retention window. Real forecasts
+that omit fields are smaller.
+
+## Polling
 
 The first poll runs immediately after registration. Later polls wait one interval
 after the preceding poll completes, with no overlapping polls or catch-up work.
+Each poll is one provider request for the `currently`, `hourly`, and `daily`
+blocks.
 Equal readings still produce new Observation evidence. Missing, null, sentinel,
 wrong-type, or out-of-range values do not become zero; their Entities become
 unavailable while Core retains last State. Valid sibling values still publish.
@@ -101,8 +139,8 @@ of returning an empty successful forecast.
 Daily `temperature_min_c` and `temperature_max_c` describe midnight-to-midnight
 extremes, not the daytime high and overnight low. Daily precipitation probability is the
 provider's maximum; today's value may concern only the remaining hours. A
-precipitation rate is liquid-water equivalent, not accumulated depth. Summaries
-and icons remain provider text in Function results, not Entity State.
+precipitation rate is liquid-water equivalent, not accumulated depth. Function
+results keep the provider's summary and icon text unchanged.
 
 ```sh
 CORE=http://127.0.0.1:8080
@@ -145,9 +183,10 @@ cooldown lasts one poll interval. Requests already in progress may finish.
 | `provider_unavailable` | Network, timeout, or provider refusal; later polls/calls can recover |
 | `invalid_response` | Wrong units, malformed/oversized data, or unusable requested block |
 | `measurement_unavailable` | A current measurement is missing or invalid; last State remains readable |
+| `forecast_unavailable` | The poll's hourly or daily block is missing or invalid; the last forecast remains readable |
 
 Polls alone establish Adapter health and Entity availability. A failed forecast
-does not rewrite the previous current-condition evidence; the next poll reassesses
+Function does not rewrite the previous current-condition evidence; the next poll reassesses
 upstream health. Recovery reports fresh availability after healthy evidence is
 acknowledged. A disabled Entity stays disabled across restart; the companion does
 not gate publication locally or change user enablement.
@@ -157,10 +196,11 @@ releases the Session. No pending forecast or poll is replayed on restart.
 
 ## Verification
 
-Unit tests cover conversions, partial data, bounded polling, and provider errors.
-Synthetic HTTP integration tests cover transport behavior. The production-Core
-journey checks retained State, Function discovery and results, shutdown, stable
-identity, and preserved enablement through public boundaries:
+Unit tests cover conversions, partial data, forecast publication, bounded polling,
+and provider errors. Synthetic HTTP integration tests cover transport behavior. The
+production-Core journey checks retained current and forecast State, Function
+discovery and results, shutdown, stable identity, and preserved enablement through
+public boundaries:
 
 ```sh
 GO_PACKAGES='./internal/adapters/pirateweather ./internal/app/pirateweather ./cmd/hearth-adapter-pirateweather' mise run test -- -tags=integration,e2e
@@ -168,6 +208,7 @@ GO_PACKAGES='./internal/adapters/pirateweather ./internal/app/pirateweather ./cm
 
 Synthetic tests do not establish live Pirate Weather compatibility. For a live
 smoke test, supply an authorized key file and location, start the companion, read
-its Device and Entities through `/v1/devices` and `/v1/entities`, invoke both Functions,
+its Device and thirteen Entities through `/v1/devices` and `/v1/entities`, including
+both forecast States after the first poll, invoke both Functions,
 and inspect `/v1/adapter-function-invocations/<id>` for the retained result. Confirm
 units, timestamps, and availability before relying on it for household automations.

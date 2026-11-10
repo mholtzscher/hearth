@@ -56,7 +56,7 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
-func TestCurrentRequestAndConversions(t *testing.T) {
+func TestPollRequestAndConversions(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
 	c := testClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -67,7 +67,7 @@ func TestCurrentRequestAndConversions(t *testing.T) {
 		}
 		q := r.URL.Query()
 		if q.Get("units") != "si" || q.Get("version") != "2" || q.Get("lang") != "en" ||
-			q.Get("exclude") != "minutely,hourly,daily,alerts" {
+			q.Get("exclude") != "minutely,alerts" {
 			t.Errorf("query: %v", q)
 		}
 		if _, ok := r.Context().Deadline(); !ok {
@@ -82,7 +82,7 @@ func TestCurrentRequestAndConversions(t *testing.T) {
 		), nil
 	}))
 	c.now = func() time.Time { return now }
-	got, err := c.current(context.Background())
+	got, err := c.poll(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,15 +95,15 @@ func TestCurrentRequestAndConversions(t *testing.T) {
 		"precipitation-rate":        0,
 		"precipitation-probability": 70,
 	}
-	if len(got.Values) != len(want) {
-		t.Fatalf("values: %#v", got.Values)
+	if len(got.Current.Values) != len(want) {
+		t.Fatalf("values: %#v", got.Current.Values)
 	}
 	for key, value := range want {
-		if actual, ok := got.Values[key]; !ok || math.Abs(actual-value) > 1e-9 {
+		if actual, ok := got.Current.Values[key]; !ok || math.Abs(actual-value) > 1e-9 {
 			t.Errorf("%s = %v, present %v", key, actual, ok)
 		}
 	}
-	if !got.SourceTime.Equal(now) || !got.ReceivedAt.Equal(now) {
+	if !got.Current.SourceTime.Equal(now) || !got.Current.ReceivedAt.Equal(now) {
 		t.Errorf("times: %+v", got)
 	}
 }
@@ -132,12 +132,12 @@ func TestForecastFunctions(t *testing.T) {
 	c := testClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
 		switch {
-		case !strings.Contains(r.URL.Query().Get("exclude"), "hourly"):
+		case r.URL.Query().Get("exclude") == "currently,minutely,daily,alerts":
 			return response(
 				200,
 				`{"flags":{"units":"si"},"timezone":"America/Toronto","hourly":{"data":[{"time":1794225600,"temperature":0,"humidity":0.42},{"time":1794229200,"temperature":2},{"time":1794232800,"temperature":3}]}}`,
 			), nil
-		case !strings.Contains(r.URL.Query().Get("exclude"), "daily"):
+		case r.URL.Query().Get("exclude") == "currently,minutely,hourly,alerts":
 			return response(
 				200,
 				`{"flags":{"units":"si"},"timezone":"America/Toronto","daily":{"data":[{"time":1794225600,"temperatureMin":-3,"temperatureMax":5,"precipProbability":0.5}]}}`,
@@ -258,7 +258,7 @@ func TestThrottleSharedAcrossRequestsAndSafeErrors(t *testing.T) {
 		return nil, errors.New("secret-test-key https://secret.example coordinates")
 	}))
 	c.now = func() time.Time { return now }
-	_, err := c.current(context.Background())
+	_, err := c.poll(context.Background())
 	if err == nil || err.Error() != "provider_throttled" {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestThrottleSharedAcrossRequestsAndSafeErrors(t *testing.T) {
 		t.Fatalf("monthly reset must outlast Retry-After: %#v calls=%d", result, calls)
 	}
 	now = now.Add(time.Hour)
-	_, err = c.current(context.Background())
+	_, err = c.poll(context.Background())
 	if err == nil || err.Error() != "provider_unavailable" || calls != 2 {
 		t.Fatalf("network: %v calls=%d", err, calls)
 	}

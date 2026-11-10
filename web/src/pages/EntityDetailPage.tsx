@@ -12,6 +12,7 @@ import {
   Section,
   StatusChip,
 } from "../components/common.tsx";
+import { stateCellText } from "../components/forecast-summary.ts";
 import { Button } from "../components/ui/button.tsx";
 import NameEditor from "../components/NameEditor.tsx";
 import EntityEventHistory from "../components/entity-event-history.tsx";
@@ -254,6 +255,10 @@ function formatStateSummary(
     }
     case "hearth.enumaction/v1":
       // Stateless: never render a State summary, even if a value is present.
+      return null;
+    case "hearth.hourlyforecast/v1":
+    case "hearth.dailyforecast/v1":
+      // The State row already shows the summary; the full State is in Raw entity JSON.
       return null;
     default:
       return null;
@@ -512,7 +517,7 @@ export default function EntityDetailPage() {
                     [
                       "State",
                       data.state
-                        ? `${JSON.stringify(data.state.value)} obs=${data.state.observation_id} at ${data.state.observed_at}`
+                        ? `${stateCellText(data.type, data.state.value)} obs=${data.state.observation_id} at ${data.state.observed_at}`
                         : "null (never observed)",
                     ],
                     ...(stateSummary !== null

@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:dailyforecast:v1:state",
+  "title": "Hearth dailyforecast/v1 State",
+  "description": "One daily forecast snapshot. Periods are consecutive local days in strictly increasing order; the first is today at the forecast location. Values are modeled predictions, not measurements. Omitted measurements are unavailable, never zero.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "periods"
+  ],
+  "properties": {
+    "periods": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "starts_at",
+          "date"
+        ],
+        "properties": {
+          "starts_at": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+            "description": "Start of the local day in UTC, RFC 3339 with a Z suffix."
+          },
+          "date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Calendar day at the forecast location, YYYY-MM-DD."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "clear-day",
+              "clear-night",
+              "partly-cloudy-day",
+              "partly-cloudy-night",
+              "cloudy",
+              "rain",
+              "snow",
+              "sleet",
+              "thunderstorm",
+              "wind",
+              "fog"
+            ],
+            "description": "Hearth sky condition. Omitted when the source condition has no Hearth equivalent."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Source summary text for display."
+          },
+          "temperature_min_c": {
+            "type": "number",
+            "minimum": -273.15,
+            "maximum": 1000,
+            "description": "Lowest temperature from midnight to midnight, in degrees Celsius; not the overnight low."
+          },
+          "temperature_max_c": {
+            "type": "number",
+            "minimum": -273.15,
+            "maximum": 1000,
+            "description": "Highest temperature from midnight to midnight, in degrees Celsius; not the daytime high."
+          },
+          "precipitation_probability_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "The day's maximum chance of precipitation; today's value may cover only the remaining hours."
+          },
+          "precipitation_rate_mmh": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10000,
+            "description": "Liquid-water-equivalent rate in mm/h; not an accumulation."
+          },
+          "humidity_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "pressure_hpa": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2000,
+            "description": "Sea-level pressure in hPa."
+          },
+          "wind_speed_mps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 200
+          },
+          "wind_gust_mps": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 200
+          },
+          "wind_direction_degrees": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 360,
+            "description": "Direction the wind comes from, in degrees."
+          },
+          "cloud_cover_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "uv_index": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  }
+}

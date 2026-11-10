@@ -45,6 +45,13 @@ type currentResult struct {
 	Values     map[string]float64
 }
 
+// pollResult contains one response; invalid or missing forecast blocks are nil.
+type pollResult struct {
+	Current currentResult
+	Hourly  *HourlyForecast
+	Daily   *DailyForecast
+}
+
 type ForecastMetadata struct {
 	LocationName string    `json:"location_name"`
 	RetrievedAt  time.Time `json:"retrieved_at"`

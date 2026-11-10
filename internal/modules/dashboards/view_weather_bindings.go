@@ -2,6 +2,32 @@ package dashboards
 
 import "encoding/json"
 
+const (
+	hourlyForecastType = "hearth.hourlyforecast/v1"
+	dailyForecastType  = "hearth.dailyforecast/v1"
+)
+
+func forecastBindings(raw json.RawMessage) ([]binding, error) {
+	var props struct {
+		Source binding `json:"source"`
+	}
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return nil, err
+	}
+	props.Source.ValueKind = forecastValueKind
+	return []binding{props.Source}, nil
+}
+
+func validateBindingShape(b binding) error {
+	if b.ValueKind == forecastValueKind {
+		if b.Field != "" || (b.EntityType != hourlyForecastType && b.EntityType != dailyForecastType) {
+			return invalidDefinition("a Forecast reads a whole hourly or daily forecast Entity")
+		}
+		return nil
+	}
+	return validateFieldBinding(b)
+}
+
 // Stored units of the numeric-sensor slots in weather cards.
 const (
 	unitRainRate  = "mm/h"

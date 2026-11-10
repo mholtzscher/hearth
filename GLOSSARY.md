@@ -130,6 +130,10 @@ _Avoid_: Physical confirmation, proof of causation
 The current value Hearth has accepted for an entity. It is the latest first-seen valid Observation from the owning adapter by core-assigned receive order; a same-value Observation advances its evidence and timestamps, and State is not a requested or desired value.
 _Avoid_: Desired state, target
 
+**Forecast**:
+An Entity State that predicts conditions for consecutive future periods, held as one snapshot of hourly or daily periods. Each Observation of a forecast Entity is evidence of what the source predicted when the Adapter acquired it, not of the conditions themselves; a newer snapshot replaces the older one as State by receive order, and periods that have ended remain in the snapshot until it is replaced.
+_Avoid_: Reading, measurement
+
 **Command**:
 A request to change one controllable entity before a deadline. For observed operations, its outcome is satisfied only after a fresh post-dispatch observation linked to that Command matches the requested value; dispatch or acceptance alone is not satisfaction, and an unhealthy owning Adapter causes failure rather than deferred delivery, while an unavailable Entity with a healthy owner is still attempted. A dispatched operation on a stateless entity instead terminates as `dispatched` once acceptance is durably recorded; it requests no observation and stores no state. Commands for one entity may overlap, each with an independent outcome; a satisfied outcome may be immediately superseded by another observation. The core durably records each attempt and outcome for history, but the record is not executable work: unfinished attempts become interrupted after restart and are never replayed.
 _Avoid_: Action, service call, queued job

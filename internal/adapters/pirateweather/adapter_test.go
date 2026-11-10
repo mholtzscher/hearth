@@ -2,6 +2,7 @@ package pirateweather //nolint:testpackage // Controls the poll clock and observ
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -148,13 +149,192 @@ func assertRegisteredWeather(t *testing.T, r adapter.Registration) {
 	t.Helper()
 	if r.BindingKey != "location" || r.Device.ExternalID == nil || *r.Device.ExternalID != "location" ||
 		r.Device.Kind != "sensor" ||
-		len(r.Entities) != 11 {
+		len(r.Entities) != 13 {
 		t.Fatalf("registration: %+v", r)
 	}
 	for _, e := range r.Entities {
 		if e.ExternalID != "location/"+e.Key || !strings.Contains(string(e.Support), `"operations":{}`) ||
 			e.InitiallyEnabled != nil {
 			t.Fatalf("descriptor: %+v", e)
+		}
+	}
+	if r.Entities[11].Key != hourlyForecastKey || r.Entities[11].Name != "Hourly forecast" ||
+		r.Entities[11].Type != "hearth.hourlyforecast/v1" || r.Entities[12].Key != dailyForecastKey ||
+		r.Entities[12].Name != "Daily forecast" || r.Entities[12].Type != "hearth.dailyforecast/v1" {
+		t.Fatalf("forecast descriptors: %+v", r.Entities[11:])
+	}
+}
+
+func TestPollForecastPublicationAndPartialFailures(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	body := fullForecastBody(t, now, 50, 10)
+	calls := 0
+	session := &recordingSession{}
+	instance, err := New(session, testConfig(), "secret", roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.Query().Get("exclude") != "minutely,alerts" {
+			t.Errorf("exclude: %s", r.URL.RawQuery)
+		}
+		return response(http.StatusOK, body), nil
+	}), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance.client.now = func() time.Time { return now }
+	ids, err := instance.register(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = instance.poll(t.Context(), ids); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || len(session.observations) != 13 || len(session.availability) != 1 ||
+		len(session.availability[0]) != 13 ||
+		session.health[0].Status != adapter.HealthHealthy {
+		t.Fatalf(
+			"poll: calls=%d health=%+v obs=%d availability=%+v",
+			calls,
+			session.health,
+			len(session.observations),
+			session.availability,
+		)
+	}
+	assertFullForecastPublication(t, session, now)
+	var document map[string]any
+	if err = json.Unmarshal([]byte(body), &document); err != nil {
+		t.Fatal(err)
+	}
+	document["hourly"] = map[string]any{"data": []any{map[string]any{"time": now.Unix(), "summary": "no measurements"}}}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = string(encoded)
+	if err = instance.poll(t.Context(), ids); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || len(session.observations) != 25 || len(session.availability) != 2 ||
+		session.health[1].Status != adapter.HealthHealthy {
+		t.Fatalf("partial poll: %+v", session)
+	}
+	assertPartialForecastAvailability(t, session, ids)
+	body = `{"flags":{"units":"us"},"currently":{"time":1,"temperature":1}}`
+	if err = instance.poll(t.Context(), ids); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 || len(session.observations) != 25 || len(session.availability) != 2 ||
+		session.health[2].Status != adapter.HealthUnhealthy ||
+		session.health[2].ReasonCode != reasonPrefix+"invalid_response" {
+		t.Fatalf(
+			"response failure: health=%+v obs=%d availability=%d",
+			session.health,
+			len(session.observations),
+			len(session.availability),
+		)
+	}
+}
+
+func assertFullForecastPublication(t *testing.T, session *recordingSession, now time.Time) {
+	t.Helper()
+	for i, count := range []int{48, 8} {
+		o := session.observations[11+i]
+		var state struct {
+			Periods []map[string]any `json:"periods"`
+		}
+		if err := json.Unmarshal(o.Value, &state); err != nil {
+			t.Fatal(err)
+		}
+		if len(state.Periods) != count || state.Periods[0]["condition"] != "rain" ||
+			state.Periods[0]["humidity_percent"] != float64(
+				42,
+			) || state.Periods[0]["precipitation_probability_percent"] != float64(70) ||
+			state.Periods[0]["icon"] != nil || state.Periods[0]["precipitation_type"] != nil ||
+			o.SourceUpdatedAt != nil || o.AdapterReceivedAt != now.Format(time.RFC3339Nano) {
+			t.Fatalf("forecast: %+v periods=%+v", o, state.Periods)
+		}
+		if i == 0 && state.Periods[0]["temperature_c"] != 12.5 ||
+			i == 1 &&
+				(state.Periods[0]["date"] != "2026-11-09" || state.Periods[0]["temperature_min_c"] != float64(4)) {
+			t.Fatalf("forecast values: %+v", state.Periods[0])
+		}
+		assertFullForecastFields(t, state.Periods[0], i == 0)
+	}
+	for _, entry := range session.availability[0] {
+		if entry.Status != adapter.AvailabilityAvailable || entry.ReasonCode != "" {
+			t.Fatalf("availability: %+v", entry)
+		}
+	}
+}
+
+func assertFullForecastFields(t *testing.T, period map[string]any, hourly bool) {
+	t.Helper()
+	want := map[string]any{
+		"starts_at": "2026-11-09T12:00:00Z", "summary": "Rain expected", "pressure_hpa": float64(1013),
+		"wind_speed_mps": float64(3), "wind_gust_mps": float64(5), "wind_direction_degrees": float64(180),
+		"precipitation_rate_mmh": 0.5, "cloud_cover_percent": float64(30), "uv_index": float64(2),
+	}
+	if hourly {
+		want["apparent_temperature_c"] = 11.5
+	} else {
+		want["temperature_max_c"] = float64(15)
+	}
+	for key, value := range want {
+		if period[key] != value {
+			t.Errorf("%s = %v, want %v", key, period[key], value)
+		}
+	}
+}
+
+func TestPollPublishesForecastsWithEmptySummaries(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	body := fmt.Sprintf(
+		`{"flags":{"units":"si"},"timezone":"UTC","currently":{"time":%d,"temperature":1},"hourly":{"data":[{"time":%d,"temperature":1,"summary":""}]},"daily":{"data":[{"time":%d,"temperatureMin":1,"summary":""}]}}`,
+		now.Unix(),
+		now.Unix(),
+		now.Unix(),
+	)
+	session := &recordingSession{}
+	instance, err := New(session, testConfig(), "secret", roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return response(http.StatusOK, body), nil
+	}), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance.client.now = func() time.Time { return now }
+	ids, err := instance.register(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = instance.poll(t.Context(), ids); err != nil {
+		t.Fatal(err)
+	}
+	if len(session.observations) != 3 || len(session.availability) != 1 {
+		t.Fatalf("poll: %+v", session)
+	}
+	for _, observation := range session.observations[1:] {
+		if strings.Contains(string(observation.Value), `"summary"`) {
+			t.Fatalf("empty summary in %s", observation.Value)
+		}
+	}
+	for _, entry := range session.availability[0][11:] {
+		if entry.Status != adapter.AvailabilityAvailable {
+			t.Fatal(entry)
+		}
+	}
+}
+
+func assertPartialForecastAvailability(t *testing.T, session *recordingSession, ids map[string]string) {
+	t.Helper()
+	for _, entry := range session.availability[1] {
+		if entry.EntityID == ids[hourlyForecastKey] {
+			if entry.Status != adapter.AvailabilityUnavailable ||
+				entry.ReasonCode != reasonPrefix+"forecast_unavailable" {
+				t.Fatal(entry)
+			}
+		} else if entry.Status != adapter.AvailabilityAvailable {
+			t.Fatal(entry)
 		}
 	}
 }
@@ -169,7 +349,7 @@ func assertWeatherPublication(t *testing.T, s *recordingSession) {
 	for _, e := range s.availability[0] {
 		if e.Status == adapter.AvailabilityAvailable {
 			available++
-		} else if e.ReasonCode != reasonPrefix+"measurement_unavailable" {
+		} else if e.ReasonCode != reasonPrefix+"measurement_unavailable" && e.ReasonCode != reasonPrefix+"forecast_unavailable" {
 			t.Fatal(e)
 		}
 	}

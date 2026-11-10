@@ -11,9 +11,11 @@ import (
 	contractcolormodev1 "github.com/mholtzscher/hearth/entitytypes/colormodev1"
 	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
 	contractcolorxyv1 "github.com/mholtzscher/hearth/entitytypes/colorxyv1"
+	contractdailyforecastv1 "github.com/mholtzscher/hearth/entitytypes/dailyforecastv1"
 	contractenumactionv1 "github.com/mholtzscher/hearth/entitytypes/enumactionv1"
 	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
 	contractenumsettingv1 "github.com/mholtzscher/hearth/entitytypes/enumsettingv1"
+	contracthourlyforecastv1 "github.com/mholtzscher/hearth/entitytypes/hourlyforecastv1"
 	contractnumericsensorv1 "github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
@@ -30,9 +32,11 @@ const (
 	EntityTypeColormodeV1        EntityTypeID = "hearth.colormode/v1"
 	EntityTypeColortempV1        EntityTypeID = "hearth.colortemp/v1"
 	EntityTypeColorxyV1          EntityTypeID = "hearth.colorxy/v1"
+	EntityTypeDailyforecastV1    EntityTypeID = "hearth.dailyforecast/v1"
 	EntityTypeEnumactionV1       EntityTypeID = "hearth.enumaction/v1"
 	EntityTypeEnumeventV1        EntityTypeID = "hearth.enumevent/v1"
 	EntityTypeEnumsettingV1      EntityTypeID = "hearth.enumsetting/v1"
+	EntityTypeHourlyforecastV1   EntityTypeID = "hearth.hourlyforecast/v1"
 	EntityTypeNumericsensorV1    EntityTypeID = "hearth.numericsensor/v1"
 	EntityTypeNumericsettingV1   EntityTypeID = "hearth.numericsetting/v1"
 	EntityTypePowerV1            EntityTypeID = "hearth.power/v1"
@@ -43,7 +47,7 @@ const (
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 16)
+	definitions := make([]EntityTypeDefinition, 0, 18)
 	binarysensorV1, err := newBinarysensorV1TypeDefinition(EntityTypeBinarysensorV1)
 	if err != nil {
 		return nil, err
@@ -74,6 +78,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, colorxyV1)
+	dailyforecastV1, err := newDailyforecastV1TypeDefinition(EntityTypeDailyforecastV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, dailyforecastV1)
 	enumactionV1, err := newEnumactionV1TypeDefinition(EntityTypeEnumactionV1)
 	if err != nil {
 		return nil, err
@@ -89,6 +98,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, enumsettingV1)
+	hourlyforecastV1, err := newHourlyforecastV1TypeDefinition(EntityTypeHourlyforecastV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, hourlyforecastV1)
 	numericsensorV1, err := newNumericsensorV1TypeDefinition(EntityTypeNumericsensorV1)
 	if err != nil {
 		return nil, err
@@ -243,6 +257,18 @@ func newColorxyV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 	return definition, nil
 }
 
+func newDailyforecastV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractdailyforecastv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.dailyforecast/v1 codecs: %w", err)
+	}
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractdailyforecastv1.ValidateSupport, contractdailyforecastv1.ValidateState, contractdailyforecastv1.EqualState)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
 func newEnumactionV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 	codecs, err := contractenumactionv1.Compile()
 	if err != nil {
@@ -304,6 +330,18 @@ func newEnumsettingV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, erro
 		contractenumsettingv1.SetSatisfied,
 	)
 	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractenumsettingv1.ValidateSupport, contractenumsettingv1.ValidateState, contractenumsettingv1.EqualState, set)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newHourlyforecastV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contracthourlyforecastv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.hourlyforecast/v1 codecs: %w", err)
+	}
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contracthourlyforecastv1.ValidateSupport, contracthourlyforecastv1.ValidateState, contracthourlyforecastv1.EqualState)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

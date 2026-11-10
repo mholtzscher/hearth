@@ -5,7 +5,7 @@ import { isQuantityField, pointer, resolveQuantity, stateField, stateFields } fr
 import type { EntitySource, ResourceMetadata } from "./types";
 
 const timestamp = z.string().datetime({ offset: true });
-const entityBody = z.object({
+export const entityBody = z.object({
   id: z.string(), type: z.string(), name: z.string(), enabled: z.boolean(),
   availability: z.object({ status: z.string() }), support: z.unknown().optional(),
   state: z.object({ value: z.unknown(), observed_at: timestamp }).nullable(),
@@ -55,6 +55,10 @@ export function entityMetadata(data: FieldEntity, source: EntitySource): Resourc
 /** One shared current-State read per Entity, whichever field a card selects. */
 export function entityStateRequest(source: EntitySource): ReadRequest {
   return { key: `entity-state:${source.entity_id}`, kind: "state",
-    load: signal => apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}`, { signal }, text => readEntity(JSON.parse(text), source)),
+    load: signal => apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}`, { signal }, text => {
+      const raw: unknown = JSON.parse(text);
+      if (source.entity_type === "hearth.hourlyforecast/v1" || source.entity_type === "hearth.dailyforecast/v1") return entityBody.parse(raw);
+      return readEntity(raw, source);
+    }),
   };
 }

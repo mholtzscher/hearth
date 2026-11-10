@@ -15,6 +15,8 @@ import { OutsideNowEditor } from "../cards/outside-now/Editor";
 import { RainEditor } from "../cards/rain/Editor";
 import { WindEditor } from "../cards/wind/Editor";
 import { PressureEditor } from "../cards/pressure/Editor";
+import { ForecastEditor } from "../cards/forecast/Editor";
+import { forecastTypes } from "../cards/forecast/schema";
 import { gridSchema } from "../layout/schema";
 import { TimeSeriesEditor, type SensorChoice } from "../cards/time-series/Editor";
 import { fieldTypes } from "../bindings/state-fields";
@@ -29,9 +31,9 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
   const [choices, setChoices] = useState<SensorChoice[]>([]);
   const [error, setError] = useState("");
   const version = useBaseUrlVersion();
-  const readable = new Set<string>(fieldTypes);
+  const readable = new Set<string>([...fieldTypes, forecastTypes.hourly, forecastTypes.daily]);
   // Entity names repeat across Devices ("Humidity"), so cards that pick sources by name also show the Device.
-  const deviceNames = Object.values(definition.spec.elements).some(node => ["ToggleTile", "ToggleList", "OutsideNow", "Rain", "Wind", "Pressure"].includes(node.type));
+  const deviceNames = Object.values(definition.spec.elements).some(node => ["ToggleTile", "ToggleList", "OutsideNow", "Rain", "Wind", "Pressure", "Forecast"].includes(node.type));
   useEffect(() => {
     const controller = new AbortController();
     setChoices([]);
@@ -87,6 +89,7 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
       {node.type === "Rain" && <RainEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "Wind" && <WindEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "Pressure" && <PressureEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "Forecast" && <ForecastEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "TimeSeries" && <TimeSeriesEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {(node.type === "Heading" || node.type === "Note") && <TextField label="Text" multiline value={node.props.text} onChange={text => element(key, { ...node, props: { text } })} schema={node.type === "Heading" ? headingSchema.shape.text : noteSchema.shape.text} errorMessage={`Use 1–${node.type === "Heading" ? 120 : 500} characters for this ${node.type.toLowerCase()}.`} />}
       {node.type === "Grid" && <label>Columns<select value={node.props.columns} onChange={event => element(key, { ...node, props: { columns: gridSchema.shape.columns.parse(Number(event.target.value)) } })}><option>1</option><option>2</option><option>3</option><option>4</option></select></label>}

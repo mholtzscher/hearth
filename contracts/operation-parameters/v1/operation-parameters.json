@@ -112,6 +112,9 @@
         }
       }
     },
+    "hearth.dailyforecast/v1": {
+      "operations": {}
+    },
     "hearth.enumaction/v1": {
       "operations": {
         "trigger": {
@@ -160,6 +163,9 @@
           }
         }
       }
+    },
+    "hearth.hourlyforecast/v1": {
+      "operations": {}
     },
     "hearth.numericsensor/v1": {
       "operations": {}
