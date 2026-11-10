@@ -262,6 +262,20 @@ Derived values and words dim when any reading they use is dimmed. Pressure state
 16px arrow icon and the signed change, or says why there is no tendency.
 Method and thresholds belong in Source.
 
+Forecast cards show modeled predictions, not station readings, and are the
+only cards that draw sky conditions. Daily rows are 44px tall: the day at 14px
+(**Today** first), a 28px condition icon, the precipitation chance at 13px
+`--info`, the low at the 20px compact scale in `--gray-8`, a 4px `--gray-3`
+track with a `--gray-9` span from low to high on the shown days' range, and the
+high at 20px in `--gray-10`. Hourly draws a 2px `--gray-10` temperature line,
+precipitation-chance bars in `--info` at 55 % opacity, icons and 13px
+temperature labels above the line, hour labels below the axis, and a dashed
+`--gray-5` midnight rule with the weekday beneath it. Chance below 10 % is not
+shown, and its column keeps its space. Condition icons are 1.6px line drawings in
+`--gray-9`; only here, the sun and lightning take pale gold (`--chart-5`) and
+drops and flakes take dusk blue (`--info`). An unavailable or disabled forecast
+keeps its last periods with values, icons, and bars in `--gray-8`.
+
 Every data card in a view uses one frame. Future card types follow this contract rather than copying an existing card.
 
 The frame is the card surface (`--gray-1`, a 1px `--gray-3` border, 12px corners, 18px padding) with these slots, in order:

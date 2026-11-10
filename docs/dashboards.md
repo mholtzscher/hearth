@@ -266,6 +266,29 @@ view is presented or saved: `mm/h` for rain rates, `mm` for rain totals, and
 Each reading keeps its own statuses; the footer states the oldest displayed
 reading. Weather cards count toward the 16-reference budget like other cards.
 
+Forecast binds one `source` Entity of type `hearth.hourlyforecast/v1` or
+`hearth.dailyforecast/v1` and reads its whole State; there is no `field`. Its
+optional `periods` is 6–48 for hourly (default 24) and 3–8 for daily (default
+8); the JSON Schema ties the range to the source type, and Core also checks on
+present and save that the Entity exists with that type. The title defaults to
+**Next 24 hours** or **Next 8 days** from the count. The card shows modeled
+forecasts, not station readings:
+
+- Daily lists one row per upcoming day: the day (**Today** first), a condition
+  icon, the precipitation chance, the low, a bar spanning the shown days' range,
+  and the high.
+- Hourly charts upcoming hours: a temperature line with gaps where a period has
+  no temperature, precipitation-chance bars, and icons and temperatures every 1,
+  2, 3, or 6 hours for up to 6, 12, 24, or 48 hours. Below 22px per hour the plot
+  scrolls inside the card.
+- Precipitation chance shows only at 10% or more. Temperatures convert to the
+  household unit system and round to whole degrees.
+- Periods that have ended drop at each minute without a refetch: an hour once it
+  is over, a day once the viewer's local date passes it. With none left, the card
+  says the last forecast has passed.
+- The footer states the forecast's observation time. An unavailable or disabled
+  Entity keeps its last forecast, dimmed.
+
 Grid accepts 1–4 columns as a ceiling. Grids containing only ToggleTiles use a
 160px minimum and can retain two columns on phones; other grids keep the
 248px minimum and single-column phone layout. Metering ToggleTiles span the full
