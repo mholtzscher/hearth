@@ -191,7 +191,7 @@ describe("DeviceFactsPage entity and device enrichment", () => {
     expect(factRow.textContent).toContain(fixtures.targetDeviceName);
     expect(factRow.textContent).not.toContain("(unresolved entity)");
     // The page-2 entity type drove the rendered value, not just the name.
-    expect(factRow.textContent).toContain("21.50 °C");
+    expect(factRow.textContent).toContain("21500 mCel");
 
     const grid = screen.getByRole("grid", { name: "Device facts, newest first" });
     expect(within(grid).queryByText("(unresolved entity)")).toBeNull();

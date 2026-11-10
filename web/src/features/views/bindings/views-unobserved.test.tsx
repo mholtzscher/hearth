@@ -13,6 +13,7 @@ function emptyHistory(entity: string, rangeTo: string) {
   const from = Math.ceil(to / 60_000) * 60_000 - 6 * 3600_000;
   return {
     entity_id: entity,
+    quantity: { unit: "Cel", label: "°C", fraction_digits: 1 },
     range: { from: new Date(from).toISOString(), to: rangeTo },
     bucket: { duration: "1m0s", alignment: "range_start" },
     buckets: Array.from({ length: 360 }, (_, i) => ({
@@ -30,7 +31,7 @@ it("shows never-observed State beside an empty historical chart", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => new Response(
     JSON.stringify(String(url).includes("/state/history") && init?.method === "POST"
       ? emptyHistory(id, JSON.parse(String(init?.body)).range.to)
-      : { id, name: "New sensor", type: "hearth.temperature/v1", enabled: true, availability: { status: "available" }, state: null }),
+      : { id, name: "New sensor", type: "hearth.temperature/v1", enabled: true, availability: { status: "available" }, quantities: { "": { unit: "Cel", label: "°C", fraction_digits: 1 } }, state: null }),
   ));
   render(<ViewDataProvider><BoundTimeSeries title="New sensor history" series={[{ source: { entity_id: id, entity_type: "hearth.temperature/v1", window: "6h" } }]} /></ViewDataProvider>, { wrapper: MemoryRouter });
   expect(await screen.findByText("Never observed")).toBeTruthy();
@@ -43,6 +44,7 @@ it("shares one Entity response across hue and saturation cards", async () => {
   const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
     id: source.entity_id, type: source.entity_type, name: "Lamp", enabled: true,
     availability: { status: "unavailable" }, support: {},
+    quantities: { "/hue": { unit: "deg", label: "°", fraction_digits: 0 }, "/saturation": { unit: "%", label: "%", fraction_digits: 0 } },
     state: { value: { active: false, hue: 210, saturation: 64 }, observed_at: "2026-11-01T10:00:00Z" },
   })));
   render(<ViewDataProvider>
@@ -63,6 +65,7 @@ it("renders absent optional fields separately from never-observed and zero", asy
     const value = id.endsWith("1") ? { mode: "choice", choice: "auto" } : { mode: "value", value: 0 };
     return new Response(JSON.stringify({ id, type, name: "Setting", enabled: true,
       availability: { status: "available" }, support: {},
+      quantities: { "/value": { unit: "1", label: "", fraction_digits: 1 } },
       state: id.endsWith("3") ? null : { value, observed_at: "2026-11-01T10:00:00Z" },
     }));
   });

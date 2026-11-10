@@ -1,6 +1,6 @@
 import type { ReadRequest } from "../data/cache";
 import type { HistorySeries } from "./history";
-import type { UnitSystem } from "../../units/units";
+import type { UnitSystem } from "../../units/systems";
 
 export type SeriesWindow = "1h" | "6h" | "24h" | "7d";
 export type NumericFormat = { unit_label: string; fraction_digits: number };
@@ -11,7 +11,7 @@ export type TextData = { text: string; observed_at: string };
 /** Card-chosen words for a boolean field. */
 export type Words = { true: string; false: string };
 export type AbsentMetric = { absent: true; observed_at: string };
-export type SeriesData = { from: string; to: string; format: NumericFormat; buckets: Array<{
+export type SeriesData = { from: string; to: string; unit?: string; format: NumericFormat; buckets: Array<{
   start: string; end: string; min: number | null; max: number | null; mean: number | null;
 }> };
 export type ResourceMetadata = {

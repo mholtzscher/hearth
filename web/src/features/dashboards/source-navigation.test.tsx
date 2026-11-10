@@ -10,7 +10,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const id = "ent_019a3e6a-4111-7000-8000-000000000001";
 const entity = { id, type: "hearth.temperature/v1", name: "Temperature", enabled: true, availability: { status: "available" }, support: {},
-  state: { value: 21500, observed_at: "2026-11-05T22:00:00Z" } };
+  quantities: { "": { unit: "Cel", label: "°C", fraction_digits: 1 } }, state: { value: 21.5, observed_at: "2026-11-05T22:00:00Z" } };
 const definition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Climate", spec: { root: "metric", elements: {
   metric: { type: "Metric", props: { label: "Living room", source: { kind: "entity-state", entity_id: id, entity_type: entity.type } } },
 } } };

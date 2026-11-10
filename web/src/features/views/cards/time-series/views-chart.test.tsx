@@ -13,6 +13,20 @@ const data = (hour: number, value: number): SeriesData => ({
   format: { unit_label: "%", fraction_digits: 0 },
   buckets: [{ start: `2026-11-01T0${hour}:00:00Z`, end: `2026-11-01T0${hour}:01:15Z`, min: value, max: value, mean: value }],
 });
+it("does not plot household histories with different delivered unit codes on one axis", async () => {
+  const a = { ...data(4, 1), unit: "[in_i]/h", format: { unit_label: "in/h", fraction_digits: 2 } };
+  const b = { ...data(4, 25), unit: "mm/h", format: { unit_label: "mm/h", fraction_digits: 1 } };
+  a.buckets.push({ ...a.buckets[0], start: "2026-11-01T04:01:15Z", end: "2026-11-01T04:02:30Z" });
+  b.buckets.push({ ...b.buckets[0], start: "2026-11-01T04:01:15Z", end: "2026-11-01T04:02:30Z" });
+  const { container } = render(<TimeSeries title="Rain" series={[
+    { label: "Classified", resource: { status: "ready", data: a } },
+    { label: "Unclassified", resource: { status: "ready", data: b } },
+  ]} />);
+  expect(screen.getByText("History series use incompatible units.")).toBeTruthy();
+  expect(screen.getByText("Unclassified: no readings yet.")).toBeTruthy();
+  await waitFor(() => expect(container.querySelectorAll(".recharts-yAxis-tick-labels text").length).toBeGreaterThan(0));
+  expect([...container.querySelectorAll(".recharts-yAxis-tick-labels text")].every(node => Number(node.textContent) < 10)).toBe(true);
+});
 it("keeps the last coherent plot after a sibling refresh fails and honors adapter precision", async () => {
   const one = data(4, 65), two = data(4, 75);
   const { container, rerender } = render(<TimeSeries title="Battery history" series={[

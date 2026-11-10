@@ -14,7 +14,6 @@
     "@assistant-ui/react": "0.15.32",
     "@assistant-ui/react-markdown": "0.14.24",
     "@fontsource-variable/figtree": "^5.3.0",
-    "@lhncbc/ucum-lhc": "8.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "ajv": "^8.20.0",
     "class-variance-authority": "^0.7.1",

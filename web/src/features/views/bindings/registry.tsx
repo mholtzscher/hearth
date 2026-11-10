@@ -9,7 +9,7 @@ import { quantityField, quantityTypes, textField } from "./state-fields";
 import { textReading } from "./words";
 import { readTimeline, readWeekPattern, timelineRequest, weekPatternRequest, weekStart } from "./changes";
 import { useUnitSystem } from "../../units/household";
-import type { UnitSystem } from "../../units/units";
+import type { UnitSystem } from "../../units/systems";
 import type { ReadRequest } from "../data/cache";
 import { type EntitySource, type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow, type TextData, type TimelineData, type WeekPatternData, type Words } from "./types";
 

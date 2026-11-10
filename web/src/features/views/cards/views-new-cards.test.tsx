@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { StateCard } from "./state/State";
@@ -10,6 +10,7 @@ import { BoundState } from "./state/State";
 import { BoundMetric } from "./metric/Metric";
 import { parseDefinition } from "../catalog/compatibility";
 import { deviceReading, lightReading, parseDevice } from "../bindings/device";
+import type { FieldEntity } from "../bindings/entity";
 import type { Resolved, TextData, SeriesData } from "../bindings/types";
 import { UnitSystemOverride } from "../../units/household";
 
@@ -38,7 +39,7 @@ it.each([
 });
 
 it("State and numeric fields share one validated Entity request", async () => {
-  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id, type: "hearth.colorhs/v1", name: "Lamp", enabled: true, availability: { status: "available" }, support: {}, state: { value: { active: true, hue: 42, saturation: 64 }, observed_at: at } })));
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id, type: "hearth.colorhs/v1", name: "Lamp", enabled: true, availability: { status: "available" }, support: {}, quantities: { "/hue": { unit: "deg", label: "°", fraction_digits: 0 }, "/saturation": { unit: "%", label: "%", fraction_digits: 0 } }, state: { value: { active: true, hue: 42, saturation: 64 }, observed_at: at } })));
   const source = { entity_id: id, entity_type: "hearth.colorhs/v1" };
   render(<UnitSystemOverride.Provider value="metric"><ViewDataProvider><BoundState label="Mode" source={{ ...source, field: "/active" }} /><BoundMetric label="Hue" source={{ ...source, field: "/hue" }} /></ViewDataProvider></UnitSystemOverride.Provider>, { wrapper: MemoryRouter });
   expect(await screen.findByText("Active")).toBeTruthy();
@@ -73,7 +74,12 @@ it("shows pinned ranges in words and keeps gaps in a trend", () => {
   expect(screen.getByText("1 h range 10–40 %")).toBeTruthy();
 });
 
-const entity = (type: string, value: unknown, i = 1) => ({ id: id.slice(0, -1) + i, type: `hearth.${type}/v1`, name: type, enabled: true, availability: { status: "available" }, support: {}, state: value === undefined ? null : { value, observed_at: at } });
+const entity = (type: string, value: unknown, i = 1): FieldEntity => ({ id: id.slice(0, -1) + i, type: `hearth.${type}/v1`, name: type, enabled: true, availability: { status: "available" }, support: {},
+  quantities: type === "brightness" ? { "": { unit: "%", label: "%", fraction_digits: 0, range: { minimum: 0, maximum: 100 } } }
+    : type === "colorhs" ? { "/hue": { unit: "deg", label: "°", fraction_digits: 0 }, "/saturation": { unit: "%", label: "%", fraction_digits: 0, range: { minimum: 0, maximum: 100 } } }
+    : type === "colorxy" ? { "/x": { unit: "1", label: "", fraction_digits: 4 }, "/y": { unit: "1", label: "", fraction_digits: 4 } }
+    : type === "numericsetting" ? { "/value": { unit: "1", label: "", fraction_digits: 1 } } : {},
+  state: value === undefined ? null : { value, observed_at: at } });
 
 it("Device handles never observed colors and skips event sources, not malformed State", () => {
   const device = parseDevice({ id: deviceId, name: "Lamp", entities: [entity("power", true), entity("brightness", 64, 2), entity("colorhs", undefined, 3), { type: "hearth.enumevent/v1" }] }, deviceId);
@@ -108,6 +114,22 @@ it("Device follows paginated membership and names a missing Device", async () =>
   expect(await screen.findByText("Device not found")).toBeTruthy();
 });
 
+it("renders projected color coordinates but requests canonical coordinates for the swatch", async () => {
+  const projected = entity("colorxy", { active: true, x: 0.3127, y: 0.329 }, 3);
+  const canonical = { ...projected, quantities: {
+    "/x": { unit: "10*-4", label: "10*-4", fraction_digits: 0 }, "/y": { unit: "10*-4", label: "10*-4", fraction_digits: 0 },
+  }, state: { value: { active: true, x: 3127, y: 3290 }, observed_at: at } };
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+    const isCanonical = String(input).includes("units=canonical");
+    return new Response(JSON.stringify({ id: deviceId, name: "Lamp", entities: [entity("power", true), entity("brightness", 64, 2), isCanonical ? canonical : projected] }));
+  });
+  render(<UnitSystemOverride.Provider value="metric"><ViewDataProvider><BoundDevice device={{ kind: "device", device_id: deviceId }} /></ViewDataProvider></UnitSystemOverride.Provider>, { wrapper: MemoryRouter });
+  expect(await screen.findByText(/X 0\.3127/)).toBeTruthy();
+  await waitFor(() => expect(document.querySelector<HTMLElement>(".view-light-swatch")?.style.backgroundColor).toBe("rgb(255, 255, 255)"));
+  expect(fetch.mock.calls.some(([url]) => String(url).includes("units=canonical"))).toBe(true);
+  expect(fetch.mock.calls.some(([url]) => !String(url).includes("units=canonical"))).toBe(true);
+});
+
 it("strict definitions reject text words on strings and ranges without facts", () => {
   const definition = (node: unknown) => ({ schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Test", spec: { root: "card", elements: { card: node } } });
   expect(parseDefinition(definition({ type: "State", props: { source: { kind: "entity-state", entity_id: id, entity_type: "hearth.colormode/v1" }, words: { true: "X", false: "Y" } } }))).toBeNull();
@@ -125,11 +147,11 @@ it("does not replay a displayed unavailable change when availability returns", (
 
 it("does not use a hidden inactive color for the Device footer or afterglow", () => {
   const entities = [entity("power", true), entity("brightness", 64, 2), entity("colorhs", { active: true, hue: 20, saturation: 64 }, 3),
-    { ...entity("colorxy", { active: false, x: 4000, y: 4000 }, 4), state: { value: { active: false, x: 4000, y: 4000 }, observed_at: "2026-11-06T08:00:00Z" } }];
+    { ...entity("colorxy", { active: false, x: 0.4, y: 0.4 }, 4), state: { value: { active: false, x: 0.4, y: 0.4 }, observed_at: "2026-11-06T08:00:00Z" } }];
   const data = parseDevice({ id: deviceId, name: "Lamp", entities }, deviceId);
   const view = render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} system="metric" />, { wrapper: MemoryRouter });
   expect(document.querySelector("time")?.getAttribute("datetime")).toBe(at);
-  const updated = { ...data, entities: data.entities.map(e => e.type === "hearth.colorxy/v1" ? { ...e, state: { value: { active: false, x: 5000, y: 4000 }, observed_at: "2026-11-06T10:02:00Z" } } : e) };
+  const updated = { ...data, entities: data.entities.map(e => e.type === "hearth.colorxy/v1" ? { ...e, state: { value: { active: false, x: 0.5, y: 0.4 }, observed_at: "2026-11-06T10:02:00Z" } } : e) };
   view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: updated }} system="metric" />);
   expect(document.querySelector(".view-card-arrival")).toBeNull();
   const unavailable = { ...data, entities: data.entities.map(e => e.type === "hearth.colorhs/v1" ? { ...e, availability: { status: "unavailable" } } : e) };
@@ -149,7 +171,7 @@ it("names a refresh failure even with an empty Device or an empty history interv
 
 it("observes color-mode changes that select a new light color and reports selector availability", () => {
   const entities = [entity("power", true), entity("brightness", 64, 2), { ...entity("colorhs", undefined, 3), state: { value: { active: false, hue: 20, saturation: 64 }, observed_at: "2026-11-06T12:00:00Z" } },
-    entity("colorxy", { active: false, x: 4000, y: 4000 }, 4), entity("colormode", "hs", 5)];
+    entity("colorxy", { active: false, x: 0.4, y: 0.4 }, 4), entity("colormode", "hs", 5)];
   const data = parseDevice({ id: deviceId, name: "Lamp", entities }, deviceId);
   const view = render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} system="metric" />, { wrapper: MemoryRouter });
   const updated = { ...data, entities: data.entities.map(e => e.type === "hearth.colormode/v1" ? { ...e, state: { value: "xy", observed_at: "2026-11-06T10:02:00Z" } } : e) };

@@ -213,24 +213,28 @@ function eventSourceNames(support?: Record<string, unknown>): string[] {
 function formatStateSummary(
   type: string | undefined,
   value: unknown,
-  support?: Record<string, unknown>,
+  quantities?: Entity["quantities"],
 ): string | null {
   if (value === null || value === undefined) return null;
+  const numeric = (value: number, path: string) => {
+    const quantity = quantities?.[path];
+    return quantity ? `${value.toFixed(quantity.fraction_digits)}${quantity.label ? ` ${quantity.label}` : ""}` : String(value);
+  };
   switch (type) {
     case "hearth.colorxy/v1": {
       const v = value as { active?: unknown; x?: unknown; y?: unknown };
       if (typeof v.active !== "boolean" || typeof v.x !== "number" || typeof v.y !== "number") return null;
-      return `x ${v.x} (${(v.x / 10000).toFixed(4)}), y ${v.y} (${(v.y / 10000).toFixed(4)}), ${v.active ? "active" : "inactive"}`;
+      return `x ${numeric(v.x, "/x")}, y ${numeric(v.y, "/y")}, ${v.active ? "active" : "inactive"}`;
     }
     case "hearth.colorhs/v1": {
       const v = value as { active?: unknown; hue?: unknown; saturation?: unknown };
       if (typeof v.active !== "boolean" || typeof v.hue !== "number" || typeof v.saturation !== "number") return null;
-      return `hue ${v.hue}°, saturation ${v.saturation}%, ${v.active ? "active" : "inactive"}`;
+      return `hue ${numeric(v.hue, "/hue")}, saturation ${numeric(v.saturation, "/saturation")}, ${v.active ? "active" : "inactive"}`;
     }
     case "hearth.colortemp/v1": {
       const v = value as { active?: unknown; value?: unknown };
       if (typeof v.active !== "boolean" || typeof v.value !== "number") return null;
-      return `${v.value} mireds, ${v.active ? "active" : "inactive"}`;
+      return `${numeric(v.value, "/value")}, ${v.active ? "active" : "inactive"}`;
     }
     case "hearth.colormode/v1":
       return typeof value === "string" ? value : null;
@@ -238,8 +242,7 @@ function formatStateSummary(
       return typeof value === "boolean" ? (value ? "True" : "False") : null;
     case "hearth.numericsensor/v1": {
       if (typeof value !== "number") return null;
-      const unit = (support?.state as { unit?: unknown } | undefined)?.unit;
-      return typeof unit === "string" && unit ? `${value} ${unit}` : String(value);
+      return numeric(value, "");
     }
     case "hearth.enumsetting/v1":
       return typeof value === "string" ? value : null;
@@ -247,8 +250,7 @@ function formatStateSummary(
       if (typeof value !== "object" || value === null) return null;
       const v = value as { mode?: unknown; value?: unknown; choice?: unknown };
       if (v.mode === "value" && typeof v.value === "number") {
-        const unit = (support?.state as { unit?: unknown } | undefined)?.unit;
-        return typeof unit === "string" && unit ? `${v.value} ${unit}` : String(v.value);
+        return numeric(v.value, "/value");
       }
       if (v.mode === "choice" && typeof v.choice === "string") return v.choice;
       return null;
@@ -261,7 +263,7 @@ function formatStateSummary(
       // The State row already shows the summary; the full State is in Raw entity JSON.
       return null;
     default:
-      return null;
+      return typeof value === "number" ? numeric(value, "") : null;
   }
 }
 function brightnessPresets(): { label: string; params: string }[] {
@@ -473,7 +475,7 @@ export default function EntityDetailPage() {
     }
   }
 
-  const stateSummary = data ? formatStateSummary(data.type, data.state?.value, data.support) : null;
+  const stateSummary = data ? formatStateSummary(data.type, data.state?.value, data.quantities) : null;
   const commandable = hasOperations(data?.support);
   const eventNames = eventSourceNames(data?.support);
   const eventSource = eventNames.length > 0;

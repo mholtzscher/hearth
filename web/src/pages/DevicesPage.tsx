@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
+import { formatEntityState } from "../api/entity-state";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, Device, DeviceDetail } from "../api/types.ts";
 import {
@@ -12,7 +13,7 @@ import {
   Section,
   StatusChip,
 } from "../components/common.tsx";
-import { stateCellText } from "../components/forecast-summary.ts";
+import { forecastSummary } from "../components/forecast-summary.ts";
 import { Button } from "../components/ui/button.tsx";
 import NameEditor from "../components/NameEditor.tsx";
 import {
@@ -138,7 +139,7 @@ export default function DevicesPage() {
                         <StatusChip status={e.availability.status} />
                       </TableCell>
                       <TableCell className="font-mono text-xs">
-                        {e.state ? stateCellText(e.type, e.state.value) : "—"}
+                        {e.state ? forecastSummary(e.type, e.state.value) ?? formatEntityState(e) : "—"}
                       </TableCell>
                     </TableRow>
                   ))}

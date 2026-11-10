@@ -1,5 +1,5 @@
 import { Area, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChartContainer } from "../../../../components/ui/chart";
 import { useNumericReads } from "../../bindings/registry";
 import type { NumericSource, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
@@ -29,7 +29,16 @@ function seriesSummary(label: string, data: SeriesData | undefined): string {
   return `${label}: latest ${latest.toFixed(digits)}${unit}, range ${Math.min(...lows).toFixed(digits)} to ${Math.max(...highs).toFixed(digits)} over the last ${windowWords(data)}.`;
 }
 
-export function TimeSeries({ title, series }: { title: string; series: Array<{ label?: string; resource: Resolved<SeriesData> }> }) {
+export function TimeSeries({ title, series: inputs }: { title: string; series: Array<{ label?: string; resource: Resolved<SeriesData> }> }) {
+  // Equal canonical units can have different projections, e.g. a classified
+  // precipitation sensor alongside an unclassified mm/h sensor. Never plot
+  // the delivered numbers on one axis when their actual units differ.
+  const series = useMemo(() => {
+    const unit = inputs.find(item => item.resource.data?.unit !== undefined)?.resource.data?.unit;
+    return inputs.map(item => item.resource.data?.unit !== undefined && unit !== undefined && item.resource.data.unit !== unit
+      ? { ...item, resource: { ...item.resource, status: "error" as const, data: undefined, error: "History series use incompatible units." } }
+      : item);
+  }, [inputs]);
   const latest = series.find(item => item.resource.data)?.resource.data;
   const aligned = series.every(item => !item.resource.data || !latest || (item.resource.data.from === latest.from && item.resource.data.to === latest.to));
   const [retained, setRetained] = useState(() => aligned ? series : []);
@@ -66,7 +75,7 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
   const xLabels = new Map(x.map(tick => [tick.value, tick.label]));
   const since = coverageStart(items.flatMap(item => item.data ? [item.data] : []));
   const bucketMinutes = first ? (to - from) / first.buckets.length / 60_000 : null;
-  const unit = first?.format.unit_label;
+  const label = first?.format.unit_label;
   // History and current State refresh independently. Compare the displayed
   // history interval, not State's timestamp, so only a changed plot glows.
   const arrivals = items.flatMap((item, index) => {
@@ -85,7 +94,7 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
     <p>Each point averages the samples in a {bucketMinutes >= 1 ? `${Number(bucketMinutes.toFixed(1))}-minute` : `${Math.round(bucketMinutes * 60)}-second`} interval; the shaded band spans their minimum and maximum. Gaps mean no samples or a reported absent field.</p>
     {first && <p>{new Date(from).toLocaleString()} to {new Date(to).toLocaleString()}</p>}
   </>;
-  return <CardFrame className="view-chart" title={title} unit={unit} status={[]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
+  return <CardFrame className="view-chart" title={title} unit={label} status={[]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
     <ul className="view-chart-legend">{items.map((item, i) => <li key={i} data-dimmed={item.dimmed || undefined}>
       <span className="view-chart-swatch" aria-hidden="true" style={{ background: item.color }} />{item.label}
       <StatusList entries={item.status.entries} />

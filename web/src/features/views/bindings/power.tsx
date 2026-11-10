@@ -18,7 +18,7 @@ export type PowerReading = {
 
 /** Current power/support stays usable when the independent change-history read fails. */
 export function usePowerReadings(sources: PowerSource[]): PowerReading[] {
-  const snapshots = useReads(sources.flatMap(source => [entityStateRequest(source), timelineRequest(source, "24h")]));
+  const snapshots = useReads(sources.flatMap(source => [entityStateRequest(source, "canonical"), timelineRequest(source, "24h")]));
   return sources.map((source, index) => resolvePower(source, snapshots[index * 2], snapshots[index * 2 + 1]));
 }
 

@@ -19,6 +19,7 @@ const view = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title:
 function respond(availability: string) {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
     id, type: "hearth.temperature/v1", name: "Temperature", enabled: true, availability: { status: availability }, support: {},
+    quantities: { "": { unit: "Cel", label: "°C", fraction_digits: 1 } },
     state: { value: 20, observed_at: new Date().toISOString() },
   })));
 }
@@ -57,6 +58,7 @@ it("dims an unavailable reading, leads with its status, and links Source to the 
 it("separates combined statuses into distinct list items", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
     id, type: "hearth.temperature/v1", name: "Temperature", enabled: false, availability: { status: "unavailable" }, support: {},
+    quantities: { "": { unit: "Cel", label: "°C", fraction_digits: 1 } },
     state: { value: 20, observed_at: new Date().toISOString() },
   })));
   await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={view} /></ViewDataProvider>, { wrapper: MemoryRouter }));

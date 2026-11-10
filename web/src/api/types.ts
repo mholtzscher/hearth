@@ -52,7 +52,15 @@ export interface Entity {
   support: Record<string, unknown>;
   enabled: boolean;
   availability: Availability;
+  quantities?: Record<string, Quantity>;
   state: EntityState | null;
+}
+
+export interface Quantity {
+  unit: string;
+  label: string;
+  fraction_digits: number;
+  range?: { minimum: number; maximum: number };
 }
 
 export interface Device {

@@ -3,11 +3,13 @@ import { apiFetch } from "../../../api/client";
 import type { ReadRequest } from "../data/cache";
 import { isQuantityField, pointer, resolveQuantity, stateField, stateFields } from "./state-fields";
 import type { EntitySource, ResourceMetadata } from "./types";
+import { quantitySchema } from "./quantity";
 
 const timestamp = z.string().datetime({ offset: true });
 export const entityBody = z.object({
   id: z.string(), type: z.string(), name: z.string(), enabled: z.boolean(),
   availability: z.object({ status: z.string() }), support: z.unknown().optional(),
+  quantities: z.record(z.string(), quantitySchema).optional(),
   state: z.object({ value: z.unknown(), observed_at: timestamp }).nullable(),
 });
 export type FieldEntity = z.infer<typeof entityBody>;
@@ -23,12 +25,16 @@ export function parseFieldEntity(raw: unknown): FieldEntity {
   const fields = Object.prototype.hasOwnProperty.call(stateFields, parsed.type) ? stateFields[parsed.type] : undefined;
   if (!fields) throw new Error("Unsupported Entity type");
   for (const [path, field] of Object.entries(fields)) {
-    if (isQuantityField(field)) resolveQuantity(field, parsed.support);
+    if (isQuantityField(field)) {
+      resolveQuantity(field, parsed.support);
+      if (!parsed.quantities?.[path]) throw new Error("Missing quantity metadata");
+    }
     if (!parsed.state) continue;
     const value = pointer(parsed.state.value, path);
     if (value === undefined && field.presence === "sometimes") continue;
     switch (field.value_type) {
-      case "integer": z.number().int().parse(value); break;
+      // A household projection of an integer canonical field can be fractional.
+      case "integer": z.number().parse(value); break;
       case "number": z.number().parse(value); break;
       case "boolean": z.boolean().parse(value); break;
       case "string":
@@ -53,9 +59,9 @@ export function entityMetadata(data: FieldEntity, source: EntitySource): Resourc
 }
 
 /** One shared current-State read per Entity, whichever field a card selects. */
-export function entityStateRequest(source: EntitySource): ReadRequest {
-  return { key: `entity-state:${source.entity_id}`, kind: "state",
-    load: signal => apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}`, { signal }, text => {
+export function entityStateRequest(source: EntitySource, units: "household" | "canonical" = "household"): ReadRequest {
+  return { key: `entity-state:${source.entity_id}:${units}`, kind: "state",
+    load: signal => apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}${units === "canonical" ? "?units=canonical" : ""}`, { signal }, text => {
       const raw: unknown = JSON.parse(text);
       if (source.entity_type === "hearth.hourlyforecast/v1" || source.entity_type === "hearth.dailyforecast/v1") return entityBody.parse(raw);
       return readEntity(raw, source);

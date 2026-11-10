@@ -9,6 +9,8 @@ const numericField = z.strictObject({
   value_type: z.enum(["integer", "number"]), presence,
   quantity: z.strictObject({
     unit: z.union([z.string().min(1), reference]),
+    quantity_kind: z.union([z.string().min(1), reference]).optional(),
+    quantity_kind_optional: z.boolean().optional(),
     unit_optional: z.boolean().optional(),
     range: z.strictObject({ minimum: bound, maximum: bound }).optional(),
   }),
@@ -20,9 +22,12 @@ export type QuantityField = z.infer<typeof numericField>;
 export type TextField = z.infer<typeof booleanField> | z.infer<typeof stringField>;
 export type StateField = z.infer<typeof field>;
 
-// Only generated schema facts live here. Household presentation belongs to units.
-export const stateFields: Readonly<Record<string, Readonly<Record<string, StateField>>>> =
-  z.strictObject({ $comment: z.string(), types: z.record(z.string(), z.record(z.string(), field)) }).parse(catalog).types;
+const catalogSchema = z.strictObject({ $comment: z.string(), types: z.record(z.string(), z.record(z.string(), field)) });
+/** Strictly parse generated catalog facts, independently of household presentation. */
+export function parseStateFields(raw: unknown): Readonly<Record<string, Readonly<Record<string, StateField>>>> {
+  return catalogSchema.parse(raw).types;
+}
+export const stateFields = parseStateFields(catalog);
 /** Types with at least one catalogued State field: every type a reading card can bind. */
 export const fieldTypes = Object.keys(stateFields).sort();
 export const quantityTypes = fieldTypes.filter(type => Object.values(stateFields[type]).some(isQuantityField));

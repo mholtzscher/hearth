@@ -26,7 +26,7 @@ function fakeCore(light: Light) {
     { id: powerId, type: "hearth.power/v1", name: "Power", enabled: light.powerEnabled ?? true, availability: { status: "available" },
       support: light.powerSupport ?? settable, state: { value: light.on, observed_at: light.observedAt } },
     { id: brightnessId, type: "hearth.brightness/v1", name: "Brightness", enabled: true, availability: { status: "available" },
-      support: settable, state: { value: light.level, observed_at: light.observedAt } },
+      support: settable, quantities: { "": { unit: "%", label: "%", fraction_digits: 0, range: { minimum: 0, maximum: 100 } } }, state: { value: light.level, observed_at: light.observedAt } },
   ] });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
@@ -63,13 +63,14 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-06T10:
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 it("offers a power switch and a brightness slider for a light whose Entities support set", async () => {
-  fakeCore({ on: false, level: 64, observedAt: "2026-11-06T10:00:00Z" });
+  const core = fakeCore({ on: false, level: 64, observedAt: "2026-11-06T10:00:00Z" });
   await renderLight();
   const power = screen.getByRole("switch", { name: "Lamp power" });
   expect(power.getAttribute("aria-checked")).toBe("false");
   const slider = screen.getByRole("slider", { name: "Lamp brightness" });
   expect(slider.getAttribute("aria-valuetext")).toBe("64 %");
   expect(slider.getAttribute("min")).toBe("1");
+  expect(core.gets.some(url => url.includes("units=canonical"))).toBe(true);
   // The slider states the level, so the detail line doesn't repeat it.
   expect(screen.queryByText(/Brightness 64 %/)).toBeNull();
 });
