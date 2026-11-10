@@ -1172,7 +1172,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "Wind direction in deg, named on the wind row."
+                        "description": "Wind direction reading."
                       },
                       "rain_rate": {
                         "type": "object",
@@ -1200,7 +1200,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "Rain rate in mm/h, for rain words such as Light rain."
+                        "description": "Rain rate reading."
                       },
                       "rain_today": {
                         "type": "object",

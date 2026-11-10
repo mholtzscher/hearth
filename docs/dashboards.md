@@ -358,13 +358,16 @@ and unchanged. See [agent skills](agent-skills.md) for provider migration.
 Household-default Entity and history reads change the numeric representation at
 existing JSON paths. Deploy Core and web together; older web clients would apply
 their own conversion to the projected numbers. Request `units=canonical` for
-canonical readers. This change does not rewrite stored observations.
+canonical readers. This units change does not rewrite stored observations or
+require a database reset. See [quantity metadata and read units](units.md) for
+the Core-first Adapter rollout and rollback constraints.
 
-The State-field cutover requires a fresh database and coordinated Core, SDK and
+The earlier State-field cutover required a fresh database and coordinated Core, SDK and
 Adapter versions. Fixed units no longer appear in support JSON, and brightness
 support contains neither native maximum nor step. Old support data
-is unsupported; there is no compatibility decoder or migration. The operator
-must stop writers and reset the database before restarting the new runtime (or
+is unsupported; there is no compatibility decoder or migration for that historical
+cutover. An operator upgrading from before that cutover must stop writers and
+reset the database before restarting the new runtime (or
 choose a separate fresh fixture path). Do not delete `.data/` wholesale: preserve
 design assets, screenshots, recordings, verification evidence and local specs.
 Recreate fixture Entities and explicitly seed saved dashboards; generated drafts
