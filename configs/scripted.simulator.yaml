@@ -156,6 +156,33 @@ adapters:
             type: hearth.enumevent/v1
             support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
             outputs: {interval: 30s, values: [single_press, double_press]}
+      # Forecast periods start in 2099 so they stay upcoming; visual checks
+      # generate a temporary config with periods near the current hour.
+      - binding_key: simulated-forecast
+        name: Simulated forecast
+        kind: sensor
+        entities:
+          - key: hourly-forecast
+            name: Hourly forecast
+            type: hearth.hourlyforecast/v1
+            support: {state: {}, operations: {}}
+            initial:
+              periods:
+                - {starts_at: "2099-01-01T00:00:00Z", condition: clear-night, temperature_c: 2.5, precipitation_probability_percent: 0}
+                - {starts_at: "2099-01-01T01:00:00Z", condition: partly-cloudy-night, temperature_c: 2.1, precipitation_probability_percent: 5}
+                - {starts_at: "2099-01-01T02:00:00Z", condition: cloudy, temperature_c: 1.8, precipitation_probability_percent: 20}
+                - {starts_at: "2099-01-01T03:00:00Z", condition: rain, temperature_c: 1.6, precipitation_probability_percent: 70}
+                - {starts_at: "2099-01-01T04:00:00Z", condition: sleet, temperature_c: 0.4, precipitation_probability_percent: 80}
+                - {starts_at: "2099-01-01T05:00:00Z", condition: snow, temperature_c: -0.6, precipitation_probability_percent: 60}
+          - key: daily-forecast
+            name: Daily forecast
+            type: hearth.dailyforecast/v1
+            support: {state: {}, operations: {}}
+            initial:
+              periods:
+                - {starts_at: "2099-01-01T06:00:00Z", date: "2099-01-01", condition: rain, temperature_min_c: -0.6, temperature_max_c: 4.2, precipitation_probability_percent: 80}
+                - {starts_at: "2099-01-02T06:00:00Z", date: "2099-01-02", condition: partly-cloudy-day, temperature_min_c: -3.1, temperature_max_c: 2.0, precipitation_probability_percent: 10}
+                - {starts_at: "2099-01-03T06:00:00Z", date: "2099-01-03", condition: clear-day, temperature_min_c: -5.4, temperature_max_c: 0.8, precipitation_probability_percent: 0}
 
       # Eight comparable temperature series, with different ranges and cadences.
       - binding_key: living-room-sensor

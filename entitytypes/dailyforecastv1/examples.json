@@ -1,0 +1,382 @@
+{
+  "cases": [
+    {
+      "name": "daily-snapshot",
+      "support": {
+        "state": {},
+        "operations": {}
+      },
+      "states": [
+        {
+          "value": {
+            "periods": [
+              {
+                "starts_at": "2026-11-09T06:00:00Z",
+                "date": "2026-11-09",
+                "temperature_max_c": 0
+              }
+            ]
+          },
+          "valid": true
+        },
+        {
+          "value": {
+            "periods": [
+              {
+                "starts_at": "2026-11-09T06:00:00Z",
+                "date": "2026-11-09",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-10T06:00:00Z",
+                "date": "2026-11-10",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-11T06:00:00Z",
+                "date": "2026-11-11",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-12T06:00:00Z",
+                "date": "2026-11-12",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-13T06:00:00Z",
+                "date": "2026-11-13",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-14T06:00:00Z",
+                "date": "2026-11-14",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-15T06:00:00Z",
+                "date": "2026-11-15",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-16T06:00:00Z",
+                "date": "2026-11-16",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              }
+            ]
+          },
+          "valid": true
+        },
+        {
+          "value": {
+            "periods": []
+          },
+          "valid": false
+        },
+        {
+          "value": {
+            "periods": [
+              {
+                "starts_at": "2026-11-09T06:00:00Z",
+                "date": "2026-11-09",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-10T06:00:00Z",
+                "date": "2026-11-10",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-11T06:00:00Z",
+                "date": "2026-11-11",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-12T06:00:00Z",
+                "date": "2026-11-12",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-13T06:00:00Z",
+                "date": "2026-11-13",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-14T06:00:00Z",
+                "date": "2026-11-14",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-15T06:00:00Z",
+                "date": "2026-11-15",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-16T06:00:00Z",
+                "date": "2026-11-16",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              },
+              {
+                "starts_at": "2026-11-17T06:00:00Z",
+                "date": "2026-11-17",
+                "condition": "partly-cloudy-day",
+                "summary": "Partly cloudy until afternoon.",
+                "temperature_min_c": -1.5,
+                "temperature_max_c": 9.2,
+                "precipitation_probability_percent": 20,
+                "precipitation_rate_mmh": 0.1,
+                "humidity_percent": 70,
+                "pressure_hpa": 1012,
+                "wind_speed_mps": 3.4,
+                "wind_gust_mps": 7.7,
+                "wind_direction_degrees": 270,
+                "cloud_cover_percent": 45,
+                "uv_index": 2
+              }
+            ]
+          },
+          "valid": false
+        },
+        {
+          "value": {
+            "periods": [
+              {
+                "starts_at": "2026-11-09T06:00:00Z",
+                "temperature_max_c": 5
+              }
+            ]
+          },
+          "valid": false
+        },
+        {
+          "value": {
+            "periods": [
+              {
+                "starts_at": "2026-11-09T06:00:00Z",
+                "date": "Nov 9",
+                "temperature_max_c": 5
+              }
+            ]
+          },
+          "valid": false
+        },
+        {
+          "value": {
+            "periods": [
+              {
+                "starts_at": "2026-11-09T06:00:00Z",
+                "date": "2026-11-09",
+                "condition": "hail"
+              }
+            ]
+          },
+          "valid": false
+        },
+        {
+          "value": {
+            "periods": [
+              {
+                "starts_at": "2026-11-09T06:00:00Z",
+                "date": "2026-11-09",
+                "uv_index": -1
+              }
+            ]
+          },
+          "valid": false
+        }
+      ],
+      "operations": {}
+    }
+  ]
+}

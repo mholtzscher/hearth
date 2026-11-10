@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:hourlyforecast:v1:support",
+  "title": "Hearth hourlyforecast/v1 Entity support",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "state",
+    "operations"
+  ],
+  "properties": {
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    }
+  }
+}

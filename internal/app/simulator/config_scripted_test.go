@@ -309,7 +309,7 @@ func TestScriptedExampleDevicesStayHealthy(t *testing.T) {
 		t.Fatalf("expected five isolated Adapters starting with sim-healthy: %+v", value.Adapters)
 	}
 	healthyKeys := map[string]bool{
-		"simulated-light": true, "simulated-button": true,
+		"simulated-light": true, "simulated-button": true, "simulated-forecast": true,
 		"simulated-climate": true, "simulated-plug": true,
 		"living-room-sensor": true, "kitchen-sensor": true, "office-sensor": true,
 		"bedroom-sensor": true, "nursery-sensor": true, "garage-sensor": true,

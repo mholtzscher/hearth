@@ -19,9 +19,11 @@ import (
 	contractcolormodev1 "github.com/mholtzscher/hearth/entitytypes/colormodev1"
 	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
 	contractcolorxyv1 "github.com/mholtzscher/hearth/entitytypes/colorxyv1"
+	contractdailyforecastv1 "github.com/mholtzscher/hearth/entitytypes/dailyforecastv1"
 	contractenumactionv1 "github.com/mholtzscher/hearth/entitytypes/enumactionv1"
 	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
 	contractenumsettingv1 "github.com/mholtzscher/hearth/entitytypes/enumsettingv1"
+	contracthourlyforecastv1 "github.com/mholtzscher/hearth/entitytypes/hourlyforecastv1"
 	contractnumericsensorv1 "github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
@@ -135,6 +137,9 @@ func buildRegistry() (map[string]*TypeCodecs, error) {
 		{contractcolorxyv1.TypeID, false,
 			contractcolorxyv1.StateSchemaID, contractcolorxyv1.SupportSchemaID,
 			contractcolorxyv1.SchemaFiles(), contractcolorxyv1.FS.ReadFile},
+		{contractdailyforecastv1.TypeID, false,
+			contractdailyforecastv1.StateSchemaID, contractdailyforecastv1.SupportSchemaID,
+			contractdailyforecastv1.SchemaFiles(), contractdailyforecastv1.FS.ReadFile},
 		{contractenumactionv1.TypeID, false,
 			contractenumactionv1.StateSchemaID, contractenumactionv1.SupportSchemaID,
 			contractenumactionv1.SchemaFiles(), contractenumactionv1.FS.ReadFile},
@@ -144,6 +149,9 @@ func buildRegistry() (map[string]*TypeCodecs, error) {
 		{contractenumsettingv1.TypeID, false,
 			contractenumsettingv1.StateSchemaID, contractenumsettingv1.SupportSchemaID,
 			contractenumsettingv1.SchemaFiles(), contractenumsettingv1.FS.ReadFile},
+		{contracthourlyforecastv1.TypeID, false,
+			contracthourlyforecastv1.StateSchemaID, contracthourlyforecastv1.SupportSchemaID,
+			contracthourlyforecastv1.SchemaFiles(), contracthourlyforecastv1.FS.ReadFile},
 		{contractnumericsensorv1.TypeID, false,
 			contractnumericsensorv1.StateSchemaID, contractnumericsensorv1.SupportSchemaID,
 			contractnumericsensorv1.SchemaFiles(), contractnumericsensorv1.FS.ReadFile},
