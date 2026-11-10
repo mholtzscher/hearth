@@ -15,7 +15,7 @@ const reading = (observed_at: string, availability = "available", value = 21.5):
 });
 const glowing = () => document.querySelector(".view-card-arrival");
 
-it("glows a reading's top edge when a newer observation changes its value, then clears after a minute", () => {
+it("glows a reading's top edge when a newer observation changes its value, then clears", () => {
   vi.useFakeTimers();
   const { rerender } = render(<Metric label="Living room" resource={reading("2026-11-05T22:00:00Z")} />, { wrapper: MemoryRouter });
   // Opening a view shows the current reading without lighting it.
@@ -28,10 +28,10 @@ it("glows a reading's top edge when a newer observation changes its value, then 
   expect(glowing()).toBeNull();
   rerender(<Metric label="Living room" resource={reading("2026-11-05T22:01:00Z", "available", 21.6)} />);
   expect(glowing()).not.toBeNull();
-  act(() => { vi.advanceTimersByTime(30_000); });
-  // Re-reporting the changed value does not extend the existing minute.
-  rerender(<Metric label="Living room" resource={reading("2026-11-05T22:01:30Z", "available", 21.6)} />);
-  act(() => { vi.advanceTimersByTime(ARRIVAL_GLOW_MS - 30_000); });
+  act(() => { vi.advanceTimersByTime(ARRIVAL_GLOW_MS / 2); });
+  // Re-reporting the changed value does not extend the existing glow.
+  rerender(<Metric label="Living room" resource={reading("2026-11-05T22:01:05Z", "available", 21.6)} />);
+  act(() => { vi.advanceTimersByTime(ARRIVAL_GLOW_MS / 2); });
   expect(glowing()).toBeNull();
 });
 

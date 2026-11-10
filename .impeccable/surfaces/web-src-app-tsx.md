@@ -15,7 +15,7 @@ Household members and the technical self-hoster read live house state, generate 
 
 ## Direction contract
 
-THESIS: Hearth's surfaces are night sky. A changed reading arrives as afterglow: the card's top edge lights orange and fades over a minute; age and availability are stated in text. This refuses the gray dashboard with a single blue accent, and the neon synthwave glow.
+THESIS: Hearth's surfaces are night sky. A changed reading arrives as afterglow: the card's top edge lights orange and fades over ten seconds; age and availability are stated in text. This refuses the gray dashboard with a single blue accent, and the neon synthwave glow.
 
 OWN-WORLD: True #000 background and one numbered, untinted gray ramp for surfaces, borders and text. Violet is Hearth's voice: the agent, the selected view, focus, links. Orange is the one action to take: Save, Send, the primary button. Status uses its own green, amber and red-pink, never the brand hues. Gradients exist only as one- or two-pixel horizon lines.
 

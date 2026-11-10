@@ -26,7 +26,7 @@ export function StatusList({ entries, className = "view-status" }: { entries: St
  * The one frame every data card uses (DESIGN.md, View cards): a header with the
  * title and status, the body, and a footer with compact age and Source details.
  * When newer data changes what the card shows
- * while it is on screen, the top edge glows orange and fades over a minute.
+ * while it is on screen, the top edge glows orange and fades over ten seconds.
  */
 export function CardFrame({ title, unit, status, observedAt, observedLabel = "Observed", compactTimeLabel = false, arrival, arrivals, sources, sourceExtra, className, children }: {
   title: string;

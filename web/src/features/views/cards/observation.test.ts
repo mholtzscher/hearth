@@ -42,7 +42,7 @@ describe("useArrival", () => {
     expect(mount(reading(0, "21.5 °C")).result.current).toBeUndefined();
   });
 
-  it("glows when a newer observation changes the shown value, for one minute", () => {
+  it("glows when a newer observation changes the shown value, for the glow duration", () => {
     vi.useFakeTimers();
     const { result, rerender } = mount(reading(0, "21.5 °C"));
     rerender({ value: reading(1, "21.6 °C") });
@@ -82,7 +82,7 @@ describe("useArrival", () => {
     const { result, rerender } = mount(reading(0, "21.5 °C"));
     rerender({ value: reading(1, "21.6 °C") });
     expect(result.current).toBe(1);
-    act(() => { vi.advanceTimersByTime(10_000); });
+    act(() => { vi.advanceTimersByTime(ARRIVAL_GLOW_MS / 2); });
     rerender({ value: undefined });
     expect(result.current).toBeUndefined();
     rerender({ value: reading(1, "21.6 °C") });
@@ -90,9 +90,9 @@ describe("useArrival", () => {
     rerender({ value: reading(2, "21.7 °C") });
     expect(result.current).toBe(2);
     // The cancelled first glow must not end the later glow early.
-    act(() => { vi.advanceTimersByTime(50_000); });
+    act(() => { vi.advanceTimersByTime(ARRIVAL_GLOW_MS - 1); });
     expect(result.current).toBe(2);
-    act(() => { vi.advanceTimersByTime(10_000); });
+    act(() => { vi.advanceTimersByTime(1); });
     expect(result.current).toBeUndefined();
   });
 });
