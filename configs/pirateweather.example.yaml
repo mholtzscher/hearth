@@ -1,0 +1,8 @@
+adapter_id: pirateweather-home
+nats_url: nats://127.0.0.1:4222
+api_key_file: /run/secrets/pirateweather-api-key
+location:
+  name: Home Weather (Pirate Weather)
+  latitude: 45.42
+  longitude: -75.69
+poll_interval: 15m

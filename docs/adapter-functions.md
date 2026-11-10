@@ -17,6 +17,13 @@ Only retained success advances a Run; there is no retry or restart replay.
 
 ## Discover, describe, invoke, inspect
 
+The [Pirate Weather Adapter](pirateweather.md) registers `get_hourly_forecast`
+(`hours`: 1–48) and `get_daily_forecast` (`days`: 1–8) for its configured location.
+Each requests fresh provider data and returns bounded, unit-explicit periods with
+retrieval time and timezone. These read-only Functions never update Entity State;
+the Adapter's separate poll loop owns current-condition Observations. No forecast
+cache or automatic invocation retry is used.
+
 The Zigbee2MQTT Adapter registers `refresh_entity`. It requests the selected
 Entity's readable upstream properties with one QoS 1, non-retained MQTT `/get`.
 Success means PUBACK, not a fresh Hearth State or a physical response. Read-only
@@ -166,8 +173,8 @@ A schema annotation does not redact either store.
 Keep credentials in Adapter-local secret files. Adapters own destination policy,
 configuration sources, validation, persistence, and reload semantics. This
 feature provides no generic URL, topic, path, shell, or configuration editor.
-Two function-specific behaviors ship: Zigbee2MQTT `refresh_entity` and Discord
-`send_message`.
+Function-specific behaviors include Zigbee2MQTT `refresh_entity`, Discord
+`send_message`, and Pirate Weather's hourly/daily forecasts.
 
 HTTP/MCP and NATS keep their existing trusted-household deployment boundary.
 Runtime and catalog IDs are not credentials. Anyone with management API access
