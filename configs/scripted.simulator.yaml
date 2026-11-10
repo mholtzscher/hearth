@@ -595,6 +595,12 @@ adapters:
             support: {state: {}, operations: {}}
             initial: 0
             outputs: {interval: 5s, values: [0, 4, 10, 15, 4]}
+          - key: wind-direction
+            name: Wind direction
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 360, unit: deg, quantity_kind: wind_direction}, operations: {}}
+            initial: 0
+            outputs: {interval: 5s, values: [0, 45, 90, 180, 270, 359]}
           - key: illuminance
             name: Illuminance
             type: hearth.numericsensor/v1

@@ -3,6 +3,7 @@ package simulator_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -263,6 +264,49 @@ func TestLoadScriptedExampleFile(t *testing.T) {
 		if !seen[typeID] {
 			t.Errorf("scripted example missing Entity type %s", typeID)
 		}
+	}
+}
+
+func TestScriptedWeatherStationHasCyclingWindDirection(t *testing.T) {
+	t.Parallel()
+	value := loadValidationSimulatorExample(t)
+	var direction *scripted.EntitySpec
+	for _, device := range value.Adapters[0].Devices {
+		if device.BindingKey != "weather-station" {
+			continue
+		}
+		for _, entity := range device.Entities {
+			if entity.Key == "wind-direction" {
+				direction = &entity
+			}
+		}
+	}
+	if direction == nil {
+		t.Fatal("scripted weather station missing wind-direction Entity")
+	}
+	if direction.Type != "hearth.numericsensor/v1" {
+		t.Fatalf("wind direction type = %q, want hearth.numericsensor/v1", direction.Type)
+	}
+	wantSupport := map[string]any{
+		"state": map[string]any{
+			"minimum":       0,
+			"maximum":       360,
+			"unit":          "deg",
+			"quantity_kind": "wind_direction",
+		},
+		"operations": map[string]any{},
+	}
+	if !reflect.DeepEqual(direction.Support, wantSupport) {
+		t.Errorf("wind direction support = %#v, want %#v", direction.Support, wantSupport)
+	}
+	if direction.Initial != 0 {
+		t.Errorf("initial wind direction = %v, want 0", direction.Initial)
+	}
+	if direction.Outputs == nil || direction.Outputs.Interval <= 0 || len(direction.Outputs.Values) < 2 {
+		t.Fatalf("wind direction must cycle through multiple readings: %+v", direction.Outputs)
+	}
+	if reflect.DeepEqual(direction.Outputs.Values[0], direction.Outputs.Values[1]) {
+		t.Error("wind direction output readings must vary")
 	}
 }
 
