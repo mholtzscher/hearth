@@ -8,30 +8,30 @@ import (
 	"github.com/mholtzscher/hearth/entitytypes/quantitykind"
 )
 
-// Forecast source schemas use unit-suffixed properties. Only the household read
-// representation renames them; canonical reads and retained audit stay source-shaped.
+// Forecast measurements have stable, unit-neutral names in every representation.
+// This table declares the canonical quantities for the bounded period arrays,
+// which are not selectable scalar State fields.
 type forecastQuantity struct {
-	source string
-	field  string
-	unit   string
-	kind   string
+	field string
+	unit  string
+	kind  string
 }
 
 func forecastQuantities() []forecastQuantity {
 	return []forecastQuantity{
-		{"temperature_c", "temperature", unitCelsius, quantitykind.Temperature},
-		{"apparent_temperature_c", "apparent_temperature", unitCelsius, quantitykind.Temperature},
-		{"temperature_min_c", "temperature_min", unitCelsius, quantitykind.Temperature},
-		{"temperature_max_c", "temperature_max", unitCelsius, quantitykind.Temperature},
-		{"precipitation_probability_percent", "precipitation_probability", "%", quantitykind.PrecipitationProbability},
-		{"precipitation_rate_mmh", "precipitation_rate", "mm/h", quantitykind.PrecipitationRate},
-		{"humidity_percent", "humidity", "%", quantitykind.RelativeHumidity},
-		{"pressure_hpa", "pressure", unitHectopascal, quantitykind.AtmosphericPressure},
-		{"wind_speed_mps", "wind_speed", unitMetersPerSecond, quantitykind.Speed},
-		{"wind_gust_mps", "wind_gust", unitMetersPerSecond, quantitykind.Speed},
-		{"wind_direction_degrees", "wind_direction", unitDegrees, quantitykind.WindDirection},
-		{"cloud_cover_percent", "cloud_cover", "%", quantitykind.CloudCover},
-		{"uv_index", "uv_index", "index", quantitykind.UVIndex},
+		{"temperature", unitCelsius, quantitykind.Temperature},
+		{"apparent_temperature", unitCelsius, quantitykind.Temperature},
+		{"temperature_min", unitCelsius, quantitykind.Temperature},
+		{"temperature_max", unitCelsius, quantitykind.Temperature},
+		{"precipitation_probability", "%", quantitykind.PrecipitationProbability},
+		{"precipitation_rate", "mm/h", quantitykind.PrecipitationRate},
+		{"humidity", "%", quantitykind.RelativeHumidity},
+		{"pressure", unitHectopascal, quantitykind.AtmosphericPressure},
+		{"wind_speed", unitMetersPerSecond, quantitykind.Speed},
+		{"wind_gust", unitMetersPerSecond, quantitykind.Speed},
+		{"wind_direction", unitDegrees, quantitykind.WindDirection},
+		{"cloud_cover", "%", quantitykind.CloudCover},
+		{"uv_index", "index", quantitykind.UVIndex},
 	}
 }
 
@@ -84,24 +84,19 @@ func (presenter *Presenter) forecastField(
 	if quantity.kind == quantitykind.Temperature || quantity.kind == quantitykind.PrecipitationProbability {
 		presentation.metadata.FractionDigits = 0
 	}
-	field := quantity.source
-	if units != UnitsCanonical {
-		field = quantity.field
-	}
 	for index, period := range periods {
-		raw, present := period[quantity.source]
+		raw, present := period[quantity.field]
 		if !present {
 			continue
 		}
 		if units != UnitsCanonical {
 			converted, conversionErr := presentation.number(raw)
 			if conversionErr != nil {
-				return fmt.Errorf("project forecast field %s: %w", field, conversionErr)
+				return fmt.Errorf("project forecast field %s: %w", quantity.field, conversionErr)
 			}
-			delete(period, quantity.source)
-			period[field] = converted
+			period[quantity.field] = converted
 		}
-		metadata["/periods/"+strconv.Itoa(index)+"/"+field] = presentation.metadata
+		metadata["/periods/"+strconv.Itoa(index)+"/"+quantity.field] = presentation.metadata
 	}
 	return nil
 }

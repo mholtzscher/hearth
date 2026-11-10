@@ -14,6 +14,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 type storedStateChange struct {
@@ -136,7 +137,9 @@ func TestStateChangeFailureRollsBackProjection(t *testing.T) {
 func TestStateChangeBackfillMatchesIngest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	// Exercise migration 31 without crossing migration 32's backup-only rollback.
+	database := dbtest.OpenAtVersion(t, filepath.Join(t.TempDir(), "hearth.db"), 31)
+	claimRegistrationAdapters(t, database)
 	service := openHistoryService(t, database)
 	entities := registerRollupEntities(t, service)
 	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
@@ -270,7 +273,8 @@ func TestReadStateChangesRejectsUnsupportedReads(t *testing.T) {
 func TestStateChangeBackfillSeedsFromARetainedUnchangedReport(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database := dbtest.OpenAtVersion(t, filepath.Join(t.TempDir(), "hearth.db"), 31)
+	claimRegistrationAdapters(t, database)
 	service := openHistoryService(t, database)
 	entities := registerRollupEntities(t, service)
 	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)

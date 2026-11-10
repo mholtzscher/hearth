@@ -1,5 +1,11 @@
 # Forecast conversion verification
 
+These captures predate the unit-neutral contract correction. The canonical
+examples below record that earlier revision, not the current read shape. Current
+canonical and household reads both use `temperature` / `temperature_min` and
+identical quantity pointers; only the units and numbers differ. See the
+[current contract and migration](../../../units.md#forecast-snapshots).
+
 These screenshots show real saved Forecast cards against production Core and
 worktree-local simulated Devices. Both runs use US household units and the same
 checked-in `simulated-forecast` periods: six hours and three days in January 2099.

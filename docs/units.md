@@ -60,21 +60,18 @@ metrics or buckets. Null metrics remain gaps, never zero.
 ### Forecast snapshots
 
 Hourly and daily forecast Entities also use backend household projection.
-Their source schemas encode units in property names, so default reads rename
-numeric period fields instead of putting Fahrenheit under `temperature_c`.
-The response still contains one set of values:
+Their measurement names are unit-neutral and identical in canonical and household
+reads. Canonical units are declared by the contracts, not encoded in the names:
 
-| Canonical source property | Household read property |
+| Period property | Canonical unit |
 | --- | --- |
-| `temperature_c`, `apparent_temperature_c` | `temperature`, `apparent_temperature` |
-| `temperature_min_c`, `temperature_max_c` | `temperature_min`, `temperature_max` |
-| `precipitation_probability_percent` | `precipitation_probability` |
-| `precipitation_rate_mmh` | `precipitation_rate` |
-| `humidity_percent`, `cloud_cover_percent` | `humidity`, `cloud_cover` |
-| `pressure_hpa` | `pressure` |
-| `wind_speed_mps`, `wind_gust_mps` | `wind_speed`, `wind_gust` |
-| `wind_direction_degrees` | `wind_direction` |
-| `uv_index` | `uv_index` |
+| `temperature`, `apparent_temperature`, `temperature_min`, `temperature_max` | `Cel` |
+| `precipitation_probability`, `humidity`, `cloud_cover` | `%` (0–100) |
+| `precipitation_rate` | `mm/h` |
+| `pressure` | `hPa` |
+| `wind_speed`, `wind_gust` | `m/s` |
+| `wind_direction` | `deg` |
+| `uv_index` | `index` |
 
 Metadata uses concrete period pointers, such as
 `quantities["/periods/0/temperature"]`. Each entry describes that returned field;
@@ -83,12 +80,11 @@ absent. Timestamps, dates, conditions, source summaries, period order, and
 Observation evidence are unchanged. A null forecast State has an empty quantities
 map because there are no period indices yet.
 
-For forecasts, `units=canonical` retains the original unit-suffixed properties
-and numeric tokens, with metadata keyed by those source pointers. This is a
-forecast-specific difference in field names between the two read modes. SDK
-ingestion, retained State, and raw audit also keep the original source format;
-there is no data migration. Existing forecast consumers can request canonical
-reads while migrating. Forecast Function results remain unchanged.
+For example, a US household read returns `temperature: 36.5` with Fahrenheit
+metadata; `units=canonical` returns `temperature: 2.5` with Celsius metadata at
+the same pointer. Canonical reads preserve stored numeric tokens. SDK ingestion
+and retained State use these same neutral names and canonical units. Forecast
+Function results also use neutral names, but remain canonical and are not projected.
 
 Forecast canonical temperatures use `Cel`, unlike current-condition temperature
 Entities' `mCel`. Both use the shared affine engine and household policy. Forecast
@@ -143,7 +139,7 @@ Core aggregates history canonically before conversion. Positive-affine conversio
 preserves min/max ordering and arithmetic sample means. A sample mean for hue or
 wind direction is still arithmetic; it is not a circular mean. Precipitation
 counter summaries do not become precipitation totals over a window by summing
-cumulative readings. Forecast Function outputs have separate unit-named schemas
+cumulative readings. Forecast Function outputs have separate canonical-unit schemas
 and are not projected by this Entity-read feature.
 
 Weather cards show only bound Entity readings and their existing history. They
@@ -153,11 +149,29 @@ calculation service is introduced by this change.
 
 ## Deployment and rollback
 
-This is a breaking default-read contract change. Scalar field paths stay the
-same; household forecast reads also replace unit-suffixed measurement names.
-Deploy the matching Core and web client together, and update
+This is a breaking default-read contract change. Canonical and household reads
+use identical field paths, including forecasts. Deploy matching Core, Adapters,
+SDK consumers, and web together, and update
 external numeric consumers to use returned metadata or `units=canonical`.
 Older clients that still perform household conversion can convert twice.
+
+Forecast contracts correct the initial unit-suffixed names in place. Stop old
+forecast producers and let their Observation queue drain before the coordinated
+cutover; old suffixed payloads are not accepted aliases. Migration 32 renames keys
+in current forecast State, its backing Observation, and pending Device Facts
+linked to forecast Entities and their source Observations. Numeric tokens, IDs,
+timestamps, period order, and saved dashboards are preserved. Older audit rows,
+Automation evidence, and pinned Function results are not rewritten and may retain
+the old names. New Function invocations use the corrected descriptor and result
+shape. Review any saved Automation expressions or external consumers that
+reference the old keys. The migration does not rewrite their definitions.
+
+An orphaned pending fact has no retained Entity type to establish its contract.
+The migration leaves such records untouched rather than infer a type from their
+JSON field names.
+
+Back up SQLite before upgrading. Migration 32 refuses automatic downgrade;
+restore the pre-upgrade backup with matching Core, Adapters, and web binaries.
 
 Upgrade Core before Adapters send the optional kind declaration: older Core
 support schemas reject that property. Generic retained rows remain unclassified

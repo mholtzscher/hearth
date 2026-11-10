@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -86,11 +85,11 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 	require.Equal(t, "applied", report.Disposition)
 	require.InDelta(t, 21500, report.Value, 0)
 	forecastReports := []struct{ key, field, value string }{
-		{"hourly", "temperature_c", `{"periods":[{"starts_at":"2026-11-10T12:00:00Z","temperature_c":2.150e1}]}`},
+		{"hourly", "temperature", `{"periods":[{"starts_at":"2026-11-10T12:00:00Z","temperature":2.150e1}]}`},
 		{
 			"daily",
-			"temperature_min_c",
-			`{"periods":[{"starts_at":"2026-11-10T00:00:00Z","date":"2026-11-10","temperature_min_c":2.150e1}]}`,
+			"temperature_min",
+			`{"periods":[{"starts_at":"2026-11-10T00:00:00Z","date":"2026-11-10","temperature_min":2.150e1}]}`,
 		},
 	}
 	for _, forecast := range forecastReports {
@@ -181,12 +180,12 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 			raw := automationFunctionsMCP(t, mcp, "get_entity", `{"entity_id":"`+forecastEntity+`"}`)
 			require.NoError(t, json.Unmarshal(raw, &mcpForecast))
 			require.Equal(t, httpForecast, mcpForecast)
-			field := strings.TrimSuffix(forecast.field, "_c")
+			field := forecast.field
 			var number float64
 			require.NoError(t, json.Unmarshal(httpForecast.State.Value.Periods[0][field], &number))
 			require.InDelta(t, expected, number, 1e-9)
 			require.Equal(t, unit, httpForecast.Quantities["/periods/0/"+field].Unit)
-			require.NotContains(t, httpForecast.State.Value.Periods[0], forecast.field)
+			require.NotContains(t, httpForecast.State.Value.Periods[0], forecast.field+"_c")
 			forecastCanonical := successfulFunctionCoreRequest(
 				t,
 				client,
@@ -197,6 +196,18 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 			)
 			var source forecastRead
 			require.NoError(t, json.Unmarshal(forecastCanonical, &source))
+			forecastCanonicalMCP := automationFunctionsMCP(
+				t,
+				mcp,
+				"get_entity",
+				`{"entity_id":"`+forecastEntity+`","units":"canonical"}`,
+			)
+			var mcpSource forecastRead
+			require.NoError(t, json.Unmarshal(forecastCanonicalMCP, &mcpSource))
+			require.Equal(t, source, mcpSource)
+			for path := range httpForecast.Quantities {
+				require.Contains(t, source.Quantities, path, "read modes must expose identical forecast paths")
+			}
 			require.Contains(t, source.State.Value.Periods[0], forecast.field)
 			// Forecast ingestion normalizes the typed float to this canonical token;
 			// neither household projection nor the preference restart may rewrite it.

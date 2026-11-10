@@ -278,8 +278,8 @@ forecasts, not station readings:
 - Precipitation chance shows only at 10% or more. Core returns forecast values
   in household units with per-period quantity metadata. The card formats those
   values without conversion or a household-settings read; forecast temperature
-  metadata recommends whole degrees. Canonical/source fields remain available
-  through `units=canonical`; see [forecast read representations](units.md#forecast-snapshots).
+  metadata recommends whole degrees. `units=canonical` returns canonical values
+  under the same field names; see [forecast read representations](units.md#forecast-snapshots).
 - Periods that have ended drop at each minute without a refetch: an hour once it
   is over, a day once the viewer's local date passes it. With none left, the card
   says the last forecast has passed.

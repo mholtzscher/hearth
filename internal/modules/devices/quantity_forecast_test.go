@@ -12,7 +12,7 @@ import (
 
 func TestForecastPresentationUsesNeutralFieldsAndSharedPolicy(t *testing.T) {
 	t.Parallel()
-	canonical := `{"periods":[{"starts_at":"2026-11-10T12:00:00Z","condition":"clear-day","summary":"Source prediction","temperature_c":1.6005e1,"apparent_temperature_c":-40,"precipitation_probability_percent":50.125,"precipitation_rate_mmh":2.54,"humidity_percent":70.25,"pressure_hpa":1013.2,"wind_speed_mps":3.4,"wind_gust_mps":5,"wind_direction_degrees":180,"cloud_cover_percent":10,"uv_index":2},{"starts_at":"2026-11-10T13:00:00Z"}]}`
+	canonical := `{"periods":[{"starts_at":"2026-11-10T12:00:00Z","condition":"clear-day","summary":"Source prediction","temperature":1.6005e1,"apparent_temperature":-40,"precipitation_probability":50.125,"precipitation_rate":2.54,"humidity":70.25,"pressure":1013.2,"wind_speed":3.4,"wind_gust":5,"wind_direction":180,"cloud_cover":10,"uv_index":2},{"starts_at":"2026-11-10T13:00:00Z"}]}`
 	for _, test := range []struct {
 		system                             household.UnitSystem
 		temperature, rate, pressure, speed float64
@@ -56,8 +56,11 @@ func TestForecastPresentationUsesNeutralFieldsAndSharedPolicy(t *testing.T) {
 			source, metadata, err := presenter.Entity(view, devices.UnitsCanonical)
 			require.NoError(t, err)
 			require.Equal(t, canonical, string(source.State.Value))
-			require.Equal(t, "Cel", metadata["/periods/0/temperature_c"].Unit)
-			require.NotContains(t, metadata, "/periods/0/temperature")
+			require.Equal(t, "Cel", metadata["/periods/0/temperature"].Unit)
+			require.NotContains(t, metadata, "/periods/0/temperature_c")
+			for path := range quantities {
+				require.Contains(t, metadata, path, "canonical and household metadata use identical paths")
+			}
 		})
 	}
 }
@@ -68,7 +71,7 @@ func TestForecastDailyBoundsAndMissingValues(t *testing.T) {
 	view := quantityView(
 		devices.EntityTypeDailyforecastV1,
 		`{}`,
-		`{"periods":[{"starts_at":"2026-11-10T00:00:00Z","date":"2026-11-10","temperature_min_c":0,"temperature_max_c":25,"precipitation_probability_percent":0},{"starts_at":"2026-11-11T00:00:00Z","date":"2026-11-11","temperature_max_c":10}]}`,
+		`{"periods":[{"starts_at":"2026-11-10T00:00:00Z","date":"2026-11-10","temperature_min":0,"temperature_max":25,"precipitation_probability":0},{"starts_at":"2026-11-11T00:00:00Z","date":"2026-11-11","temperature_max":10}]}`,
 	)
 	result, metadata, err := presenter.Entity(view, "")
 	require.NoError(t, err)

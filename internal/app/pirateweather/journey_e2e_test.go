@@ -249,11 +249,11 @@ func weatherProviderFixture(mode *atomic.Int32, entered, returned chan struct{})
 func assertRetainedWeatherForecasts(t *testing.T, coreURL string, mode *atomic.Int32) {
 	t.Helper()
 	hourly := invokeWeather(t, coreURL, "get_hourly_forecast", `{"hours":48}`)
-	if hourly.Status != "succeeded" || !strings.Contains(string(hourly.Result), `"temperature_c":12.5`) {
+	if hourly.Status != "succeeded" || !strings.Contains(string(hourly.Result), `"temperature":12.5`) {
 		t.Fatalf("hourly=%+v", hourly)
 	}
 	daily := invokeWeather(t, coreURL, "get_daily_forecast", `{"days":8}`)
-	if daily.Status != "succeeded" || !strings.Contains(string(daily.Result), `"temperature_min_c":4`) {
+	if daily.Status != "succeeded" || !strings.Contains(string(daily.Result), `"temperature_min":4`) {
 		t.Fatalf("daily=%+v", daily)
 	}
 	var persisted adaptersapi.InvocationBody
@@ -451,7 +451,7 @@ func assertWeatherMCP(t *testing.T, base, adapterID string) {
 		t.Fatalf("MCP forecast: %+v %v", invocation, err)
 	}
 	data, err = json.Marshal(invocation.StructuredContent)
-	if err != nil || !strings.Contains(string(data), `"temperature_c":12.5`) {
+	if err != nil || !strings.Contains(string(data), `"temperature":12.5`) {
 		t.Fatalf("MCP forecast data: %s %v", data, err)
 	}
 }
