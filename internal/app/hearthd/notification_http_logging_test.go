@@ -34,6 +34,7 @@ func TestNotificationHTTPUsesInjectedLogger(t *testing.T) {
 			&stubDevices{},
 			&stubFunctions{},
 			logger, nil,
+			testDevicesPresenter(),
 		), nil, household.Settings{},
 	)
 	response := httptest.NewRecorder()

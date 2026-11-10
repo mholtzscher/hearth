@@ -13,20 +13,29 @@ import (
 
 func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 	t.Parallel()
-	const summary = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null}`
-	const detail = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":{},"availability":{"status":"online","source":"s","since":"t","evidence_at":"t"},"state":null}`
+	const summary = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null,"quantities":{}}`
+	const detail = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":{},"availability":{"status":"online","source":"s","since":"t","evidence_at":"t"},"state":null,"quantities":{}}`
 	const command = `{"command_id":"c","entity_id":"e","operation":"set","status":"succeeded","requested_at":"t","parameters":{},"deadline_at":"t"}`
+	const history = `"kind":"summary","entity_id":"e","range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at","coverage":{"basis":"retained_observations","completeness":"unverified"},"quantity":{"unit":"mCel","label":"mCel","fraction_digits":0}`
 	for _, test := range []struct {
 		name    string
 		schema  func(*mcptools.Server, string)
 		valid   string
 		invalid []string
 	}{
+		{"history summary", generatedSuccessSchema[historyResult](t), `{` + history + `,"metrics":{"min":9007199254740993,"mean":null}}`, []string{
+			`{` + history + `,"metrics":{"min":"wrong"}}`,
+			`{` + history + `,"metrics":{},"bucket":{"duration":"1h","alignment":"range_start"},"buckets":[]}`,
+			`{` + history + `}`,
+		}},
+		{"history buckets", generatedSuccessSchema[historyResult](t), `{` + history + `,"bucket":{"duration":"1h","alignment":"range_start"},"buckets":[]}`, []string{
+			`{` + history + `,"bucket":{"duration":"1h","alignment":"range_start"},"buckets":null}`,
+		}},
 		{"entity summary", generatedSuccessSchema[EntitySummary](t), summary, []string{
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"}}`,
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online","reason_code":null},"state":null}`,
 		}},
-		{"entity state", generatedSuccessSchema[EntitySummary](t), `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":{"value":{"n":9007199254740993,"tiny":1e-10000,"huge":1e10000,"nullable":null},"observed_at":"t"}}`, []string{
+		{"entity state", generatedSuccessSchema[EntitySummary](t), `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":{"value":{"n":9007199254740993,"tiny":1e-10000,"huge":1e10000,"nullable":null},"observed_at":"t"},"quantities":{}}`, []string{
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":{"observed_at":"t"}}`,
 		}},
 		{"entity page", generatedSuccessSchema[entityPage](t), `{"items":[` + summary + `]}`, []string{`{"items":null}`, `{"items":[],"next_cursor":null}`, `{"items":[],"extra":true}`}},

@@ -24,7 +24,8 @@ func registerGetEntity(server *mcptools.Server, h *handler) {
 }
 
 type GetEntityInput struct {
-	EntityID entityID `json:"entity_id" doc:"canonical Hearth Entity ID"`
+	EntityID entityID `json:"entity_id"       doc:"canonical Hearth Entity ID"`
+	Units    string   `json:"units,omitempty" doc:"Omit for household units"   enum:",canonical"`
 }
 
 type AvailabilityDetail struct {
@@ -45,31 +46,42 @@ type StateDetail struct {
 }
 
 type EntityDetail struct {
-	EntityID     string             `json:"entity_id"`
-	DeviceID     string             `json:"device_id"`
-	Name         string             `json:"name"`
-	Type         string             `json:"type"`
-	Enabled      bool               `json:"enabled"`
-	AdapterID    string             `json:"adapter_id"`
-	Support      json.RawMessage    `json:"support"`
-	Availability AvailabilityDetail `json:"availability"`
-	State        *StateDetail       `json:"state"`
+	EntityID     string                              `json:"entity_id"`
+	DeviceID     string                              `json:"device_id"`
+	Name         string                              `json:"name"`
+	Type         string                              `json:"type"`
+	Enabled      bool                                `json:"enabled"`
+	AdapterID    string                              `json:"adapter_id"`
+	Support      json.RawMessage                     `json:"support"`
+	Availability AvailabilityDetail                  `json:"availability"`
+	State        *StateDetail                        `json:"state"`
+	Quantities   map[string]devices.QuantityMetadata `json:"quantities"`
 }
 
 func (h *handler) getEntity(ctx context.Context, input GetEntityInput) (EntityDetail, error) {
+	units, err := devices.ParseReadUnits(input.Units)
+	if err != nil {
+		return EntityDetail{}, invalidRequestFailure("invalid units")
+	}
 	view, err := h.devices.GetEntity(ctx, devices.EntityID(input.EntityID))
 	if err != nil {
 		return EntityDetail{}, readFailure(err)
 	}
-	summary := entitySummary(view)
+	projected, quantities, err := h.presenter.Entity(view, units)
+	if err != nil {
+		return EntityDetail{}, mcptools.InternalToolError(err)
+	}
+	view = projected
+	summary := entitySummary(view, quantities)
 	result := EntityDetail{
-		EntityID:  summary.EntityID,
-		DeviceID:  summary.DeviceID,
-		Name:      summary.Name,
-		Type:      summary.Type,
-		Enabled:   summary.Enabled,
-		AdapterID: view.Entity.AdapterID,
-		Support:   json.RawMessage(view.Entity.Support),
+		Quantities: quantities,
+		EntityID:   summary.EntityID,
+		DeviceID:   summary.DeviceID,
+		Name:       summary.Name,
+		Type:       summary.Type,
+		Enabled:    summary.Enabled,
+		AdapterID:  view.Entity.AdapterID,
+		Support:    json.RawMessage(view.Entity.Support),
 		Availability: AvailabilityDetail{
 			AvailabilitySummary: summary.Availability,
 			Source:              view.Availability.Source,

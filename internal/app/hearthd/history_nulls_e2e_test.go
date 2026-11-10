@@ -75,7 +75,17 @@ func TestHistoryNullGapThroughCore(t *testing.T) {
 	}
 	bucket := map[string]any{"duration": "1h", "alignment": "range_start"}
 	want := map[string]any{
-		"kind": "summary", "entity_id": entity, "range": rangeBody, "time_axis": "observed_at", "coverage": basic,
+		"kind":      "summary",
+		"entity_id": entity,
+		"range":     rangeBody,
+		"time_axis": "observed_at",
+		"coverage":  basic,
+		"quantity": map[string]any{
+			"unit":            "%",
+			"label":           "%",
+			"fraction_digits": 1,
+			"range":           map[string]any{"minimum": 0, "maximum": 100},
+		},
 		"bucket": map[string]any{"duration": "1h0m0s", "alignment": "range_start"},
 		"buckets": []any{map[string]any{
 			"range": rangeBody, "metrics": map[string]any{"min": nil, "max": nil, "mean": nil},

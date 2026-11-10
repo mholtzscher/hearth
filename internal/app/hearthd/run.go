@@ -359,6 +359,7 @@ func runWithOptions(
 		functionService,
 		coreLogger,
 		dashboardService,
+		newDevicesPresenter(householdSettings),
 	)
 	agentService, agentErr := startAgentService(
 		dependencyContext, config, mcpServer, database, agentLogger,

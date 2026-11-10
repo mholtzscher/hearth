@@ -4,6 +4,8 @@ import (
 	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 const (
@@ -13,11 +15,14 @@ const (
 )
 
 // Register publishes Device operations. A nil logger discards HTTP diagnostics.
-func Register(api huma.API, service Devices, logger *slog.Logger) {
+func Register(api huma.API, service Devices, presenter *devices.Presenter, logger *slog.Logger) {
+	if presenter == nil {
+		panic("devices presenter is required")
+	}
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	handler := &handler{devices: service, logger: logger}
+	handler := &handler{devices: service, presenter: presenter, logger: logger}
 	registerUpdateDevice(api, handler)
 	registerListEntities(api, handler)
 	registerGetEntity(api, handler)

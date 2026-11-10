@@ -244,7 +244,7 @@ func testAPIWithLogger(t *testing.T, devices Devices, logger *slog.Logger) (*ech
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	group := huma.NewGroup(openapi, "/v1")
-	Register(group, devices, logger)
+	Register(group, devices, testPresenter(), logger)
 	return router, openapi
 }
 

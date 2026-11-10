@@ -58,10 +58,32 @@ func TestHTTPTransportContractSnapshot(t *testing.T) {
 	if len(artifactSchema["oneOf"].([]any)) != 2 {
 		t.Fatal("turn artifacts must publish view and automation variants")
 	}
+	entity := schemas["EntityBody"].(map[string]any)["properties"].(map[string]any)
+	if _, exists := entity["quantities"]; !exists {
+		t.Fatal("Entity schema must publish quantities")
+	}
+	paths := document["paths"].(map[string]any)
+	for _, operation := range []struct{ path, method string }{
+		{"/v1/entities", "get"}, {"/v1/entities/{entity_id}", "get"},
+		{"/v1/entities/{entity_id}", "patch"}, {"/v1/devices/{device_id}", "get"},
+		{"/v1/entities/{entity_id}/state/history", "post"},
+	} {
+		published := paths[operation.path].(map[string]any)[operation.method].(map[string]any)
+		found := false
+		for _, parameter := range published["parameters"].([]any) {
+			p := parameter.(map[string]any)
+			if p["name"] == "units" && p["in"] == "query" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s %s does not publish units", operation.method, operation.path)
+		}
+	}
 	// Includes paths, wire schemas, component names, references and publication
 	// metadata. Intentional API extensions update this digest alongside contract tests.
 	got := fmt.Sprintf("%x", sha256.Sum256(response.Body.Bytes()))
-	const want = "fb827df5421ccab00d55b7e0504eaf44df9c5e29d7f46e15efac3bc44ecd0a6d"
+	const want = "7812d804bd2cc4ab18429080ff423b056d89b382007ad087a2a0f480319eb4a1"
 	if got != want {
 		t.Fatalf("HTTP/OpenAPI contract changed: SHA-256 = %s, want %s", got, want)
 	}

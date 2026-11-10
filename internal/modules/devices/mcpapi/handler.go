@@ -7,6 +7,7 @@ import (
 )
 
 type Devices interface {
+	QueryHistory(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
 	SetEntityEnabled(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	ExecuteCommand(
@@ -34,5 +35,6 @@ type Devices interface {
 }
 
 type handler struct {
-	devices Devices
+	devices   Devices
+	presenter *devices.Presenter
 }

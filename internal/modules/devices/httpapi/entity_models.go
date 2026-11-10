@@ -1,17 +1,20 @@
 package httpapi
 
+import "github.com/mholtzscher/hearth/internal/modules/devices"
+
 type EntityBody struct {
-	AdapterName  string           `json:"adapter_name"`
-	NameOverride *string          `json:"name_override" nullable:"true"`
-	ID           string           `json:"id"`
-	DeviceID     string           `json:"device_id"`
-	AdapterID    string           `json:"adapter_id"`
-	Name         string           `json:"name"`
-	Type         string           `json:"type"`
-	Support      map[string]any   `json:"support"`
-	Enabled      bool             `json:"enabled"`
-	Availability AvailabilityBody `json:"availability"`
-	State        *StateBody       `json:"state"`
+	AdapterName  string                              `json:"adapter_name"`
+	NameOverride *string                             `json:"name_override" nullable:"true"`
+	ID           string                              `json:"id"`
+	DeviceID     string                              `json:"device_id"`
+	AdapterID    string                              `json:"adapter_id"`
+	Name         string                              `json:"name"`
+	Type         string                              `json:"type"`
+	Support      map[string]any                      `json:"support"`
+	Enabled      bool                                `json:"enabled"`
+	Availability AvailabilityBody                    `json:"availability"`
+	State        *StateBody                          `json:"state"`
+	Quantities   map[string]devices.QuantityMetadata `json:"quantities"`
 }
 
 type AvailabilityBody struct {

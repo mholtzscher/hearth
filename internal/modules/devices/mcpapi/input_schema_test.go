@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/stretchr/testify/require"
+
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
@@ -40,10 +43,59 @@ func TestInputSchemasPreserveOptionalIDsAndPageArguments(t *testing.T) {
 	}
 }
 
+func TestHistoryToolPublishedSchemaRejectsNullBucket(t *testing.T) {
+	t.Parallel()
+	doc := listedDeviceInputSchemas(t)["query_entity_state_history"]
+	value, err := jsonschema.UnmarshalJSON(strings.NewReader(string(doc)))
+	require.NoError(t, err)
+	compiler := jsonschema.NewCompiler()
+	require.NoError(t, compiler.AddResource("https://hearth.invalid/tool", value))
+	schema, err := compiler.Compile("https://hearth.invalid/tool")
+	require.NoError(t, err)
+	base := `{"entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"select_field":"","result":{"kind":"summary","metrics":{"min":{"operation":"min"}}}}`
+	for _, tc := range []struct {
+		body  string
+		valid bool
+	}{
+		{base, true},
+		{strings.Replace(base, `"metrics":{`, `"bucket":null,"metrics":{`, 1), false},
+		{strings.Replace(base, `"metrics":{`, `"nulls":null,"metrics":{`, 1), false},
+		{strings.Replace(base, `"operation":"min"`, `"Operation":"min"`, 1), false},
+		{strings.Replace(base, `"metrics":{"min":{"operation":"min"}}`, `"metrics":{}`, 1), false},
+	} {
+		instance, decodeErr := jsonschema.UnmarshalJSON(strings.NewReader(tc.body))
+		require.NoError(t, decodeErr)
+		require.Equal(t, tc.valid, schema.Validate(instance) == nil, tc.body)
+	}
+}
+
+func TestPresentationToolsPublishUnitsArgument(t *testing.T) {
+	t.Parallel()
+	inputs := listedDeviceInputSchemas(t)
+	for _, name := range []string{"get_entity", "get_device", "list_entities", "query_entity_state_history"} {
+		var schema struct {
+			Properties map[string]map[string]any `json:"properties"`
+			Required   []string                  `json:"required"`
+		}
+		if err := json.Unmarshal(inputs[name], &schema); err != nil {
+			t.Fatal(err)
+		}
+		units := schema.Properties["units"]
+		if units["type"] != "string" || !reflect.DeepEqual(units["enum"], []any{"", "canonical"}) {
+			t.Fatalf("%s units = %#v", name, units)
+		}
+		for _, field := range schema.Required {
+			if field == "units" {
+				t.Fatalf("%s requires units", name)
+			}
+		}
+	}
+}
+
 func listedDeviceInputSchemas(t *testing.T) map[string]json.RawMessage {
 	t.Helper()
 	server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
-	Register(server, &stubDevices{})
+	Register(server, &stubDevices{}, testPresenter())
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/mcp",
@@ -69,7 +121,7 @@ func listedDeviceInputSchemas(t *testing.T) map[string]json.RawMessage {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Result.Tools) != 12 {
+	if len(envelope.Result.Tools) != 13 {
 		t.Fatalf("catalog has %d tools", len(envelope.Result.Tools))
 	}
 	inputs := make(map[string]json.RawMessage)

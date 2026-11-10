@@ -34,6 +34,7 @@ func TestStateHistoryOmitsRejectedValuesButKeepsAcceptedNullAndExactJSON(t *test
 				}, nil
 			},
 		},
+		testPresenter(),
 	)
 	const prefix = `"observation_id":"` + string(apiObservationID) + `","adapter_received_at":"2026-08-25T10:00:00.123456789Z","source_updated_at":"2026-08-25T09:59:00.123456789Z","observed_at":"2026-08-25T10:00:01.123456789Z"`
 	want := `{"items":[{` + prefix + `,"disposition":"rejected","rejection_code":"entity_disabled"},{` + prefix + `,"disposition":"applied","value":null},{` + prefix + `,"disposition":"unchanged","value":{"large":9007199254740993,"huge":1e10000,"tiny":1e-10000,"nullable":null}}]}`
@@ -74,7 +75,7 @@ func TestReadSuccessSchemasRejectInvalidRawDocuments(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
-			Register(server, test.stub)
+			Register(server, test.stub, testPresenter())
 			assertInternalWireFailure(t, callWire(t, server.HTTPHandler(), test.tool, test.args))
 		})
 	}

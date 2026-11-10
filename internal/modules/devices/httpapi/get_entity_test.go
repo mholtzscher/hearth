@@ -149,7 +149,7 @@ func TestRegisterDoesNotChangeHumaErrorFactory(t *testing.T) {
 
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	Register(huma.NewGroup(openapi, "/v1"), &stubDevices{}, nil)
+	Register(huma.NewGroup(openapi, "/v1"), &stubDevices{}, testPresenter(), nil)
 	called = false
 	status := huma.NewError(http.StatusTeapot, "sentinel message")
 	if !called || status.GetStatus() != http.StatusTeapot {

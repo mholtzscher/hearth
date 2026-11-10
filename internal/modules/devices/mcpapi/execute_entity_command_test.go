@@ -40,6 +40,7 @@ func TestCommandReceiptsKeepTerminalAlternativesAndExactEvidence(t *testing.T) {
 						return test.result, nil
 					},
 				},
+				testPresenter(),
 			)
 			result := callWire(
 				t,

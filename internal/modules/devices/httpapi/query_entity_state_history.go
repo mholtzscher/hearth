@@ -56,6 +56,7 @@ type HistoryQueryEnvelope struct {
 	Range    historyRangeBody          `json:"range"`
 	TimeAxis string                    `json:"time_axis" enum:"observed_at"`
 	Coverage HistoryQueryBasicCoverage `json:"coverage"`
+	Quantity devices.QuantityMetadata  `json:"quantity"`
 }
 type historySummaryBody struct {
 	HistoryQueryEnvelope
@@ -81,6 +82,12 @@ type queryHistoryInput struct {
 	EntityID    string `path:"entity_id"`
 	ContentType string `                 header:"Content-Type"`
 	RawBody     []byte
+}
+type queryNumericHistoryInput struct {
+	EntityID    string `path:"entity_id"`
+	ContentType string `                 header:"Content-Type"`
+	RawBody     []byte
+	Units       string `                                       query:"units" doc:"Omit for household units; canonical returns canonical values"`
 }
 type queryHistoryOutput struct {
 	ContentType string `header:"Content-Type"`
@@ -165,7 +172,7 @@ func registerQueryEntityStateHistory(api huma.API, h *handler) {
 			Content:  map[string]*huma.MediaType{"application/json": {Schema: request}},
 		},
 	}
-	huma.Register(api, op, func(ctx context.Context, in *queryHistoryInput) (*queryHistoryOutput, error) {
+	huma.Register(api, op, func(ctx context.Context, in *queryNumericHistoryInput) (*queryHistoryOutput, error) {
 		return h.queryEntityStateHistory(ctx, in, api.OpenAPI().Components.Schemas, request)
 	})
 	op.RequestBody.Content = map[string]*huma.MediaType{"application/json": {Schema: request}}
@@ -257,11 +264,19 @@ func decodeHistoryQuery(
 
 func (h *handler) queryEntityStateHistory(
 	ctx context.Context,
-	in *queryHistoryInput,
+	in *queryNumericHistoryInput,
 	registry huma.Registry,
 	schema *huma.Schema,
 ) (*queryHistoryOutput, error) {
-	query, err := decodeHistoryQuery(in, registry, schema)
+	units, err := devices.ParseReadUnits(in.Units)
+	if err != nil {
+		return nil, historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid units.", "")
+	}
+	query, err := decodeHistoryQuery(
+		&queryHistoryInput{EntityID: in.EntityID, ContentType: in.ContentType, RawBody: in.RawBody},
+		registry,
+		schema,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +284,23 @@ func (h *handler) queryEntityStateHistory(
 	if err != nil {
 		return nil, h.historyQueryFailure(ctx, err)
 	}
+	view, err := h.devices.GetEntity(ctx, query.EntityID)
+	if err != nil {
+		return nil, h.historyQueryFailure(ctx, err)
+	}
+	answer, quantity, err := h.presenter.History(view, query.Field, answer, units)
+	if err != nil {
+		return nil, h.historyQueryFailure(ctx, err)
+	}
 	mapped, err := historyQueryResponse(answer)
+	switch body := mapped.(type) {
+	case historySummaryBody:
+		body.Quantity = quantity
+		mapped = body
+	case historyBucketedBody:
+		body.Quantity = quantity
+		mapped = body
+	}
 	return h.encodeHistoryAnswer(ctx, "query-entity-state-history", mapped, err)
 }
 

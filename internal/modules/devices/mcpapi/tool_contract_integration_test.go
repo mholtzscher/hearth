@@ -34,7 +34,7 @@ func mcpSessionWithLogs(t *testing.T, service Devices, logs *bytes.Buffer) *mcp.
 
 func mcpSessionWithServer(t *testing.T, server *mcptools.Server, service Devices) *mcp.ClientSession {
 	t.Helper()
-	Register(server, service)
+	Register(server, service, testPresenter())
 	httpServer := httptest.NewServer(server.HTTPHandler())
 	t.Cleanup(httpServer.Close)
 	session, err := mcp.NewClient(
@@ -72,6 +72,7 @@ func TestDevicesToolCatalog(t *testing.T) {
 		"list_commands",
 		"list_entity_availability_history",
 		"list_entity_state_history",
+		"query_entity_state_history",
 		"list_entity_events",
 	}
 	if len(listed.Tools) != len(want) {

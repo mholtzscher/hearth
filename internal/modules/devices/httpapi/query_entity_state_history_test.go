@@ -29,7 +29,7 @@ const (
 func historyPost(router http.Handler, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/v1/entities/"+string(apiEntityID)+"/state/history",
+		"/v1/entities/"+string(apiEntityID)+"/state/history?units=canonical",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -53,8 +53,15 @@ func historyPublishedSchema(t *testing.T, api huma.API, pointer string) *jsonsch
 	return schema
 }
 
+func historyTemperatureEntity(_ context.Context, id devices.EntityID) (devices.EntityWithState, error) {
+	return devices.EntityWithState{
+		Entity: devices.Entity{ID: id, TypeID: devices.EntityTypeTemperatureV1, Support: []byte(`{}`)},
+	}, nil
+}
+
 func historySummaryStub(called *bool) *stubDevices {
 	return &stubDevices{
+		getEntity: historyTemperatureEntity,
 		queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
 			*called = true
 			return devices.HistoryQueryResult{
@@ -71,6 +78,15 @@ func historySummaryStub(called *bool) *stubDevices {
 func TestHistoryQueryDecodesSummaryRequest(t *testing.T) {
 	t.Parallel()
 	router, _ := testAPI(t, &stubDevices{
+		getEntity: func(_ context.Context, id devices.EntityID) (devices.EntityWithState, error) {
+			return devices.EntityWithState{
+				Entity: devices.Entity{
+					ID:      id,
+					TypeID:  devices.EntityTypeColortempV1,
+					Support: []byte(`{"state":{"minimum":153,"maximum":500}}`),
+				},
+			}, nil
+		},
 		queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
 			require.Equal(t, devices.HistoryQuery{
 				EntityID: apiEntityID,
@@ -145,6 +161,7 @@ func TestHistoryQueryRequestContract(t *testing.T) {
 			t.Parallel()
 			called := false
 			router, api := testAPI(t, &stubDevices{
+				getEntity: historyTemperatureEntity,
 				queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
 					called = true
 					require.Equal(t, tc.policy, q.Nulls)
@@ -232,6 +249,7 @@ func TestHistoryQueryNormalizesExplicitOffsetsToUTC(t *testing.T) {
 	wantTo := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
 	called := false
 	router, _ := testAPI(t, &stubDevices{
+		getEntity: historyTemperatureEntity,
 		queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
 			called = true
 			require.Equal(t, devices.HistoryRange{From: wantFrom, To: wantTo}, q.Range)
@@ -258,7 +276,7 @@ func TestHistoryQuerySummaryWireVariants(t *testing.T) {
 	window := devices.HistoryRange{From: start, To: start.Add(time.Hour)}
 	const envelope = `"kind":"summary","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
 		`"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at",` +
-		`"coverage":{"basis":"retained_observations","completeness":"unverified"}`
+		`"coverage":{"basis":"retained_observations","completeness":"unverified"},"quantity":{"unit":"mCel","label":"mCel","fraction_digits":0}`
 	for _, tc := range []struct {
 		name string
 		data devices.HistoryResult
@@ -293,6 +311,7 @@ func TestHistoryQuerySummaryWireVariants(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			router, api := testAPI(t, &stubDevices{
+				getEntity: historyTemperatureEntity,
 				queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
 					return devices.HistoryQueryResult{EntityID: q.EntityID, Range: window, Data: tc.data}, nil
 				},
@@ -318,6 +337,54 @@ func TestHistoryQuerySummaryWireVariants(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestHistoryQueryProjectsAfterAggregation(t *testing.T) {
+	t.Parallel()
+	view := apiEntityWithState(nil)
+	view.Entity.TypeID = devices.EntityTypeColorxyV1
+	view.Entity.Support = []byte(`{}`)
+	stub := &stubDevices{
+		getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) { return view, nil },
+		queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+			return devices.HistoryQueryResult{
+				EntityID: q.EntityID,
+				Range:    q.Range,
+				Data: devices.HistorySummaryResult{
+					Metrics: devices.HistoryMetricValues{
+						"min":  json.RawMessage(`1000`),
+						"mean": json.RawMessage(`null`),
+					},
+				},
+			}, nil
+		},
+	}
+	router, _ := testAPI(t, stub)
+	body := strings.Replace(historyRequestBody, `"select_field":""`, `"select_field":"/x"`, 1)
+	for _, tc := range []struct{ query, value, unit string }{{"", `"min":0.1`, `"unit":"1"`}, {"?units=canonical", `"min":1000`, `"unit":"10*-4"`}} {
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/v1/entities/"+string(apiEntityID)+"/state/history"+tc.query,
+			strings.NewReader(body),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		require.Contains(t, rec.Body.String(), tc.value)
+		require.Contains(t, rec.Body.String(), tc.unit)
+		require.Contains(t, rec.Body.String(), `"mean":null`)
+	}
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/entities/"+string(apiEntityID)+"/state/history?units=private_sentinel",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.NotContains(t, rec.Body.String(), "private_sentinel")
 }
 
 func TestHistoryQueryPublishedSchemaRejectsContradictoryResults(t *testing.T) {
@@ -408,12 +475,13 @@ func TestHistoryQueryExactEncodedResultLimit(t *testing.T) {
 	// the production mapper. JSON member ordering does not affect its byte size.
 	const emptyResponse = `{"kind":"summary","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
 		`"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at",` +
-		`"coverage":{"basis":"retained_observations","completeness":"unverified"},"metrics":{"":1}}`
+		`"coverage":{"basis":"retained_observations","completeness":"unverified"},"quantity":{"unit":"mCel","label":"mCel","fraction_digits":0},"metrics":{"":1}}`
 	for _, delta := range []int{-1, 0, 1} {
 		t.Run(strconv.Itoa(delta), func(t *testing.T) {
 			t.Parallel()
 			name := strings.Repeat("x", devices.HistoryMaxResultBytes-len(emptyResponse)+delta)
 			router, _ := testAPI(t, &stubDevices{
+				getEntity: historyTemperatureEntity,
 				queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
 					return devices.HistoryQueryResult{
 						EntityID: q.EntityID,

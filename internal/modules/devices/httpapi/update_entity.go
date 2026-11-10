@@ -33,7 +33,8 @@ func registerUpdateEntity(api huma.API, handler *handler) {
 
 type PatchEntityInput struct {
 	EntityID string          `path:"entity_id" doc:"Canonical Hearth Entity ID"`
-	Body     PatchEntityBody `                 doc:"Mutable Entity fields"      contentType:"application/merge-patch+json"`
+	Units    string          `                 doc:"Omit for household units; canonical returns canonical values; writes remain canonical" query:"units"`
+	Body     PatchEntityBody `                 doc:"Mutable Entity fields"                                                                               contentType:"application/merge-patch+json"`
 }
 
 type PatchEntityOutput struct {
@@ -41,6 +42,10 @@ type PatchEntityOutput struct {
 }
 
 func (handler *handler) patchEntity(ctx context.Context, input *PatchEntityInput) (*PatchEntityOutput, error) {
+	units, err := devices.ParseReadUnits(input.Units)
+	if err != nil {
+		return nil, huma.NewError(http.StatusBadRequest, "invalid units")
+	}
 	entityID, err := devices.ParseEntityID(input.EntityID)
 	if err != nil {
 		return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
@@ -62,7 +67,7 @@ func (handler *handler) patchEntity(ctx context.Context, input *PatchEntityInput
 	case err != nil:
 		return nil, handler.internalAPIError(ctx, "update-entity", "service", err)
 	}
-	body, err := entityBody(view)
+	body, err := handler.entityBody(view, units)
 	if err != nil {
 		return nil, handler.internalAPIError(ctx, "update-entity", "mapping", err)
 	}

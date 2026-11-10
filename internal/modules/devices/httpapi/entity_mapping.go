@@ -6,12 +6,17 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-func entityBody(view devices.EntityWithState) (EntityBody, error) {
+func (h *handler) entityBody(view devices.EntityWithState, units devices.ReadUnits) (EntityBody, error) {
+	view, quantities, err := h.presenter.Entity(view, units)
+	if err != nil {
+		return EntityBody{}, err
+	}
 	var support map[string]any
-	if err := decodeJSON(view.Entity.Support, &support); err != nil {
-		return EntityBody{}, fmt.Errorf("decode entity support: %w", err)
+	if decodeErr := decodeJSON(view.Entity.Support, &support); decodeErr != nil {
+		return EntityBody{}, fmt.Errorf("decode entity support: %w", decodeErr)
 	}
 	body := EntityBody{
+		Quantities:  quantities,
 		AdapterName: view.Entity.AdapterName, NameOverride: view.Entity.NameOverride,
 		ID:           string(view.Entity.ID),
 		DeviceID:     string(view.Entity.DeviceID),
@@ -26,8 +31,8 @@ func entityBody(view devices.EntityWithState) (EntityBody, error) {
 		return body, nil
 	}
 	var value any
-	if err := decodeJSON(view.State.Value, &value); err != nil {
-		return EntityBody{}, fmt.Errorf("decode entity state: %w", err)
+	if decodeErr := decodeJSON(view.State.Value, &value); decodeErr != nil {
+		return EntityBody{}, fmt.Errorf("decode entity state: %w", decodeErr)
 	}
 	state := &StateBody{
 		Value:             value,

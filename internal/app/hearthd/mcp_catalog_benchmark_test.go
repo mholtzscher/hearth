@@ -18,6 +18,7 @@ func BenchmarkMCPCatalogConstruction(b *testing.B) {
 			&stubDevices{},
 			&stubFunctions{},
 			nil, nil,
+			testDevicesPresenter(),
 		)
 		runtime.KeepAlive(server)
 	}
