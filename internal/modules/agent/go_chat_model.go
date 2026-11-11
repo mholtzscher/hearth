@@ -83,21 +83,7 @@ func (provider *goChatModel) Generate(
 	if err = stream.Err(); err != nil {
 		return nil, err
 	}
-	message, err := output.message()
-	if err != nil {
-		return nil, err
-	}
-	usage := output.usage
-	details := usage.PromptTokensDetails
-	retainModelUsage(message, modelUsage{
-		Provider: ProviderOpenCodeGo, Model: provider.config.Model,
-		InputTokens:           reportedTokens(usage.PromptTokens, usage.JSON.PromptTokens),
-		OutputTokens:          reportedTokens(usage.CompletionTokens, usage.JSON.CompletionTokens),
-		TotalTokens:           reportedTokens(usage.TotalTokens, usage.JSON.TotalTokens),
-		CachedInputTokens:     reportedTokens(details.CachedTokens, details.JSON.CachedTokens),
-		CacheWriteInputTokens: reportedTokens(details.CacheWriteTokens, details.JSON.CacheWriteTokens),
-	})
-	return message, nil
+	return output.message()
 }
 
 func (*goChatModel) Stream(
@@ -150,7 +136,6 @@ func goChatTools(infos []*schema.ToolInfo) ([]openai.ChatCompletionToolUnionPara
 
 type goChatAccumulator struct {
 	completion   openai.ChatCompletionAccumulator
-	usage        openai.CompletionUsage
 	reasoning    strings.Builder
 	finishReason string
 	announced    map[string]bool
@@ -179,11 +164,6 @@ func (output *goChatAccumulator) add(ctx context.Context, chunk openai.ChatCompl
 	}
 	if !output.completion.AddChunk(chunk) {
 		return rejectResponse(malformedResponse, "agent Go stream changed response identity")
-	}
-	// The SDK accumulator sums counters but drops field-presence metadata and
-	// cache writes. Retain the provider's usage frame, including explicit zeros.
-	if chunk.JSON.Usage.Valid() {
-		output.usage = chunk.Usage
 	}
 	if len(output.completion.Choices) == 1 {
 		output.announce(ctx)
@@ -255,8 +235,11 @@ func (output *goChatAccumulator) message() (*schema.Message, error) {
 		PromptTokens: int(
 			usage.PromptTokens,
 		),
-		CompletionTokens: int(usage.CompletionTokens),
-		TotalTokens:      int(usage.TotalTokens),
+		// The SDK accumulator sums cached reads but drops cache writes; the Go
+		// gateway currently reports writes as null anyway.
+		PromptTokenDetails: schema.PromptTokenDetails{CachedTokens: int(usage.PromptTokensDetails.CachedTokens)},
+		CompletionTokens:   int(usage.CompletionTokens),
+		TotalTokens:        int(usage.TotalTokens),
 	}}
 	return message, nil
 }

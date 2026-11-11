@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
-	"github.com/stretchr/testify/require"
 
 	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 )
@@ -60,41 +59,6 @@ func TestFitModelHistoryRespectsExactWholeTurnBoundary(t *testing.T) {
 	if err != nil || len(got) != 0 {
 		t.Fatalf("partial prior turn: %v %v", contentsOf(got), err)
 	}
-}
-
-func TestCacheUsageDoesNotConsumeHistoryBudget(t *testing.T) {
-	t.Parallel()
-	message := schema.AssistantMessage("answer", nil)
-	message.Extra = map[string]any{responsesOutputKey: "private-continuation"}
-	message.ResponseMeta = &schema.ResponseMeta{
-		Usage: &schema.TokenUsage{PromptTokens: 2048, CompletionTokens: 16, TotalTokens: 2064},
-	}
-	baseline, err := json.Marshal(message)
-	require.NoError(t, err)
-	retainModelUsage(message, modelUsage{
-		Provider: ProviderOpenAI, Model: "fixture",
-		InputTokens: new(int64(2048)), CachedInputTokens: new(int64(1536)), CacheWriteInputTokens: new(int64(512)),
-	})
-	stored, err := json.Marshal(message)
-	require.NoError(t, err)
-	prepared, err := historyMessageFromRow(
-		dbsqlc.ListRecentMessageJsonRow{Role: "assistant", MessageJson: string(stored)},
-	)
-	require.NoError(t, err)
-	require.Equal(t, len(baseline), prepared.bytes)
-	raw, err := json.Marshal(prepared.message)
-	require.NoError(t, err)
-	require.JSONEq(t, string(baseline), string(raw))
-	question := schema.UserMessage("question")
-	questionJSON, err := json.Marshal(question)
-	require.NoError(t, err)
-	selected, err := fitModelHistory([]*schema.Message{question, prepared.message}, len(questionJSON)+len(baseline))
-	require.NoError(t, err)
-	require.Equal(t, []string{"question", "answer"}, contentsOf(selected))
-	// Preparation must not erase the durable evidence or its native counters.
-	after, err := json.Marshal(message)
-	require.NoError(t, err)
-	require.JSONEq(t, string(stored), string(after))
 }
 
 // contentsOf projects rebuilt history to its message text.

@@ -29,7 +29,9 @@ func TestResponsesDefaultEndpoint(t *testing.T) {
 				StatusCode: http.StatusOK,
 				Header:     http.Header{"Content-Type": {"text/event-stream"}},
 				Body: io.NopCloser(strings.NewReader(responsesStream(
-					`{"id":"resp_default","status":"completed","output":[{"id":"msg_default","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Ready.","annotations":[]}]}]}`,
+					`{"id":"resp_default","status":"completed","output":[{"id":"msg_default","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Ready.","annotations":[]}]}],` +
+						`"usage":{"input_tokens":2048,"output_tokens":5,"total_tokens":2053,` +
+						`"input_tokens_details":{"cached_tokens":1536,"cache_write_tokens":512}}}`,
 				))),
 			}, nil
 		}),
@@ -40,6 +42,10 @@ func TestResponsesDefaultEndpoint(t *testing.T) {
 	}
 	if !requested || message.Content != "Ready." {
 		t.Fatalf("requested=%v message=%+v", requested, message)
+	}
+	if details := message.ResponseMeta.Usage.PromptTokenDetails; message.ResponseMeta.Usage.PromptTokens != 2048 ||
+		details.CachedTokens != 1536 || details.CacheWriteTokens != 512 {
+		t.Fatalf("usage=%+v", message.ResponseMeta.Usage)
 	}
 }
 

@@ -74,21 +74,7 @@ func (provider *responsesModel) Generate(
 	if err != nil {
 		return nil, err
 	}
-	message, err := responsesMessage(response)
-	if err != nil {
-		return nil, err
-	}
-	usage := response.Usage
-	details := usage.InputTokensDetails
-	retainModelUsage(message, modelUsage{
-		Provider: ProviderOpenAI, Model: provider.config.Model,
-		InputTokens:           reportedTokens(usage.InputTokens, usage.JSON.InputTokens),
-		OutputTokens:          reportedTokens(usage.OutputTokens, usage.JSON.OutputTokens),
-		TotalTokens:           reportedTokens(usage.TotalTokens, usage.JSON.TotalTokens),
-		CachedInputTokens:     reportedTokens(details.CachedTokens, details.JSON.CachedTokens),
-		CacheWriteInputTokens: reportedTokens(details.CacheWriteTokens, details.JSON.CacheWriteTokens),
-	})
-	return message, nil
+	return responsesMessage(response)
 }
 
 // finalResponse streams only to learn early which tools the model is calling.
@@ -244,6 +230,10 @@ func responsesMessage(response *responses.Response) (*schema.Message, error) {
 		PromptTokens: int(
 			response.Usage.InputTokens,
 		),
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens:     int(response.Usage.InputTokensDetails.CachedTokens),
+			CacheWriteTokens: int(response.Usage.InputTokensDetails.CacheWriteTokens),
+		},
 		CompletionTokens: int(response.Usage.OutputTokens),
 		TotalTokens:      int(response.Usage.TotalTokens),
 	}}

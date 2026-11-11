@@ -45,7 +45,7 @@ func TestGoDefaultEndpointAndProviderDefaults(t *testing.T) {
 	ctx := context.WithValue(t.Context(), modelConversationKey{}, "aconv_fixture")
 	message, err := provider.Generate(ctx, []*schema.Message{schema.UserMessage("Hello.")})
 	if err != nil || message.Content != "Ready." || message.ReasoningContent != "" ||
-		message.ResponseMeta.Usage.TotalTokens != 15 {
+		message.ResponseMeta.Usage.TotalTokens != 15 || message.ResponseMeta.Usage.PromptTokenDetails.CachedTokens != 8 {
 		t.Fatalf("message=%+v error=%v", message, err)
 	}
 	if _, err = provider.Generate(t.Context(), []*schema.Message{schema.UserMessage("No session")}); err == nil {
@@ -105,5 +105,6 @@ func goChatStream(reasoning, content, calls, finish string) string {
 			"data: {\"id\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":%q}]}\n\n",
 			finish,
 		) +
-		"data: {\"id\":\"fixture\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\ndata: [DONE]\n\n"
+		"data: {\"id\":\"fixture\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15," +
+		"\"prompt_tokens_details\":{\"cached_tokens\":8,\"cache_write_tokens\":null}}}\n\ndata: [DONE]\n\n"
 }

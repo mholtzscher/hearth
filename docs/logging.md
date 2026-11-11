@@ -38,7 +38,7 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 | `core.automation_history_prune_failed` | The startup or hourly Automation history retention pass failed (`module=automations`); one safe app-owned record per failed pass, no raw error text |
 | `core.automation_schedule_failed` | Unexpected calendar worker failure closes Automation admission and fails readiness; Error-level record with fixed `error_code=automation_schedule_failed`, no raw error text. Normal shutdown cancellation does not emit it |
 | `agent.turn_failed` | One unexpected household agent turn failure, with the canonical `conversation_id`, a fixed `stage` (`queue`, `history`, `persist`, `model`, `tool`, `runner`), and a fixed `error_code` (`conversation_not_found`, `admission_unavailable`, `model_call_failed`, `model_response_invalid`, `tool_call_failed`, `trace_persist_failed`, or `turn_failed`); expected caller/Drain cancellation or caller expiry produces no failure record. Dependency context errors retain their origin. A model-stage failure adds a fixed `model_failure` (`provider_status` with the integer `provider_status`, `provider_stream_error`, `response_incomplete`, `inconsistent_tool_completion`, `invalid_function_call`, `malformed_response`, `empty_response`, `deadline_exceeded`, `canceled`, or `unclassified`); a transient status is logged only after its single retry also fails. Provider, tool, and persistence error text is never logged |
-| `agent.model_usage` | Debug-only provider-reported token counts for one completed model call, including calls that request tools. Includes `conversation_id`, configured `provider` and `model`, and reported `input_tokens`, `output_tokens`, `total_tokens`, `cached_input_tokens`, and `cache_write_input_tokens`. Missing/null counts are omitted, not treated as zero. See [Agent cache usage](agent-cache-usage.md) |
+| `agent.model_usage` | Debug-only provider-reported token counts for one completed model call, including tool-calling calls: `conversation_id`, `provider`, `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, and `output_tokens`. A count the provider omits is logged as 0. OpenCode Go does not report cache writes. See [Measure agent prompt caching](#measure-agent-prompt-caching) |
 | `mcp.tool_internal_failure` | One retained unexpected MCP handler failure, with the tool name, fixed `error_code`, and Go error type; no raw cause text. A single-cause wrapping chain ending in the canceled or expired request's context error produces no failure record. Dependency cancellation with an active caller and joined or unrelated faults remain diagnostic, even after caller cancellation. Tool result codes and SDK disconnect behavior are unchanged |
 | `notification.http_internal_failure` | Unexpected Notification HTTP failure, with the fixed operation ID, `error_code=internal_error`, and Go error type; no raw error text or retained data. Caller cancellation alone does not emit it; joined persistence failures still do |
 | `notification.registration_failed` | Notification registration persistence fault, with `stage=persist`, `error_code=registration_write_failed`, and validated registration, Adapter, and runtime identities. The request still receives no reply. No destination name, local key, body, subject, or cause text is logged |
@@ -93,6 +93,27 @@ Automation logs are likewise diagnostics rather than execution history. Use the 
 Silence is not current-health evidence. Reconnection does not prove upstream reconciliation or Entity availability. `/readyz` defines Core dependency readiness; Adapter and Entity reads describe their evidence. Logs do not reproduce those state machines or the lease-expiry grace sequence.
 
 Logs are best-effort diagnostics, not authoritative State, durable Command history, or proof of physical causation. A crash may lose a record after commit. An optional `process.stopped` record means Run returned successfully, not that every cleanup succeeded. No complete teardown sequence is promised.
+
+## Measure agent prompt caching
+
+Run Core with `--log-level debug --log-format json` and capture stderr outside the
+repository. Hold a multi-turn conversation without changing the provider, model,
+reasoning setting, or tools. Then compute the token-weighted cache-hit rate for
+that conversation:
+
+```sh
+jq -s --arg id 'aconv_...' '
+  [.[] | select(.event == "agent.model_usage" and .conversation_id == $id)]
+  | {calls: length, input: (map(.input_tokens) | add),
+     cached: (map(.cached_input_tokens) | add)}
+  | .hit_rate = (if .input > 0 then .cached / .input else null end)
+' core.jsonl
+```
+
+Sum the tokens rather than averaging per-call percentages. The first call in a
+conversation usually reports no hits. These counts cover completed responses only,
+so use provider billing for total charges. The same counts are also stored in each
+assistant message's `response_meta.usage` in `agent_messages.message_json`.
 
 ## Developer conventions and safety
 
