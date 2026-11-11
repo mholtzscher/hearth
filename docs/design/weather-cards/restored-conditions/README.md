@@ -1,60 +1,69 @@
-# Restored weather conditions
+# Weather cards with full synthetic history
 
-These captures show the production React dashboard and Core on November 11,
-2026, against the worktree-local simulator. A local copy of the scripted preset
-adds six rain sensors to the weather station: a `precipitation_rate` sensor in
-mm/h and five `precipitation_depth` counters in mm. The station's Entities are
-paused, then receive these canonical readings through the simulator
-publication API:
+These screenshots show production React and Core at `421cea1`, captured through
+Browse on November 11, 2026. The history is synthetic, seeded directly into this
+worktree's simulator database to inspect complete trend lines. The browser does
+not mock API responses, and no household Devices or model turns were used.
 
-- Temperature: `9400 mCel`.
-- Humidity: `94 %`.
-- Wind and gust: `6.3 m/s` and `11.2 m/s`.
-- Wind direction: `135 deg`.
+## Fixture
+
+With the local stack stopped, its SQLite database was backed up before replacing
+only the temperature, rain-rate, and pressure Entities' history. Each received
+26 hours of canonical samples, three per minute: 4,680 Observations and 1,560
+minute rollups per Entity. The rollups use exact rational sums and matching
+sample counts, minima, and maxima. Small additional samples fill the restart
+interval; the simulator repeats current values every 30 seconds thereafter.
+Database integrity and foreign-key checks passed.
+
+The series include a daily temperature cycle, several showers separated by dry
+periods, and falling pressure. Rain samples vary around each minute's mean so
+the min–max band is visible. Core's history API confirmed all 288 five-minute
+buckets populated for each 24-hour series, and all 360 one-minute buckets for
+the pressure tendency's six-hour history. Both household and canonical pressure
+history reads had complete coverage.
+
+The simulator supplies these current readings:
+
+- Temperature: `9400 mCel`; humidity: `94 %`.
+- Wind: `6.3 m/s`; gusts: `11.2 m/s`; direction: `135 deg`.
 - Rain rate: `6.8 mm/h`.
-- Storm, day, week, month, and year totals: `18.6`, `16.2`, `22.9`, `71.4`, and `688.1 mm`.
+- Storm, day, week, month, and year counters: `18.6`, `16.2`, `22.9`, `71.4`, and `688.1 mm`.
 - Pressure: `1003.2 hPa`.
 
-Core applied each publication by its exact Observation ID. The dashboard was
-saved over HTTP. The US run restarts Core with `household_unit_system: us`
-against the same database and republishes the same readings.
+Counters are independent fixture readings, not integrals of the synthetic rain
+rate. The saved dashboard has the same bindings in both unit systems. Core was
+restarted with `household_unit_system: us` for the US captures.
+
+The seed script, backup, API responses, and original Browse captures remain
+locally under `.data/verification/weather-full-history/`. The database and
+backup are not checked into Git.
+
+## Captures
 
 | Capture | What it shows |
 | --- | --- |
-| [Metric desktop](metric-desktop.png) | 1440×1000; Outside, Rain, Wind, and Pressure |
-| [US desktop](us-desktop.png) | The same dashboard in a US household |
-| [Metric phone](metric-phone.png) | 390×900; Outside and Rain in one column |
-| [Metric phone Wind](metric-phone-wind.png) | The Wind card at phone width |
-| [Metric four columns](metric-four-columns.png) | Narrow cards keep their stacked layout |
+| [Metric desktop](metric-desktop.png) | 1440×1000; complete 24-hour rain and pressure curves in the two-zone layout |
+| [US desktop](us-desktop.png) | The same dashboard with household-projected readings and history |
+| [Intermediate desktop](metric-intermediate.png) | 1100×1000; stacked content and full-width trends |
 | [Metric three columns](metric-three-columns.png) | Three-column layout at 1440×1000 |
+| [Metric four columns](metric-four-columns.png) | Four-column layout at 1440×1000 |
+| [Metric phone](metric-phone.png) | 390×900; the top of the single-column dashboard |
+| [Phone Rain](metric-phone-rain.png) | Element capture showing the full 24-hour rain curve and totals |
+| [Phone Pressure](metric-phone-pressure.png) | Element capture showing the falling curve and three-hour tendency |
+| [Phone Wind](metric-phone-wind.png) | Element capture retaining the compass and reading order |
+| [US phone Pressure](us-phone-pressure.png) | Element capture with the tendency and range in inches of mercury |
 
-The desktop and phone captures were refreshed for the responsive layout
-follow-up to `6fbffe8`. At 1440px, each two-column card has enough room to put
-the lead reading beside its details. Weather trend plots grow from 44px to
-72px in that layout. At 1100px, two-column cards stack their content, as do
-the four-column cards and phone cards. The 40px reading scale, Source control,
-and grid's aligned footers stay unchanged.
+## Observed result
 
-The final captures use headless Chromium against the saved production
-dashboard. Additional checks cover Wind with no optional slots, no compass,
-and a maximum-gust row. A US `100.0 mi/h` reading fits at exactly 460px of
-content width without overlapping details. On the two-column 1440px dashboard,
-the first row is 247px tall (previously 363px), and the second is 215px
-(previously 270px). Three- and four-column cards stack at the captured width;
-the breakpoint follows the card's width, not the column count.
+Both rain and pressure draw one continuous path across the full trend width,
+with a nonempty min–max band. Wide cards use a 72px plot; narrow cards retain
+the 44px plot. The curves, labels, and footers remain within their card bounds.
+The pressure card now shows **Falling · −3.1 hPa in 3 h**, or
+**Falling · −0.09 in Hg in 3 h** in the US household. Browse also verified that
+Source describes the five-minute sample means, min–max band, and tendency method.
 
-Both households show the same words because they come from the canonical
-readings. A US card shows **Moderate breeze** for 14.1 mi/h. Applying the
-Beaufort thresholds to that mi/h value would give **Near gale**. In the US
-household, Rain words a 0.27 in/h rate as **Rain now**. Applied to 0.27, the
-mm/h thresholds would give **Light rain**.
-
-The database has less than three hours of history, so Pressure has no reading
-from three hours earlier and states **Tendency unavailable**. The simulator
-cannot backdate Observations.
-Component tests cover the worded tendency in both unit systems.
-
-The original restoration run's browser HAR contains history queries only;
-three are `units=canonical`. It has no Commands or dashboard writes. The layout
-follow-up refreshed screenshots without a new HAR and does not claim a new
-interaction journey.
+This fixture bypasses Adapter ingestion for historical samples. It verifies
+Core's real history queries, household projection, and rendered cards, not
+backdated ingestion or physical sensor behavior. No production UI code changed
+for these captures. The owned Browse session and local stack were stopped;
+the seeded database is retained for inspection.
