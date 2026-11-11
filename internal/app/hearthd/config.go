@@ -83,6 +83,10 @@ type AgentConfig struct {
 	// the selected provider. Empty selects none for OpenAI's DefaultAgentModel,
 	// otherwise the provider's own default.
 	ReasoningEffort string `yaml:"reasoning_effort"`
+	// ServiceTier selects OpenAI's processing tier, such as fast, for every
+	// agent request. Empty uses the OpenAI project's default tier. Only the
+	// openai provider accepts it.
+	ServiceTier string `yaml:"service_tier"`
 	// MaxIterations bounds one turn's model-generation cycles. Zero selects the
 	// agent module's default of 10.
 	MaxIterations int `yaml:"max_iterations"`
@@ -282,5 +286,6 @@ func (value Config) agentModelSettings() agent.ModelConfig {
 		Model:           value.EffectiveAgentModel(),
 		BaseURL:         value.Agent.BaseURL,
 		ReasoningEffort: value.Agent.ReasoningEffort,
+		ServiceTier:     value.Agent.ServiceTier,
 	}
 }

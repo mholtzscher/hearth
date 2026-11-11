@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/openai/openai-go/v3/responses"
 )
 
 // Provider selects the model connection, not the agent runtime.
@@ -39,6 +41,9 @@ type ModelConfig struct {
 	Model           string
 	BaseURL         string
 	ReasoningEffort string
+	// ServiceTier selects OpenAI's processing tier, such as fast. Empty omits
+	// it, so the OpenAI project's default tier applies.
+	ServiceTier string
 }
 
 // ValidateSettings checks non-secret settings without reading credentials.
@@ -61,6 +66,29 @@ func (config ModelConfig) ValidateSettings() error {
 	}
 	if config.ReasoningEffort != "" && !slices.Contains(efforts, config.ReasoningEffort) {
 		return fmt.Errorf("agent.reasoning_effort must be one of %s", strings.Join(efforts, ", "))
+	}
+	return config.validateServiceTier()
+}
+
+func (config ModelConfig) validateServiceTier() error {
+	if config.ServiceTier == "" {
+		return nil
+	}
+	if config.Provider.Effective() != ProviderOpenAI {
+		return errors.New("agent.service_tier applies only to the openai provider")
+	}
+	// The pinned SDK's tiers. OpenAI decides which ones each model supports.
+	tiers := []string{
+		string(responses.ResponseNewParamsServiceTierAuto),
+		string(responses.ResponseNewParamsServiceTierDefault),
+		string(responses.ResponseNewParamsServiceTierFlex),
+		string(responses.ResponseNewParamsServiceTierScale),
+		string(responses.ResponseNewParamsServiceTierPriority),
+		string(responses.ResponseNewParamsServiceTierFast),
+		string(responses.ResponseNewParamsServiceTierUltrafast),
+	}
+	if !slices.Contains(tiers, config.ServiceTier) {
+		return fmt.Errorf("agent.service_tier must be one of %s", strings.Join(tiers, ", "))
 	}
 	return nil
 }

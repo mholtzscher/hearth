@@ -247,11 +247,14 @@ agent:
   model: gpt-5.6-luna                 # default
   base_url: ""                        # provider default; absolute http(s) when set
   reasoning_effort: none              # none, minimal, low, medium, or high; empty selects none for this default model
+  service_tier: ""                    # openai only; for example fast. Empty uses the OpenAI project's default tier
   max_iterations: 10                  # model-generation cycles per turn; zero selects 10
   history_retention: 720h             # conversation retention (default 30d, minimum 24h)
 ```
 
 Supply the model API key only through the selected provider's variable: `HEARTH_OPENAI_API_KEY` for `openai`, or `HEARTH_OPENCODE_GO_API_KEY` for `opencode-go`. The key is read once at the `start_agent` stage, trimmed, and passed directly to the model configuration; it never enters serializable Core configuration and is never logged, persisted, or echoed in diagnostics. A missing, empty, or whitespace-only variable fails startup with a variable-name-only error. There is no credential CLI flag, YAML field, file fallback, or fallback to another provider's key. Non-secret configuration validation does not read the credential. `reasoning_effort: none` matters for OpenAI's default model, which rejects function tools at higher reasoning levels.
+
+`service_tier` sends OpenAI's `service_tier` with every agent request. Set it to `fast` to use [Fast mode](https://developers.openai.com/api/docs/guides/fast-mode), which costs twice the standard per-token rate. Core accepts `auto`, `default`, `flex`, `scale`, `priority`, `fast`, and `ultrafast`, and rejects the setting for `opencode-go`. OpenAI decides which tiers each model supports, so an unsupported combination fails the first turn with the provider's error. The equivalent sources are `--agent-service-tier` and `HEARTHD_AGENT_SERVICE_TIER`.
 
 To use an OpenCode Go subscription, replace the model settings with:
 

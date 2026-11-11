@@ -48,6 +48,7 @@ func newHearthdCommand(
 		hearthdEnvFlag("agent-model", "HEARTHD_AGENT_MODEL"),
 		hearthdEnvFlag("agent-base-url", "HEARTHD_AGENT_BASE_URL"),
 		hearthdEnvFlag("agent-reasoning-effort", "HEARTHD_AGENT_REASONING_EFFORT"),
+		hearthdEnvFlag("agent-service-tier", "HEARTHD_AGENT_SERVICE_TIER"),
 		&cli.IntFlag{
 			Name: "agent-max-iterations", Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTHD_AGENT_MAX_ITERATIONS")),
 		},
@@ -139,6 +140,9 @@ func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {
 	}
 	if cmd.IsSet("agent-reasoning-effort") {
 		config.Agent.ReasoningEffort = cmd.String("agent-reasoning-effort")
+	}
+	if cmd.IsSet("agent-service-tier") {
+		config.Agent.ServiceTier = cmd.String("agent-service-tier")
 	}
 	if cmd.IsSet("agent-max-iterations") {
 		config.Agent.MaxIterations = cmd.Int("agent-max-iterations")
