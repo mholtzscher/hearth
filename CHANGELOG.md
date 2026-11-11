@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.21.0](https://github.com/mholtzscher/hearth/compare/v0.20.0...v0.21.0) (2026-11-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **devices:** return household quantities with read metadata ([#323](https://github.com/mholtzscher/hearth/issues/323))
+
+### Features
+
+* **agent:** retain and diagnose provider cache usage ([#326](https://github.com/mholtzscher/hearth/issues/326)) ([d366055](https://github.com/mholtzscher/hearth/commit/d36605529f82545830f1f2688ef8778610c01ccc))
+* **devices:** return household quantities with read metadata ([#323](https://github.com/mholtzscher/hearth/issues/323)) ([e73e249](https://github.com/mholtzscher/hearth/commit/e73e249d15feb47bee2a04e07fb08369777ab10b))
+* **pirateweather:** add current conditions and forecast adapter ([#321](https://github.com/mholtzscher/hearth/issues/321)) ([80d57e5](https://github.com/mholtzscher/hearth/commit/80d57e5db4c7bb101a2e48245a83a632eeba16ba))
+* **pirateweather:** persist forecasts as Entities and add a Forecast card ([#322](https://github.com/mholtzscher/hearth/issues/322)) ([ac8aadf](https://github.com/mholtzscher/hearth/commit/ac8aadf47ce6777a3226c73a09ced1f2bd8ba1e8))
+* record yes/no and text State changes and add timeline and week pattern cards ([#317](https://github.com/mholtzscher/hearth/issues/317)) ([6ff79b1](https://github.com/mholtzscher/hearth/commit/6ff79b145d0d8c68aa0ea00267432b7b93673612))
+* **simulator:** add cycling weather wind direction ([#325](https://github.com/mholtzscher/hearth/issues/325)) ([650e460](https://github.com/mholtzscher/hearth/commit/650e460d8fc762f533d21bb8193827807e7d7f2a))
+* **views:** add toggle tiles and toggle lists ([#319](https://github.com/mholtzscher/hearth/issues/319)) ([e8cc97f](https://github.com/mholtzscher/hearth/commit/e8cc97f0d54dbe0738b813d8c1b6f6037d1ddd8a))
+* **views:** add weather cards for outdoor conditions, rain, wind, and pressure ([#320](https://github.com/mholtzscher/hearth/issues/320)) ([710db18](https://github.com/mholtzscher/hearth/commit/710db18f015251ff539d97b26cd46d93ef0ecc87))
+* **views:** drop the now marker from charts and trends ([#316](https://github.com/mholtzscher/hearth/issues/316)) ([41685d1](https://github.com/mholtzscher/hearth/commit/41685d175e84abce05d844194f5ab4bc34163c87))
+* **views:** fade the afterglow over ten seconds ([#324](https://github.com/mholtzscher/hearth/issues/324)) ([4335ef0](https://github.com/mholtzscher/hearth/commit/4335ef0658a955c6f85270b9ba77c96faa56fd4e))
+
+
+### Performance Improvements
+
+* **web:** render committed agent replies before history reload ([#327](https://github.com/mholtzscher/hearth/issues/327)) ([413fe28](https://github.com/mholtzscher/hearth/commit/413fe28abc6861188c11b4b446c7e7b2f6c3a809))
+
 ## [0.20.0](https://github.com/mholtzscher/hearth/compare/v0.19.0...v0.20.0) (2026-11-08)
 
 
