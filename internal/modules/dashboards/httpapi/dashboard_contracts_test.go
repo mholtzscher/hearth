@@ -32,6 +32,13 @@ func TestDashboardWriteRequestSchemas(t *testing.T) {
 	if decodeErr := json.Unmarshal(viewsv1.Schema, &expected); decodeErr != nil {
 		t.Fatal(decodeErr)
 	}
+	if len(expected["$defs"].(map[string]any)) == 0 {
+		t.Fatal("catalog has no shared definitions")
+	}
+	resourceID, _ := expected["$id"].(string)
+	if resourceID == "" || strings.Count(string(raw), `"$id":"`+resourceID+`"`) != 1 {
+		t.Fatal("OpenAPI must publish the canonical schema resource exactly once")
+	}
 	const uri = "https://hearth.local/dashboard-openapi"
 	paths := document["paths"].(map[string]any)
 	components := document["components"].(map[string]any)["schemas"].(map[string]any)
@@ -42,6 +49,18 @@ func TestDashboardWriteRequestSchemas(t *testing.T) {
 		"spec": map[string]any{
 			"root":     "n",
 			"elements": map[string]any{"n": map[string]any{"type": "Note", "props": map[string]any{"text": "Hello"}}},
+		},
+	}
+	invalidSource := map[string]any{
+		"schema_version": float64(1), "catalog_version": "hearth.dashboard/v1", "title": "Invalid source",
+		"spec": map[string]any{
+			"root": "metric", "elements": map[string]any{
+				"metric": map[string]any{"type": "Metric", "props": map[string]any{
+					"source": map[string]any{
+						"kind": "entity-state", "entity_id": "not-an-entity-id", "entity_type": "hearth.temperature/v1",
+					},
+				}},
+			},
 		},
 	}
 	for _, tc := range []struct {
@@ -87,6 +106,11 @@ func TestDashboardWriteRequestSchemas(t *testing.T) {
 				map[string]any{"definition": definition, "unknown": true},
 				map[string]any{"definition": map[string]any{}},
 			}
+			badSource := map[string]any{"definition": invalidSource}
+			if tc.revision {
+				badSource["expected_revision"] = float64(1)
+			}
+			invalid = append(invalid, badSource)
 			if tc.revision {
 				invalid = append(
 					invalid,

@@ -299,6 +299,11 @@ func assertDashboardResponsesRequest(
 			if info["strict"] != false || !reflect.DeepEqual(info["parameters"], wantSchema) {
 				t.Errorf("step %d dashboard schema mismatch: got %v want %v", step, info["parameters"], wantSchema)
 			}
+			parameters, marshalErr := json.Marshal(info["parameters"])
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			t.Logf("Responses present_view parameter schema: %d compact JSON bytes", len(parameters))
 		}
 	}
 	if !found {
