@@ -1,0 +1,142 @@
+[
+  {
+    "label": "baseline-1",
+    "dom": 1592.5999999940395,
+    "responseEnd": 528.2999999970198,
+    "delayMs": 1064.2999999970198,
+    "replyCount": 1,
+    "held": {
+      "at": 1584.0999999940395,
+      "replyVisible": false,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  },
+  {
+    "label": "candidate-1",
+    "dom": 595.1000000089407,
+    "responseEnd": 542.5,
+    "delayMs": 52.6000000089407,
+    "replyCount": 1,
+    "held": {
+      "at": 1598,
+      "replyVisible": true,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  },
+  {
+    "label": "baseline-2",
+    "dom": 1570.7000000029802,
+    "responseEnd": 504.20000000298023,
+    "delayMs": 1066.5,
+    "replyCount": 1,
+    "held": {
+      "at": 1559.7000000029802,
+      "replyVisible": false,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  },
+  {
+    "label": "candidate-2",
+    "dom": 526,
+    "responseEnd": 473,
+    "delayMs": 53,
+    "replyCount": 1,
+    "held": {
+      "at": 1529.3999999910593,
+      "replyVisible": true,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  },
+  {
+    "label": "baseline-3",
+    "dom": 1597.699999988079,
+    "responseEnd": 533.0999999940395,
+    "delayMs": 1064.5999999940395,
+    "replyCount": 1,
+    "held": {
+      "at": 1589.2999999970198,
+      "replyVisible": false,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  },
+  {
+    "label": "candidate-3",
+    "dom": 1569,
+    "responseEnd": 1516.4000000059605,
+    "delayMs": 52.599999994039536,
+    "replyCount": 1,
+    "held": {
+      "at": 2571.7999999970198,
+      "replyVisible": true,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  },
+  {
+    "label": "baseline-4",
+    "dom": 1530.2999999970198,
+    "responseEnd": 464,
+    "delayMs": 1066.2999999970198,
+    "replyCount": 1,
+    "held": {
+      "at": 1520.2999999970198,
+      "replyVisible": false,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  },
+  {
+    "label": "candidate-4",
+    "dom": 528.3999999910593,
+    "responseEnd": 475.5,
+    "delayMs": 52.8999999910593,
+    "replyCount": 1,
+    "held": {
+      "at": 1531,
+      "replyVisible": true,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  },
+  {
+    "label": "baseline-5",
+    "dom": 1529.3999999910593,
+    "responseEnd": 464.29999999701977,
+    "delayMs": 1065.0999999940395,
+    "replyCount": 1,
+    "held": {
+      "at": 1519.5999999940395,
+      "replyVisible": false,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  },
+  {
+    "label": "candidate-5",
+    "dom": 1616.9000000059605,
+    "responseEnd": 1564.1000000089407,
+    "delayMs": 52.79999999701977,
+    "replyCount": 1,
+    "held": {
+      "at": 2620,
+      "replyVisible": true,
+      "composerDisabled": true
+    },
+    "submissions": 1,
+    "historyReads": 2
+  }
+]

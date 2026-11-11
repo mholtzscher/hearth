@@ -58,8 +58,8 @@ export function groupReplies(items: ConversationItem[]): ConversationItem[] {
 }
 
 /** preparing holds calls the model has begun writing, until each call finishes. */
-export type LiveTurn = { activities: Activity[]; artifacts: PresentedArtifact[]; preparing: { id: string; name: string }[]; failed: string | null; terminal: boolean };
-export const emptyTurn = (): LiveTurn => ({ activities: [], artifacts: [], preparing: [], failed: null, terminal: false });
+export type LiveTurn = { reply: string; activities: Activity[]; artifacts: PresentedArtifact[]; preparing: { id: string; name: string }[]; failed: string | null; terminal: boolean };
+export const emptyTurn = (): LiveTurn => ({ reply: "", activities: [], artifacts: [], preparing: [], failed: null, terminal: false });
 
 /** Announced or running presentation calls without a result. */
 export function pendingArtifactCalls(turn: LiveTurn): NonNullable<ConversationItem["pendingArtifacts"]> {
@@ -85,6 +85,6 @@ export function reduceTurn(turn: LiveTurn, event: TurnEvent, scope: string, base
   }
   if ((event.type === "view.presented" || event.type === "automation.presented") && event.artifact && !turn.artifacts.some(item => item.artifact.artifact_id === event.artifact?.artifact_id)) return { ...turn, artifacts: [...turn.artifacts, { artifact: event.artifact, base }] };
   if (event.type === "turn.failed") return { ...turn, terminal: true, failed: event.error || "The request failed." };
-  if (event.type === "turn.finished") return { ...turn, terminal: true };
+  if (event.type === "turn.finished") return { ...turn, terminal: true, reply: event.reply ?? "" };
   return turn;
 }
