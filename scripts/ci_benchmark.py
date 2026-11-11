@@ -142,9 +142,17 @@ def verify():
         assert hashlib.sha256((SNAPSHOT / name).read_bytes()).hexdigest() == digest
     frozen = json.loads((SNAPSHOT / "environment.json").read_text())
     current = environment()
-    for key in ("revision", "go", "mise", "node", "pnpm", "image_os", "image_version",
-                "runner_arch", "cpus", "cpu_model"):
-        assert frozen[key] == current[key], f"Snapshot environment mismatch: {key}"
+    # Hosted CPU models vary. Preserve provenance without selecting lucky hosts;
+    # image, architecture, allocated cores, and tool versions must still match.
+    keys = ("revision", "go", "mise", "node", "pnpm", "image_os", "image_version",
+            "runner_arch", "cpus")
+    mismatches = [key for key in keys if frozen[key] != current[key]]
+    EVIDENCE.mkdir(parents=True, exist_ok=True)
+    (EVIDENCE / "verification.json").write_text(json.dumps({
+        "hardware_policy": "hosted-mix", "seed": frozen, "current": current,
+        "mismatches": mismatches,
+    }, indent=2) + "\n")
+    assert not mismatches, f"Snapshot environment mismatch: {mismatches}"
 
 
 def restore():
