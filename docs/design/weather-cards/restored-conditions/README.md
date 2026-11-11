@@ -1,7 +1,8 @@
 # Weather cards with full synthetic history
 
-These screenshots show production React and Core at `421cea1`, captured through
-Browse on November 11, 2026. The history is synthetic, seeded directly into this
+These screenshots show production React and Core from checkpoint `6a86a69`
+with the subsequent 50% weather-trend color treatment, captured through Browse
+on November 11, 2026. The history is synthetic, seeded directly into this
 worktree's simulator database to inspect complete trend lines. The browser does
 not mock API responses, and no household Devices or model turns were used.
 
@@ -52,18 +53,33 @@ backup are not checked into Git.
 | [Phone Pressure](metric-phone-pressure.png) | Element capture showing the falling curve and three-hour tendency |
 | [Phone Wind](metric-phone-wind.png) | Element capture retaining the compass and reading order |
 | [US phone Pressure](us-phone-pressure.png) | Element capture with the tendency and range in inches of mercury |
+| [Disabled trends](metric-disabled.png) | Real disabled fixture Entities retain dashed-gray lines and omit the bands |
 
 ## Observed result
 
 Both rain and pressure draw one continuous path across the full trend width,
 with a nonempty min–max band. Wide cards use a 72px plot; narrow cards retain
 the 44px plot. The curves, labels, and footers remain within their card bounds.
-The pressure card now shows **Falling · −3.1 hPa in 3 h**, or
+The pressure card shows **Falling · −3.0 hPa in 3 h**, or
 **Falling · −0.09 in Hg in 3 h** in the US household. Browse also verified that
 Source describes the five-minute sample means, min–max band, and tendency method.
 
+Live Rain lines blend dusk blue (`--chart-4`) equally with `--gray-9`; Pressure
+uses the same blend with pale gold (`--chart-5`). The bands use those chart
+colors at 8% opacity. Computed line contrast against the card surface is about
+11:1 for Rain and 13.2:1 for Pressure. Readings, labels, and surfaces remain
+neutral. The final captures use the real stylesheet after removing the
+temporary browser preview.
+
+The disabled-state check temporarily disabled the local rain-rate and pressure
+Entities through Core's metadata API. Both trends rendered gray with 4px/3px
+dashes and no band. Both Entities were re-enabled and confirmed before the
+live screenshots were captured. This changes neither household data nor the
+production status rules.
+
 This fixture bypasses Adapter ingestion for historical samples. It verifies
 Core's real history queries, household projection, and rendered cards, not
-backdated ingestion or physical sensor behavior. No production UI code changed
-for these captures. The owned Browse session and local stack were stopped;
+backdated ingestion or physical sensor behavior. The only production UI change
+for the color follow-up is scoped CSS for these two weather trends. The owned
+Browse session and local stack were stopped;
 the seeded database is retained for inspection.

@@ -489,6 +489,10 @@
  */
 .view-weather { container-type:inline-size; }
 .view-weather .view-card-body { display:flex; flex-direction:column; gap:6px; }
+.view-rain { --weather-trend-color:var(--chart-4); }
+.view-pressure { --weather-trend-color:var(--chart-5); }
+:is(.view-rain,.view-pressure) .view-trend:not([data-value=dimmed]) .view-trend-mean { stroke:color-mix(in oklch,var(--weather-trend-color) 50%,var(--gray-9)); }
+:is(.view-rain,.view-pressure) .view-trend:not([data-value=dimmed]) .view-trend-band { fill:var(--weather-trend-color); fill-opacity:.08; }
 .view-weather-conditions { color:var(--gray-9); font-size:14px; line-height:1.5; text-wrap:balance; }
 .view-weather-detail, .view-weather-inline { color:var(--quiet); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; text-wrap:pretty; }
 .view-weather-detail[data-value=dimmed], .view-weather-tendency[data-value=dimmed], .view-weather-inline [data-value=dimmed] { color:var(--gray-7); }

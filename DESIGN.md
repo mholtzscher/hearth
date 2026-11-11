@@ -271,6 +271,12 @@ for the displayed value before allocating space to details. Rain's totals
 sentence spans both halves below. Narrower cards keep the single column;
 the card's available width, not its grid's column count, chooses the layout.
 
+Live Rain trends use dusk blue (`--chart-4`), and Pressure uses pale gold
+(`--chart-5`). Their lines mix equal parts of that color and `--gray-9` in
+OKLCH; the min–max band uses the chart color at 8% opacity. Readings, labels,
+and card backgrounds stay neutral. Unavailable or disabled trends retain the
+shared dashed-gray treatment. Other Metric trends keep their neutral lines.
+
 Forecast cards show modeled predictions, not station readings, and are the
 only cards that draw sky conditions. Daily rows are 44px tall: the day at 14px
 (**Today** first), a 28px condition icon, the precipitation chance at 13px
