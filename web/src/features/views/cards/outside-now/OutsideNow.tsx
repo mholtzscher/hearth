@@ -4,7 +4,7 @@ import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates } from "../reading-list/ReadingRows";
 import { beaufort, compassPoint, rainWord, windWord } from "../weather/formulas";
 import { canonicalValue, derivedTreatment, extremes, shownData } from "../weather/readings";
-import { SlotStatus, slotRows, useWeatherReads, WeatherReading } from "../weather/WeatherParts";
+import { SlotStatus, slotRows, useWeatherReads, WeatherReading, WeatherZones } from "../weather/WeatherParts";
 import { outsideNowSchema } from "./schema";
 
 type Props = z.infer<typeof outsideNowSchema>;
@@ -58,13 +58,14 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
           <div key={label}><dt>{label}</dt><dd><time dateTime={at}>{new Date(at).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</time></dd></div>)}
       </dl>}
     </>}>
-    <WeatherReading data={data} status={status} />
-    {words.length > 0 && <p className="view-weather-conditions" data-value={wordTreatment}>{words.join(" · ")}</p>}
-    {data && <p className="view-weather-detail">{range
-      ? `${history.refreshFailed ? "Last loaded 24 h:" : "24 h"} high ${range.high.toFixed(digits)}, low ${range.low.toFixed(digits)} ${history.data!.format.unit_label}`
-      : history.status === "loading" ? "Loading the last 24 hours…" : history.status === "error" ? "Couldn't load the last 24 hours." : "No history in the last 24 h."}</p>}
-    {history.refreshFailed && <StatusList entries={[{ key: "refresh-failed", tone: "warn", text: "Couldn't refresh temperature history" }]} />}
-    {rows.length > 0 && <div className="view-weather-rows"><ReadingRows rows={rows} /></div>}
+    <WeatherZones aside={rows.length > 0 && <div className="view-weather-rows"><ReadingRows rows={rows} /></div>}>
+      <WeatherReading data={data} status={status} />
+      {words.length > 0 && <p className="view-weather-conditions" data-value={wordTreatment}>{words.join(" · ")}</p>}
+      {data && <p className="view-weather-detail">{range
+        ? `${history.refreshFailed ? "Last loaded 24 h:" : "24 h"} high ${range.high.toFixed(digits)}, low ${range.low.toFixed(digits)} ${history.data!.format.unit_label}`
+        : history.status === "loading" ? "Loading the last 24 hours…" : history.status === "error" ? "Couldn't load the last 24 hours." : "No history in the last 24 h."}</p>}
+      {history.refreshFailed && <StatusList entries={[{ key: "refresh-failed", tone: "warn", text: "Couldn't refresh temperature history" }]} />}
+    </WeatherZones>
     {!directionRow && <SlotStatus name="Wind direction" resource={reads.current("direction")} />}
     {!rateRow && <SlotStatus name="Rain rate" resource={reads.current("rate")} />}
   </CardFrame>;

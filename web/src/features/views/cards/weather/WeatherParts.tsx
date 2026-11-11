@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useNumericReads } from "../../bindings/registry";
 import type { MetricData, NumericSource, ReadUnits, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
 import { StatusList } from "../CardFrame";
@@ -37,6 +38,17 @@ export function WeatherReading({ data, status, words }: { data?: MetricData; sta
     {words ?? (data ? data.value.toFixed(data.format.fraction_digits) : "—")}
     {!words && data?.format.unit_label && <small>{data.format.unit_label}</small>}
   </p>;
+}
+
+/**
+ * The lead reading and its words, with the card's other readings beside them
+ * in a wide card and below them otherwise. Without details there is one zone.
+ */
+export function WeatherZones({ aside, children }: { aside?: ReactNode; children: ReactNode }) {
+  return <div className="view-weather-zones">
+    <div className="view-weather-main">{children}</div>
+    {aside ? <div className="view-weather-aside">{aside}</div> : null}
+  </div>;
 }
 
 /** Statuses of a reading that has no row of its own, named so readers know which value they describe. */

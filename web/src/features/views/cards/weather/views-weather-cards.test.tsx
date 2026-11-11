@@ -245,6 +245,15 @@ it.each(["unavailable", "disabled"].flatMap(state => [
   expect(api.posts).toHaveLength(0);
 });
 
+it("keeps speed, gusts, Beaufort words, and direction in reading order", async () => {
+  core(station());
+  await mount(<BoundWind speed={source(103, "hearth.speed/v1")} gust={source(111, "hearth.speed/v1")} direction={source(104, "hearth.numericsensor/v1")} />);
+  const text = card("Wind").textContent!;
+  const order = ["6.3m/s", "Gusts 11.2 m/s", "Moderate breeze", "From SE"].map(reading => text.indexOf(reading));
+  expect(order.every(index => index >= 0)).toBe(true);
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+});
+
 it("draws where the wind comes from, but no direction when calm or missing", async () => {
   const speed = source(103, "hearth.speed/v1");
   const direction = source(104, "hearth.numericsensor/v1");

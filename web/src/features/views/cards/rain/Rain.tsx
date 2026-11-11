@@ -6,7 +6,7 @@ import { listArrivals, oldestObservation, rowSources, rowStates } from "../readi
 import { Trend, trendMethod } from "../metric/Trend";
 import { rainWord } from "../weather/formulas";
 import { canonicalValue, derivedTreatment, formatReading, shownData } from "../weather/readings";
-import { SlotStatus, slotRows, useWeatherReads, WeatherReading, type WeatherRead } from "../weather/WeatherParts";
+import { SlotStatus, slotRows, useWeatherReads, WeatherReading, WeatherZones, type WeatherRead } from "../weather/WeatherParts";
 import { rainPeriods, rainSchema, type RainPeriod } from "./schema";
 
 type Props = z.infer<typeof rainSchema>;
@@ -58,17 +58,18 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
       <p>Totals are the station's own counters, which it resets for each storm, day, week, month and year.</p>
       {trend && trendMethod(trend)}
     </>}>
-    {stormLeads ? <>
-      <WeatherReading data={stormData} status={status} />
-      <p className="view-weather-conditions" data-value={derivedTreatment(stormReading, rateReading)}>This storm{!rateData ? "" : mmPerHour === undefined ? ` · Rate ${formatReading(rateData)}` : word ? ` · ${word} now, ${formatReading(rateData)}` : " · Stopped for now"}</p>
-    </> : rateData && mmPerHour === 0 ? <>
-      <WeatherReading status={rateStatus} words="Dry" />
-      <p className="view-weather-detail" data-value={rateStatus.value}>Rate {formatReading(rateData)}</p>
-    </> : <>
-      <WeatherReading data={rateData} status={rateStatus} />
-      {word && <p className="view-weather-conditions" data-value={rateStatus.value}>{word}</p>}
-    </>}
-    {trend && history && rateStatus.value !== "empty" && <Trend window={trend} resource={history} dimmed={rateStatus.value === "dimmed"} />}
+    <WeatherZones aside={trend && history && rateStatus.value !== "empty" && <Trend window={trend} resource={history} dimmed={rateStatus.value === "dimmed"} />}>
+      {stormLeads ? <>
+        <WeatherReading data={stormData} status={status} />
+        <p className="view-weather-conditions" data-value={derivedTreatment(stormReading, rateReading)}>This storm{!rateData ? "" : mmPerHour === undefined ? ` · Rate ${formatReading(rateData)}` : word ? ` · ${word} now, ${formatReading(rateData)}` : " · Stopped for now"}</p>
+      </> : rateData && mmPerHour === 0 ? <>
+        <WeatherReading status={rateStatus} words="Dry" />
+        <p className="view-weather-detail" data-value={rateStatus.value}>Rate {formatReading(rateData)}</p>
+      </> : <>
+        <WeatherReading data={rateData} status={rateStatus} />
+        {word && <p className="view-weather-conditions" data-value={rateStatus.value}>{word}</p>}
+      </>}
+    </WeatherZones>
     {totalsLine.length > 0 && <p className="view-weather-inline">
       {totalsLine.map((total, index) => <span key={total.period} data-value={cardStatus(total.resource).value}>
         {index > 0 && " · "}{periodNames[total.period]} {sharedUnit ? total.data!.value.toFixed(total.data!.format.fraction_digits) : formatReading(total.data!)}

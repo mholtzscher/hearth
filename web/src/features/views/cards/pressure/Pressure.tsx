@@ -7,7 +7,7 @@ import { cardStatus, type CardStatus } from "../status";
 import { Trend, trendMethod } from "../metric/Trend";
 import { pressureTendency } from "../weather/formulas";
 import { shownData, threeHourChange } from "../weather/readings";
-import { useWeatherReads, WeatherReading } from "../weather/WeatherParts";
+import { useWeatherReads, WeatherReading, WeatherZones } from "../weather/WeatherParts";
 import { pressureSchema } from "./schema";
 
 type Props = z.infer<typeof pressureSchema>;
@@ -26,7 +26,7 @@ function TendencyLine({ data, history, canonical, status }: { data?: MetricData;
   if (!change || !hPa || change.nowStart !== hPa.nowStart || change.thenStart !== hPa.thenStart) {
     const loading = history.status === "loading" || canonical.status === "loading";
     const failed = history.status === "error" || canonical.status === "error";
-    const words = loading ? "Loading the last 3 hours…" : failed ? "Couldn't load the last 3 hours." : "Tendency unavailable · no recent or 3 h reading";
+    const words = loading ? "Loading the last 3 hours…" : failed ? "Couldn't load the last 3 hours." : "Tendency unavailable · no recent or 3\u00a0h reading";
     return <p className="view-weather-detail">{words}</p>;
   }
   const tendency = pressureTendency(hPa.now - hPa.then);
@@ -36,7 +36,7 @@ function TendencyLine({ data, history, canonical, status }: { data?: MetricData;
   const sign = shown > 0 ? "+" : shown < 0 ? "−" : "±";
   return <p className="view-weather-tendency" data-value={status.value}>
     <Icon aria-hidden="true" />{tendency.words}
-    <span>{sign}{Math.abs(shown).toFixed(digits)} {history.data!.format.unit_label} in 3 h</span>
+    <span>{sign}{Math.abs(shown).toFixed(digits)} {history.data!.format.unit_label} in 3&nbsp;h</span>
   </p>;
 }
 
@@ -59,9 +59,10 @@ export function BoundPressure({ label, source, trend }: Props) {
       <p>The tendency compares the latest minute with the minute nearest three hours earlier, using Met Office thresholds: steady below 0.1 hPa, slowly to 1.5 hPa, quickly above 3.5 hPa and very rapidly above 6 hPa. With no reading within ten minutes of three hours ago, there is no tendency.</p>
       {trend && trendMethod(trend)}
     </>}>
-    <WeatherReading data={data} status={status} />
-    <TendencyLine data={data} history={recent} canonical={canonical} status={status} />
-    {(recent.refreshFailed || canonical.refreshFailed) && <StatusList entries={[{ key: "refresh-failed", tone: "warn", text: "Couldn't refresh pressure history" }]} />}
-    {trend && history && status.value !== "empty" && <Trend window={trend} resource={history} dimmed={status.value === "dimmed"} />}
+    <WeatherZones aside={trend && history && status.value !== "empty" && <Trend window={trend} resource={history} dimmed={status.value === "dimmed"} />}>
+      <WeatherReading data={data} status={status} />
+      <TendencyLine data={data} history={recent} canonical={canonical} status={status} />
+      {(recent.refreshFailed || canonical.refreshFailed) && <StatusList entries={[{ key: "refresh-failed", tone: "warn", text: "Couldn't refresh pressure history" }]} />}
+    </WeatherZones>
   </CardFrame>;
 }

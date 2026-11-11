@@ -262,6 +262,15 @@ Derived values and words dim when any reading they use is dimmed. Pressure state
 16px arrow icon and the signed change, or says why there is no tendency.
 Method and thresholds belong in Source.
 
+A weather card with at least 460px of content width uses its width rather
+than its height. The lead reading and its words fill the left half; rows, the
+trend, or Wind's gusts and direction take the right half, 24px away, so the
+right halves line up down a grid column. The trend there grows to a 72px plot.
+Wind keeps its compass to the left of the reading and reserves enough width
+for the displayed value before allocating space to details. Rain's totals
+sentence spans both halves below. Narrower cards keep the single column;
+the card's available width, not its grid's column count, chooses the layout.
+
 Forecast cards show modeled predictions, not station readings, and are the
 only cards that draw sky conditions. Daily rows are 44px tall: the day at 14px
 (**Today** first), a 28px condition icon, the precipitation chance at 13px
