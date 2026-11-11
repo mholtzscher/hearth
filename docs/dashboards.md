@@ -52,9 +52,11 @@ assistant row without another provider generation. The row is local completion
 evidence, not provider output or token usage.
 
 Intermediate or unmarked presentations continue normally. A failed sibling
-requires a fresh completion decision. Turns that attempt a Command, Function,
-Notification, Automation run/deletion, or Entity update continue through the
-provider for an outcome reply even if a presentation is marked complete.
+requires a fresh completion decision. Only read-only lookups, presentations,
+and the bundled skill can end a turn this way. A turn that calls any other tool,
+such as a Command, Function, Notification, Automation run/deletion, or Entity
+update, continues through the provider for an outcome reply even if a
+presentation is marked complete.
 Cancellation, persistence failures, and the existing runner iteration limit still apply. The browser
 continues to reconcile history before admitting the next message.
 

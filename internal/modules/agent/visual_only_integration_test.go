@@ -16,6 +16,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 )
 
@@ -79,13 +80,7 @@ func testVisualOnlyCompletion(t *testing.T, provider Provider, complete bool) {
 		len(history[2].Artifacts) != 1 || history[2].Artifacts[0].ArtifactID != turn.Artifacts[0].ArtifactID {
 		t.Fatalf("history=%+v error=%v", history, err)
 	}
-	retained, err := service.loadModelMessages(t.Context(), conversation.ID)
-	if err != nil || isVisualCompletion(retained[len(retained)-1]) != complete {
-		t.Fatalf("local completion attribution missing: history=%+v err=%v", retained, err)
-	}
-	if complete && retained[len(retained)-1].ResponseMeta != nil {
-		t.Fatal("local completion claimed provider usage")
-	}
+	assertCompletionRowIsNotModelInput(t, service, conversation.ID, complete)
 	// An artifact from an earlier turn must not authorize a new empty answer.
 	_, err = service.SendMessage(
 		t.Context(),
@@ -94,6 +89,32 @@ func testVisualOnlyCompletion(t *testing.T, provider Provider, complete bool) {
 	)
 	if !errors.Is(err, errModelResponseInvalid) || requests.Load() != wantRequests+1 {
 		t.Fatalf("empty next turn error=%v requests=%d", err, requests.Load())
+	}
+}
+
+// The durable completion row is conversation evidence, never provider input.
+func assertCompletionRowIsNotModelInput(t *testing.T, service *Service, conversationID string, complete bool) {
+	t.Helper()
+	rows, err := service.queries.ListRecentMessageJson(
+		t.Context(), dbsqlc.ListRecentMessageJsonParams{ConversationID: conversationID, Limit: 1},
+	)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("latest row: %v", err)
+	}
+	latest, err := historyMessageFromRow(rows[0])
+	if err != nil || isVisualCompletion(latest.message) != complete {
+		t.Fatalf("local completion attribution missing: row=%+v err=%v", latest.message, err)
+	}
+	if complete && latest.message.ResponseMeta != nil {
+		t.Fatal("local completion claimed provider usage")
+	}
+	modelHistory, err := service.loadModelMessages(t.Context(), conversationID)
+	wantModelRows := 4
+	if complete {
+		wantModelRows = 3
+	}
+	if err != nil || len(modelHistory) != wantModelRows || isVisualCompletion(modelHistory[len(modelHistory)-1]) {
+		t.Fatalf("model history=%+v err=%v", modelHistory, err)
 	}
 }
 

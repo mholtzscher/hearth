@@ -760,6 +760,10 @@ func (service *Service) loadModelMessages(ctx context.Context, conversationID st
 		if decodeErr != nil {
 			return nil, decodeErr
 		}
+		// A local completion row records the turn's end but is not provider output.
+		if isVisualCompletion(message.message) {
+			continue
+		}
 		decoded = append(decoded, message)
 	}
 	return boundConversationHistory(decoded), nil

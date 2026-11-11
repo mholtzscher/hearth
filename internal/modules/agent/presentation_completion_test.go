@@ -100,3 +100,21 @@ func TestAutomationCompletionSchemaPreservesClosedVariants(t *testing.T) {
 		}
 	}
 }
+
+// An unlisted tool may have an effect, so it must not end a turn silently.
+func TestOnlyReadOnlyToolsSkipTheOutcomeReply(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"present_view", "present_automation", "skill", "list_entities", "get_command", "query_entity_state_history"} {
+		if requiresOutcomeReply(name) {
+			t.Errorf("%s requires an outcome reply, want a silent finish allowed", name)
+		}
+	}
+	for _, name := range []string{
+		"execute_entity_command", "invoke_adapter_function", "send_notification", "start_automation_run",
+		"delete_automation", "update_entity", "create_automation", "a_future_tool",
+	} {
+		if !requiresOutcomeReply(name) {
+			t.Errorf("%s may finish silently, want an outcome reply", name)
+		}
+	}
+}

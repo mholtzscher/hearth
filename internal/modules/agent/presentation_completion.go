@@ -18,8 +18,7 @@ const visualCompletionKey = "hearth_visual_completion"
 
 // Local completion is durable conversation evidence, not provider continuation.
 func isVisualCompletion(message *schema.Message) bool {
-	return message.Role == schema.Assistant && message.Content == "" && len(message.ToolCalls) == 0 &&
-		message.Extra[visualCompletionKey] == true
+	return message.Extra[visualCompletionKey] == true
 }
 
 func (trace *turnTrace) canCompletePresentation() bool {
@@ -28,15 +27,22 @@ func (trace *turnTrace) canCompletePresentation() bool {
 	return trace.completeTurn && !trace.incompleteBatch && !trace.requiresReply && len(trace.failures) == 0
 }
 
-// These catalog operations change household state or attempt an external effect.
-// Their outcome needs a reply even when the model marks a later visual complete.
+// Only lookups, presentations, and the bundled skill may end a turn silently.
+// Any other tool, including one added later, may change household state or
+// attempt an external effect, so its outcome needs a reply.
 func requiresOutcomeReply(name string) bool {
 	switch name {
-	case "execute_entity_command", "invoke_adapter_function", "send_notification",
-		"start_automation_run", "delete_automation", "update_entity":
-		return true
-	default:
+	case presentViewTool, presentAutomationTool, "skill",
+		"get_adapter", "get_adapter_function", "get_adapter_function_invocation", "get_automation",
+		"get_automation_history_entry", "get_command", "get_device", "get_entity", "get_notification",
+		"get_notification_destination", "list_adapter_function_invocations", "list_adapter_functions",
+		"list_adapter_health_history", "list_adapters", "list_automation_history", "list_automations",
+		"list_commands", "list_devices", "list_entities", "list_entity_availability_history",
+		"list_entity_commands", "list_entity_events", "list_entity_state_history",
+		"list_notification_destinations", "list_notifications", "query_entity_state_history":
 		return false
+	default:
+		return true
 	}
 }
 

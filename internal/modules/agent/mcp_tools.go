@@ -140,33 +140,29 @@ func callMCPTool(
 	name, argsJSON string,
 ) (string, error) {
 	status, _ := ctx.Value(toolResultStatusKey{}).(*toolResultStatus)
-	if status != nil {
-		// Local argument failures also need model recovery, just like MCP errors.
-		status.modeledFailure = true
+	// Local argument failures need model recovery, just like MCP errors.
+	invalid := func(detail string) (string, error) {
+		if status != nil {
+			status.modeledFailure = true
+		}
+		return fmt.Sprintf("agent tool %s: invalid arguments: %s", name, detail), nil
 	}
 	if err := ctx.Err(); err != nil {
 		return "", fmt.Errorf("agent tool %s: %w", name, err)
 	}
-	var decoded json.RawMessage
-	decoder := json.NewDecoder(bytes.NewBufferString(argsJSON))
-	if err := decoder.Decode(&decoded); err != nil {
-		return fmt.Sprintf("agent tool %s: invalid arguments: %v", name, err), nil
-	}
-	if decoder.Decode(&struct{}{}) != io.EOF {
-		return fmt.Sprintf("agent tool %s: invalid arguments: expected one JSON object", name), nil
-	}
 	var object map[string]json.RawMessage
-	if err := json.Unmarshal(decoded, &object); err != nil {
-		return fmt.Sprintf("agent tool %s: invalid arguments: expected a JSON object: %v", name, err), nil
+	decoder := json.NewDecoder(strings.NewReader(argsJSON))
+	if err := decoder.Decode(&object); err != nil {
+		return invalid("expected one JSON object: " + err.Error())
 	}
-	if object == nil {
-		return fmt.Sprintf("agent tool %s: invalid arguments: expected a JSON object", name), nil
+	if object == nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return invalid("expected one JSON object")
 	}
 	complete := false
 	if value, exists := object[completeTurnArgument]; exists && isPresentationTool(name) {
 		flag := string(bytes.TrimSpace(value))
 		if flag != "true" && flag != "false" {
-			return "invalid arguments: complete_turn must be a boolean", nil
+			return invalid("complete_turn must be a boolean")
 		}
 		complete = flag == "true"
 		delete(object, completeTurnArgument)

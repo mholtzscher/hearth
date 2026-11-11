@@ -97,9 +97,6 @@ func (*goChatModel) Stream(
 func goChatInput(messages []*schema.Message) ([]openai.ChatCompletionMessageParamUnion, error) {
 	input := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
 	for _, message := range messages {
-		if isVisualCompletion(message) {
-			continue
-		}
 		switch message.Role {
 		case schema.System:
 			input = append(input, openai.SystemMessage(message.Content))

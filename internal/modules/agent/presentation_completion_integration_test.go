@@ -39,13 +39,14 @@ func TestPresentationCompletionWaitsForSibling(t *testing.T) {
 								"present_view",
 								`{"definition":`+definition+`,"complete_turn":true}`,
 							),
-							nativeTestCall("sibling", "slow", `{}`),
+							// A read-only lookup may share the final batch; completion still joins it.
+							nativeTestCall("sibling", "list_entities", `{}`),
 						}), nil
 					},
 				},
 			)
 			service.tools = append(mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil))),
-				callbackTool{name: "slow", invoke: func(context.Context, string) (string, error) {
+				callbackTool{name: "list_entities", invoke: func(context.Context, string) (string, error) {
 					<-release
 					defer close(ended)
 					if fails {
