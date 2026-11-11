@@ -45,7 +45,8 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
   // reading those words need, they show as rows so no measurement disappears.
   const rateRow = rate === undefined, directionRow = speed === undefined;
   const rows = displayed.filter(row => row.key === "humidity" || row.key === "wind" || row.key === "today" ||
-    (row.key === "rate" && rateRow) || (row.key === "direction" && directionRow));
+    (row.key === "rate" && rateRow) || (row.key === "direction" && directionRow))
+    .map(row => row.key === "wind" && from ? { ...row, nameTreatment: derivedTreatment(reads.current("wind"), reads.current("direction")) } : row);
   const title = label ?? "Outside";
   const digits = history.data?.format.fraction_digits ?? 1;
   return <CardFrame className="view-weather view-outside-now" title={title} status={status.entries}

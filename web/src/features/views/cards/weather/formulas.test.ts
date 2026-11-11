@@ -23,3 +23,20 @@ it("words the three-hour pressure tendency with Met Office thresholds", () => {
   ]);
   expect(pressureTendency(-2).direction).toBe("falling");
 });
+
+it.each([
+  { then: 1003.2, now: 1003.3, words: "slowly" },
+  { then: 1022.9, now: 1024.4, words: "slowly" },
+  { then: 1020.9, now: 1024.4, words: "" },
+  { then: 1018.4, now: 1024.4, words: "quickly" },
+])("classifies realistic pressure differences at the threshold ($then → $now)", ({ then, now, words }) => {
+  expect(pressureTendency(now - then)).toEqual({ direction: "rising", words: `Rising${words ? ` ${words}` : ""}` });
+  expect(pressureTendency(then - now)).toEqual({ direction: "falling", words: `Falling${words ? ` ${words}` : ""}` });
+});
+
+it("preserves pressure changes just below and above each threshold without rounding to display precision", () => {
+  expect([0.099999, 0.100001, 1.499999, 1.500001, 3.499999, 3.500001, 5.999999, 6.000001]
+    .map(change => pressureTendency(change).words)).toEqual([
+      "Steady", "Rising slowly", "Rising slowly", "Rising", "Rising", "Rising quickly", "Rising quickly", "Rising very rapidly",
+    ]);
+});

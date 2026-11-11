@@ -38,7 +38,9 @@ export type Tendency = { direction: "rising" | "falling" | "steady"; words: stri
 /** Met Office barometric tendency for a three-hour change in hPa. */
 export function pressureTendency(change: number): Tendency {
   const size = Math.abs(change);
-  if (size < 0.1) return { direction: "steady", words: "Steady" };
-  const pace = size <= 1.5 ? " slowly" : size <= 3.5 ? "" : size <= 6 ? " quickly" : " very rapidly";
+  // Subtracting means near 1000 hPa can put an exact threshold a few ulps away.
+  const tolerance = 1e-9;
+  if (size < 0.1 - tolerance) return { direction: "steady", words: "Steady" };
+  const pace = size <= 1.5 + tolerance ? " slowly" : size <= 3.5 + tolerance ? "" : size <= 6 + tolerance ? " quickly" : " very rapidly";
   return change > 0 ? { direction: "rising", words: `Rising${pace}` } : { direction: "falling", words: `Falling${pace}` };
 }

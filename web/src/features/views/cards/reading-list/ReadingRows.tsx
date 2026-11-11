@@ -5,7 +5,7 @@ import { useArrival } from "../observation";
 import { StatusList, type SourceItem } from "../CardFrame";
 import { cardStatus, type CardStatus } from "../status";
 
-export type ReadingRow = { key: string; name: string; resource: Resolved<Reading> };
+export type ReadingRow = { key: string; name: string; nameTreatment?: "live" | "dimmed"; resource: Resolved<Reading> };
 
 /** What a row shows, for comparing successive readings. */
 export function shownReading(data: Reading): string {
@@ -46,7 +46,7 @@ function Row({ row }: { row: ReturnType<typeof rowStates>[number] }) {
   const glow = useArrival(data ? { updatedAt: data.observed_at, shown: shownReading(data), eligible: status.glows } : undefined);
   return <li className="view-row">
     {glow !== undefined && <span key={glow} className="view-row-arrival" aria-hidden="true" />}
-    <span className="view-row-name">{row.name}</span>
+    <span className="view-row-name" data-value={row.nameTreatment}>{row.name}</span>
     <span className="view-row-value" data-value={status.value}>
       {data ? "text" in data ? data.text : <>{data.value.toFixed(data.format.fraction_digits)}{data.format.unit_label && <small>{data.format.unit_label}</small>}</> : "—"}
     </span>

@@ -385,6 +385,36 @@ it("words a US pressure tendency from hPa and shows the change in inches of merc
   expect(within(card("Pressure")).getByText("−0.09 in Hg in 3 h")).toBeTruthy();
 });
 
+it.each([
+  { now: 1003.3, then: 1003.2, words: "Rising slowly", change: "+0.1 hPa in 3 h" },
+  { now: 1003.2, then: 1003.3, words: "Falling slowly", change: "−0.1 hPa in 3 h" },
+])("words a real 0.1 hPa subtraction as $words", async ({ now, then, words, change }) => {
+  core(station({ 113: { state: { value: now, observed_at: at } } }), { 113: minutes => minutes > 180 ? then : now });
+  await mount(<BoundPressure source={source(113, "hearth.pressure/v1")} />);
+  expect(within(card("Pressure")).getByText(words)).toBeTruthy();
+  expect(within(card("Pressure")).getByText(change)).toBeTruthy();
+});
+
+it.each([
+  { number: 104, state: "unavailable" }, { number: 104, state: "disabled" },
+  { number: 103, state: "unavailable" }, { number: 103, state: "disabled" },
+])("dims OutsideNow's derived bearing for $state Entity $number without dimming a live speed", async ({ number, state }) => {
+  const api = core(station());
+  const failed = api.entities.get(id(number))!;
+  if (state === "unavailable") failed.availability = { status: "unavailable" };
+  else failed.enabled = false;
+  await mount(<BoundOutsideNow temperature={source(101, "hearth.temperature/v1")} wind={source(103, "hearth.speed/v1")} wind_direction={source(104, "hearth.numericsensor/v1")} />);
+  const label = within(card("Outside")).getByText("Wind from SE");
+  expect(label.getAttribute("data-value")).toBe("dimmed");
+  expect(label.closest("li")!.querySelector(".view-row-value")!.getAttribute("data-value")).toBe(number === 104 ? "live" : "dimmed");
+  expect(label.closest("li")!.querySelector(".view-row-value")!.textContent).toBe("6.3m/s");
+  expect(within(card("Outside")).getByText(state === "disabled" ? "Disabled" : "Unavailable")).toBeTruthy();
+  failed.enabled = true; failed.availability = { status: "available" };
+  await act(() => vi.advanceTimersByTimeAsync(10000));
+  expect(within(card("Outside")).getByText("Wind from SE").getAttribute("data-value")).toBe("live");
+  expect(within(card("Outside")).queryByText(state === "disabled" ? "Disabled" : "Unavailable")).toBeNull();
+});
+
 it("dims conditions and totals whose readings are unavailable", async () => {
   const unavailable = { availability: { status: "unavailable" } };
   core(station({ 103: unavailable, 108: unavailable }));
