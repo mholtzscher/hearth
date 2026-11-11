@@ -754,6 +754,14 @@
   .sidebar-new { background:var(--gray-2); }
   .hearth-main-nav { gap:2px; }
   .hearth-main-nav a:hover, .hearth-main-nav a.active { background:var(--gray-3); }
+  /*
+   * While typing a search, the keyboard leaves room only for Recent and its results.
+   * A query keeps this layout after the field blurs, so tapping a result doesn't move it.
+   */
+  &:has(.history-search:focus-within), &:has(.history-search input:not(:placeholder-shown)) {
+    .hearth-brand, .sidebar-new, .hearth-main-nav, .server-status { display:none; }
+    .conversation-history { border-top:0; padding-top:12px; }
+  }
 }
 @media(min-width:721px) and (max-width:980px) {
   .workspace-body.has-canvas { grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr); }

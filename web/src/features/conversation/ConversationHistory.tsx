@@ -2,7 +2,7 @@ import { SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Link, useMatch } from "react-router-dom";
 import { useConversations } from "./ConversationsProvider";
-import { groupByRecency } from "./recency";
+import { groupByRecency, useLocalDay } from "./recency";
 
 /** Past this many conversations, a search field helps find older ones. */
 const SEARCH_THRESHOLD = 12;
@@ -18,10 +18,11 @@ export function ConversationHistory({ id, open, onNavigate, onClose }: { id: str
   const list = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const needle = query.trim().toLocaleLowerCase();
+  const day = useLocalDay();
   const groups = useMemo(() => groupByRecency(
     needle ? conversations.filter(conversation => label(conversation.preview).toLocaleLowerCase().includes(needle)) : conversations,
-    new Date(),
-  ), [conversations, needle]);
+    new Date(day),
+  ), [conversations, needle, day]);
   // Each search reads its results from the top.
   useEffect(() => { if (list.current) list.current.scrollTop = 0; }, [needle]);
   // A long list can hold the open conversation below the fold; bring it into view.

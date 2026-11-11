@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 /** A run of conversations under one date heading in the Recent list. */
 export type RecencyGroup<T> = { label: string; items: T[] };
 
@@ -28,4 +30,25 @@ export function groupByRecency<T extends Dated>(items: readonly T[], now: Date):
 
 function monthLabel(date: Date, now: Date): string {
   return date.toLocaleDateString(undefined, date.getFullYear() === now.getFullYear() ? { month: "long" } : { month: "long", year: "numeric" });
+}
+
+const startOfDay = (offset = 0) => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset).getTime(); };
+
+/**
+ * The start of the local calendar day, in milliseconds. It advances at local
+ * midnight and when a hidden tab becomes visible again, since a suspended tab's
+ * timer may not fire on time, so date headings never keep yesterday's labels.
+ */
+export function useLocalDay(): number {
+  const [day, setDay] = useState(() => startOfDay());
+  useEffect(() => {
+    const update = () => setDay(startOfDay());
+    const timer = setTimeout(update, startOfDay(1) - Date.now());
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [day]);
+  return day;
 }

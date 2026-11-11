@@ -1,5 +1,8 @@
-import { expect, it } from "vitest";
-import { groupByRecency } from "./recency";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { groupByRecency, useLocalDay } from "./recency";
+
+afterEach(() => vi.useRealTimers());
 
 const local = (...parts: [number, number, number, number?, number?]) => new Date(parts[0], parts[1], parts[2], parts[3] ?? 0, parts[4] ?? 0).toISOString();
 const at = (id: string, time: string) => ({ id, created_at: "", last_message_at: time });
@@ -38,4 +41,19 @@ it("falls back to creation time and puts unreadable times last", () => {
     at("yesterday", local(2026, 10, 10, 8)),
   ], now);
   expect(labels(groups)).toEqual([["Today", ["untouched"]], ["Yesterday", ["yesterday"]], ["Earlier", ["unknown"]]]);
+});
+
+it("advances the local day at midnight and when a suspended tab returns", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 10, 11, 23, 59, 30));
+  const { result } = renderHook(() => useLocalDay());
+  expect(result.current).toBe(new Date(2026, 10, 11).getTime());
+  act(() => { vi.advanceTimersByTime(30_000); });
+  expect(result.current).toBe(new Date(2026, 10, 12).getTime());
+  // A suspended tab's timer may never fire; becoming visible catches up.
+  act(() => {
+    vi.setSystemTime(new Date(2026, 10, 14, 8));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(result.current).toBe(new Date(2026, 10, 14).getTime());
 });
