@@ -36,6 +36,7 @@ import { Canvas } from "./features/dashboards/Canvas.tsx";
 import { ViewDataProvider } from "./features/views/data/provider.tsx";
 import { ConversationHistory } from "./features/conversation/ConversationHistory.tsx";
 import { ConversationsProvider, useConversations } from "./features/conversation/ConversationsProvider.tsx";
+import { useVisibleViewport } from "./lib/visibleViewport.ts";
 
 const NAV_ITEMS = [
   { to: "/devices", label: "Devices" },
@@ -135,6 +136,7 @@ function ConnectionSettings() {
 }
 
 function Shell() {
+  useVisibleViewport();
   return <ViewDataProvider><ConversationsProvider><div className="hearth-app"><WorkspaceProvider><HouseholdShell /></WorkspaceProvider></div></ConversationsProvider></ViewDataProvider>;
 }
 
