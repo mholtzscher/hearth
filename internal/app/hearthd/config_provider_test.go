@@ -34,6 +34,13 @@ func TestGoProviderDefaultsAndReasoning(t *testing.T) {
 			t.Fatalf("Go effort %q accepted", effort)
 		}
 	}
+	// Go's Chat Completions endpoint has no OpenAI processing tiers.
+	got.Agent.ReasoningEffort = ""
+	got.Agent.ServiceTier = "fast"
+	if err := got.Validate(); err == nil ||
+		err.Error() != "agent.service_tier applies only to the openai provider" {
+		t.Fatalf("Go service tier: %v", err)
+	}
 	config.Agent.Provider = "private-unknown-provider"
 	if err := config.Validate(); err == nil || strings.Contains(err.Error(), "private-unknown-provider") {
 		t.Fatalf("unknown provider error: %v", err)

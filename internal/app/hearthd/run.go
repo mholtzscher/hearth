@@ -82,6 +82,7 @@ func startAgentService(
 			Model:           config.EffectiveAgentModel(),
 			BaseURL:         config.Agent.BaseURL,
 			ReasoningEffort: config.Agent.ReasoningEffort,
+			ServiceTier:     config.Agent.ServiceTier,
 		},
 		ChatModel:     config.Agent.ChatModel,
 		MaxIterations: config.Agent.MaxIterations,

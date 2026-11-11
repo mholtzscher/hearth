@@ -64,6 +64,8 @@ func (provider *responsesModel) Generate(
 		Input:     responses.ResponseNewParamsInputUnion{OfInputItemList: input},
 		Tools:     tools,
 		Reasoning: shared.ReasoningParam{Effort: shared.ReasoningEffort(provider.config.ReasoningEffort)},
+		// An empty tier is omitted, so the OpenAI project's default applies.
+		ServiceTier: responses.ResponseNewParamsServiceTier(provider.config.ServiceTier),
 		// SQLite owns conversation context. Encrypted reasoning allows stateless
 		// continuation after tool calls and restarts without provider-side storage.
 		Store:   openai.Bool(false),

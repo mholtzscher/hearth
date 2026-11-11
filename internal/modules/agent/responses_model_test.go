@@ -49,6 +49,51 @@ func TestResponsesDefaultEndpoint(t *testing.T) {
 	}
 }
 
+// TestResponsesServiceTier fails if a configured tier is not sent, or if an
+// empty tier overrides the OpenAI project's default.
+func TestResponsesServiceTier(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		configured string
+		wantSent   bool
+	}{{configured: "fast", wantSent: true}, {configured: "", wantSent: false}} {
+		t.Run("tier="+test.configured, func(t *testing.T) {
+			t.Parallel()
+			provider := newResponsesModel(
+				ModelConfig{APIKey: "test-key", Model: "fixture", ServiceTier: test.configured},
+			)
+			var body map[string]json.RawMessage
+			provider.client.Options = append(provider.client.Options, option.WithHTTPClient(&http.Client{
+				Transport: responsesRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+					if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+						t.Errorf("decode request: %v", err)
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": {"text/event-stream"}},
+						Body: io.NopCloser(strings.NewReader(responsesStream(
+							`{"id":"resp_tier","status":"completed","output":[]}`,
+						))),
+					}, nil
+				}),
+			}))
+			if _, err := provider.Generate(t.Context(), []*schema.Message{schema.UserMessage("Hello.")}); err != nil {
+				t.Fatal(err)
+			}
+			raw, sent := body["service_tier"]
+			if sent != test.wantSent || (sent && string(raw) != `"`+test.configured+`"`) {
+				t.Fatalf(
+					"service_tier sent=%v value=%s, want sent=%v value=%q",
+					sent,
+					raw,
+					test.wantSent,
+					test.configured,
+				)
+			}
+		})
+	}
+}
+
 type responsesRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (roundTrip responsesRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

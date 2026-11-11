@@ -211,9 +211,9 @@ func TestConfigValidationDoesNotReadCredential(t *testing.T) {
 }
 
 // TestConfigRejectsInvalidAgentModelSettings protects static agent validation:
-// a base URL must be an absolute http or https URL and a reasoning effort must
-// be one of the levels Core forwards. It fails if an unusable endpoint or level
-// reaches the model provider.
+// a base URL must be an absolute http or https URL, and a reasoning effort and
+// service tier must be values Core forwards. It fails if an unusable endpoint,
+// level, or tier reaches the model provider.
 func TestConfigRejectsInvalidAgentModelSettings(t *testing.T) {
 	t.Parallel()
 	for _, baseURL := range []string{
@@ -260,6 +260,28 @@ func TestConfigRejectsInvalidAgentModelSettings(t *testing.T) {
 		}
 		if err := value.Validate(); err == nil {
 			t.Fatalf("agent reasoning effort %q unexpectedly accepted", effort)
+		}
+	}
+	for _, tier := range []string{"", "auto", "default", "flex", "scale", "priority", "fast", "ultrafast"} {
+		agentConfig := testAgentConfig()
+		agentConfig.ServiceTier = tier
+		value := hearthd.Config{HouseholdTimezone: "UTC",
+			HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db",
+			Agent: agentConfig,
+		}
+		if err := value.Validate(); err != nil {
+			t.Fatalf("agent service tier %q rejected: %v", tier, err)
+		}
+	}
+	for _, tier := range []string{"FAST", " fast", "fast ", "standard", "turbo"} {
+		agentConfig := testAgentConfig()
+		agentConfig.ServiceTier = tier
+		value := hearthd.Config{HouseholdTimezone: "UTC",
+			HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db",
+			Agent: agentConfig,
+		}
+		if err := value.Validate(); err == nil {
+			t.Fatalf("agent service tier %q unexpectedly accepted", tier)
 		}
 	}
 	// A negative iteration budget is never a valid bound.

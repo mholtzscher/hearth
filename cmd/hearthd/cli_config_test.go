@@ -28,6 +28,7 @@ agent:
   model: yaml-model
   base_url: https://yaml.example/v1
   reasoning_effort: low
+  service_tier: flex
   max_iterations: 9
   history_retention: 48h
 `
@@ -85,10 +86,12 @@ func TestGoProviderSources(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "go.yaml")
 	body := strings.Replace(validYAML, "agent:\n", "agent:\n  provider: opencode-go\n", 1)
 	body = strings.Replace(body, "  model: yaml-model\n", "", 1)
+	body = strings.Replace(body, "  service_tier: flex\n", "", 1)
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	unsetEnv(t, "HEARTHD_AGENT_PROVIDER")
+	unsetEnv(t, "HEARTHD_AGENT_SERVICE_TIER")
 	got := invokeConfig(t, []string{"--config", path})
 	if got.Agent.Provider != agent.ProviderOpenCodeGo || got.Agent.Model != "deepseek-v4.1-flash" {
 		t.Fatalf("Go YAML defaults: %+v", got.Agent)
@@ -107,6 +110,11 @@ func TestGoProviderSources(t *testing.T) {
 	}
 	if _, err := invokeConfigErr(t, []string{"--config", path, "--agent-provider", "unknown"}); err == nil {
 		t.Fatal("unknown provider accepted")
+	}
+	if _, err := invokeConfigErr(
+		t, []string{"--config", path, "--agent-provider", "opencode-go", "--agent-service-tier", "fast"},
+	); err == nil {
+		t.Fatal("OpenAI service tier accepted for Go")
 	}
 }
 
@@ -196,6 +204,18 @@ func TestHearthdSourcesPrecedence(t *testing.T) {
 			"high",
 			"medium",
 			"low",
+		},
+		{
+			"service tier",
+			"HEARTHD_AGENT_SERVICE_TIER",
+			"agent-service-tier",
+			"service_tier",
+			"flex",
+			"default",
+			"fast",
+			"fast",
+			"default",
+			"flex",
 		},
 		{
 			"iterations", "HEARTHD_AGENT_MAX_ITERATIONS", "agent-max-iterations", "max_iterations",
@@ -432,7 +452,8 @@ func TestNormalizationAndInvalidValueMasking(t *testing.T) {
 		"HEARTHD_CONFIG", "HEARTHD_HOUSEHOLD_TIMEZONE", "HEARTHD_HTTP_ADDR", "HEARTHD_NATS_URL",
 		"HEARTHD_SQLITE_PATH", "HEARTHD_OBSERVATION_RETENTION", "HEARTHD_AUTOMATION_HISTORY_RETENTION",
 		"HEARTHD_AGENT_MODEL", "HEARTHD_AGENT_BASE_URL",
-		"HEARTHD_AGENT_REASONING_EFFORT", "HEARTHD_AGENT_MAX_ITERATIONS", "HEARTHD_AGENT_HISTORY_RETENTION",
+		"HEARTHD_AGENT_REASONING_EFFORT", "HEARTHD_AGENT_SERVICE_TIER", "HEARTHD_AGENT_MAX_ITERATIONS",
+		"HEARTHD_AGENT_HISTORY_RETENTION",
 	} {
 		unsetEnv(t, key)
 	}
@@ -660,6 +681,8 @@ func assertField(t *testing.T, config hearthd.Config, name, want string) {
 		got = config.Agent.BaseURL
 	case "reasoning":
 		got = config.Agent.ReasoningEffort
+	case "service tier":
+		got = config.Agent.ServiceTier
 	case "iterations":
 		got = strconv.Itoa(config.Agent.MaxIterations)
 	case "agent retention":

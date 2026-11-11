@@ -30,6 +30,9 @@ agent:
   # except for the default model where it selects none. The default model rejects function
   # tools at any other level.
   reasoning_effort: none
+  # OpenAI processing tier for every agent request, such as fast (2x per-token price).
+  # Empty uses the OpenAI project's default tier. Only the openai provider accepts it.
+  service_tier: ""
   # For Go, replace provider/model/reasoning_effort together:
   # provider: opencode-go
   # model: deepseek-v4.1-flash
