@@ -230,6 +230,10 @@ func responsesMessage(response *responses.Response) (*schema.Message, error) {
 		PromptTokens: int(
 			response.Usage.InputTokens,
 		),
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens:     int(response.Usage.InputTokensDetails.CachedTokens),
+			CacheWriteTokens: int(response.Usage.InputTokensDetails.CacheWriteTokens),
+		},
 		CompletionTokens: int(response.Usage.OutputTokens),
 		TotalTokens:      int(response.Usage.TotalTokens),
 	}}

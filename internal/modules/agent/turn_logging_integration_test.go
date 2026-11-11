@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
@@ -57,5 +59,48 @@ func TestLogTurnFailureRecordsFixedCodesOnly(t *testing.T) {
 	}
 	if strings.Contains(record, `"error"`) {
 		t.Fatalf("log record carries a raw error field: %s", record)
+	}
+}
+
+// usageChatModel answers once with provider-reported token usage.
+type usageChatModel struct{ failingChatModel }
+
+func (usageChatModel) Generate(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
+	message := schema.AssistantMessage("private-answer", nil)
+	message.ResponseMeta = &schema.ResponseMeta{Usage: &schema.TokenUsage{
+		PromptTokens: 2048, CompletionTokens: 16, TotalTokens: 2064,
+		PromptTokenDetails: schema.PromptTokenDetails{CachedTokens: 1536, CacheWriteTokens: 512},
+	}}
+	return message, nil
+}
+
+func TestModelUsageIsLoggedAtDebugWithoutConversationText(t *testing.T) {
+	t.Parallel()
+	var logs lockedBuffer
+	service, err := NewService(context.Background(), Config{
+		DB:        dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db")),
+		Tools:     []tool.BaseTool{stubTool{name: "noop"}},
+		ChatModel: usageChatModel{},
+		Logger:    slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation := mustCreateConversation(t, service)
+	if _, err = service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "private-prompt"}); err != nil {
+		t.Fatal(err)
+	}
+	record := logs.String()
+	for _, want := range []string{
+		`"level":"DEBUG"`, `"event":"agent.model_usage"`, `"conversation_id":"` + conversation.ID + `"`,
+		`"provider":"openai"`, `"input_tokens":2048`, `"cached_input_tokens":1536`,
+		`"cache_write_input_tokens":512`, `"output_tokens":16`,
+	} {
+		if !strings.Contains(record, want) {
+			t.Fatalf("log record %s is missing %s", record, want)
+		}
+	}
+	if strings.Contains(record, "private-") {
+		t.Fatalf("log record leaked conversation text: %s", record)
 	}
 }

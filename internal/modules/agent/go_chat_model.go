@@ -235,8 +235,11 @@ func (output *goChatAccumulator) message() (*schema.Message, error) {
 		PromptTokens: int(
 			usage.PromptTokens,
 		),
-		CompletionTokens: int(usage.CompletionTokens),
-		TotalTokens:      int(usage.TotalTokens),
+		// The SDK accumulator sums cached reads but drops cache writes; the Go
+		// gateway currently reports writes as null anyway.
+		PromptTokenDetails: schema.PromptTokenDetails{CachedTokens: int(usage.PromptTokensDetails.CachedTokens)},
+		CompletionTokens:   int(usage.CompletionTokens),
+		TotalTokens:        int(usage.TotalTokens),
 	}}
 	return message, nil
 }
