@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "catalog_version": "hearth.dashboard/v1",
+  "title": "Weather",
+  "spec": {
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Stack",
+        "props": {
+          "gap": "medium"
+        },
+        "children": [
+          "grid",
+          "forecasts"
+        ]
+      },
+      "grid": {
+        "type": "Grid",
+        "props": {
+          "columns": 3
+        },
+        "children": [
+          "outside",
+          "wind",
+          "pressure"
+        ]
+      },
+      "forecasts": {
+        "type": "Grid",
+        "props": {
+          "columns": 2
+        },
+        "children": [
+          "daily",
+          "hourly"
+        ]
+      },
+      "outside": {
+        "type": "OutsideNow",
+        "props": {
+          "temperature": {
+            "kind": "entity-state",
+            "entity_id": "ent_01a1cc56-f207-7339-bbe6-7c1065357e20",
+            "entity_type": "hearth.temperature/v1"
+          },
+          "humidity": {
+            "kind": "entity-state",
+            "entity_id": "ent_01a1cc56-f207-733b-a9b5-90773b34f981",
+            "entity_type": "hearth.relativehumidity/v1"
+          },
+          "wind": {
+            "kind": "entity-state",
+            "entity_id": "ent_01a1cc56-f207-733d-874c-6a313a77bf6e",
+            "entity_type": "hearth.speed/v1"
+          }
+        }
+      },
+      "wind": {
+        "type": "Wind",
+        "props": {
+          "speed": {
+            "kind": "entity-state",
+            "entity_id": "ent_01a1cc56-f207-733d-874c-6a313a77bf6e",
+            "entity_type": "hearth.speed/v1"
+          },
+          "gust": {
+            "kind": "entity-state",
+            "entity_id": "ent_01a1cc56-f207-733e-9997-e09b405c9602",
+            "entity_type": "hearth.speed/v1"
+          },
+          "direction": {
+            "kind": "entity-state",
+            "entity_id": "ent_01a1cc56-f207-7347-92ed-adb10ab4f386",
+            "entity_type": "hearth.numericsensor/v1"
+          }
+        }
+      },
+      "pressure": {
+        "type": "Pressure",
+        "props": {
+          "source": {
+            "kind": "entity-state",
+            "entity_id": "ent_01a1cc56-f207-733c-976a-86e33e254712",
+            "entity_type": "hearth.pressure/v1"
+          },
+          "trend": "24h"
+        }
+      },
+      "daily": {
+        "type": "Forecast",
+        "props": {
+          "source": {
+            "kind": "entity-state",
+            "entity_id": "ent_01a1cc56-f1b2-7830-96b8-e25f7301b242",
+            "entity_type": "hearth.dailyforecast/v1"
+          },
+          "periods": 5
+        }
+      },
+      "hourly": {
+        "type": "Forecast",
+        "props": {
+          "source": {
+            "kind": "entity-state",
+            "entity_id": "ent_01a1cc56-f1b2-782e-b2c0-4c96e869376f",
+            "entity_type": "hearth.hourlyforecast/v1"
+          },
+          "periods": 24
+        }
+      }
+    }
+  }
+}

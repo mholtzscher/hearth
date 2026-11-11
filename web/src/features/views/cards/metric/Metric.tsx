@@ -17,7 +17,7 @@ export function Metric({ label, resource, trend, range = false }: {
   const data = status.value === "empty" ? undefined : resource.data;
   const title = label ?? resource.metadata?.label ?? "Reading";
   const dimmed = status.value === "dimmed";
-  return <CardFrame className="view-metric" title={title} status={status.entries} observedAt={data?.observed_at}
+  return <CardFrame className="view-metric" title={title} status={status.entries} observedAt={data?.observed_at} compactTimeLabel
     arrival={data ? { updatedAt: data.observed_at, shown: `${data.value.toFixed(data.format.fraction_digits)} ${data.format.unit_label}`, eligible: status.glows } : undefined}
     sources={resource.metadata ? [{ entityId: resource.metadata.id, label: resource.metadata.label, availability: resource.metadata.availability, enabled: resource.metadata.enabled }] : []}
     sourceExtra={trend ? trendMethod(trend.window) : undefined}>

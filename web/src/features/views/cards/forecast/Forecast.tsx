@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import type { z } from "zod";
 import type { Quantity } from "../../bindings/quantity";
 import { useForecast, type DailyPeriod, type HourlyPeriod } from "../../bindings/forecast";
@@ -45,7 +46,22 @@ function Daily({ periods, now }: { periods: DailyPeriod[]; now: number }) {
 function hourlyLabel(p: HourlyPeriod, index: number): string {
   return [index === 0 ? "Now" : hour(new Date(p.starts_at)), p.condition && conditionWords[p.condition], temperature(p.temperature, p.quantities.temperature), chance(p.precipitation_probability, p.quantities.precipitation_probability) && `${chance(p.precipitation_probability, p.quantities.precipitation_probability)} chance of precipitation`].filter(Boolean).join(", ");
 }
+/** The plot's measured width, so the chart is drawn at its rendered size rather than scaled with it. */
+function useMeasuredWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
+    setWidth(element.clientWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width] as const;
+}
 function Hourly({ periods, count }: { periods: HourlyPeriod[]; count: number }) {
+  const [plotRef, measured] = useMeasuredWidth();
   const values = periods.map(p => p.temperature);
   const known = values.filter((v): v is number => v !== undefined);
   const low = Math.min(...known), high = Math.max(...known);
@@ -58,7 +74,8 @@ function Hourly({ periods, count }: { periods: HourlyPeriod[]; count: number }) 
     : chance(peak.precipitation_probability, peak.quantities.precipitation_probability) ? `precipitation chance peaks at ${chance(peak.precipitation_probability, peak.quantities.precipitation_probability)} at ${hour(new Date(peak.starts_at))}`
     : "precipitation chance below 10%";
   const summary = `Next ${periods.length} hours: ${known.length ? `low ${temperature(low, lowest?.quantities.temperature)}, high ${temperature(high, highest?.quantities.temperature)}` : "temperature unavailable"}; ${precipitation}.`;
-  const width = Math.max(264, periods.length * 22), step = chartLabelStep(count);
+  // Hours keep at least 22px each and scroll below that; wider cards spread the hours while text and icons keep their size.
+  const width = Math.max(264, periods.length * 22, Math.floor(measured)), step = chartLabelStep(count);
   const x = (i: number) => 14 + i * ((width - 28) / Math.max(1, periods.length - 1));
   // Icons occupy y 8–32; the line starts at 58 so a label 8px above the highest point clears them.
   const y = (v: number) => 58 + (1 - (v - low) / (high - low || 1)) * 70;
@@ -69,8 +86,8 @@ function Hourly({ periods, count }: { periods: HourlyPeriod[]; count: number }) 
     return `${command}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
   }).join("");
   return <><div className="forecast-legend" aria-hidden="true"><span>Temperature{unit && ` ${unit}`}</span><span>Chance of precipitation</span></div>
-    <div className="view-chart-scroll" role="img" tabIndex={0} aria-label={summary}>
-      <svg className="forecast-chart" style={{ minWidth: width }} viewBox={`0 0 ${width} 216`} aria-hidden="true">
+    <div ref={plotRef} className="view-chart-scroll" role="img" tabIndex={0} aria-label={summary}>
+      <svg className="forecast-chart" width={width} height={216} viewBox={`0 0 ${width} 216`} aria-hidden="true">
         <line className="forecast-grid" x1="0" x2={width} y1="176" y2="176" />
         {periods.map((p, i) => {
           const date = new Date(p.starts_at), probability = p.precipitation_probability;

@@ -356,6 +356,8 @@ it("renders views in the reply, opens the canvas on demand, and closes an unedit
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith("/messages") ? historyWithView : { conversations: [] }))));
   mount("/conversations/conv-1");
   const open = await screen.findByRole("button", { name: "Open in canvas" });
+  expect(open.closest(".artifact-preview")?.classList.contains("artifact-view")).toBe(true);
+  expect(open.querySelector(".artifact-open-detail")?.textContent).toBe(" in canvas");
   expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
   expect(screen.queryByRole("group", { name: "Workspace panels" })).toBeNull();
   expect(within(screen.getByRole("log")).getByText("Hello home")).toBeTruthy();

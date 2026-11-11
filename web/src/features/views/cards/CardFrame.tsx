@@ -37,7 +37,7 @@ export function CardFrame({ title, unit, status, observedAt, observedLabel = "Ob
   observedAt?: string;
   /** Names the footer time; a card of several readings states its oldest. */
   observedLabel?: string;
-  /** A narrow ToggleTile can hide only the visual prefix, preserving the full accessible label. */
+  /** Narrow single-reading and toggle cards may hide the visual prefix, preserving the full accessible label. */
   compactTimeLabel?: boolean;
   /** Displayed reading; eligible defaults to true. Availability and enablement determine eligibility. */
   arrival?: Arrival;
