@@ -20,6 +20,9 @@ has no reading from three hours ago instead of guessing a tendency. The
 Source capture predates a change that drops a role name when it matches the
 Entity name apart from case, such as "Rain rate · Rain Rate".
 
+These captures predate household unit projection. For the current cards, see
+[restored conditions](restored-conditions/README.md).
+
 Saving a definition with a rain total bound to the mm/h rain-rate sensor
 returned 400 and created no dashboard. The browser HAR contains one dashboard
 update and history reads only, with no Commands.

@@ -9,7 +9,7 @@ import { quantityField, quantityTypes, textField } from "./state-fields";
 import { textReading } from "./words";
 import { readTimeline, readWeekPattern, timelineRequest, weekPatternRequest, weekStart } from "./changes";
 import type { ReadRequest } from "../data/cache";
-import { type EntitySource, type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow, type TextData, type TimelineData, type WeekPatternData, type Words } from "./types";
+import { type EntitySource, type MetricData, type NumericAdapter, type NumericSource, type ReadUnits, type Resolved, type SeriesData, type SeriesWindow, type TextData, type TimelineData, type WeekPatternData, type Words } from "./types";
 
 export const numericAdapters: Readonly<Record<string, NumericAdapter>> =
   Object.fromEntries(quantityTypes.map(type => [type, quantityAdapter] as const));
@@ -19,11 +19,11 @@ export const NumericAdapters = createContext(numericAdapters);
 export function useNumericRead(source: NumericSource, window?: SeriesWindow): Resolved<MetricData | SeriesData> {
   return useNumericReads([{ source, window }])[0];
 }
-export function useNumericReads(bindings: Array<{ source: NumericSource; window?: SeriesWindow }>): Resolved<MetricData | SeriesData>[] {
+export function useNumericReads(bindings: Array<{ source: NumericSource; window?: SeriesWindow; units?: ReadUnits }>): Resolved<MetricData | SeriesData>[] {
   const adapters = useContext(NumericAdapters);
-  const requests = bindings.flatMap(({ source, window }) => {
+  const requests = bindings.flatMap(({ source, window, units }) => {
     const adapter = adapters[source.entity_type];
-    return adapter ? [adapter.stateRequest(source), ...(window ? [adapter.seriesRequest(source, window)] : [])] : [];
+    return adapter ? [adapter.stateRequest(source, units), ...(window ? [adapter.seriesRequest(source, window, units)] : [])] : [];
   });
   const snapshots = useReads(requests);
   let index = 0;

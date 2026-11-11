@@ -142,10 +142,11 @@ counter summaries do not become precipitation totals over a window by summing
 cumulative readings. Forecast Function outputs have separate canonical-unit schemas
 and are not projected by this Entity-read feature.
 
-Weather cards show only bound Entity readings and their existing history. They
-do not create feels-like/dew-point readings, Beaufort or compass classifications,
-condition text, or calculated pressure tendency in the frontend. No new weather
-calculation service is introduced by this change.
+Weather cards display household readings. Their condition words, Beaufort
+forces, and pressure tendencies use fixed thresholds, so the cards evaluate them
+against a separate `units=canonical` read of the same Entity. The frontend does
+not convert units, and the cards show no feels-like or dew-point temperatures.
+See [weather cards](dashboards.md).
 
 ## Deployment and rollback
 

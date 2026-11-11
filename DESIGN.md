@@ -249,7 +249,7 @@ below a 420px card. A key names the levels.
 Weather cards (Outside now, Rain, Wind and Pressure) lead with one reading at
 the 40px scale. Conditions follow in words at 14px `--gray-9`, such as
 `Rain · Breezy` or `Moderate breeze`, and derived values follow in quiet 14px
-text, such as feels like, dew point, and the 24 h high and low. They describe
+text, such as the 24 h high and low. They describe
 only what the station measures, never sky conditions. Further readings use
 compact rows or one inline sentence. A reading with no row of its own states
 its statuses on a named line. Rain totals that share one status share one

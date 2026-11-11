@@ -11,8 +11,9 @@ func TestWeatherCardGuidanceNamesSlotsAndUnits(t *testing.T) {
 		"OutsideNow", "Rain", "Wind", "Pressure", "hearth.temperature/v1", "hearth.pressure/v1",
 		"mm/h for a rain rate", "mm for rain totals", "deg for wind direction", "sensor named for that period", "leave an optional slot out rather than guess",
 		"never sums of the rate",
-		"actual Entity readings and retained history",
-		"not derived feels-like, dew point, or condition classifications",
+		"words conditions from the rain rate and wind speed",
+		"shows no feels-like or dew point",
+		"states its three-hour tendency",
 	} {
 		if !strings.Contains(defaultSystemPrompt, instruction) {
 			t.Errorf("weather card guidance omits %q", instruction)
