@@ -21,6 +21,17 @@ import { BoundForecast } from "../cards/forecast/Forecast";
 type Graph = { root: string; elements: Record<string, ViewElement | null>; children: Record<string, string[]> };
 
 /**
+ * Quick switches and single readings fit narrower cells than other cards, so
+ * grids made only of them keep more columns, including on phones.
+ */
+function gridKind(graph: Graph, id: string) {
+  const types = graph.children[id].map(child => graph.elements[child]?.type);
+  if (types.every(type => type === "ToggleTile")) return " view-grid-toggle";
+  if (types.every(type => type === "Metric" || type === "State")) return " view-grid-reading";
+  return "";
+}
+
+/**
  * Keeps one failing card from blanking the whole view, and says so rather than
  * leaving a silent gap. A changed definition gets a fresh attempt.
  */
@@ -46,7 +57,7 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
   const children = graph.children[id].map(child => <ViewNode key={child} graph={graph} id={child} />);
   switch (node.type) {
     case "Stack": return <div className={`view-stack gap-${node.props.gap}`}>{children}</div>;
-    case "Grid": return <div className={`view-grid${graph.children[id].every(child => graph.elements[child]?.type === "ToggleTile") ? " view-grid-toggle" : ""}`} style={{ "--view-columns": node.props.columns } as CSSProperties}>{children}</div>;
+    case "Grid": return <div className={`view-grid${gridKind(graph, id)}`} style={{ "--view-columns": node.props.columns } as CSSProperties}>{children}</div>;
     case "Heading": return <Heading className="view-heading">{node.props.text}</Heading>;
     case "Note": return <p className="view-note">{node.props.text}</p>;
     case "Metric": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Reading"}><BoundMetric {...node.props} /></CardBoundary>;

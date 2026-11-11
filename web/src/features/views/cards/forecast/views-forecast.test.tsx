@@ -74,6 +74,53 @@ it("renders an accessible scrollable hourly chart with gaps and threshold bars",
   expect(plot.querySelector(".forecast-line")?.getAttribute("d")?.match(/M/g)).toHaveLength(2);
 });
 
+it("redraws hourly spacing at the container width without scaling its height and releases its observer", async () => {
+  core(entity("hourly", hourly));
+  let width = 340;
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => width);
+  const observers: { resize: () => void; disconnect: ReturnType<typeof vi.fn> }[] = [];
+  vi.stubGlobal("ResizeObserver", class {
+    disconnect = vi.fn();
+    constructor(callback: ResizeObserverCallback) {
+      observers.push({ resize: () => callback([], this as unknown as ResizeObserver), disconnect: this.disconnect });
+    }
+    observe() {} unobserve() {}
+  });
+  try {
+    await mount(<BoundForecast source={source("hourly")} periods={6} />);
+    const plot = screen.getByRole("img").querySelector("svg")!;
+    expect(plot.getAttribute("viewBox")).toBe("0 0 340 216");
+    expect(plot.getAttribute("width")).toBe("340");
+    const firstPath = plot.querySelector(".forecast-line")!.getAttribute("d");
+    width = 1346;
+    act(() => observers[observers.length - 1].resize());
+    expect(plot.getAttribute("viewBox")).toBe("0 0 1346 216");
+    expect(plot.getAttribute("width")).toBe("1346");
+    expect(plot.getAttribute("height")).toBe("216");
+    expect(plot.querySelector(".forecast-line")!.getAttribute("d")).not.toBe(firstPath);
+    width = 200;
+    act(() => observers[observers.length - 1].resize());
+    expect(plot.getAttribute("viewBox")).toBe("0 0 264 216");
+    cleanup();
+    expect(observers.every(observer => observer.disconnect.mock.calls.length === 1)).toBe(true);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("preserves the minimum spacing for a dense 48-hour forecast in a narrow container", async () => {
+  core(entity("hourly", { periods: Array.from({ length: 48 }, (_, i) => ({
+    starts_at: new Date(Date.parse(at) + i * 3600000).toISOString(),
+    temperature: i % 12, precipitation_probability: 50, condition: "rain",
+  })) }));
+  await mount(<BoundForecast source={source("hourly")} periods={48} />);
+  const plot = screen.getByRole("img");
+  expect(plot.querySelector("svg")?.getAttribute("width")).toBe("1056");
+  expect(plot.querySelector("svg")?.getAttribute("height")).toBe("216");
+  expect(plot.querySelectorAll(".forecast-bar")).toHaveLength(48);
+  expect(plot.getAttribute("aria-label")).toContain("Next 48 hours");
+});
+
 it.each([
   ["metric", 16, "16°C", "16°"],
   ["us", 60.8, "61°F", "61°"],

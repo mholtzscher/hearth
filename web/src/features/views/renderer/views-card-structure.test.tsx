@@ -66,3 +66,22 @@ it("separates combined statuses into distinct list items", async () => {
   await within(card).findByText("Disabled");
   expect([...card.querySelectorAll(".view-status li")].map(li => li.textContent)).toEqual(["Unavailable", "Disabled"]);
 });
+
+it.each([
+  ["single readings", ["Metric", "State"], "view-grid-reading"],
+  ["quick switches", ["ToggleTile", "ToggleTile"], "view-grid-toggle"],
+  ["mixed content", ["Metric", "Heading"], null],
+])("selects the compact grid layout only for %s", async (_name, types, expected) => {
+  respond("available");
+  const power = { ...source, entity_type: "hearth.power/v1" };
+  const elements = Object.fromEntries(types.map((type, i) => [`child${i}`, {
+    type, props: type === "Heading" ? { text: "Heading" } : { source: type === "Metric" ? source : power },
+  }]));
+  const definition = { ...view, spec: { root: "root", elements: {
+    ...elements, root: { type: "Grid", props: { columns: 3 }, children: types.map((_, i) => `child${i}`) },
+  } } };
+  const { container } = await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={definition} /></ViewDataProvider>, { wrapper: MemoryRouter }));
+  const grid = container.querySelector<HTMLElement>(".view-grid")!;
+  expect([...grid.classList]).toEqual(expected ? ["view-grid", expected] : ["view-grid"]);
+  expect(grid.style.getPropertyValue("--view-columns")).toBe("3");
+});

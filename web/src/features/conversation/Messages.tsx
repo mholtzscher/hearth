@@ -67,11 +67,14 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
   }
   // The canvas already shows the open view, so its card stays compact.
   const open = openId === data.artifact.artifact_id;
-  return <div ref={ref} className={`artifact-preview${open ? " open" : ""}`}>
+  // An inline view's cards are the frame; a narrow column keeps "Open" on the title row and names the action in full.
+  return <div ref={ref} className={`artifact-preview artifact-view${open ? " open" : ""}`}>
     <div className="artifact-header">
       <span className="artifact-icon"><PanelsTopLeftIcon aria-hidden="true" /></span>
       <div className="artifact-text"><h3>{title}</h3><p>{summary}</p></div>
-      <button onClick={() => select(data)}>{open ? <><CheckIcon aria-hidden="true" />Showing in canvas</> : <>Open in canvas <ArrowRightIcon aria-hidden="true" /></>}</button>
+      {open
+        ? <button onClick={() => select(data)}><CheckIcon aria-hidden="true" />Showing in canvas</button>
+        : <button onClick={() => select(data)} aria-label="Open in canvas"><span>Open<span className="artifact-open-detail"> in canvas</span></span><ArrowRightIcon aria-hidden="true" /></button>}
     </div>
     {!open && <ArtifactBody definition={data.artifact.definition} live={visible && near} />}
   </div>;

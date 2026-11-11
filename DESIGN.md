@@ -109,7 +109,7 @@ The household workspace is spacious enough to read at a glance. Development uses
 - True black ground with a numbered, neutral gray ramp.
 - Violet for Hearth's voice; orange for the primary action and arrival signals.
 - A changed reading arrives as an afterglow: the card's top edge lights orange and fades over ten seconds. Text states each reading's age and availability.
-- One fixed numeral scale for reading cards; compact diagnostics share the same tokens.
+- A shared reading scale with a narrow-card step; compact diagnostics share the same tokens.
 - One card frame and one state table for every data card in a view.
 
 ## Colors
@@ -138,7 +138,7 @@ The palette is a neutral night ground with sparing, purposeful color.
 Figtree Variable is self-hosted through `@fontsource-variable/figtree`, with sans-serif fallback. It provides a clear, restrained voice throughout; opaque identifiers and raw structured data may use monospace.
 
 ### Hierarchy
-- **Reading:** 40px, weight 350, line-height 1.15, tabular figures; units remain smaller and quieter. Every reading card uses this fixed scale.
+- **Reading:** 40px, weight 350, line-height 1.15, tabular figures; units remain smaller and quieter. Metric, State, and ToggleTile step down to 32px below a 200px content width.
 - **Headline:** canvas and library titles use 26px, weight 500; canvas titles become 22px on phones. The empty conversation heading uses 28px.
 - **Title:** view headings use 18px, weight 600.
 - **Body:** conversation text uses 16px with 1.7 line-height; the workspace base is 14px.
@@ -146,9 +146,9 @@ Figtree Variable is self-hosted through `@fontsource-variable/figtree`, with san
 
 ## Layout
 
-At desktop widths, a navigation sidebar of `clamp(218px, 22vw, 340px)` sits beside the workspace. When a canvas is present, the conversation column is `clamp(368px, 28vw, 480px)` with 20px gutters, which keeps the composer prompt on one line, and the canvas takes the remaining width. An independent conversation is centered at a maximum reading width of 720px. Canvas content has a maximum width of 1080px beside the conversation and 1440px when it has the screen to itself: expanded, or as a dashboard page. Reading grids use 12px gaps; vertical stacks use 8px, 16px, or 24px gaps.
+At desktop widths, a navigation sidebar of `clamp(218px, 22vw, 340px)` sits beside the workspace. When a canvas is present, the conversation column is `clamp(368px, 28vw, 480px)` with 20px gutters, which keeps the composer prompt on one line, and the canvas takes the remaining width. An independent conversation is centered at a maximum width of 960px; reply prose keeps a 720px maximum on the shared left edge. Canvas content has a maximum width of 1080px beside the conversation and 1440px when it has the screen to itself: expanded, or as a dashboard page. Reading grids use 12px gaps; vertical stacks use 8px, 16px, or 24px gaps.
 
-The sidebar narrows to a 104px rail, with recent conversations in a drawer, at 721–980px, and also at 981–1279px while a canvas is open, so the view keeps room for its cards. At 720px and below, a 52px top bar holds a menu button, the page name, and New conversation, and the whole sidebar opens from the menu as one drawer. With a canvas open on Home, the Conversation and Canvas switch takes the page name's place, so one bar is the only chrome above the content. Conversation and Canvas become separate full-width views, and reading grids collapse to one column. Household controls commonly provide a 44px minimum target, with composer padding respecting the phone safe area. The app fills the area the on-screen keyboard leaves visible, so the top bar stays in view and the composer sits on the keyboard, without the home-indicator padding the keyboard covers. Development pages retain compact controls; their page list shares one row with the entity jump field and health badges where the width allows, and wraps otherwise.
+The sidebar narrows to a 104px rail, with recent conversations in a drawer, at 721–980px, and also at 981–1279px while a canvas is open, so the view keeps room for its cards. At 720px and below, a 52px top bar holds a menu button, the page name, and New conversation, and the whole sidebar opens from the menu as one drawer. With a canvas open on Home, the Conversation and Canvas switch takes the page name's place, so one bar is the only chrome above the content. Conversation and Canvas become separate full-width views. Grids collapse to one column except the compact reading and ToggleTile grids described below. Household controls commonly provide a 44px minimum target, with composer padding respecting the phone safe area. The app fills the area the on-screen keyboard leaves visible, so the top bar stays in view and the composer sits on the keyboard, without the home-indicator padding the keyboard covers. Development pages retain compact controls; their page list shares one row with the entity jump field and health badges where the width allows, and wraps otherwise.
 
 The canvas header puts the title and window controls (Expand, Close) on its first row and the view actions on the next. When the canvas is at least 1000px wide, the actions join the title row. One rule separates the header from the view. On phones, Expand is hidden because the Canvas tab already fills the screen, and while there is something to save, Discard, Save as new, and Save move to a bar along the bottom edge, within thumb reach. A disabled Save is not shown on phones.
 
@@ -170,7 +170,7 @@ Household primary buttons are orange with dark text, 8px corners, and a 44px min
 
 ### View cards
 
-State cards show boolean and text fields in words at the 40px reading scale.
+State cards show boolean and text fields in words at the reading scale.
 Power reads On/Off, color modes use readable names, and adapter choices retain
 their text. Boolean labels may come from the definition. Long words wrap rather
 than shrinking the reading scale.
@@ -208,8 +208,9 @@ action sits above the footer. Its feedback counts observed Off values and
 per-Entity failures, not a transactional multi-Device result. Since lines use
 recorded State changes, never the age of an observation.
 
-Grids containing only ToggleTiles use a 160px minimum, including on phones;
-other cards keep their existing 248px minimum and single-column phone layout.
+Grids containing only ToggleTiles, or only Metric and State cards, use a 160px
+minimum, including on phones. Requested columns remain a ceiling. Other grids
+keep their 248px minimum and single-column phone layout.
 Metering variants span the full grid row on phones, so the history range and
 additional reading stay readable instead of wrapping into tall, narrow tiles.
 Their 16px padding and 8px frame gaps keep the card compact; a 21px status line
@@ -217,10 +218,10 @@ reserves one line and grows for longer messages. The power State and selected
 measurement share a reading row, with the measurement at the 20px compact scale
 and its unit at 14px. Ordinary quick switches keep two compact columns where
 space permits.
-Below a 200px content width, ToggleTiles use a 32px reading and omit the visual
+Below a 200px content width, ToggleTile, Metric, and State use a 32px reading and omit the visual
 Observed/Oldest prefix while retaining the full accessible time label. Grid
-column counts remain a ceiling, now 1–4. These are scoped compact-control
-exceptions, not changes to Metric's fixed 40px reading scale.
+column counts remain a ceiling, now 1–4. ToggleTiles reserve one 21px status line
+at every width; longer pending or failure messages grow the tile while shown.
 
 State timeline cards show when yes/no and text fields changed over one window,
 in one of three styles. **Lanes** put every row on one time axis: an 18px track
@@ -292,7 +293,10 @@ only cards that draw sky conditions. Daily rows are 44px tall: the day at 14px
 (**Today** first), a 28px condition icon, the precipitation chance at 13px
 `--info`, the low at the 20px compact scale in `--gray-8`, a 4px `--gray-3`
 track with a `--gray-9` span from low to high on the shown days' range, and the
-high at 20px in `--gray-10`. Hourly draws a 2px `--gray-10` temperature line,
+high at 20px in `--gray-10`. Hourly keeps a 216px plot height and draws at its
+container's measured width, so text, icons, and strokes do not scale on desktop.
+Each hour requires at least 22px within a 264px minimum plot; narrower containers
+scroll horizontally. Hourly draws a 2px `--gray-10` temperature line,
 precipitation-chance bars in `--info` at 55 % opacity, icons and 13px
 temperature labels above the line, hour labels below the axis, and a dashed
 `--gray-5` midnight rule with the weekday beneath it. Chance below 10 % is not
@@ -310,7 +314,7 @@ The frame is the card surface (`--gray-1`, a 1px `--gray-3` border, 12px corners
 | Title | The card's label, as a heading one level below the view's headings. | 14px, weight 500, `--gray-10` |
 | Unit | A chart's unit, beside its title. A reading's unit stays attached to its value. | 14px `--gray-8` |
 | Status | Zero or more status entries opposite the title, wrapping beneath it in a narrow card. Each entry is a 6px tone dot and words, separated by `·`. A ready card from an available Entity has none. | 14px; warn and error words take their tone, neutral words are `--gray-9` |
-| Body | A reading at the fixed 40px scale with its unit, or a chart's legend, notes, and plot. | See Typography and Charts |
+| Body | A reading with its unit, or a chart's legend, notes, and plot. | See Typography and Charts |
 | Time | Compact age: `Observed just now`, `Observed 2m ago`, `Observed 3h ago`, or `Observed 2d ago`. Multi-reading cards say `Oldest 2m ago`, with “Oldest reading” in the accessible label. | 14px `--gray-8`, tabular figures |
 | Source | An action named **Source** opens reading details in a desktop popover or a phone bottom sheet, outside the grid flow. It links each Entity to its detail page and shows its ID; a chart adds its interval and method. | 14px `--gray-8`, 44px target on phones and coarse pointers |
 | Afterglow | A 2px orange top edge when newer data changes what the card shows while it is on screen. | See Afterglow |
@@ -318,6 +322,10 @@ The frame is the card surface (`--gray-1`, a 1px `--gray-3` border, 12px corners
 The footer, holding Time and Source, sits on the card's bottom edge. When a grid row stretches a card, the spare height falls between the body and the footer. Cards are named articles, never landmarks. A view's host sets its heading level: the canvas title is `h2`, so view headings are `h3` and card titles `h4`; in conversation the artifact title is `h3`, so they are `h4` and `h5`.
 
 Time and Source share one non-wrapping footer row. Opening Source never changes a card or grid row's height. A Grid treats its requested column count as a ceiling and reduces columns when cards would be narrower than 248px, including beside a conversation. The details show the local observation date and time (with seconds and timezone), its age in full words, and Entity availability and enablement when known. The original full timestamp remains on the time element's `datetime` attribute. Multiple sources carry those Entity facts beside their own links; a card-level timestamp on a multi-reading card remains the oldest displayed reading. Charts do not invent a card-level observation time: their interval and method remain the timing evidence.
+
+The compact-grid exceptions above use a 160px minimum. Source uses a 28px layout
+row at every width. On phones and coarse pointers, its press target extends 8px
+above and below that row to remain 44px tall without increasing the card height.
 
 At 720px and below, Source uses a modal bottom sheet with a dim backdrop, a 44px close target, safe-area padding, and scrolling within 85% of the viewport height. At larger widths it uses an anchored, viewport-bounded nonmodal popover. Escape and Close return focus to Source; links close the details before route navigation, so the dashboard's unsaved-changes dialog remains usable.
 
@@ -393,6 +401,13 @@ The afterglow needs no key, because the card lights as its value changes. Age is
 
 Every reply shares one left edge. Reply text, view cards, tables, and the composer start on it; metadata rows (the Hearth label, tool activity, Copy) place a 16px icon on that edge and their text 24px in, with any hover padding hanging outside the edge. User messages are content-width bubbles aligned to the column's right edge. Text inside user bubbles, view cards, tables, and the composer starts at a 16px inset. Blocks within a reply are 12px apart, a reply starts 24px below its prompt, and a new turn starts 32px below the previous reply. Markdown tables use the card treatment: 12px radius, 1px border, and row rules only.
 
+An inline view has no outer card frame or padding. Its icon, title and summary,
+and Open in canvas action share one header row above the view's own cards.
+Below a 440px container the visible action reads Open; its accessible name stays
+Open in canvas. A view has 12px extra space above it to separate successive
+views. The compact Showing in canvas preview and pending placeholder keep their
+bordered treatment.
+
 ### Inputs and navigation
 
 The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled and sits in its own row below the text, so it never floats between lines. The selected view and any editor note share that row, to the left of Send, rather than adding rows of their own. Development inputs are compact, bordered shadcn fields with violet focus rings and error-colored invalid states. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it moves into the drawer, and while the server is not ready the menu button carries a status dot in its tone, with the status in its accessible name and in words inside the drawer. Status chips pair words with their tone.
@@ -403,7 +418,7 @@ The conversation composer is a bordered, near-black 12px container with a violet
 - **Do** use the neutral gray ramp for surfaces and preserve true black as the ground.
 - **Do** pair arrival, status, and availability signals with explicit text.
 - **Do** use violet for Hearth's voice and orange for the main action and arrival signals.
-- **Do** preserve the fixed reading scale and use outline buttons for filters and paging.
+- **Do** use the defined reading scales and outline buttons for filters and paging.
 - **Do** use glossary terms precisely when presenting State, availability, and Command outcomes.
 
 ### Don't:

@@ -1,0 +1,452 @@
+{
+  "320": {
+    "viewport": 320,
+    "views": [
+      {
+        "title": "Room temperatures",
+        "width": 270,
+        "height": 2027,
+        "columns": [
+          1
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Lights and plugs",
+        "width": 270,
+        "height": 1890,
+        "columns": [
+          1,
+          1
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather",
+        "width": 270,
+        "height": 1680,
+        "columns": [
+          1
+        ],
+        "hourly": [
+          {
+            "width": "528",
+            "height": 216,
+            "font": "13px"
+          }
+        ],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather, two columns",
+        "width": 270,
+        "height": 1361,
+        "columns": [
+          1
+        ],
+        "hourly": [],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Air and energy",
+        "width": 270,
+        "height": 1293,
+        "columns": [
+          1,
+          1
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      }
+    ],
+    "sumViewHeights": 8251,
+    "documentOverflow": false
+  },
+  "390": {
+    "viewport": 390,
+    "views": [
+      {
+        "title": "Room temperatures",
+        "width": 340,
+        "height": 1269,
+        "columns": [
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Lights and plugs",
+        "width": 340,
+        "height": 1467,
+        "columns": [
+          2,
+          1
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather",
+        "width": 340,
+        "height": 1621,
+        "columns": [
+          1
+        ],
+        "hourly": [
+          {
+            "width": "528",
+            "height": 216,
+            "font": "13px"
+          }
+        ],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather, two columns",
+        "width": 340,
+        "height": 1318,
+        "columns": [
+          1
+        ],
+        "hourly": [],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Air and energy",
+        "width": 340,
+        "height": 1224,
+        "columns": [
+          1,
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      }
+    ],
+    "sumViewHeights": 6899,
+    "documentOverflow": false
+  },
+  "768": {
+    "viewport": 768,
+    "views": [
+      {
+        "title": "Room temperatures",
+        "width": 614,
+        "height": 941,
+        "columns": [
+          3
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Lights and plugs",
+        "width": 614,
+        "height": 1134,
+        "columns": [
+          3,
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather",
+        "width": 614,
+        "height": 1395,
+        "columns": [
+          2
+        ],
+        "hourly": [
+          {
+            "width": "576",
+            "height": 216,
+            "font": "13px"
+          }
+        ],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather, two columns",
+        "width": 614,
+        "height": 716,
+        "columns": [
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Air and energy",
+        "width": 614,
+        "height": 709,
+        "columns": [
+          2,
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      }
+    ],
+    "sumViewHeights": 4895,
+    "documentOverflow": false
+  },
+  "1024": {
+    "viewport": 1024,
+    "views": [
+      {
+        "title": "Room temperatures",
+        "width": 737,
+        "height": 941,
+        "columns": [
+          3
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Lights and plugs",
+        "width": 737,
+        "height": 946,
+        "columns": [
+          4,
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather",
+        "width": 737,
+        "height": 1374,
+        "columns": [
+          2
+        ],
+        "hourly": [
+          {
+            "width": "699",
+            "height": 216,
+            "font": "13px"
+          }
+        ],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather, two columns",
+        "width": 737,
+        "height": 716,
+        "columns": [
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Air and energy",
+        "width": 737,
+        "height": 686,
+        "columns": [
+          2,
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      }
+    ],
+    "sumViewHeights": 4663,
+    "documentOverflow": false
+  },
+  "1280": {
+    "viewport": 1280,
+    "views": [
+      {
+        "title": "Room temperatures",
+        "width": 936,
+        "height": 959,
+        "columns": [
+          3
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Lights and plugs",
+        "width": 936,
+        "height": 946,
+        "columns": [
+          4,
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather",
+        "width": 936,
+        "height": 1091,
+        "columns": [
+          3
+        ],
+        "hourly": [
+          {
+            "width": "898",
+            "height": 216,
+            "font": "13px"
+          }
+        ],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather, two columns",
+        "width": 936,
+        "height": 716,
+        "columns": [
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Air and energy",
+        "width": 936,
+        "height": 686,
+        "columns": [
+          2,
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      }
+    ],
+    "sumViewHeights": 4398,
+    "documentOverflow": false
+  },
+  "1920": {
+    "viewport": 1920,
+    "views": [
+      {
+        "title": "Room temperatures",
+        "width": 950,
+        "height": 959,
+        "columns": [
+          3
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Lights and plugs",
+        "width": 950,
+        "height": 946,
+        "columns": [
+          4,
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather",
+        "width": 950,
+        "height": 1091,
+        "columns": [
+          3
+        ],
+        "hourly": [
+          {
+            "width": "912",
+            "height": 216,
+            "font": "13px"
+          }
+        ],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Weather, two columns",
+        "width": 950,
+        "height": 716,
+        "columns": [
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 5,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      },
+      {
+        "title": "Air and energy",
+        "width": 950,
+        "height": 686,
+        "columns": [
+          2,
+          2
+        ],
+        "hourly": [],
+        "dailyRows": 0,
+        "clippedBodies": 0,
+        "footerCollisions": 0
+      }
+    ],
+    "sumViewHeights": 4398,
+    "documentOverflow": false
+  }
+}

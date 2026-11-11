@@ -192,8 +192,11 @@
 .workspace-body.has-canvas { grid-template-columns:clamp(368px,28vw,480px) minmax(0,1fr); }
 .conversation { --gutter:26px; --pad:var(--gutter); display:flex; min-width:0; min-height:0; flex-direction:column; background:var(--gray-0); }
 .has-canvas .conversation { --gutter:20px; border-right:1px solid var(--edge); }
-/* Without a view, the conversation is a centered reading column. */
-.workspace-body:not(.has-canvas) .conversation { --pad:max(var(--gutter), calc((100% - 720px) / 2)); }
+/*
+ * Without a view, the conversation is a centered column up to 960px, so inline views keep their columns;
+ * reply prose stays within 720px of the shared left edge.
+ */
+.workspace-body:not(.has-canvas) .conversation { --pad:max(var(--gutter), calc((100% - 960px) / 2)); }
 .message-area { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; }
 .messages { overflow:auto; flex:1; min-height:0; padding:8px var(--pad) 25px; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; }
 .jump-to-latest { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); display:inline-flex; align-items:center; gap:8px; min-height:40px; max-width:calc(100% - 32px); padding:8px 12px; border:1px solid var(--gray-4); border-radius:10px; background:var(--gray-2); color:var(--ink); font-size:14px; white-space:nowrap; }
@@ -211,7 +214,7 @@
 .chat-message.assistant { display:flex; flex-direction:column; gap:12px; margin-top:24px; color:var(--gray-9); overflow-wrap:break-word; }
 .agent-label { display:flex; align-items:center; gap:8px; min-height:24px; margin-bottom:-4px; color:var(--ink); font-size:14px; line-height:1.5; font-weight:600; }
 .agent-label svg { width:16px; height:16px; flex-shrink:0; color:var(--violet); }
-.message-markdown { min-width:0; overflow-x:auto; line-height:1.7; }
+.message-markdown { min-width:0; max-width:720px; overflow-x:auto; line-height:1.7; }
 .message-markdown p,.message-markdown ul,.message-markdown ol,.message-markdown blockquote,.message-markdown pre,.message-markdown table { margin:12px 0; }
 .message-markdown>:first-child { margin-top:0; }
 .message-markdown>:last-child { margin-bottom:0; }
@@ -258,12 +261,16 @@
 .artifact-preview.open .artifact-header>button { border-color:transparent; color:var(--quiet); }
 .artifact-preview.open .artifact-header>button:hover { background:none; color:var(--link); }
 .artifact-header>button svg { width:16px; height:16px; flex-shrink:0; }
-/* In a narrow column the action drops under the title, on the title's edge. */
+/* In a narrow column the action drops under the title, on the title's edge; an inline view keeps a short Open on the title row instead. */
 @container (max-width:440px) {
-  .artifact-header>button { grid-column:2 / -1; justify-self:start; }
+  .artifact-preview:is(:not(.artifact-view),.open) .artifact-header>button { grid-column:2 / -1; justify-self:start; }
   .artifact-preview.open .artifact-header>button { margin-inline-start:-12px; }
+  .artifact-open-detail { display:none; }
 }
 .artifact-body { margin-top:16px; padding-top:16px; border-top:1px solid var(--edge); min-width:0; overflow-x:auto; }
+/* An inline view is a titled group, not a card: its own cards start on the reply's edge. Space above sets each view apart. */
+.artifact-view:not(.open) { margin-top:12px; padding:0; background:none; border:0; border-radius:0; }
+.artifact-view:not(.open) .artifact-body { margin-top:12px; padding-top:0; border-top:0; }
 /* A view on its way: the same card, with tiles the size of a reading card that breathe until the checked view replaces them. */
 .pending-tiles { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .pending-tiles span { height:157px; border:1px solid var(--edge); border-radius:12px; background:var(--gray-1); animation:view-pending 1.6s cubic-bezier(.45,0,.55,1) infinite; }
@@ -335,7 +342,8 @@
 /* Views: layout blocks, then the one frame every data card uses (DESIGN.md, View cards). */
 /* Requested columns are a ceiling; each card needs room for its reading and one-line footer. */
 .view-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,max(var(--view-min-card,248px),calc((100% - (var(--view-columns) - 1) * 12px) / var(--view-columns)))),1fr)); gap:12px; min-width:0; }
-.view-grid-toggle { --view-min-card:160px; }
+/* Quick switches and single readings fit 160px cells, so their grids keep two columns on phones. */
+.view-grid-toggle,.view-grid-reading { --view-min-card:160px; }
 .view-stack { --stack-gap:16px; display:grid; gap:var(--stack-gap); min-width:0; }
 .view-stack.gap-small { --stack-gap:8px; }
 .view-stack.gap-medium { --stack-gap:16px; }
@@ -382,8 +390,9 @@
 .view-source-backdrop { position:fixed; inset:0; z-index:80; background:#0009; }
 .view-source-sheet { position:fixed; inset:auto 0 0; width:100%; max-height:85dvh; padding:22px 22px max(24px,env(safe-area-inset-bottom)); border-radius:14px 14px 0 0; }
 .view-source-sheet::before { content:""; display:block; width:32px; height:4px; margin:-10px auto 18px; border-radius:2px; background:var(--gray-6); }
-@media(max-width:720px) { .view-source-toggle { min-height:44px; } .view-source li>a { min-height:44px; } }
-@media(pointer:coarse) { .view-source-toggle { min-height:44px; } }
+/* Touch keeps a 44px Source target without a 44px footer row: the target reaches 8px into the card's padding and the gap above. */
+@media(max-width:720px),(pointer:coarse) { .view-source-toggle { position:relative; } .view-source-toggle::after { content:""; position:absolute; inset:-8px 0; } }
+@media(max-width:720px) { .view-source li>a { min-height:44px; } }
 /* Status entries: a tone dot and words; warn and error words take their tone. */
 .view-status { display:flex; flex-wrap:wrap; gap:0 8px; list-style:none; color:var(--gray-9); font-size:14px; line-height:1.5; }
 .view-status li { display:inline-flex; align-items:baseline; gap:6px; }
@@ -399,6 +408,16 @@
 .view-metric-value[data-value=dimmed] { color:var(--gray-8); }
 .view-metric-value[data-value=empty] { color:var(--gray-6); }
 .view-state-value { overflow-wrap:anywhere; text-wrap:balance; }
+/* A reading in a narrow cell, such as two to a row on a phone, steps down to 32px, as ToggleTiles do. */
+.view-metric,.view-state { container-type:inline-size; }
+.view-metric .view-metric-value { overflow-wrap:anywhere; }
+@container(max-width:200px) {
+  :is(.view-metric,.view-state) .view-metric-value { font-size:32px; }
+  /* The footer stays on one row: the visible Observed prefix goes, the accessible label keeps it. */
+  :is(.view-metric,.view-state) .view-card-time-label { display:none; }
+  :is(.view-metric,.view-state) .view-card-footer { gap:8px; }
+  :is(.view-metric,.view-state) .view-source-toggle { padding-inline:4px; margin-inline-end:-4px; }
+}
 .view-trend { display:grid; gap:4px; margin-top:12px; }
 .view-trend-plot { position:relative; height:44px; }
 .view-trend svg { display:block; width:100%; height:44px; overflow:visible; }
@@ -481,7 +500,8 @@
 .view-toggle-tile .view-power-metric[data-value=empty] { color:var(--gray-6); }
 .view-toggle-tile .view-card-footer { position:relative; z-index:2; gap:8px; pointer-events:none; }
 .view-toggle-tile .view-source-toggle { pointer-events:auto; }
-.view-toggle-tile .view-control-status { min-height:42px; margin-top:0; }
+/* One reserved status line; a longer message, such as a failure, grows the tile while it shows. */
+.view-toggle-tile .view-control-status, .view-toggle-tile .view-power-idle { min-height:21px; margin-top:0; }
 .view-power-idle { min-height:42px; color:var(--quiet); font-size:14px; line-height:1.5; }
 .view-power-reading-status { display:grid; gap:2px; color:var(--quiet); font-size:14px; }
 .view-toggle-tile .view-trend { margin-top:2px; }
@@ -788,14 +808,11 @@
   .canvas-inner:has(.canvas-save[data-pending]) { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
   .canvas-save:not([data-pending]) .primary { display:none; }
   .composer-wrap { padding:12px var(--pad) max(12px,var(--safe-bottom,env(safe-area-inset-bottom))); }
-  .view-grid { grid-template-columns:1fr!important; }
-  .view-grid.view-grid-toggle { grid-template-columns:repeat(auto-fit,minmax(min(100%,max(160px,calc((100% - (var(--view-columns) - 1) * 12px) / var(--view-columns)))),1fr))!important; }
+  .view-grid:not(.view-grid-toggle,.view-grid-reading) { grid-template-columns:1fr; }
   /* Metering needs a reading-width row, not a quick-switch cell. */
   .view-grid-toggle>.view-toggle-tile.is-metered { grid-column:1/-1; }
   .view-toggle-tile.is-metered { gap:8px; padding:16px; }
   .view-toggle-tile.is-metered .view-card-body { gap:6px; }
-  .view-toggle-tile.is-metered .view-control-status,
-  .view-toggle-tile.is-metered .view-power-idle { min-height:21px; }
   .view-toggle-tile.is-metered .view-metric-value { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 12px; }
   .view-toggle-tile.is-metered .view-power-metric { max-width:100%; margin-inline-start:0; white-space:normal; overflow-wrap:anywhere; }
   .view-toggle-tile.is-metered .view-power-metric-reading { font-size:20px; font-weight:400; letter-spacing:-.02em; }
@@ -847,7 +864,8 @@
 .forecast-legend { display: flex; flex-wrap: wrap; gap: 16px; color: var(--gray-8); font-size: 13px; margin-bottom: 6px; }
 .forecast-legend span::before { content: ""; display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 6px; background: var(--gray-10); }
 .forecast-legend span + span::before { width: 8px; height: 8px; background: var(--info); opacity: .55; }
-.forecast-chart { width: 100%; height: auto; display: block; overflow: visible; font-variant-numeric: tabular-nums; }
+/* Drawn at its measured width with a fixed height, so labels and icons keep their size on wide cards. */
+.forecast-chart { display: block; overflow: visible; font-variant-numeric: tabular-nums; }
 .forecast-chart text { fill: var(--gray-8); font-size: 12px; }
 .forecast-chart .forecast-temp-label { fill: var(--gray-10); font-size: 13px; }
 .forecast-chart .forecast-line { fill: none; stroke: var(--gray-10); stroke-width: 2; }
