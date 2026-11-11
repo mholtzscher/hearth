@@ -140,15 +140,37 @@
 .sidebar-new { display:flex; align-items:center; gap:10px; min-height:44px; padding:0 12px; border:1px solid var(--edge); border-radius:10px; background:var(--gray-1); color:var(--ink); font-size:14px; font-weight:500; text-align:left; }
 .sidebar-new svg { width:18px; height:18px; flex-shrink:0; color:var(--violet); }
 .sidebar-new:hover:not(:disabled) { background:var(--gray-2); border-color:var(--gray-4); }
-.conversation-history { display:flex; flex-direction:column; flex:1; min-height:0; border-top:1px solid var(--edge); padding-top:20px; }
-.conversation-history h2 { font-size:13px; font-weight:600; color:var(--quiet); padding:0 12px 8px; }
-.conversation-history ul { list-style:none; display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:2px; min-height:0; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; }
-.conversation-history a { display:block; min-height:40px; padding:10px 12px; border-radius:8px; color:var(--quiet); font-size:14px; line-height:20px; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Recent: date headings pin while their conversations scroll beneath them. --history-bg matches the surface behind the list. */
+.conversation-history { --history-bg:var(--gray-0); --history-field:var(--gray-1); display:flex; flex-direction:column; flex:1; min-height:0; border-top:1px solid var(--edge); padding-top:20px; }
+.history-header { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:20px; padding:0 12px 8px; }
+.history-header h2 { font-size:13px; line-height:20px; font-weight:600; color:var(--quiet); }
+.history-search { display:flex; align-items:center; gap:8px; flex-shrink:0; min-height:36px; margin-bottom:8px; padding-inline:12px 4px; border:1px solid var(--edge); border-radius:8px; background:var(--history-field); color:var(--quiet); }
+.history-search:focus-within { border-color:var(--violet); }
+.history-search svg { width:16px; height:16px; flex-shrink:0; }
+.history-search input { flex:1; min-width:0; height:34px; border:0; background:none; color:var(--ink); font-size:14px; caret-color:var(--violet); appearance:none; }
+.history-search input::-webkit-search-cancel-button { appearance:none; }
+.history-search input::placeholder { color:var(--quiet); opacity:1; }
+.hearth-app .history-search input:focus-visible { outline:none; }
+.history-search button { display:grid; place-items:center; flex-shrink:0; width:28px; height:28px; border-radius:6px; color:var(--quiet); }
+.history-search button:hover { background:var(--gray-3); color:var(--ink); }
+.history-list { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; }
+.history-group+.history-group { margin-top:12px; }
+.history-group h3 { position:sticky; top:0; z-index:1; padding:6px 12px 4px; background:var(--history-bg); color:var(--gray-7); font-size:12px; line-height:18px; font-weight:500; }
+.history-group ul { list-style:none; display:grid; grid-template-columns:minmax(0,1fr); gap:2px; }
+.conversation-history a { display:block; padding:8px 12px; border-radius:8px; color:var(--quiet); font-size:14px; line-height:20px; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; scroll-margin-top:28px; }
 .conversation-history a:hover { background:var(--gray-2); color:var(--ink); }
 .conversation-history a[aria-current=page] { background:var(--gray-3); color:var(--ink); }
+/* Touch keeps 44px rows, and a 16px field so phones don't zoom into it. */
+@media(pointer:coarse) {
+  .conversation-history a { padding-block:12px; }
+  .history-search { min-height:44px; }
+  .history-search input { height:42px; font-size:16px; }
+  .history-search button { width:40px; height:40px; }
+}
 .history-note { color:var(--quiet); font-size:13px; line-height:1.5; padding:0 12px; }
 .history-note button { color:var(--link); text-decoration:underline; text-underline-offset:3px; }
-.history-toggle,.history-backdrop { display:none; }
+.history-toggle,.phone-bar { display:none; }
+.drawer-backdrop { position:fixed; inset:0; z-index:55; background:#0008; }
 .hearth-main { min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
 .server-status { display:flex; flex-shrink:0; align-items:center; gap:8px; margin:0; padding:12px 12px 0; border-top:1px solid var(--edge); color:var(--quiet); font-size:13px; line-height:1.5; }
 .server-status strong { color:var(--quiet); font-weight:500; margin-inline-start:8px; }
@@ -277,6 +299,9 @@
 .chat-message.user .context-badge { margin-top:6px; }
 .context-badge svg { width:16px; height:16px; flex-shrink:0; margin-top:2.5px; }
 .mobile-tabs { display:none; }
+.phone-bar .mobile-tabs { display:flex; gap:2px; }
+.mobile-tabs button { min-height:44px; padding:0 14px; color:var(--quiet); border-radius:8px; font-size:14px; white-space:nowrap; }
+.mobile-tabs button[aria-pressed=true] { color:var(--ink); background:var(--gray-3); }
 .conversation ::selection,.hearth-canvas ::selection { background:color-mix(in oklch, var(--violet) 40%, transparent); color:var(--ink); }
 .hearth-canvas { overflow:auto; min-width:0; min-height:0; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; background:var(--gray-0); }.hearth-main > .hearth-canvas { flex:1; }.hearth-canvas.expanded { position:fixed; inset:0; z-index:50; }.canvas-inner { container:canvas / inline-size; max-width:1080px; margin:auto; padding:22px 28px 40px; }
 /* A canvas with the screen to itself, expanded or as a dashboard page, may grow wider. */
@@ -676,18 +701,20 @@
 .view-field-error,.view-editor summary .invalid-fields { color:var(--error); }
 .view-editor input,.view-editor textarea,.view-editor select,.view-editor button,.view-editor summary { min-height:44px; }
 /*
- * The shell sets data-nav (useNavMode in App.tsx): "bar", a top row, on phones;
- * "rail", 104px wide, up to 980px and, beside a canvas, up to 1279px; "full"
- * otherwise. Every mode but full puts the recent list in a drawer.
+ * The shell sets data-nav (useNavMode in App.tsx): "bar" on phones, where the
+ * whole sidebar becomes a drawer behind a top bar; "rail", 104px wide, up to
+ * 980px and, beside a canvas, up to 1279px, with Recent in a drawer; "full"
+ * otherwise.
  */
-.hearth-sidebar:not([data-nav=full]) {
+.hearth-sidebar[data-nav=rail] {
   .history-toggle { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:12px 4px; border-radius:8px; color:var(--quiet); font-size:12px; }
   .history-toggle:hover,.history-toggle[aria-expanded=true] { background:var(--gray-2); color:var(--ink); }
   .history-toggle svg { width:18px; height:18px; }
   .history-toggle span { font-size:12px; line-height:1.5; }
-  .conversation-history { position:fixed; top:0; bottom:0; z-index:60; width:min(320px,85vw); padding:24px 12px; border-top:0; border-right:1px solid var(--edge); background:var(--gray-1); box-shadow:12px 0 40px #0006; visibility:hidden; opacity:0; transform:translateX(-12px); transition:opacity .18s ease-out,transform .18s cubic-bezier(.16,1,.3,1),visibility 0s linear .18s; }
+  .conversation-history { --history-bg:var(--gray-1); --history-field:var(--gray-2); position:fixed; top:0; bottom:0; left:104px; z-index:60; width:min(320px,85vw); padding:12px 12px 16px; border-top:0; border-right:1px solid var(--edge); background:var(--gray-1); box-shadow:12px 0 40px #0006; visibility:hidden; opacity:0; transform:translateX(-12px); transition:opacity .18s ease-out,transform .18s cubic-bezier(.16,1,.3,1),visibility 0s linear .18s; }
   .conversation-history.open { visibility:visible; opacity:1; transform:none; transition-delay:0s; }
-  & ~ .history-backdrop { display:block; position:fixed; inset:0; z-index:55; background:#0008; }
+  .history-header { padding:0 0 4px 12px; }
+  .history-header .icon-button { margin-inline-end:-4px; }
 }
 .hearth-app:has(>.hearth-sidebar[data-nav=rail]) { grid-template-columns:104px minmax(0,1fr); }
 .hearth-sidebar[data-nav=rail] {
@@ -699,34 +726,36 @@
   .sidebar-new { justify-content:center; padding:0; }
   .sidebar-new span { display:none; }
   .hearth-main-nav a { flex-direction:column; justify-content:center; gap:6px; padding:12px 4px; font-size:12px; }
-  .conversation-history { left:104px; }
+}
+/* Phones: a 52px bar (menu, page name or the Conversation/Canvas switch, New conversation) over one screen of content. */
+.hearth-app:has(>.phone-bar) { grid-template-columns:minmax(0,1fr); grid-template-rows:52px minmax(0,1fr); }
+.hearth-app>.phone-bar { display:grid; grid-template-columns:44px minmax(0,1fr) 44px; align-items:center; gap:8px; padding:4px 8px; border-bottom:1px solid var(--edge); background:var(--gray-0); }
+.phone-bar-center { display:flex; justify-content:center; min-width:0; }
+.phone-bar-title { overflow:hidden; color:var(--ink); font-size:16px; font-weight:600; letter-spacing:-.01em; white-space:nowrap; text-overflow:ellipsis; }
+.phone-bar-center:has(.phone-bar-slot:not(:empty)) .phone-bar-title { display:none; }
+.phone-new svg { color:var(--violet); }
+/* A server problem marks the menu with its tone; the button's name and the drawer state it in words. */
+.phone-menu { position:relative; }
+.phone-menu[data-server]::after { content:""; position:absolute; top:10px; right:9px; width:8px; height:8px; border-radius:50%; background:var(--warn); box-shadow:0 0 0 2px var(--gray-0); }
+.phone-menu[data-server=unavailable]::after { background:var(--error); }
+.hearth-sidebar[data-nav=bar] {
+  position:fixed; inset:0 auto 0 0; z-index:60; width:min(320px,85vw); gap:16px; padding:16px 12px max(16px,env(safe-area-inset-bottom)); border-right:1px solid var(--edge); background:var(--gray-1); box-shadow:12px 0 40px #0006;
+  visibility:hidden; opacity:0; transform:translateX(-12px); transition:opacity .18s ease-out,transform .18s cubic-bezier(.16,1,.3,1),visibility 0s linear .18s;
+  &.open { visibility:visible; opacity:1; transform:none; transition-delay:0s; }
+  .hearth-brand { min-height:44px; padding:8px 52px 0 12px; font-size:20px; }
+  .hearth-brand span svg { width:20px; height:20px; }
+  .hearth-brand small { display:none; }
+  .drawer-close { position:absolute; top:16px; right:8px; }
+  .conversation-history { --history-bg:var(--gray-1); --history-field:var(--gray-2); padding-top:16px; }
+  .sidebar-new { background:var(--gray-2); }
+  .hearth-main-nav { gap:2px; }
+  .hearth-main-nav a:hover, .hearth-main-nav a.active { background:var(--gray-3); }
 }
 @media(min-width:721px) and (max-width:980px) {
   .workspace-body.has-canvas { grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr); }
   .conversation { --gutter:20px; }
 }
 @media(max-width:720px) {
-  .hearth-app { grid-template-columns:1fr; grid-template-rows:60px minmax(0,1fr); }
-  .hearth-sidebar { flex-direction:row; align-items:center; gap:4px; border:0; border-bottom:1px solid var(--edge); padding:4px 10px; }
-  .hearth-brand { font-size:20px; white-space:nowrap; padding:0; }
-  .server-status { order:1; margin-inline-end:auto; padding:0 6px; border:0; }
-  /* The phone row only has room for the status dot; its text stays available to assistive technology. */
-  .server-status>span:not(.server-status-dot) { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-  .sidebar-new,.history-toggle,.hearth-main-nav { order:2; }
-  .hearth-sidebar[data-nav=bar] .history-toggle { gap:3px; min-width:44px; min-height:48px; padding:4px; }
-  .hearth-sidebar[data-nav=bar] .history-toggle svg { width:16px; height:16px; }
-  .hearth-brand span svg { width:20px; height:20px; }
-  .hearth-brand small { display:none; }
-  .sidebar-new { justify-content:center; width:44px; min-height:48px; padding:0; border-color:transparent; background:none; }
-  .sidebar-new:hover:not(:disabled) { background:var(--gray-2); border-color:transparent; }
-  .sidebar-new span { display:none; }
-  .hearth-main-nav { display:flex; gap:4px; }
-  .hearth-main-nav a { flex-direction:column; justify-content:center; gap:3px; min-width:44px; min-height:48px; padding:4px; font-size:12px; }
-  .hearth-main-nav svg { width:16px; height:16px; }
-  .conversation-history { left:0; }
-  .mobile-tabs { display:flex; gap:4px; padding:4px; background:var(--gray-0); border-bottom:1px solid var(--edge); }
-  .mobile-tabs button { flex:1; min-height:44px; padding:8px; color:var(--quiet); border-radius:6px; font-size:14px; }
-  .mobile-tabs button[aria-pressed=true] { color:var(--ink); background:var(--gray-3); }
   .workspace-body,.workspace-body.has-canvas { display:block; overflow:hidden; }
   .conversation,.hearth-canvas { height:100%; }
   .conversation { --gutter:20px; }
@@ -761,8 +790,6 @@
   .library { padding:24px 20px; }
   .canvas-title h2 { font-size:22px; }
 }
-@media(max-width:480px) { .hearth-brand { font-size:0; } }
-@media(max-width:380px) { .hearth-main-nav a span,.history-toggle span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; } }
 @media(prefers-reduced-motion:reduce) { .hearth-app *, .hearth-app *::before, .hearth-app *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; } }
 @media(max-height:600px) {
   .conversation { overflow-y:auto; }

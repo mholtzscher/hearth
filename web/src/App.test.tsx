@@ -132,3 +132,69 @@ it("publishes a new conversation immediately and lets its reply finish after lea
   expect(await within(screen.getByRole("log")).findByText("Finished in the background.")).toBeTruthy();
   expect(signal?.aborted).toBe(false);
 });
+
+/** A window of the given width: every max-width query at or above it matches. */
+function stubWidth(width: number) {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: Number(/max-width: (\d+)px/.exec(query)?.[1]) >= width,
+    addEventListener() {}, removeEventListener() {},
+  }));
+}
+
+it("puts all navigation in one drawer behind a phone bar, and the panel switch in the bar", async () => {
+  stubWidth(390);
+  const definition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Warm house", spec: { root: "heading", elements: { heading: { type: "Heading", props: { text: "Hello home" } } } } };
+  vi.stubGlobal("fetch", vi.fn(async input => {
+    const path = String(input);
+    if (path === "/readyz") return new Response(JSON.stringify({ status: "not_ready" }), { status: 503 });
+    const body = path === "/v1/agent/conversations" ? { conversations: [{ id: "c1", created_at: new Date().toISOString(), message_count: 1, preview: "Kitchen lights" }] }
+      : path === "/v1/dashboards/dash-1" ? { id: "dash-1", revision: 1, definition, created_at: "", updated_at: "" } : null;
+    if (!body) throw new Error(`Unexpected request ${path}`);
+    return new Response(JSON.stringify(body));
+  }));
+  window.location.hash = "#/dashboards/dash-1";
+  render(<App />);
+  const bar = within(screen.getByRole("banner"));
+  expect(await bar.findByText("Dashboards")).toBeTruthy();
+  const menu = await bar.findByRole("button", { name: "Open navigation, Hearth server Not ready" });
+  const main = screen.getByRole("main");
+  fireEvent.click(menu);
+  expect(menu.getAttribute("aria-expanded")).toBe("true");
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close navigation" }));
+  expect(main.hasAttribute("inert")).toBe(true);
+  const drawer = within(screen.getByRole("complementary", { name: "Hearth navigation" }));
+  expect(await drawer.findByRole("link", { name: "Kitchen lights" })).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(menu.getAttribute("aria-expanded")).toBe("false");
+  expect(main.hasAttribute("inert")).toBe(false);
+  expect(document.activeElement).toBe(menu);
+  fireEvent.click(menu);
+  fireEvent.click(drawer.getByRole("button", { name: "Close navigation" }));
+  expect(menu.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(menu);
+  // On Home with a view open, the Conversation/Canvas switch replaces the page name.
+  fireEvent.click(await screen.findByRole("button", { name: "Ask Hearth to change" }));
+  const panels = await bar.findByRole("group", { name: "Workspace panels" });
+  expect(within(panels).getByRole("button", { name: "Canvas" })).toBeTruthy();
+  // Choosing the open page from the drawer still closes it.
+  fireEvent.click(menu);
+  fireEvent.click(drawer.getByRole("link", { name: "Home" }));
+  expect(menu.getAttribute("aria-expanded")).toBe("false");
+  window.location.hash = "";
+});
+
+it("closes the rail's Recent drawer from its own Close button", async () => {
+  stubWidth(900);
+  vi.stubGlobal("fetch", vi.fn(async input => {
+    const path = String(input);
+    const body = path === "/readyz" ? { status: "ready" } : path === "/v1/agent/conversations" ? { conversations: [] } : null;
+    if (!body) throw new Error(`Unexpected request ${path}`);
+    return new Response(JSON.stringify(body));
+  }));
+  render(<App />);
+  const toggle = await screen.findByRole("button", { name: "Conversation history" });
+  fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole("button", { name: "Close recent conversations" }));
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(toggle);
+});
