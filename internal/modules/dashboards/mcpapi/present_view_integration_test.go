@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	viewsv1 "github.com/mholtzscher/hearth/contracts/views/v1"
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
@@ -52,6 +53,10 @@ func TestPresentViewCatalogAndCall(t *testing.T) {
 	if string(actualRaw) != string(expectedRaw) {
 		t.Fatalf("schema differs: %s", actualRaw)
 	}
+	if len(actual["$defs"].(map[string]any)) == 0 {
+		t.Fatal("catalog has no shared definitions")
+	}
+	assertPublishedSourceValidation(t, schema)
 	definition := map[string]any{
 		"schema_version":  1,
 		"catalog_version": "hearth.dashboard/v1",
@@ -67,6 +72,39 @@ func TestPresentViewCatalogAndCall(t *testing.T) {
 	)
 	if err != nil || result.IsError {
 		t.Fatalf("call: %+v %v", result, err)
+	}
+}
+
+// Compile the advertised contract independently of the domain decoder: a
+// successful call alone cannot prove that its shared reference targets validate.
+func assertPublishedSourceValidation(t *testing.T, document map[string]any) {
+	t.Helper()
+	const uri = "https://hearth.invalid/present-view-test"
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource(uri, document); err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := compiler.Compile(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		entityID string
+		valid    bool
+	}{
+		{"ent_01980000-0000-7000-8000-000000000001", true},
+		{"not-an-entity-id", false},
+	} {
+		input := `{"definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Metric","spec":{"root":"metric","elements":{"metric":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ENTITY_ID","entity_type":"hearth.temperature/v1"}}}}}}}`
+		instance, decodeErr := jsonschema.UnmarshalJSON(
+			strings.NewReader(strings.ReplaceAll(input, "ENTITY_ID", test.entityID)),
+		)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		if validateErr := compiled.Validate(instance); (validateErr == nil) != test.valid {
+			t.Fatalf("source %q: validation error = %v, want valid = %v", test.entityID, validateErr, test.valid)
+		}
 	}
 }
 

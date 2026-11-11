@@ -13,7 +13,9 @@ import (
 // property schema. Runtime decoding remains the strict raw-JSON boundary.
 type definitionContract struct{}
 
-func (definitionContract) Schema(_ huma.Registry) *huma.Schema {
+// A transformer lets Huma register one component shared by create and save.
+// Inlining the same $id twice would declare duplicate schema resources.
+func (definitionContract) TransformSchema(_ huma.Registry, _ *huma.Schema) *huma.Schema {
 	var document map[string]any
 	if err := json.Unmarshal(viewsv1.Schema, &document); err != nil {
 		panic(fmt.Errorf("dashboard catalog schema: %w", err))

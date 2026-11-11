@@ -83,7 +83,7 @@ func TestHTTPTransportContractSnapshot(t *testing.T) {
 	// Includes paths, wire schemas, component names, references and publication
 	// metadata. Intentional API extensions update this digest alongside contract tests.
 	got := fmt.Sprintf("%x", sha256.Sum256(response.Body.Bytes()))
-	const want = "afe0449b0cd878aa295b0d1a5d1dc9dc2c3f86590ddf79b1e6f3371dd8c2ede1"
+	const want = "04ab3808a0bbfbc689f8e6c63f4197d4844610405f062c5390b46441663b7f65"
 	if got != want {
 		t.Fatalf("HTTP/OpenAPI contract changed: SHA-256 = %s, want %s", got, want)
 	}

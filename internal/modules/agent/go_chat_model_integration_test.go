@@ -142,8 +142,15 @@ func assertGoRequest(t *testing.T, request goChatRequestFixture, wantSchema map[
 		if info.Type != "function" || info.Function.Strict == nil || *info.Function.Strict {
 			t.Error("MCP schema strictness changed")
 		}
-		if info.Function.Name == "present_view" && !reflect.DeepEqual(info.Function.Parameters, wantSchema) {
-			t.Error("dashboard schema changed at the model boundary")
+		if info.Function.Name == "present_view" {
+			if !reflect.DeepEqual(info.Function.Parameters, wantSchema) {
+				t.Error("dashboard schema changed at the model boundary")
+			}
+			parameters, marshalErr := json.Marshal(info.Function.Parameters)
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			t.Logf("Chat Completions present_view parameter schema: %d compact JSON bytes", len(parameters))
 		}
 	}
 	if !found["skill"] || !found["echo_text"] || !found["present_view"] {
