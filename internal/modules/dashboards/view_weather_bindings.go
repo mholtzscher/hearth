@@ -122,11 +122,16 @@ func windBindings(raw json.RawMessage) ([]binding, error) {
 		Gust      *binding `json:"gust"`
 		Direction *binding `json:"direction"`
 		MaxGust   *binding `json:"max_gust"`
+		Trend     string   `json:"trend"`
 	}
 	if err := json.Unmarshal(raw, &props); err != nil {
 		return nil, err
 	}
-	result := []binding{weatherReading(props.Speed, "")}
+	speed := weatherReading(props.Speed, "")
+	result := []binding{speed}
+	if props.Trend != "" {
+		result = append(result, weatherHistory(speed, props.Trend))
+	}
 	result = appendOptional(result, props.Gust, "")
 	result = appendOptional(result, props.Direction, unitDegrees)
 	return appendOptional(result, props.MaxGust, ""), nil

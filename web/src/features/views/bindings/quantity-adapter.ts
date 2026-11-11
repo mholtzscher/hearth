@@ -12,8 +12,8 @@ function readQuantityEntity(raw: unknown, source: NumericSource): FieldEntity {
 }
 
 export const quantityAdapter: NumericAdapter = {
-  stateRequest: source => entityStateRequest(source),
-  seriesRequest: (source, window) => historySeriesRequest(source, window),
+  stateRequest: (source, units) => entityStateRequest(source, units),
+  seriesRequest: (source, window, units) => historySeriesRequest(source, window, units),
   metadata: (raw, source) => entityMetadata(readQuantityEntity(raw, source), source),
   metric(raw, source) {
     const data = readQuantityEntity(raw, source);

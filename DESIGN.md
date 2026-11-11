@@ -249,7 +249,7 @@ below a 420px card. A key names the levels.
 Weather cards (Outside now, Rain, Wind and Pressure) lead with one reading at
 the 40px scale. Conditions follow in words at 14px `--gray-9`, such as
 `Rain · Breezy` or `Moderate breeze`, and derived values follow in quiet 14px
-text, such as feels like, dew point, and the 24 h high and low. They describe
+text, such as the 24 h high and low. They describe
 only what the station measures, never sky conditions. Further readings use
 compact rows or one inline sentence. A reading with no row of its own states
 its statuses on a named line. Rain totals that share one status share one
@@ -261,6 +261,29 @@ keeps its last arrow, dashed in `--gray-7`; without a value there is no arrow.
 Derived values and words dim when any reading they use is dimmed. Pressure states its three-hour tendency with a
 16px arrow icon and the signed change, or says why there is no tendency.
 Method and thresholds belong in Source.
+
+A weather card with at least 460px of content width uses its width rather
+than its height. The lead reading and its words fill the left half; rows, the
+trend, or Wind's gusts and direction take the right half, 24px away, so the
+right halves line up down a grid column. The trend there grows to a 72px plot.
+Wind keeps its compass to the left of the reading and reserves enough width
+for the displayed value before allocating space to details. Rain's totals
+sentence spans both halves below. Narrower cards keep the single column;
+the card's available width, not its grid's column count, chooses the layout.
+
+Wind may add a sustained-speed trend over 1 h, 6 h, 24 h, or 7 d, using the
+same speed Entity and Core's household units. Direction stays current-only.
+With a trend on a wide card, Wind groups its current readings beside an 88px
+compass on the left and a neutral 72px trend with its range on the right.
+The reading group reserves its intrinsic width before allocating space to
+the trend. Narrow cards stack the trend below the current readings and keep
+their usual compass size. Without a trend, Wind keeps its existing layout.
+
+Live Rain trends use dusk blue (`--chart-4`), and Pressure uses pale gold
+(`--chart-5`). Their lines mix equal parts of that color and `--gray-9` in
+OKLCH; the min–max band uses the chart color at 8% opacity. Readings, labels,
+and card backgrounds stay neutral. Unavailable or disabled trends retain the
+shared dashed-gray treatment. Other Metric trends keep their neutral lines.
 
 Forecast cards show modeled predictions, not station readings, and are the
 only cards that draw sky conditions. Daily rows are 44px tall: the day at 14px

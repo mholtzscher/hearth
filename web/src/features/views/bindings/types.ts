@@ -19,9 +19,11 @@ export type ResourceMetadata = {
 /** One Entity State field. A numeric source selects a quantity field. */
 export type EntitySource = { entity_id: string; entity_type: string; field?: string };
 export type NumericSource = EntitySource;
+/** Household units for display; canonical units for formulas with fixed working units. */
+export type ReadUnits = "household" | "canonical";
 export type NumericAdapter = {
-  stateRequest(source: NumericSource): ReadRequest;
-  seriesRequest(source: NumericSource, window: SeriesWindow): ReadRequest;
+  stateRequest(source: NumericSource, units?: ReadUnits): ReadRequest;
+  seriesRequest(source: NumericSource, window: SeriesWindow, units?: ReadUnits): ReadRequest;
   metadata(raw: unknown, source: NumericSource): ResourceMetadata;
   metric(raw: unknown, source: NumericSource): MetricData | AbsentMetric | null;
   series(data: HistorySeries, source: NumericSource, entity: unknown): SeriesData;

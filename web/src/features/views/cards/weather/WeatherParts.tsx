@@ -1,9 +1,12 @@
+import type { ReactNode } from "react";
 import { useNumericReads } from "../../bindings/registry";
-import type { MetricData, NumericSource, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
-import type { CardStatus } from "../status";
+import type { MetricData, NumericSource, ReadUnits, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
+import { StatusList } from "../CardFrame";
+import { cardStatus, type CardStatus } from "../status";
 import type { ReadingRow } from "../reading-list/ReadingRows";
 
-export type WeatherRead = { source: NumericSource; window?: SeriesWindow };
+/** A slot's read. Canonical reads feed formulas; cards show household reads. */
+export type WeatherRead = { source: NumericSource; window?: SeriesWindow; units?: ReadUnits };
 export type WeatherReads<K extends string> = {
   current: (slot: K) => Resolved<MetricData> | undefined;
   history: (slot: K) => Resolved<SeriesData> | undefined;
@@ -15,7 +18,7 @@ export type WeatherReads<K extends string> = {
  */
 export function useWeatherReads<K extends string>(slots: Array<[K, WeatherRead | undefined]>): WeatherReads<K> {
   const bound = slots.filter((slot): slot is [K, WeatherRead] => slot[1] !== undefined);
-  const results = useNumericReads(bound.flatMap(([, read]) => read.window ? [{ source: read.source }, { source: read.source, window: read.window }] : [{ source: read.source }]));
+  const results = useNumericReads(bound.flatMap(([, read]) => read.window ? [{ source: read.source, units: read.units }, { source: read.source, window: read.window, units: read.units }] : [{ source: read.source, units: read.units }]));
   const current = new Map<K, Resolved<MetricData>>(), history = new Map<K, Resolved<SeriesData>>();
   let index = 0;
   for (const [slot, read] of bound) {
@@ -29,12 +32,30 @@ export function useWeatherReads<K extends string>(slots: Array<[K, WeatherRead |
   return { current: slot => current.get(slot), history: slot => history.get(slot) };
 }
 
-/** The supplied reading, dimmed or empty by the card state table. */
-export function WeatherReading({ data, status }: { data?: MetricData; status: CardStatus }) {
-  return <p className="view-metric-value" data-value={status.value}>
-    {data ? data.value.toFixed(data.format.fraction_digits) : "—"}
-    {data?.format.unit_label && <small>{data.format.unit_label}</small>}
+/** The fixed 40px reading, or words such as Dry at the same scale. Dimmed or empty by the card state table. */
+export function WeatherReading({ data, status, words }: { data?: MetricData; status: CardStatus; words?: string }) {
+  return <p className={`view-metric-value${words ? " view-state-value" : ""}`} data-value={status.value}>
+    {words ?? (data ? data.value.toFixed(data.format.fraction_digits) : "—")}
+    {!words && data?.format.unit_label && <small>{data.format.unit_label}</small>}
   </p>;
+}
+
+/**
+ * The lead reading and its words, with the card's other readings beside them
+ * in a wide card and below them otherwise. Without details there is one zone.
+ */
+export function WeatherZones({ aside, children }: { aside?: ReactNode; children: ReactNode }) {
+  return <div className="view-weather-zones">
+    <div className="view-weather-main">{children}</div>
+    {aside ? <div className="view-weather-aside">{aside}</div> : null}
+  </div>;
+}
+
+/** Statuses of a reading that has no row of its own, named so readers know which value they describe. */
+export function SlotStatus({ name, resource }: { name: string; resource?: Resolved<unknown> }) {
+  const entries = resource ? cardStatus(resource).entries : [];
+  if (entries.length === 0) return null;
+  return <div className="view-weather-slot-status"><span>{name}</span><StatusList entries={entries} /></div>;
 }
 
 /** A row for each bound slot, in order, so the footer, afterglow, and Source cover every reading the card uses. */

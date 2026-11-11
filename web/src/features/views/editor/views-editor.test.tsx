@@ -4,8 +4,23 @@ import { ViewEditor } from "./ViewEditor";
 import type { ViewDefinition } from "../catalog";
 import { TimeSeriesEditor } from "../cards/time-series/Editor";
 import { ToggleListEditor } from "../cards/toggle-list/Editor";
+import { WindEditor } from "../cards/wind/Editor";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it("adds, changes, and removes Wind speed history without changing its slots", () => {
+  const speed = { kind: "entity-state" as const, entity_id: "ent_019a3e6a-4111-7000-8000-000000000001", entity_type: "hearth.speed/v1" as const };
+  const onChange = vi.fn();
+  const { rerender } = render(<WindEditor value={{ speed }} choices={[]} onChange={onChange} />);
+  expect((screen.getByLabelText("Trend") as HTMLSelectElement).value).toBe("");
+  for (const trend of ["1h", "6h", "24h", "7d"] as const) {
+    fireEvent.change(screen.getByLabelText("Trend"), { target: { value: trend } });
+    expect(onChange).toHaveBeenLastCalledWith({ speed, trend });
+    rerender(<WindEditor value={{ speed, trend }} choices={[]} onChange={onChange} />);
+    expect((screen.getByLabelText("Trend") as HTMLSelectElement).value).toBe(trend);
+  }
+  fireEvent.change(screen.getByLabelText("Trend"), { target: { value: "" } });
+  expect(onChange).toHaveBeenLastCalledWith({ speed, trend: undefined });
+});
 it("distinguishes power endpoints on the same Device and falls back to identity for duplicate names", () => {
   const first = "ent_019a3e6a-4111-7000-8000-000000000001", second = "ent_019a3e6a-4111-7000-8000-000000000002", third = "ent_019a3e6a-4111-7000-8000-000000000003";
   const choices = [

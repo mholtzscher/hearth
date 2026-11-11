@@ -149,6 +149,7 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		"outside-now-wrong-type":           schema,
 		"rain-total-field":                 schema,
 		"wind-unknown-slot":                schema,
+		"wind-invalid-trend":               schema,
 		"toggle-tile-binary-sensor":        schema,
 		"toggle-tile-boolean-metric":       "ToggleTile metrics and details need numeric State fields",
 		"toggle-list-duplicate-row":        "a ToggleList shows each power Entity once",

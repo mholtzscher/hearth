@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-06T01:39:38.094285Z",
+  "generatedAt": "2026-11-11T15:10:03Z",
   "title": "Design System: Hearth",
   "extensions": {
     "colorMeta": {
@@ -400,6 +400,10 @@
       "label": {
         "displayName": "Label",
         "purpose": "Reading metadata, legends, and editor details."
+      },
+      "compact-reading": {
+        "displayName": "Compact reading",
+        "purpose": "20px tabular values in ReadingList, Device, timeline ledger, and supporting weather rows."
       }
     },
     "shadows": [
@@ -424,6 +428,26 @@
         "name": "drawer",
         "value": "180ms cubic-bezier(.16,1,.3,1)",
         "purpose": "History drawer movement; disabled for reduced motion."
+      },
+      {
+        "name": "reading-arrival",
+        "value": "10s cubic-bezier(.16,1,.3,1)",
+        "purpose": "A 2px orange edge fades after a newer observation changes the shown value. Under reduced motion it stays lit for ten seconds, then disappears."
+      },
+      {
+        "name": "wind-direction",
+        "value": "600ms cubic-bezier(.16,1,.3,1)",
+        "purpose": "Compass arrow rotation; disabled for reduced motion."
+      },
+      {
+        "name": "toggle-selection",
+        "value": "180ms cubic-bezier(.16,1,.3,1)",
+        "purpose": "ToggleTile surface and border changes follow observed power State, not a pending Command."
+      },
+      {
+        "name": "light-control-selection",
+        "value": "160ms cubic-bezier(.16,1,.3,1)",
+        "purpose": "Light switch surface, border, and thumb changes; disabled for reduced motion."
       }
     ],
     "breakpoints": [
@@ -442,6 +466,26 @@
       {
         "name": "visually-hidden-nav-labels",
         "value": "380px"
+      },
+      {
+        "name": "compact-sidebar-with-canvas",
+        "value": "1279px"
+      },
+      {
+        "name": "canvas-actions-inline",
+        "value": "1000px"
+      },
+      {
+        "name": "weather-two-zone-container-min",
+        "value": "460px"
+      },
+      {
+        "name": "weather-small-compass-container-max",
+        "value": "290px"
+      },
+      {
+        "name": "toggle-compact-reading-container-max",
+        "value": "200px"
       }
     ]
   },
@@ -467,7 +511,7 @@
       "kind": "input",
       "description": "Compact field for diagnostic filters and lookups.",
       "html": "<input class=\"ds-input\" placeholder=\"Jump to entity id…\" aria-label=\"Jump to entity id\">",
-      "css": ".ds-input {font-family:'Figtree Variable',sans-serif; height:32px;padding:4px 10px;border:1px solid var(--input);border-radius:10px;background:color-mix(in oklch,var(--input) 30%,transparent);color:var(--foreground);font-size:14px} .ds-input::placeholder {color:var(--muted-foreground)} .ds-input:focus-visible {outline:3px solid color-mix(in oklch,var(--ring) 50%,transparent);border-color:var(--ring)}"
+      "css": ".ds-input {box-sizing:border-box;font-family:'Figtree Variable',sans-serif;width:100%;min-width:0;height:32px;padding:4px 10px;border:1px solid var(--input);border-radius:10px;background:color-mix(in oklch,var(--input) 30%,transparent);color:var(--foreground);font-size:16px;outline:none;transition:color 150ms,background-color 150ms,border-color 150ms} .ds-input::placeholder {color:var(--muted-foreground)} .ds-input:focus-visible {box-shadow:0 0 0 3px color-mix(in oklch,var(--ring) 50%,transparent);border-color:var(--ring)} .ds-input:disabled {pointer-events:none;cursor:not-allowed;background:color-mix(in oklch,var(--input) 80%,transparent);opacity:.5} .ds-input[aria-invalid=true] {border-color:color-mix(in oklch,var(--error) 50%,transparent);box-shadow:0 0 0 3px color-mix(in oklch,var(--error) 40%,transparent)} @media(min-width:768px) {.ds-input {font-size:14px}}"
     },
     {
       "name": "Main navigation",
@@ -488,31 +532,38 @@
       "kind": "card",
       "refersTo": "reading-card",
       "description": "A reading in the View cards frame the moment a newer observation changes its value: its top edge glows orange, then fades over ten seconds.",
-      "html": "<article class=\"ds-card ds-glow\"><header class=\"ds-card-header\"><h4 class=\"ds-card-title\">Living room temperature</h4></header><p class=\"ds-value\">21.5<small>°C</small></p><footer class=\"ds-card-footer\"><time>Observed 1:13 PM · just now</time><button type=\"button\" aria-expanded=\"false\">Source</button></footer></article>",
-      "css": ".ds-card {font-family:'Figtree Variable',sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:12px;background:var(--gray-1);color:var(--gray-10);border:1px solid var(--gray-3);border-radius:12px;padding:18px} .ds-card-header {display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px} .ds-card-title {font-size:14px;line-height:1.5;font-weight:500;margin:0} .ds-status {display:flex;gap:0 8px;margin:0 0 0 auto;padding:0;list-style:none;font-size:14px;line-height:1.5;color:var(--gray-9)} .ds-status li {display:inline-flex;align-items:baseline;gap:6px} .ds-status-dot {align-self:center;width:6px;height:6px;border-radius:50%;background:var(--gray-7)} .ds-status [data-tone=warn] {color:var(--warn)} .ds-status [data-tone=warn] .ds-status-dot {background:var(--warn)} .ds-value {margin:0;font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;font-variant-numeric:tabular-nums} .ds-value small {font-size:14px;letter-spacing:0;color:var(--gray-8);margin-left:4px} .ds-value[data-value=dimmed] {color:var(--gray-8)} .ds-card-footer {display:flex;align-items:center;gap:12px;color:var(--gray-8);font-size:14px;line-height:1.5} .ds-card-footer time {flex:1} .ds-card-footer button {font:inherit;color:inherit;background:none;border:0;padding:0 6px;min-height:28px;border-radius:6px} .ds-card-footer button:focus-visible {outline:2px solid var(--violet);outline-offset:3px} .ds-glow::before {content:\"\";position:absolute;inset:0 0 auto;height:2px;background:var(--orange)}"
+      "html": "<article class=\"ds-card ds-glow\"><header class=\"ds-card-header\"><h4 class=\"ds-card-title\">Living room temperature</h4></header><p class=\"ds-value\">21.5<small>°C</small></p><footer class=\"ds-card-footer\"><time>Observed just now</time><button type=\"button\" aria-expanded=\"false\">Source</button></footer></article>",
+      "css": ".ds-card {font-family:'Figtree Variable',sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:12px;background:var(--gray-1);color:var(--gray-10);border:1px solid var(--gray-3);border-radius:12px;padding:18px} .ds-card-header {display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px} .ds-card-title {font-size:14px;line-height:1.5;font-weight:500;margin:0} .ds-status {display:flex;gap:0 8px;margin:0 0 0 auto;padding:0;list-style:none;font-size:14px;line-height:1.5;color:var(--gray-9)} .ds-status li {display:inline-flex;align-items:baseline;gap:6px} .ds-status-dot {align-self:center;width:6px;height:6px;border-radius:50%;background:var(--gray-7)} .ds-status [data-tone=warn] {color:var(--warn)} .ds-status [data-tone=warn] .ds-status-dot {background:var(--warn)} .ds-value {margin:0;font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;font-variant-numeric:tabular-nums} .ds-value small {font-size:14px;letter-spacing:0;color:var(--gray-8);margin-inline-start:4px} .ds-value[data-value=dimmed] {color:var(--gray-8)} .ds-card-footer {display:flex;align-items:center;gap:12px;margin-top:auto;color:var(--gray-8);font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums} .ds-card-footer time {min-width:0;white-space:nowrap} .ds-card-footer button {font:inherit;color:inherit;background:none;border:0;padding:0 6px;min-height:28px;margin-inline:auto -6px;border-radius:6px;white-space:nowrap;cursor:pointer} .ds-card-footer button:hover {background:var(--gray-2);color:var(--gray-10)} .ds-card-footer button:focus-visible {outline:2px solid var(--violet);outline-offset:3px} .ds-glow::before {content:\"\";position:absolute;inset:0 0 auto;height:2px;background:var(--orange);pointer-events:none;animation:ds-reading-arrival 10s cubic-bezier(.16,1,.3,1) forwards} @keyframes ds-reading-arrival {to {opacity:0}} @media(prefers-reduced-motion:reduce) {.ds-glow::before {animation-timing-function:steps(1,end)}} @media(max-width:720px),(pointer:coarse) {.ds-card-footer button {min-height:44px}}"
     },
     {
       "name": "Unavailable reading",
       "kind": "card",
       "refersTo": "reading-card",
       "description": "An unavailable Entity keeps its last value, dimmed, with a warn status; it never glows.",
-      "html": "<article class=\"ds-card\"><header class=\"ds-card-header\"><h4 class=\"ds-card-title\">Garage temperature</h4><ul class=\"ds-status\"><li data-tone=\"warn\"><span class=\"ds-status-dot\"></span>Unavailable</li></ul></header><p class=\"ds-value\" data-value=\"dimmed\">20.0<small>°C</small></p><footer class=\"ds-card-footer\"><time>Observed 6:41 PM · 4 min ago</time><button type=\"button\" aria-expanded=\"false\">Source</button></footer></article>",
-      "css": ".ds-card {font-family:'Figtree Variable',sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:12px;background:var(--gray-1);color:var(--gray-10);border:1px solid var(--gray-3);border-radius:12px;padding:18px} .ds-card-header {display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px} .ds-card-title {font-size:14px;line-height:1.5;font-weight:500;margin:0} .ds-status {display:flex;gap:0 8px;margin:0 0 0 auto;padding:0;list-style:none;font-size:14px;line-height:1.5;color:var(--gray-9)} .ds-status li {display:inline-flex;align-items:baseline;gap:6px} .ds-status-dot {align-self:center;width:6px;height:6px;border-radius:50%;background:var(--gray-7)} .ds-status [data-tone=warn] {color:var(--warn)} .ds-status [data-tone=warn] .ds-status-dot {background:var(--warn)} .ds-value {margin:0;font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;font-variant-numeric:tabular-nums} .ds-value small {font-size:14px;letter-spacing:0;color:var(--gray-8);margin-left:4px} .ds-value[data-value=dimmed] {color:var(--gray-8)} .ds-card-footer {display:flex;align-items:center;gap:12px;color:var(--gray-8);font-size:14px;line-height:1.5} .ds-card-footer time {flex:1} .ds-card-footer button {font:inherit;color:inherit;background:none;border:0;padding:0 6px;min-height:28px;border-radius:6px} .ds-card-footer button:focus-visible {outline:2px solid var(--violet);outline-offset:3px}"
+      "html": "<article class=\"ds-card\"><header class=\"ds-card-header\"><h4 class=\"ds-card-title\">Garage temperature</h4><ul class=\"ds-status\"><li data-tone=\"warn\"><span class=\"ds-status-dot\"></span>Unavailable</li></ul></header><p class=\"ds-value\" data-value=\"dimmed\">20.0<small>°C</small></p><footer class=\"ds-card-footer\"><time>Observed 4m ago</time><button type=\"button\" aria-expanded=\"false\">Source</button></footer></article>",
+      "css": ".ds-card {font-family:'Figtree Variable',sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:12px;background:var(--gray-1);color:var(--gray-10);border:1px solid var(--gray-3);border-radius:12px;padding:18px} .ds-card-header {display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px} .ds-card-title {font-size:14px;line-height:1.5;font-weight:500;margin:0} .ds-status {display:flex;gap:0 8px;margin:0 0 0 auto;padding:0;list-style:none;font-size:14px;line-height:1.5;color:var(--gray-9)} .ds-status li {display:inline-flex;align-items:baseline;gap:6px} .ds-status-dot {align-self:center;width:6px;height:6px;border-radius:50%;background:var(--gray-7)} .ds-status [data-tone=warn] {color:var(--warn)} .ds-status [data-tone=warn] .ds-status-dot {background:var(--warn)} .ds-value {margin:0;font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;font-variant-numeric:tabular-nums} .ds-value small {font-size:14px;letter-spacing:0;color:var(--gray-8);margin-inline-start:4px} .ds-value[data-value=dimmed] {color:var(--gray-8)} .ds-card-footer {display:flex;align-items:center;gap:12px;margin-top:auto;color:var(--gray-8);font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums} .ds-card-footer time {min-width:0;white-space:nowrap} .ds-card-footer button {font:inherit;color:inherit;background:none;border:0;padding:0 6px;min-height:28px;margin-inline:auto -6px;border-radius:6px;white-space:nowrap;cursor:pointer} .ds-card-footer button:hover {background:var(--gray-2);color:var(--gray-10)} .ds-card-footer button:focus-visible {outline:2px solid var(--violet);outline-offset:3px} @media(max-width:720px),(pointer:coarse) {.ds-card-footer button {min-height:44px}}"
     },
     {
       "name": "Conversation composer",
       "kind": "custom",
       "description": "Near-black field with a violet focus border and a primary send action.",
-      "html": "<div class=\"ds-composer\"><textarea class=\"ds-composer-input\" aria-label=\"Message\" placeholder=\"Ask about your home, or ask for a view…\"></textarea><div class=\"ds-composer-footer\"><span>Message Hearth</span><button class=\"ds-send\">Send</button></div></div>",
-      "css": ".ds-composer {font-family:'Figtree Variable',sans-serif; border:1px solid var(--gray-4);background:var(--gray-1);border-radius:12px;padding:12px 14px} .ds-composer:focus-within {border-color:var(--violet)} .ds-composer-input {font-family:'Figtree Variable',sans-serif; display:block;width:100%;min-height:64px;resize:none;border:0;outline:none;background:transparent;color:var(--gray-10);caret-color:var(--violet);font-size:16px} .ds-composer-input::placeholder {color:var(--gray-8);opacity:1} .ds-composer-footer {display:flex;align-items:center;justify-content:space-between;color:var(--gray-8);font-size:12px} .ds-send {font-family:'Figtree Variable',sans-serif; min-height:44px;min-width:44px;padding:0 10px;border:0;border-radius:8px;background:var(--orange);color:var(--on-orange);font-weight:600} .ds-send:hover {background:var(--orange-hover)} .ds-send:focus-visible {outline:2px solid var(--violet);outline-offset:3px;} .ds-send:disabled {background:var(--gray-3);color:var(--gray-7)}"
+      "html": "<div class=\"ds-composer\"><textarea class=\"ds-composer-input\" rows=\"1\" aria-label=\"Message\" placeholder=\"Ask about your home, or ask for a view…\"></textarea><div class=\"ds-composer-footer\"><span>Message Hearth</span><button class=\"ds-send\">Send</button></div></div>",
+      "css": ".ds-composer {font-family:'Figtree Variable',sans-serif;display:flex;flex-direction:column;border:1px solid var(--gray-4);background:var(--gray-1);border-radius:12px;padding:8px} .ds-composer:focus-within {border-color:var(--violet)} .ds-composer-input {font-family:'Figtree Variable',sans-serif;display:block;box-sizing:border-box;width:100%;min-height:44px;padding:10px 8px;resize:none;border:0;outline:none;background:transparent;color:var(--gray-10);caret-color:var(--violet);font-size:16px;line-height:1.5} .ds-composer-input::placeholder {color:var(--gray-8);opacity:1} .ds-composer-footer {display:flex;align-items:center;gap:12px;color:var(--gray-8);font-size:12px} .ds-composer-footer>span {flex:1;padding:0 8px} .ds-send {font-family:'Figtree Variable',sans-serif;min-height:44px;min-width:44px;padding:0 10px;border:0;border-radius:8px;background:var(--orange);color:var(--on-orange);font-weight:600;cursor:pointer} .ds-send:hover:not(:disabled) {background:var(--orange-hover)} .ds-send:focus-visible {outline:2px solid var(--violet);outline-offset:3px} .ds-send:disabled {background:var(--gray-3);color:var(--gray-7)}"
+    },
+    {
+      "name": "Weather reading",
+      "kind": "card",
+      "refersTo": "reading-card",
+      "description": "An outdoor reading with its conditions and supporting rows. At 460px of content width, details move beside the lead; narrower cards stack.",
+      "html": "<article class=\"ds-weather\"><h4 class=\"ds-weather-title\">Outside</h4><div class=\"ds-weather-zones\"><div class=\"ds-weather-main\"><p class=\"ds-weather-value\">9.4<small>°C</small></p><p class=\"ds-weather-conditions\">Rain · Breezy</p><p class=\"ds-weather-detail\">24 h high 9.4, low −1.0 °C</p></div><dl class=\"ds-weather-rows\"><div><dt>Humidity</dt><dd>94.0<small>%</small></dd></div><div><dt>Wind from SE</dt><dd>6.3<small>m/s</small></dd></div><div><dt>Rain today</dt><dd>16.2<small>mm</small></dd></div></dl></div><footer class=\"ds-weather-footer\"><time>Oldest just now</time><button type=\"button\" aria-expanded=\"false\">Source</button></footer></article>",
+      "css": ".ds-weather {container-type:inline-size;display:flex;flex-direction:column;gap:12px;padding:18px;border:1px solid var(--gray-3);border-radius:12px;background:var(--gray-1);color:var(--gray-10);font:14px/1.5 'Figtree Variable',sans-serif} .ds-weather-title {margin:0;font-size:14px;font-weight:500} .ds-weather-zones,.ds-weather-main {display:flex;flex-direction:column;gap:6px;min-width:0} .ds-weather-main p {margin:0} .ds-weather-value {font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;font-variant-numeric:tabular-nums} .ds-weather small {margin-inline-start:4px;font-size:14px;letter-spacing:0;color:var(--gray-8)} .ds-weather-conditions {color:var(--gray-9)} .ds-weather-detail {color:var(--gray-8);text-wrap:pretty} .ds-weather-rows {display:grid;margin:10px 0 0;padding:0;border-top:1px solid var(--gray-3)} .ds-weather-rows>div {display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 16px;padding:10px 0;font-variant-numeric:tabular-nums} .ds-weather-rows>div+div {border-top:1px solid var(--gray-3)} .ds-weather-rows dt {flex:1 1 9em;min-width:0;color:var(--gray-9);overflow-wrap:anywhere} .ds-weather-rows dd {margin:0 0 0 auto;color:var(--gray-10);font-size:20px;font-weight:400;line-height:1.3;letter-spacing:-.02em} .ds-weather-rows small {margin-inline-start:3px} .ds-weather-footer {display:flex;align-items:center;gap:12px;margin-top:auto;color:var(--gray-8);font-variant-numeric:tabular-nums} .ds-weather-footer time {white-space:nowrap} .ds-weather-footer button {margin-inline:auto -6px;padding:0 6px;min-height:28px;border:0;border-radius:6px;background:none;color:inherit;font:inherit;cursor:pointer} .ds-weather-footer button:hover {background:var(--gray-2);color:var(--gray-10)} .ds-weather-footer button:focus-visible {outline:2px solid var(--violet);outline-offset:3px} @container(min-width:460px) {.ds-weather-zones {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start} .ds-weather-rows {margin-top:0;border-top:0}} @media(max-width:720px),(pointer:coarse) {.ds-weather-footer button {min-height:44px}}"
     },
     {
       "name": "Light controls",
-      "kind": "control",
-      "refersTo": "Controls",
+      "kind": "custom",
       "description": "A light's power switch and brightness slider inside a Device card. Violet fills what is selected; the pending line says what was requested while the reading keeps showing observed State.",
-      "html": "<div class=\"ds-light\"><p class=\"ds-reading\">Off</p><button type=\"button\" role=\"switch\" aria-checked=\"true\" aria-label=\"Hallway light power\" class=\"ds-switch\"><span></span></button></div><p class=\"ds-control-status\" role=\"status\"><i></i>Turning on…</p><div class=\"ds-slider-label\"><span>Brightness</span><span>40 %</span></div><input type=\"range\" class=\"ds-slider\" min=\"1\" max=\"100\" value=\"40\" aria-label=\"Hallway light brightness\" aria-valuetext=\"40 %\" style=\"--fill:39.4%\">",
-      "css": ".ds-light {display:flex;align-items:center;gap:14px} .ds-reading {font-family:'Figtree Variable',sans-serif;font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;color:#f4f4f4} .ds-switch {position:relative;margin-inline-start:auto;width:44px;height:24px;border:1px solid #a77bff;border-radius:12px;background:#a77bff} .ds-switch span {position:absolute;top:2px;left:22px;width:18px;height:18px;border-radius:50%;background:#f4f4f4} .ds-switch[aria-checked=false] {background:#1f1f1f;border-color:#7d7d7d} .ds-switch[aria-checked=false] span {left:2px;background:#a6a6a6} .ds-control-status {display:flex;align-items:center;gap:6px;margin-top:8px;font:14px/1.5 'Figtree Variable',sans-serif;color:#d1d1d1} .ds-control-status i {width:6px;height:6px;border-radius:50%;background:#7fb4ff} .ds-slider-label {display:flex;justify-content:space-between;margin-top:12px;font:14px/1.5 'Figtree Variable',sans-serif;color:#a6a6a6} .ds-slider-label span+span {color:#d1d1d1} .ds-slider {display:block;width:100%;height:44px;margin:0;background:transparent;appearance:none;-webkit-appearance:none} .ds-slider::-webkit-slider-runnable-track {height:4px;border-radius:2px;background:linear-gradient(to right,#a77bff var(--fill),#2c2c2c var(--fill))} .ds-slider::-webkit-slider-thumb {width:18px;height:18px;margin-top:-7px;border-radius:50%;background:#f4f4f4;appearance:none;-webkit-appearance:none} .ds-slider::-moz-range-track {height:4px;border-radius:2px;background:#2c2c2c} .ds-slider::-moz-range-progress {height:4px;border-radius:2px;background:#a77bff} .ds-slider::-moz-range-thumb {width:18px;height:18px;border:0;border-radius:50%;background:#f4f4f4}"
+      "html": "<div class=\"ds-light\"><p class=\"ds-reading\">Off</p><button type=\"button\" role=\"switch\" aria-checked=\"false\" aria-label=\"Hallway light power\" class=\"ds-switch\"><span></span></button></div><p class=\"ds-control-status\" role=\"status\"><i></i>Turning on…</p><div class=\"ds-slider-label\"><span>Brightness</span><span>40 %</span></div><input type=\"range\" class=\"ds-slider\" min=\"1\" max=\"100\" value=\"40\" aria-label=\"Hallway light brightness\" aria-valuetext=\"40 %\" style=\"--fill:39.4%\">",
+      "css": ".ds-light {display:flex;align-items:center;gap:14px} .ds-reading {margin:0;font-family:'Figtree Variable',sans-serif;font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;color:var(--gray-10)} .ds-switch {position:relative;flex-shrink:0;margin-inline-start:auto;width:44px;height:24px;border:1px solid var(--gray-7);border-radius:12px;background:var(--gray-3);cursor:pointer;transition:background-color 160ms cubic-bezier(.16,1,.3,1),border-color 160ms cubic-bezier(.16,1,.3,1)} .ds-switch::before {content:'';position:absolute;inset:-11px -1px} .ds-switch span {position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--gray-8);transition:transform 160ms cubic-bezier(.16,1,.3,1),background-color 160ms cubic-bezier(.16,1,.3,1)} .ds-switch[aria-checked=true] {background:var(--violet);border-color:var(--violet)} .ds-switch[aria-checked=true] span {transform:translateX(20px);background:var(--gray-10)} .ds-switch:disabled {background:var(--gray-3);border-color:var(--gray-4);cursor:not-allowed} .ds-switch:disabled span {background:var(--gray-6)} .ds-switch:focus-visible {outline:2px solid var(--violet);outline-offset:3px} .ds-control-status {display:flex;align-items:center;gap:6px;min-height:21px;margin:8px 0 0;font:14px/1.5 'Figtree Variable',sans-serif;color:var(--gray-9)} .ds-control-status i {width:6px;height:6px;border-radius:50%;background:var(--info)} .ds-slider-label {display:flex;justify-content:space-between;gap:8px;margin-top:12px;font:14px/1.5 'Figtree Variable',sans-serif;color:var(--gray-8);font-variant-numeric:tabular-nums} .ds-slider-label span+span {color:var(--gray-9)} .ds-slider {--track:var(--gray-4);--level:var(--violet);--knob:var(--gray-10);display:block;width:100%;height:44px;margin:0;background:transparent;cursor:pointer;appearance:none;-webkit-appearance:none} .ds-slider:disabled {--track:var(--gray-3);--level:var(--gray-5);--knob:var(--gray-6);cursor:not-allowed} .ds-slider::-webkit-slider-runnable-track {height:4px;border-radius:2px;background:linear-gradient(to right,var(--level) var(--fill),var(--track) var(--fill))} .ds-slider::-webkit-slider-thumb {width:18px;height:18px;margin-top:-7px;border:0;border-radius:50%;background:var(--knob);appearance:none;-webkit-appearance:none} .ds-slider::-moz-range-track {height:4px;border-radius:2px;background:var(--track)} .ds-slider::-moz-range-progress {height:4px;border-radius:2px;background:var(--level)} .ds-slider::-moz-range-thumb {width:18px;height:18px;border:0;border-radius:50%;background:var(--knob)} .ds-slider:focus-visible {outline:none} .ds-slider:focus-visible::-webkit-slider-thumb {outline:2px solid var(--violet);outline-offset:3px} .ds-slider:focus-visible::-moz-range-thumb {outline:2px solid var(--violet);outline-offset:3px} @media(prefers-reduced-motion:reduce) {.ds-switch,.ds-switch span {transition:none}}"
     }
   ],
   "narrative": {

@@ -243,20 +243,38 @@ view is presented or saved: `mm/h` for rain rates, `mm` for rain totals, and
 
 - OutsideNow requires an outdoor `temperature` and optionally binds `humidity`,
   `wind`, `wind_direction`, `rain_rate`, and `rain_today`. It reads 24 hours of
-  temperature for the sampled high and low. If temperature history fails to refresh, a
-  warning appears and retained extrema are labelled **Last loaded 24 h**, not
-  the current rolling window. Source states the history interval's exact start
-  and end; current readings keep their independent observation times.
+  temperature for the sampled high and low. Conditions come from measurements:
+  AMS rain intensity from the rate, and wind words from the Beaufort scale. If
+  temperature history fails to refresh, a warning appears and retained extrema
+  are labelled **Last loaded 24 h**, not the current rolling window. Source
+  states the history interval's exact start and end; current readings keep their
+  independent observation times.
 - Rain requires a `rate` and optionally binds `storm`, `totals` (`day`, `week`,
-  `month`, `year`), and a `trend` window for the rate. The rate leads, including
-  when it is zero.
+  `month`, `year`), and a `trend` window for the rate. While the storm total is
+  above zero it leads; otherwise the rate does, and a zero rate reads **Dry**.
   Totals are the station's own counters; the card never sums the rate.
 - Wind requires `speed` and optionally binds `gust`, `direction`, and
-  `max_gust`. Direction is shown as the selected Entity's reading, not a compass.
-- Pressure binds one `hearth.pressure/v1` `source` and an optional `trend`; no
-  history is requested when the trend is omitted.
+  `max_gust`. It names the Beaufort force and draws where the wind comes from on
+  a compass. Direction has no history, because history means aren't circular.
+- Pressure binds one `hearth.pressure/v1` `source` and an optional `trend`. It
+  always reads 6 hours of history to compare the latest minute with the one
+  nearest three hours earlier, within ten minutes, and words the change with Met
+  Office thresholds. The latest historical sample must also be within ten
+  minutes of the current time, checked each minute even if history refreshes
+  fail. A failed refresh shows a warning independently of the optional trend;
+  expired history shows no tendency while the live pressure reading remains.
 
-Weather cards do not derive feels-like, dew point, conditions, or tendencies.
+Conditions, Beaufort forces, and pressure tendencies use fixed thresholds, so
+the cards apply them to an additional `units=canonical` read of wind speed, rain
+rate, and pressure history. The cards show the household reading. Condition
+words and Beaufort forces appear only when the canonical read describes the
+same observation as the shown reading. If that read fails or describes another
+observation, the card shows the reading without the words; OutsideNow then
+lists the rain rate and wind direction as rows. Pressure words its tendency
+from the canonical history and states the change from the household history,
+only while both use the same buckets. Rain totals share one unit label only
+when every total has that unit. The cards do not show feels-like or dew point.
+
 Each reading keeps its own statuses; the footer states the oldest displayed
 reading. Weather cards count toward the 16-reference budget like other cards.
 

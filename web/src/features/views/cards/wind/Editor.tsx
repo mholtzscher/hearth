@@ -1,4 +1,6 @@
 import type { z } from "zod";
+import { seriesWindows } from "../../bindings/schema";
+import type { SeriesWindow } from "../../bindings/types";
 import { TextField } from "../../editor/TextField";
 import type { SensorChoice } from "../time-series/Editor";
 import { sensorUnits } from "../weather/schema";
@@ -15,5 +17,8 @@ export function WindEditor({ value, choices, onChange }: { value: Value; choices
     <SlotSelect label="Gusts" optional value={value.gust} {...speed} onChange={gust => onChange({ ...value, gust })} />
     <SlotSelect label="Wind direction" optional value={value.direction} choices={choices} type="hearth.numericsensor/v1" unit={sensorUnits.direction} onChange={direction => onChange({ ...value, direction })} />
     <SlotSelect label="Today's max gust" optional value={value.max_gust} {...speed} onChange={max_gust => onChange({ ...value, max_gust })} />
+    <label>Trend<select value={value.trend ?? ""} onChange={event => onChange({ ...value, trend: event.target.value ? event.target.value as SeriesWindow : undefined })}>
+      <option value="">No trend</option>{seriesWindows.map(window => <option key={window} value={window}>{window}</option>)}
+    </select></label>
   </>;
 }

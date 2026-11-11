@@ -1144,7 +1144,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "Sustained wind speed."
+                        "description": "Sustained wind speed, for a row and wind words."
                       },
                       "wind_direction": {
                         "type": "object",
@@ -1172,7 +1172,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "Wind direction reading."
+                        "description": "Wind direction in deg, named on the wind row."
                       },
                       "rain_rate": {
                         "type": "object",
@@ -1200,7 +1200,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "Rain rate reading."
+                        "description": "Rain rate in mm/h, for rain words such as Light rain."
                       },
                       "rain_today": {
                         "type": "object",
@@ -1283,7 +1283,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "Rain rate, also the trend's source."
+                        "description": "Rain rate in mm/h: Rain or Dry, and the trend's source."
                       },
                       "storm": {
                         "type": "object",
@@ -1311,7 +1311,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "The station's storm (event) rain total."
+                        "description": "The station's storm (event) rain total in mm. It leads the card while above zero."
                       },
                       "totals": {
                         "type": "object",
@@ -1495,7 +1495,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "Sustained wind speed."
+                        "description": "Sustained wind speed: the reading and its Beaufort words."
                       },
                       "gust": {
                         "type": "object",
@@ -1551,7 +1551,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "Wind direction in degrees."
+                        "description": "Wind direction in deg: where the wind comes from, drawn on a compass."
                       },
                       "max_gust": {
                         "type": "object",
@@ -1580,6 +1580,16 @@
                         ],
                         "additionalProperties": false,
                         "description": "The station's maximum gust today."
+                      },
+                      "trend": {
+                        "type": "string",
+                        "enum": [
+                          "1h",
+                          "6h",
+                          "24h",
+                          "7d"
+                        ],
+                        "description": "Draw sustained wind-speed history over this window; direction stays current-only."
                       }
                     },
                     "required": [
@@ -1634,7 +1644,7 @@
                           "entity_type"
                         ],
                         "additionalProperties": false,
-                        "description": "Barometric pressure."
+                        "description": "Barometric pressure. The card also reads its last 6 hours for the three-hour tendency."
                       },
                       "trend": {
                         "type": "string",
