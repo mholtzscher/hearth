@@ -13,8 +13,20 @@ env:
   MISE_JOBS: 1
 
 jobs:
-  backend:
+  backend-work:
+    name: backend (${{ matrix.check }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: checks
+          - check: unit
+            tags: ""
+          - check: integration
+            tags: integration
+          - check: e2e
+            tags: e2e
     # Race-enabled Core tests build the full MCP catalog on every startup.
     # Bound competing startups instead of exhausting lifecycle test deadlines.
     env:
@@ -55,29 +67,46 @@ jobs:
             go-build-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
             go-build-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
       - name: Run checks
-        run: mise run validate-backend
+        if: matrix.check == 'checks'
+        run: mise run validate-backend-checks
+      - name: Run tests
+        if: matrix.check != 'checks'
+        # An explicit empty tag selection overrides CI's all-level default.
+        run: mise run test -- -tags="${{ matrix.tags }}"
       - name: Verify clean working tree
         run: |
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
+      # One writer preserves the shared cache storage bound. Integration runs
+      # units too and warms race-enabled artifacts for the other test jobs.
       - name: Save Go dependencies on main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-module-cache.outputs.cache-hit != 'true'
+        if: matrix.check == 'integration' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-module-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ steps.go-cache-paths.outputs.modules }}
           key: ${{ steps.go-module-cache.outputs.cache-primary-key }}
       - name: Save Go build artifacts on main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-build-cache.outputs.cache-hit != 'true'
+        if: matrix.check == 'integration' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-build-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ steps.go-cache-paths.outputs.build }}
           key: ${{ steps.go-build-cache.outputs.cache-primary-key }}
 
+  backend:
+    needs: backend-work
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every backend check
+        env:
+          RESULT: ${{ needs.backend-work.result }}
+        run: test "$RESULT" = success
+
   # Keep cache deletion permission out of jobs that execute PR code. Limit both
   # namespaces across toolchain/dependency revisions, not just the current key.
   retain-go-caches:
     needs: backend
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       actions: write

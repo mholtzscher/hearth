@@ -102,8 +102,9 @@ GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
   `integration,e2e` includes all levels. Units need neither Docker nor listeners.
   Selected real-Mosquitto tests require Docker and fail without it.
 - Lint/vet analyze all levels, including focused runs. `CI=true` selects every
-  test level with race detection for the selected packages; it does not opt into
-  the database-scale tooling tests.
+  test level with race detection for the selected packages unless an explicit
+  `-tags` flag overrides the level selection; it does not opt into the
+  database-scale tooling tests.
 - Use mise tasks for formatting, generation, and module tidying. Generated-code
   changes need owning fixture/real-boundary checks; review generated diffs rather
   than editing outputs by hand.
@@ -111,16 +112,27 @@ GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
   `mise run --skip-deps web-test -- <filter>` and
   `mise run --skip-deps web-build` for typecheck/build.
 
-## CI Go caches
+## CI jobs and Go caches
 
-CI restores separate dependency and build caches. Only successful `main` backend
-jobs save them: dependencies are keyed by toolchain and `go.sum`, while build snapshots
-also include the revision so compiled artifacts can refresh. A separate main-only
-job retains the newest two snapshots in each namespace across toolchain and
-dependency revisions. PRs restore main's snapshots without saving large merge-ref
-caches that siblings cannot use. PR-specific compiled changes may rebuild on each
-push; the first run after this policy's rollout also starts cold until main seeds
-the new cache namespaces. Tests retain CI's race detection and concurrency limits.
+CI runs backend checks, unit tests, integration tests, and E2E tests in parallel.
+The checks job runs `mise run validate-backend-checks`, including generation,
+formatting, module tidying, lint, and vet. Test jobs run `mise run test` with an
+explicit `-tags=`, `-tags=integration`, or `-tags=e2e` selection. Tags are additive,
+so integration and E2E jobs also run units. Each parallel job checks for a clean
+working tree. The combined `backend` check fails if any backend job fails or is
+canceled or skipped. Frontend checks remain in the separate `web` job.
+
+Each backend job restores shared dependency and build caches. Only successful
+integration jobs on `main` save them: dependencies are keyed by toolchain and
+`go.sum`, while build snapshots also include the revision so compiled artifacts
+can refresh. A single writer keeps the existing storage bound and warms
+race-enabled artifacts for the other test jobs. Checks-only and E2E-specific
+compiled changes may rebuild when they are absent from the integration snapshot.
+A separate main-only job retains the newest two snapshots in each namespace
+across toolchain and dependency revisions, including after another backend job
+fails. PRs restore main's snapshots without saving large merge-ref caches that
+siblings cannot use. PR-specific compiled changes may rebuild on each push.
+Tests retain CI's race detection and concurrency limits.
 
 ## Completion gate
 

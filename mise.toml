@@ -208,12 +208,15 @@ run = '''pnpm --dir web run dev --host 127.0.0.1 --strictPort'''
 description = "Run the dashboard dev server against a remote hearthd (override with HEARTHD_URL and NATS_MONITOR_URL)"
 run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NATS_MONITOR_URL:-http://wanda:8222}" pnpm --dir web run dev'''
 
+[tasks."validate-backend-checks"]
+description = "Run Go checks without tests (including generation, formatting, and tidying)"
+depends = ["lint", "vet"]
+
 [tasks."validate-backend"]
 description = "Run Go and validation-script checks"
 depends = [
-  "lint",
+  "validate-backend-checks",
   { task = "test", args = ["-tags=integration,e2e"] },
-  "vet",
 ]
 
 [tasks."validate"]
