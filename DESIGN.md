@@ -271,6 +271,14 @@ for the displayed value before allocating space to details. Rain's totals
 sentence spans both halves below. Narrower cards keep the single column;
 the card's available width, not its grid's column count, chooses the layout.
 
+Wind may add a sustained-speed trend over 1 h, 6 h, 24 h, or 7 d, using the
+same speed Entity and Core's household units. Direction stays current-only.
+With a trend on a wide card, Wind groups its current readings beside an 88px
+compass on the left and a neutral 72px trend with its range on the right.
+The reading group reserves its intrinsic width before allocating space to
+the trend. Narrow cards stack the trend below the current readings and keep
+their usual compass size. Without a trend, Wind keeps its existing layout.
+
 Live Rain trends use dusk blue (`--chart-4`), and Pressure uses pale gold
 (`--chart-5`). Their lines mix equal parts of that color and `--gray-9` in
 OKLCH; the min–max band uses the chart color at 8% opacity. Readings, labels,

@@ -1580,6 +1580,16 @@
                         ],
                         "additionalProperties": false,
                         "description": "The station's maximum gust today."
+                      },
+                      "trend": {
+                        "type": "string",
+                        "enum": [
+                          "1h",
+                          "6h",
+                          "24h",
+                          "7d"
+                        ],
+                        "description": "Draw sustained wind-speed history over this window; direction stays current-only."
                       }
                     },
                     "required": [
