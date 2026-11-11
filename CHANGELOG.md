@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/mholtzscher/hearth/compare/v0.21.0...v0.22.0) (2026-11-11)
+
+
+### Features
+
+* **agent:** add OpenAI service tier setting ([#329](https://github.com/mholtzscher/hearth/issues/329)) ([b37a3d0](https://github.com/mholtzscher/hearth/commit/b37a3d0bfa72bc1a0ee5e5bfe2252f08f45eb2c4))
+
 ## [0.21.0](https://github.com/mholtzscher/hearth/compare/v0.20.0...v0.21.0) (2026-11-11)
 
 
