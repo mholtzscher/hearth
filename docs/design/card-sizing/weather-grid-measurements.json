@@ -1,0 +1,303 @@
+{
+  "canvas": {
+    "390": {
+      "viewport": 390,
+      "cards": [
+        {
+          "title": "Next 5 days",
+          "x": 20,
+          "y": 1115,
+          "width": 340,
+          "height": 331,
+          "plotHeight": null
+        },
+        {
+          "title": "Next 24 hours",
+          "x": 20,
+          "y": 1458,
+          "width": 340,
+          "height": 368,
+          "plotHeight": 216
+        }
+      ],
+      "sameRow": false,
+      "documentOverflow": false
+    },
+    "1280": {
+      "viewport": 1280,
+      "cards": [
+        {
+          "title": "Next 5 days",
+          "x": 310,
+          "y": 507,
+          "width": 465,
+          "height": 368,
+          "plotHeight": null
+        },
+        {
+          "title": "Next 24 hours",
+          "x": 787,
+          "y": 507,
+          "width": 465,
+          "height": 368,
+          "plotHeight": 216
+        }
+      ],
+      "sameRow": true,
+      "documentOverflow": false
+    },
+    "1920": {
+      "viewport": 1920,
+      "cards": [
+        {
+          "title": "Next 5 days",
+          "x": 438,
+          "y": 451,
+          "width": 686,
+          "height": 353,
+          "plotHeight": null
+        },
+        {
+          "title": "Next 24 hours",
+          "x": 1136,
+          "y": 451,
+          "width": 686,
+          "height": 353,
+          "plotHeight": 216
+        }
+      ],
+      "sameRow": true,
+      "documentOverflow": false
+    }
+  },
+  "conversation": {
+    "320": {
+      "viewport": 320,
+      "cards": [
+        {
+          "title": "Next 5 days",
+          "x": 20,
+          "y": 977,
+          "width": 270,
+          "height": 331,
+          "plotHeight": null
+        },
+        {
+          "title": "Next 24 hours",
+          "x": 20,
+          "y": 1320,
+          "width": 270,
+          "height": 408,
+          "plotHeight": 216
+        }
+      ],
+      "sameRow": false,
+      "title": "Weather",
+      "width": 270,
+      "height": 1676,
+      "columns": [
+        1,
+        1
+      ],
+      "hourly": [
+        {
+          "width": "528",
+          "height": 216,
+          "font": "13px"
+        }
+      ],
+      "dailyRows": 5,
+      "documentOverflow": false
+    },
+    "390": {
+      "viewport": 390,
+      "cards": [
+        {
+          "title": "Next 5 days",
+          "x": 20,
+          "y": 956,
+          "width": 340,
+          "height": 331,
+          "plotHeight": null
+        },
+        {
+          "title": "Next 24 hours",
+          "x": 20,
+          "y": 1299,
+          "width": 340,
+          "height": 370,
+          "plotHeight": 216
+        }
+      ],
+      "sameRow": false,
+      "title": "Weather",
+      "width": 340,
+      "height": 1617,
+      "columns": [
+        1,
+        1
+      ],
+      "hourly": [
+        {
+          "width": "528",
+          "height": 216,
+          "font": "13px"
+        }
+      ],
+      "dailyRows": 5,
+      "documentOverflow": false
+    },
+    "768": {
+      "viewport": 768,
+      "cards": [
+        {
+          "title": "Next 5 days",
+          "x": 124,
+          "y": 1172,
+          "width": 301,
+          "height": 408,
+          "plotHeight": null
+        },
+        {
+          "title": "Next 24 hours",
+          "x": 437,
+          "y": 1172,
+          "width": 301,
+          "height": 408,
+          "plotHeight": 216
+        }
+      ],
+      "sameRow": true,
+      "title": "Weather",
+      "width": 614,
+      "height": 1101,
+      "columns": [
+        2,
+        2
+      ],
+      "hourly": [
+        {
+          "width": "528",
+          "height": 216,
+          "font": "13px"
+        }
+      ],
+      "dailyRows": 5,
+      "documentOverflow": false
+    },
+    "1024": {
+      "viewport": 1024,
+      "cards": [
+        {
+          "title": "Next 5 days",
+          "x": 251,
+          "y": 672,
+          "width": 362,
+          "height": 370,
+          "plotHeight": null
+        },
+        {
+          "title": "Next 24 hours",
+          "x": 626,
+          "y": 672,
+          "width": 362,
+          "height": 370,
+          "plotHeight": 216
+        }
+      ],
+      "sameRow": true,
+      "title": "Weather",
+      "width": 737,
+      "height": 1042,
+      "columns": [
+        2,
+        2
+      ],
+      "hourly": [
+        {
+          "width": "528",
+          "height": 216,
+          "font": "13px"
+        }
+      ],
+      "dailyRows": 5,
+      "documentOverflow": false
+    },
+    "1280": {
+      "viewport": 1280,
+      "cards": [
+        {
+          "title": "Next 5 days",
+          "x": 308,
+          "y": 389,
+          "width": 462,
+          "height": 370,
+          "plotHeight": null
+        },
+        {
+          "title": "Next 24 hours",
+          "x": 782,
+          "y": 389,
+          "width": 462,
+          "height": 370,
+          "plotHeight": 216
+        }
+      ],
+      "sameRow": true,
+      "title": "Weather",
+      "width": 936,
+      "height": 759,
+      "columns": [
+        3,
+        2
+      ],
+      "hourly": [
+        {
+          "width": "528",
+          "height": 216,
+          "font": "13px"
+        }
+      ],
+      "dailyRows": 5,
+      "documentOverflow": false
+    },
+    "1920": {
+      "viewport": 1920,
+      "cards": [
+        {
+          "title": "Next 5 days",
+          "x": 650,
+          "y": 389,
+          "width": 469,
+          "height": 370,
+          "plotHeight": null
+        },
+        {
+          "title": "Next 24 hours",
+          "x": 1131,
+          "y": 389,
+          "width": 469,
+          "height": 370,
+          "plotHeight": 216
+        }
+      ],
+      "sameRow": true,
+      "title": "Weather",
+      "width": 950,
+      "height": 759,
+      "columns": [
+        3,
+        2
+      ],
+      "hourly": [
+        {
+          "width": "528",
+          "height": 216,
+          "font": "13px"
+        }
+      ],
+      "dailyRows": 5,
+      "documentOverflow": false
+    }
+  }
+}
