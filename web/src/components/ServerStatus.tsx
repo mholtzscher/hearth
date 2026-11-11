@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError, useBaseUrlVersion } from "../api/client";
 import { usePolling } from "../api/hooks";
 
-const labels = {
+export const serverLabels = {
   checking: "Checking…",
   ready: "Ready",
   "not-ready": "Not ready",
@@ -10,14 +10,17 @@ const labels = {
   unknown: "Status unknown",
 };
 
-export function ServerStatus() {
+export type ServerState = keyof typeof serverLabels;
+
+/** The one readiness poller; onChange lets the phone bar reflect a problem without polling again. */
+export function ServerStatus({ onChange }: { onChange?: (state: ServerState) => void }) {
   const version = useBaseUrlVersion();
-  return <ConnectedServerStatus key={version} />;
+  return <ConnectedServerStatus key={version} onChange={onChange} />;
 }
 
-function ConnectedServerStatus() {
+function ConnectedServerStatus({ onChange }: { onChange?: (state: ServerState) => void }) {
   const { data, error, loading } = usePolling("readyz", api.ready, 10_000);
-  const [state, setState] = useState<keyof typeof labels>("checking");
+  const [state, setState] = useState<ServerState>("checking");
   // Retain the last completed check during polling, including a failed check.
   useEffect(() => {
     if (loading) return;
@@ -27,9 +30,10 @@ function ConnectedServerStatus() {
     else if (data?.status === "not_ready") setState("not-ready");
     else setState("unknown");
   }, [data, error, loading]);
+  useEffect(() => onChange?.(state), [onChange, state]);
 
   return <p className="server-status" data-state={state} role="status" aria-busy={state === "checking"}>
     <span className="server-status-dot" aria-hidden="true" />
-    <span>Hearth server <strong>{labels[state]}</strong></span>
+    <span>Hearth server <strong>{serverLabels[state]}</strong></span>
   </p>;
 }

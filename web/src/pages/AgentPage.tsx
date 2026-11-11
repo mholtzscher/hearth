@@ -1,7 +1,9 @@
 import { AssistantRuntimeProvider, ComposerPrimitive, SuggestionPrimitive, ThreadPrimitive, useExternalStoreRuntime, useThreadViewport, type ThreadMessageLike, type ThreadSuggestion } from "@assistant-ui/react";
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, PanelsTopLeftIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
+import { usePhoneBarSlot } from "../components/PhoneBarSlot";
 import { Canvas } from "../features/dashboards/Canvas";
 import { useWorkspace } from "../features/dashboards/Workspace";
 import { useConversationSession } from "../features/conversation/ConversationsProvider";
@@ -60,6 +62,7 @@ export default function AgentPage() {
     });
     return () => cancelAnimationFrame(frame);
   }, [composerFocusRequested, finishComposerFocus, routeId, loading, busy, mobileCanvas]);
+  const phoneBar = usePhoneBarSlot();
   const [narrow, setNarrow] = useState(() => window.matchMedia?.("(max-width: 720px)").matches ?? false);
   const visibleSession = useRef<typeof session | null>(session);
   visibleSession.current = session;
@@ -119,9 +122,11 @@ export default function AgentPage() {
     const frame = requestAnimationFrame(() => { if (document.activeElement === document.body) prompt.current?.focus(); });
     return () => cancelAnimationFrame(frame);
   }, [draft]);
+  // On phones the switch takes the top bar's center rather than a row of its own.
+  const panels = draft && <div className="mobile-tabs" role="group" aria-label="Workspace panels"><button aria-pressed={!mobileCanvas} onClick={() => setMobileCanvas(false)}>Conversation</button><button aria-pressed={mobileCanvas} onClick={() => setMobileCanvas(true)}>Canvas</button></div>;
   return <div className={`conversation-workspace${mobileCanvas ? " show-canvas" : ""}`}>
     <h1 className="sr-only">Home workspace</h1>
-    {draft && <div className="mobile-tabs" role="group" aria-label="Workspace panels"><button aria-pressed={!mobileCanvas} onClick={() => setMobileCanvas(false)}>Conversation</button><button aria-pressed={mobileCanvas} onClick={() => setMobileCanvas(true)}>Canvas</button></div>}
+    {phoneBar ? createPortal(panels, phoneBar) : panels}
     <div className={`workspace-body${draft ? " has-canvas" : ""}`}><AssistantRuntimeProvider runtime={runtime}><ThreadPrimitive.Root className="conversation" role="region" aria-label="Conversation with Hearth"><ThreadPrimitive.ViewportProvider>
       <div className="message-area"><ThreadPrimitive.Viewport className="messages" role="log" aria-live="polite" scrollToBottomOnInitialize scrollToBottomOnThreadSwitch>
         {loading && <p role="status">Loading conversation…</p>}

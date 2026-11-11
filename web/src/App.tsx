@@ -1,11 +1,13 @@
 import { cn } from "cn";
-import { HistoryIcon, HouseIcon, LayoutDashboardIcon, PlusIcon, SettingsIcon, WrenchIcon } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { HistoryIcon, HouseIcon, LayoutDashboardIcon, MenuIcon, PlusIcon, SettingsIcon, WrenchIcon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { flushSync } from "react-dom";
 import { createHashRouter, Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { api, ApiError, getBaseUrl, useBaseUrlVersion } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
 import { StatusChip } from "./components/common.tsx";
-import { ServerStatus } from "./components/ServerStatus.tsx";
+import { PhoneBarSlot } from "./components/PhoneBarSlot.ts";
+import { ServerStatus, serverLabels, type ServerState } from "./components/ServerStatus.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { Label } from "./components/ui/label.tsx";
@@ -34,6 +36,7 @@ import { Canvas } from "./features/dashboards/Canvas.tsx";
 import { ViewDataProvider } from "./features/views/data/provider.tsx";
 import { ConversationHistory } from "./features/conversation/ConversationHistory.tsx";
 import { ConversationsProvider, useConversations } from "./features/conversation/ConversationsProvider.tsx";
+import { useVisibleViewport } from "./lib/visibleViewport.ts";
 
 const NAV_ITEMS = [
   { to: "/devices", label: "Devices" },
@@ -133,11 +136,12 @@ function ConnectionSettings() {
 }
 
 function Shell() {
+  useVisibleViewport();
   return <ViewDataProvider><ConversationsProvider><div className="hearth-app"><WorkspaceProvider><HouseholdShell /></WorkspaceProvider></div></ConversationsProvider></ViewDataProvider>;
 }
 
 /**
- * The sidebar's form: a top row on phones, a 104px rail up to 980px, and full
+ * The sidebar's form: a drawer behind a top bar on phones, a 104px rail up to 980px, and full
  * width above that, except beside a canvas below 1280px, where the rail leaves
  * the view room for its cards.
  */
@@ -165,42 +169,65 @@ function HouseholdShell() {
   const workspace = useWorkspace();
   const { startNew } = useConversations();
   const conversationId = useMatch("/conversations/:id")?.params.id;
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [server, setServer] = useState<ServerState>("checking");
+  const [barSlot, setBarSlot] = useState<HTMLElement | null>(null);
   const historyButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => setHistoryOpen(false), [location.pathname]);
-  useEffect(() => {
-    if (!historyOpen) return;
-    // The drawer follows the sidebar in DOM order, so move focus into it explicitly.
-    const history = document.getElementById("conversation-history");
-    (history?.querySelector<HTMLElement>("a[aria-current=page], a") ?? history?.querySelector<HTMLElement>("h2"))?.focus();
-    function keydown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      setHistoryOpen(false);
-      historyButton.current?.focus();
-    }
-    document.addEventListener("keydown", keydown);
-    return () => document.removeEventListener("keydown", keydown);
-  }, [historyOpen]);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const development = !["/", "/dashboards", "/agent"].includes(location.pathname) && !location.pathname.startsWith("/conversations/") && !location.pathname.startsWith("/dashboards/");
   const home = location.pathname === "/" || !!conversationId;
   const nav = useNavMode(home && !!workspace.canvasDraft);
-  useEffect(() => { if (nav === "full") setHistoryOpen(false); }, [nav]);
-  return <>
-    <aside className="hearth-sidebar" data-nav={nav} aria-label="Hearth navigation">
+  // The rail opens Recent as a drawer; on phones the whole sidebar is the drawer.
+  const toggle = nav === "bar" ? menuButton : historyButton;
+  const closeDrawer = useCallback(() => {
+    // The phone bar is inert while the drawer is open; release it before returning focus.
+    flushSync(() => setDrawerOpen(false));
+    toggle.current?.focus();
+  }, [toggle]);
+  useEffect(() => setDrawerOpen(false), [location.pathname, nav]);
+  useEffect(() => {
+    if (!drawerOpen) return;
+    // The drawer follows the sidebar or bar in DOM order, so move focus into it explicitly.
+    if (nav === "bar") document.getElementById("hearth-drawer-close")?.focus();
+    else {
+      const history = document.getElementById("conversation-history");
+      (history?.querySelector<HTMLElement>("a[aria-current=page], a") ?? history?.querySelector<HTMLElement>("h2"))?.focus();
+    }
+    function keydown(event: KeyboardEvent) { if (event.key === "Escape") closeDrawer(); }
+    document.addEventListener("keydown", keydown);
+    return () => document.removeEventListener("keydown", keydown);
+  }, [drawerOpen, nav, closeDrawer]);
+  function newConversation() {
+    setDrawerOpen(false);
+    workspace.startFresh(() => { startNew(); workspace.navigateRetainingDraft("/"); });
+  }
+  const serverProblem = server === "not-ready" || server === "unavailable";
+  return <PhoneBarSlot.Provider value={nav === "bar" ? barSlot : null}>
+    {nav === "bar" && <header className="phone-bar" inert={drawerOpen}>
+      <button ref={menuButton} className="icon-button phone-menu" data-server={serverProblem ? server : undefined} aria-label={serverProblem ? `Open navigation, Hearth server ${serverLabels[server]}` : "Open navigation"} aria-expanded={drawerOpen} aria-controls="hearth-sidebar" onClick={() => setDrawerOpen(true)}><MenuIcon aria-hidden="true" /></button>
+      <div className="phone-bar-center">
+        <span className="phone-bar-title">{home ? "Home" : development ? "Development" : "Dashboards"}</span>
+        <div ref={setBarSlot} className="phone-bar-slot" />
+      </div>
+      <button className="icon-button phone-new" aria-label="New conversation" onClick={newConversation}><PlusIcon aria-hidden="true" /></button>
+    </header>}
+    <aside id="hearth-sidebar" className={`hearth-sidebar${nav === "bar" && drawerOpen ? " open" : ""}`} data-nav={nav} aria-label="Hearth navigation">
       <div className="hearth-brand"><span><HouseIcon aria-hidden="true" /></span> hearth<small>A little closer to home.</small></div>
-      <button className="sidebar-new" aria-label="New conversation" onClick={() => workspace.startFresh(() => { startNew(); workspace.navigateRetainingDraft("/"); })}><PlusIcon aria-hidden="true" /><span>New conversation</span></button>
-      <nav className="hearth-main-nav" aria-label="Main navigation">
+      {nav === "bar" && <button id="hearth-drawer-close" className="icon-button drawer-close" aria-label="Close navigation" onClick={closeDrawer}><XIcon aria-hidden="true" /></button>}
+      <button className="sidebar-new" aria-label="New conversation" onClick={newConversation}><PlusIcon aria-hidden="true" /><span>New conversation</span></button>
+      {/* Choosing the page already open changes no route, so close the phone drawer on any link. */}
+      <nav className="hearth-main-nav" aria-label="Main navigation" onClick={event => { if ((event.target as Element).closest("a")) setDrawerOpen(false); }}>
         <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}><HouseIcon aria-hidden="true" /><span>Home</span></Link>
         <NavLink to="/dashboards" aria-label="Dashboards"><LayoutDashboardIcon aria-hidden="true" /><span>Dashboards</span></NavLink>
         <NavLink to="/devices" aria-label="Development"><WrenchIcon aria-hidden="true" /><span>Development</span></NavLink>
       </nav>
-      <button ref={historyButton} className="history-toggle" aria-label="Conversation history" aria-expanded={historyOpen} aria-controls="conversation-history" onClick={() => setHistoryOpen(open => !open)}><HistoryIcon aria-hidden="true" /><span>Recent</span></button>
-      <ConversationHistory id="conversation-history" open={historyOpen} onNavigate={() => setHistoryOpen(false)} />
-      <ServerStatus />
+      <button ref={historyButton} className="history-toggle" aria-label="Conversation history" aria-expanded={nav === "rail" && drawerOpen} aria-controls="conversation-history" onClick={() => setDrawerOpen(open => !open)}><HistoryIcon aria-hidden="true" /><span>Recent</span></button>
+      <ConversationHistory id="conversation-history" open={nav === "rail" && drawerOpen} onNavigate={() => setDrawerOpen(false)} onClose={nav === "rail" ? closeDrawer : undefined} />
+      <ServerStatus onChange={setServer} />
     </aside>
-    {historyOpen && <div className="history-backdrop" aria-hidden="true" onClick={() => setHistoryOpen(false)} />}
-    <main className="hearth-main">{development ? <DevelopmentShell /> : <Outlet />}</main>
-  </>;
+    {drawerOpen && <div className="drawer-backdrop" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
+    <main className="hearth-main" inert={drawerOpen}>{development ? <DevelopmentShell /> : <Outlet />}</main>
+  </PhoneBarSlot.Provider>;
 }
 
 function DevelopmentShell() {
