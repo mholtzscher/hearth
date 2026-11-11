@@ -121,7 +121,7 @@
 }
 
 /* Household workspace. Development pages use the same tokens through shadcn's variables. */
-.hearth-app { --ink:var(--gray-10); --quiet:var(--gray-8); --edge:var(--gray-3); display:grid; grid-template-columns:218px minmax(0,1fr); height:100dvh; background:var(--gray-0); color:var(--ink); font-size:14px; }
+.hearth-app { --ink:var(--gray-10); --quiet:var(--gray-8); --edge:var(--gray-3); display:grid; grid-template-columns:clamp(218px,22vw,340px) minmax(0,1fr); height:100dvh; background:var(--gray-0); color:var(--ink); font-size:14px; }
 .hearth-app * { box-sizing:border-box; }
 .hearth-app button, .hearth-app input, .hearth-app textarea, .hearth-app select { font:inherit; }
 .hearth-app button { cursor:pointer; }
