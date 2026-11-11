@@ -222,3 +222,13 @@ depends = [
 [tasks."validate"]
 description = "Run all validation"
 depends = ["validate-backend", "web-test", "web-build"]
+
+# Disposable benchmark: the original backend task graph, with tests forced to
+# execute and JSON evidence enabled. Production validation stays unchanged.
+[tasks."ci-benchmark-combined"]
+description = "Disposable combined CI benchmark with uncached test execution"
+depends = [
+  "lint",
+  { task = "test", args = ["-tags=integration,e2e", "-count=1", "-json"] },
+  "vet",
+]

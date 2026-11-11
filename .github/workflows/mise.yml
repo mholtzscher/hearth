@@ -1,34 +1,41 @@
-name: Build
+name: CI layout benchmark (disposable)
+run-name: ci-bench-${{ inputs.layout || 'seed' }}-${{ inputs.trial || 'bootstrap' }}${{ inputs.profile && '-profile' || '' }}
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
+    branches: [perf/ci-layout-benchmark]
+  workflow_dispatch:
+    inputs:
+      layout:
+        type: choice
+        options: [seed, combined, split]
+        required: true
+      trial:
+        type: string
+        required: true
+      seed_run:
+        type: string
+        description: Successful seed run containing the immutable cache snapshot
+      profile:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: disposable-ci-layout-benchmark
+  cancel-in-progress: false
 
 env:
   MISE_JOBS: 1
 
 jobs:
-  backend-work:
-    name: backend (${{ matrix.check }})
+  seed:
+    if: github.event_name == 'push' || inputs.layout == 'seed'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - check: checks
-          - check: unit
-            tags: ""
-          - check: integration
-            tags: integration
-          - check: e2e
-            tags: e2e
-    # Race-enabled Core tests build the full MCP catalog on every startup.
-    # Bound competing startups instead of exhausting lifecycle test deadlines.
+    timeout-minutes: 45
     env:
       GOMAXPROCS: "2"
       GOFLAGS: "-p=1"
@@ -38,111 +45,146 @@ jobs:
           fetch-depth: 0
       - uses: jdx/mise-action@v5
         with:
+          version: 2026.11.4
           cache: true
+          cache_save: false
       - name: Resolve Go cache paths
-        id: go-cache-paths
+        id: paths
         run: |
           {
             echo "build=$(go env GOCACHE)"
             echo "modules=$(go env GOMODCACHE)"
             echo "version=$(go env GOVERSION)"
           } >> "$GITHUB_OUTPUT"
-      # Dependencies are immutable for go.sum; compiled artifacts need fresh
-      # snapshots. PRs restore main's caches without filling storage per commit.
-      - name: Restore Go dependencies
-        id: go-module-cache
-        uses: actions/cache/restore@v6
+      # Bootstrap read-only from main, then freeze one artifact for every trial.
+      # Never save/delete Actions caches: the repository is already near quota.
+      - uses: actions/cache/restore@v6
         with:
-          path: ${{ steps.go-cache-paths.outputs.modules }}
-          key: go-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            go-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
-      - name: Restore Go build artifacts
-        id: go-build-cache
-        uses: actions/cache/restore@v6
+          path: ${{ steps.paths.outputs.modules }}
+          key: go-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-${{ hashFiles('go.sum') }}
+      - uses: actions/cache/restore@v6
         with:
-          path: ${{ steps.go-cache-paths.outputs.build }}
-          key: go-build-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          path: ${{ steps.paths.outputs.build }}
+          key: go-build-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-${{ hashFiles('go.sum') }}-benchmark-bootstrap
           restore-keys: |
-            go-build-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
-            go-build-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
-      - name: Run checks
-        if: matrix.check == 'checks'
-        run: mise run validate-backend-checks
-      - name: Run tests
-        if: matrix.check != 'checks'
-        # An explicit empty tag selection overrides CI's all-level default.
-        run: mise run test -- -tags="${{ matrix.tags }}"
+            go-build-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-${{ hashFiles('go.sum') }}-
+      - name: Warm all build selections and freeze the snapshot
+        run: python scripts/ci_benchmark.py seed
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ci-benchmark-cache
+          path: .data/ci-benchmark/snapshot/
+          compression-level: 0
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ci-benchmark-manifest
+          path: |
+            .data/ci-benchmark/snapshot/SHA256SUMS
+            .data/ci-benchmark/snapshot/environment.json
+            .data/ci-benchmark/snapshot/frontend.json
+            .data/ci-benchmark/snapshot/Dockerfile.frozen
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: seed-evidence
+          include-hidden-files: true
+          path: .data/ci-benchmark/evidence/
+          retention-days: 14
+
+  work:
+    if: github.event_name == 'workflow_dispatch' && inputs.layout != 'seed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOMAXPROCS: "2"
+      GOFLAGS: "-p=1"
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: ${{ fromJSON(inputs.layout == 'combined' && '["combined"]' || '["checks","unit","integration","e2e"]') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.11.4
+          cache: true
+          cache_save: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-benchmark-cache
+          path: .data/ci-benchmark/snapshot/
+          run-id: ${{ inputs.seed_run }}
+          github-token: ${{ github.token }}
+      - name: Restore immutable Go caches
+        run: python scripts/ci_benchmark.py restore
+      - name: Run selected backend work
+        env:
+          BENCH_LANE: ${{ matrix.lane }}
+          BENCH_PROFILE: ${{ inputs.profile }}
+        run: python scripts/ci_benchmark.py "$BENCH_LANE"
       - name: Verify clean working tree
         run: |
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
-      # One writer preserves the shared cache storage bound. Integration runs
-      # units too and warms race-enabled artifacts for the other test jobs.
-      - name: Save Go dependencies on main
-        if: matrix.check == 'integration' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-module-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+      - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          path: ${{ steps.go-cache-paths.outputs.modules }}
-          key: ${{ steps.go-module-cache.outputs.cache-primary-key }}
-      - name: Save Go build artifacts on main
-        if: matrix.check == 'integration' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-build-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ steps.go-cache-paths.outputs.build }}
-          key: ${{ steps.go-build-cache.outputs.cache-primary-key }}
-
-  backend:
-    needs: backend-work
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require every backend check
-        env:
-          RESULT: ${{ needs.backend-work.result }}
-        run: test "$RESULT" = success
-
-  # Keep cache deletion permission out of jobs that execute PR code. Limit both
-  # namespaces across toolchain/dependency revisions, not just the current key.
-  retain-go-caches:
-    needs: backend
-    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    concurrency:
-      group: main-go-cache-retention
-      cancel-in-progress: false
-    steps:
-      - name: Retain two main snapshots per Go cache namespace
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          for prefix in go-build-v2- go-modules-v2-; do
-            ids=$(gh api --paginate --slurp \
-              "repos/$GITHUB_REPOSITORY/actions/caches?ref=refs/heads/main&key=$prefix&per_page=100" \
-              | jq -r --arg prefix "$prefix" '
-                  [.[].actions_caches[]
-                    | select(.ref == "refs/heads/main" and (.key | startswith($prefix)))]
-                  | sort_by(.created_at) | reverse | .[2:][] | .id')
-            for id in $ids; do
-              gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id"
-            done
-          done
+          name: evidence-${{ matrix.lane }}
+          include-hidden-files: true
+          path: .data/ci-benchmark/evidence/
+          retention-days: 14
+          if-no-files-found: error
 
   web:
+    if: github.event_name == 'workflow_dispatch' && inputs.layout != 'seed'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
         with:
+          version: 2026.11.4
           cache: true
-      - name: Run dashboard tests
-        run: mise run web-test
-      - name: Build dashboard image
-        run: docker build -f web/Dockerfile . --tag hearth-web:ci
+          cache_save: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-benchmark-manifest
+          path: .data/ci-benchmark/snapshot/
+          run-id: ${{ inputs.seed_run }}
+          github-token: ${{ github.token }}
+      - name: Verify frozen environment
+        run: python scripts/ci_benchmark.py verify
+      - name: Run unchanged frontend checks
+        env:
+          BENCH_PROFILE: ${{ inputs.profile }}
+        run: python scripts/ci_benchmark.py web
       - name: Verify clean working tree
         run: |
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: evidence-web
+          include-hidden-files: true
+          path: .data/ci-benchmark/evidence/
+          retention-days: 14
+
+  gate:
+    needs: [work, web]
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.layout != 'seed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require complete successful work
+        env:
+          BACKEND: ${{ needs.work.result }}
+          WEB: ${{ needs.web.result }}
+        run: test "$BACKEND" = success && test "$WEB" = success
