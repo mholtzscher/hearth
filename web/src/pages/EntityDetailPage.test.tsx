@@ -42,6 +42,41 @@ it("offers canonical brightness percentages without support maximum or step", as
   expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
 });
 
+it.each([
+  { writable: true, operations: { set: {} } },
+  { writable: false, operations: {} },
+])("shows lock commands only when set is supported (writable=$writable)", async ({ writable, operations }) => {
+  const entity = {
+    id: "ent_lock", type: "hearth.lock/v1", name: "Door lock",
+    device_id: "dev_door", adapter_id: "test", enabled: true,
+    support: { state: {}, operations },
+    availability: { status: "available", source: "adapter", since: "2026-11-04T12:00:00Z" },
+    state: { value: "locked", observation_id: "obs_lock", observed_at: "2026-11-04T12:00:00Z" },
+  };
+  const fetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const path = new URL(String(input), "http://localhost").pathname;
+    return new Response(JSON.stringify(path === "/v1/entities/ent_lock" ? entity : { items: [], next_cursor: null }));
+  });
+  vi.stubGlobal("fetch", fetch);
+  render(<MemoryRouter initialEntries={["/entities/ent_lock"]}>
+    <Routes><Route path="/entities/:entityId" element={<EntityDetailPage />} /></Routes>
+  </MemoryRouter>);
+  await screen.findByRole("heading", { name: "Door lock" });
+  if (writable) {
+    const parameters = screen.getByLabelText<HTMLTextAreaElement>("parameters (JSON)");
+    await waitFor(() => expect(parameters.value).toBe('{"value":"locked"}'));
+    fireEvent.click(screen.getByRole("button", { name: "unlock" }));
+    expect(parameters.value).toBe('{"value":"unlocked"}');
+    fireEvent.click(screen.getByRole("button", { name: "lock" }));
+    expect(parameters.value).toBe('{"value":"locked"}');
+  } else {
+    expect(screen.queryByLabelText("parameters (JSON)")).toBeNull();
+    expect(screen.queryByRole("button", { name: "lock" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "unlock" })).toBeNull();
+  }
+  expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+});
+
 it("summarizes a forecast snapshot instead of printing its State inline", async () => {
   const value = { periods: [
     { starts_at: "2026-11-09T06:00:00Z", date: "2026-11-09", condition: "rain", temperature_min: 1, temperature_max: 9 },

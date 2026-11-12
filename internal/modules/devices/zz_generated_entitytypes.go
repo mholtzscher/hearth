@@ -16,6 +16,7 @@ import (
 	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
 	contractenumsettingv1 "github.com/mholtzscher/hearth/entitytypes/enumsettingv1"
 	contracthourlyforecastv1 "github.com/mholtzscher/hearth/entitytypes/hourlyforecastv1"
+	contractlockv1 "github.com/mholtzscher/hearth/entitytypes/lockv1"
 	contractnumericsensorv1 "github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
@@ -37,6 +38,7 @@ const (
 	EntityTypeEnumeventV1        EntityTypeID = "hearth.enumevent/v1"
 	EntityTypeEnumsettingV1      EntityTypeID = "hearth.enumsetting/v1"
 	EntityTypeHourlyforecastV1   EntityTypeID = "hearth.hourlyforecast/v1"
+	EntityTypeLockV1             EntityTypeID = "hearth.lock/v1"
 	EntityTypeNumericsensorV1    EntityTypeID = "hearth.numericsensor/v1"
 	EntityTypeNumericsettingV1   EntityTypeID = "hearth.numericsetting/v1"
 	EntityTypePowerV1            EntityTypeID = "hearth.power/v1"
@@ -47,7 +49,7 @@ const (
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 18)
+	definitions := make([]EntityTypeDefinition, 0, 19)
 	binarysensorV1, err := newBinarysensorV1TypeDefinition(EntityTypeBinarysensorV1)
 	if err != nil {
 		return nil, err
@@ -103,6 +105,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, hourlyforecastV1)
+	lockV1, err := newLockV1TypeDefinition(EntityTypeLockV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, lockV1)
 	numericsensorV1, err := newNumericsensorV1TypeDefinition(EntityTypeNumericsensorV1)
 	if err != nil {
 		return nil, err
@@ -342,6 +349,32 @@ func newHourlyforecastV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, e
 		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.hourlyforecast/v1 codecs: %w", err)
 	}
 	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contracthourlyforecastv1.ValidateSupport, contracthourlyforecastv1.ValidateState, contracthourlyforecastv1.EqualState)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newLockV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractlockv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.lock/v1 codecs: %w", err)
+	}
+	set := DefineOperation(
+		OperationName(contractlockv1.OperationSet),
+		codecs.SetParameters,
+		func(support contractlockv1.Support) (contractlockv1.SetSupport, bool) {
+			if support.Operations.Set == nil {
+				return contractlockv1.SetSupport{}, false
+			}
+			return *support.Operations.Set, true
+		},
+		contractlockv1.ValidateSetParameters,
+		contractlockv1.SetDeadline,
+		OutcomeObserved,
+		contractlockv1.SetSatisfied,
+	)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractlockv1.ValidateSupport, contractlockv1.ValidateState, contractlockv1.EqualState, set)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

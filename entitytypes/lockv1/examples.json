@@ -1,0 +1,48 @@
+{
+  "cases": [
+    {
+      "name": "writable-lock",
+      "support": {"state": {}, "operations": {"set": {}}},
+      "states": [
+        {"value": "locked", "valid": true},
+        {"value": "unlocked", "valid": true},
+        {"value": "locking", "valid": true},
+        {"value": "unlocking", "valid": true},
+        {"value": "jammed", "valid": true},
+        {"value": "unknown", "valid": true},
+        {"value": "lock", "valid": false},
+        {"value": true, "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"value": "locked"}, "valid": true},
+            {"value": {"value": "unlocked"}, "valid": true},
+            {"value": {"value": "jammed"}, "valid": false},
+            {"value": {"value": "lock"}, "valid": false},
+            {"value": {}, "valid": false},
+            {"value": {"value": "locked", "extra": true}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"value": "locked"}, "state": "locked", "satisfied": true},
+            {"parameters": {"value": "unlocked"}, "state": "unlocked", "satisfied": true},
+            {"parameters": {"value": "locked"}, "state": "unlocked", "satisfied": false},
+            {"parameters": {"value": "unlocked"}, "state": "unlocking", "satisfied": false},
+            {"parameters": {"value": "locked"}, "state": "jammed", "satisfied": false},
+            {"parameters": {"value": "locked"}, "state": "unknown", "satisfied": false}
+          ]
+        }
+      }
+    },
+    {
+      "name": "read-only-lock",
+      "support": {"state": {}, "operations": {}},
+      "states": [
+        {"value": "locked", "valid": true},
+        {"value": "unknown", "valid": true},
+        {"value": "open", "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}
