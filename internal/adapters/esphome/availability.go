@@ -20,6 +20,9 @@ const (
 	reasonPlanningFailed         = "adapter.hearth-adapter-esphome.planning_failed"
 	reasonEntityMissing          = "adapter.hearth-adapter-esphome.entity_missing"
 	reasonDeviceNotConfigured    = "adapter.hearth-adapter-esphome.device_not_configured"
+	reasonDeviceBlocked          = "adapter.hearth-adapter-esphome.device_blocked"
+	reasonDiscoveryPending       = "adapter.hearth-adapter-esphome.discovery_pending"
+	reasonEncryptionKeyRequired  = "adapter.hearth-adapter-esphome.encryption_key_required"
 )
 
 // availabilityPage is the largest availability batch the SDK accepts.

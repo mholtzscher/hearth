@@ -247,7 +247,7 @@ func harnessTiming() timing {
 func runAdapter(t *testing.T, session *fakeSession, dialer *pipeDialer, devices ...Device) (*Adapter, func() error) {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
-	instance, err := newAdapter(session, Config{Devices: devices}, logger, dialer, harnessTiming())
+	instance, err := newAdapter(session, Config{Devices: devices}, logger, dialer, harnessTiming(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

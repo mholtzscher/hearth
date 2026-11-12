@@ -485,8 +485,9 @@ Real evidence compatibility: the checked-in fixture `internal/adapters/ecowitt/t
 
 ### ESPHome adapter
 
-`hearth-adapter-esphome` connects directly to a configured list of ESPHome Native
-API devices over encrypted TCP by default. No Home Assistant bridge is needed.
+`hearth-adapter-esphome` connects directly to ESPHome Native API devices,
+using mDNS discovery or static addresses. TCP encryption is the default.
+No Home Assistant bridge is needed.
 Home Assistant can remain connected during device-by-device migration, subject
 to the firmware's API connection limit (normally five on ESP32; configurable
 with `api.max_connections`). Device Builder remains responsible for firmware
@@ -494,7 +495,7 @@ configuration and updates.
 
 ```sh
 cp -n configs/esphome.example.yaml configs/esphome.yaml
-# Set each device's MAC, fixed IP or unicast DNS address, and encryption_key_file.
+# Configure discovery, the MAC blocklist, and any encryption keys or overrides.
 mise run esphome-start
 mise daemons status esphome-adapter
 # Stop only the adapter: mise run esphome-stop
@@ -508,18 +509,46 @@ Never run two instances with the same Adapter ID against the same Core.
 
 Settings resolve from CLI flags, `HEARTH_ADAPTER_ESPHOME_` environment variables,
 optional `configs/esphome.yaml`, then defaults. The flags are `--config`,
-`--adapter-id`, `--nats-url`, `--log-level`, and `--log-format`. The device list
-is YAML-only. Each entry requires a colon-separated MAC and an address. Encrypted
-connections also require `encryption_key_file`; `port` defaults to 6053. `.local` addresses are rejected:
-use a DHCP reservation or unicast DNS. Each key file contains the base64
+`--adapter-id`, `--nats-url`, `--log-level`, and `--log-format`. Device, discovery,
+and blocklist settings are YAML-only. Enable `discovery.enabled` to browse `_esphomelib._tcp.local` and
+automatically register supported devices not in `blocklist`. The list of
+`devices` then becomes optional: MAC-keyed entries can supply credentials and
+entity overrides without an address. Encrypted advertisements without a key are
+skipped with an `encryption_key_required` diagnostic, not tried in plaintext.
+
+To enroll unencrypted devices automatically, explicitly set
+`discovery.allow_insecure_plaintext: true`. This trusts LAN advertisements and
+exposes readings and controls to the network. mDNS and MAC comparisons are not
+cryptographic authentication. This permission is false by default; an individual
+addressless entry can instead opt in with `insecure_plaintext: true`.
+An explicit key always selects encryption, even if an advertisement omits it.
+
+Discovery uses resolved IP addresses, including address updates, rather than
+the system `.local` resolver. It needs multicast reachability on the host's
+network interfaces. Container bridge networks and VLAN boundaries may need
+host networking or an operator-managed mDNS reflector. At most 64 devices run
+concurrently, with up to 64 additional candidates waiting for capacity. Repeated
+announcements do not reconnect an unchanged device.
+Missing advertisements alone do not interrupt a live subscription; a device
+outage retains its identity/history and becomes unavailable. After restart,
+previously discovered Entities remain unavailable until rediscovered.
+
+For static operation, give a `devices` entry a colon-separated MAC and an
+address. The address remains authoritative when discovery is also enabled.
+Encrypted static entries require `encryption_key_file`; `port` defaults to 6053.
+Static `.local` addresses are rejected: use a fixed IP or unicast DNS instead.
+The MAC blocklist wins over both modes and marks already-owned Entities
+unavailable without deleting them. Configuration changes require a restart.
+
+Each key file contains the base64
 `api.encryption.key` from the device's configuration and must be readable by
 the Adapter user. Keep keys outside Git. Keys load at startup; restart after
 rotating a key file.
 
-For firmware without encryption, explicitly set `insecure_plaintext: true` on
-that device and omit `encryption_key_file`. This exposes readings and controls
-to the network; use only on a trusted network. Encryption remains the default,
-and a failed encrypted connection never falls back to plaintext. The client
+For a static device without encryption, explicitly set `insecure_plaintext: true`
+on that device and omit `encryption_key_file`. The network-wide discovery
+permission does not authorize static plaintext entries. A failed encrypted
+connection never falls back to plaintext. The client
 supports API 1.10 or later (including ESPHome 2024.11.1), using the vendored
 ESPHome 2026.10.2 schema. Before API 1.14 it performs empty legacy authentication;
 password-protected devices are unsupported in either transport mode.

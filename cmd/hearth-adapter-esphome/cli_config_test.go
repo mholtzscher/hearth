@@ -100,3 +100,16 @@ func TestExampleConfig(t *testing.T) {
 		t.Fatalf("example: %+v %v", got, err)
 	}
 }
+
+func TestDiscoveryOnlyYAML(t *testing.T) {
+	t.Parallel()
+	path := writeConfig(
+		t,
+		"discovery:\n  enabled: true\n  allow_insecure_plaintext: true\nblocklist:\n  - '02:00:00:00:00:01'\n",
+	)
+	got, _, err := captureConfig(t, "--config", path)
+	if err != nil || !got.Discovery.Enabled || !got.Discovery.AllowInsecurePlaintext || len(got.Blocklist) != 1 ||
+		len(got.Devices) != 0 {
+		t.Fatalf("discovery YAML = %+v, %v", got, err)
+	}
+}

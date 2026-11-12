@@ -24,12 +24,21 @@ var macPattern = regexp.MustCompile(`^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$`)
 
 // Config is the operator configuration for one ESPHome Adapter instance.
 type Config struct {
-	AdapterID string         `yaml:"adapter_id"`
-	NATSURL   string         `yaml:"nats_url"`
-	Devices   []DeviceConfig `yaml:"devices"`
+	AdapterID string          `yaml:"adapter_id"`
+	NATSURL   string          `yaml:"nats_url"`
+	Devices   []DeviceConfig  `yaml:"devices"`
+	Discovery DiscoveryConfig `yaml:"discovery"`
+	Blocklist []string        `yaml:"blocklist"`
 }
 
-// DeviceConfig describes a device and its exposure overrides. A nil Port uses the default.
+// DiscoveryConfig enables DNS-SD browsing and explicitly authorizes plaintext devices on the trusted LAN.
+type DiscoveryConfig struct {
+	Enabled                bool `yaml:"enabled"`
+	AllowInsecurePlaintext bool `yaml:"allow_insecure_plaintext"`
+}
+
+// DeviceConfig describes a static device or MAC-keyed discovery overrides. A nil Port uses the static default or
+// inherits the discovered port when Address is empty.
 type DeviceConfig struct {
 	MAC               string   `yaml:"mac"`
 	Address           string   `yaml:"address"`
@@ -49,8 +58,14 @@ func (value Config) Validate() error {
 	if err := platformconfig.ValidateNATSURL(value.NATSURL); err != nil {
 		return err
 	}
-	if len(value.Devices) < 1 || len(value.Devices) > 64 {
-		return errors.New("devices must contain 1 to 64 entries")
+	if len(value.Devices) > 64 || (len(value.Devices) == 0 && !value.Discovery.Enabled) {
+		return errors.New("devices must contain 1 to 64 entries unless discovery is enabled")
+	}
+	if value.Discovery.AllowInsecurePlaintext && !value.Discovery.Enabled {
+		return errors.New("discovery.allow_insecure_plaintext requires discovery.enabled")
+	}
+	if _, err := blockedMACs(value.Blocklist); err != nil {
+		return err
 	}
 	seen := make(map[esphomeadapter.MAC]struct{}, len(value.Devices))
 	for index, device := range value.Devices {
@@ -66,15 +81,15 @@ func (value Config) Validate() error {
 			return fmt.Errorf("%s.mac must be unique", field)
 		}
 		seen[mac] = struct{}{}
-		if err = device.validate(field); err != nil {
+		if err = device.validate(field, value.Discovery.Enabled); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (device DeviceConfig) validate(field string) error {
-	if !validAddress(device.Address) {
+func (device DeviceConfig) validate(field string, discovery bool) error {
+	if (device.Address != "" || !discovery) && !validAddress(device.Address) {
 		return fmt.Errorf("%s.address must be an IP address or unicast DNS hostname (not .local)", field)
 	}
 	if device.Port != nil && (*device.Port < 1 || *device.Port > 65535) {
@@ -83,7 +98,8 @@ func (device DeviceConfig) validate(field string) error {
 	if device.InsecurePlaintext && device.EncryptionKeyFile != "" {
 		return fmt.Errorf("%s.insecure_plaintext and encryption_key_file are mutually exclusive", field)
 	}
-	if !device.InsecurePlaintext && strings.TrimSpace(device.EncryptionKeyFile) == "" {
+	if (device.Address != "" || !discovery) && !device.InsecurePlaintext &&
+		strings.TrimSpace(device.EncryptionKeyFile) == "" {
 		return fmt.Errorf("%s.encryption_key_file is required", field)
 	}
 	include, err := parseRefs(device.Include)
@@ -153,30 +169,60 @@ func adapterConfig(value Config) (esphomeadapter.Config, error) {
 	if err := value.Validate(); err != nil {
 		return esphomeadapter.Config{}, err
 	}
-	result := esphomeadapter.Config{Devices: make([]esphomeadapter.Device, 0, len(value.Devices))}
+	blocked, _ := blockedMACs(value.Blocklist)
+	result := esphomeadapter.Config{
+		Devices:   make([]esphomeadapter.Device, 0, len(value.Devices)),
+		Blocklist: blocked,
+		Discovery: esphomeadapter.DiscoveryConfig{
+			Enabled:                value.Discovery.Enabled,
+			AllowInsecurePlaintext: value.Discovery.AllowInsecurePlaintext,
+		},
+	}
 	for index, device := range value.Devices {
+		mac, _ := esphomeadapter.ParseMAC(device.MAC)
+		if _, isBlocked := blocked[mac]; isBlocked {
+			continue
+		}
 		var key nativeapi.PSK
-		if !device.InsecurePlaintext {
+		if device.EncryptionKeyFile != "" {
 			loaded, err := readKeyFile(device.EncryptionKeyFile, index)
 			if err != nil {
 				return esphomeadapter.Config{}, err
 			}
 			key = loaded
 		}
-		mac, _ := esphomeadapter.ParseMAC(device.MAC)
 		include, _ := parseRefs(device.Include)
 		exclude, _ := parseRefs(device.Exclude)
 		port := defaultPort
+		if device.Address == "" {
+			port = 0 // Discovered overrides inherit the advertised API port.
+		}
 		if device.Port != nil {
 			port = *device.Port
 		}
 		result.Devices = append(result.Devices, esphomeadapter.Device{
 			MAC: mac, Address: device.Address, Port: uint16(port), PSK: key,
-			InsecurePlaintext: device.InsecurePlaintext,
-			Exposure:          esphomeadapter.Exposure{Include: include, Exclude: exclude},
+			InsecurePlaintext:       device.InsecurePlaintext,
+			EncryptionKeyConfigured: device.EncryptionKeyFile != "",
+			Exposure:                esphomeadapter.Exposure{Include: include, Exclude: exclude},
 		})
 	}
 	return result, nil
+}
+
+func blockedMACs(values []string) (map[esphomeadapter.MAC]struct{}, error) {
+	blocked := make(map[esphomeadapter.MAC]struct{}, len(values))
+	for index, value := range values {
+		mac, err := esphomeadapter.ParseMAC(value)
+		if err != nil || !macPattern.MatchString(value) {
+			return nil, fmt.Errorf("blocklist[%d] must contain six colon-separated hexadecimal octets", index)
+		}
+		if _, duplicate := blocked[mac]; duplicate {
+			return nil, fmt.Errorf("blocklist[%d] must be unique", index)
+		}
+		blocked[mac] = struct{}{}
+	}
+	return blocked, nil
 }
 
 func readKeyFile(path string, index int) (nativeapi.PSK, error) {

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	esphomeadapter "github.com/mholtzscher/hearth/internal/adapters/esphome"
+	"github.com/mholtzscher/hearth/internal/adapters/esphome/mdns"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -15,6 +16,19 @@ const concurrentComponents = 2
 // Run supervises the Adapter and SDK Session under a shared child context. When either loop returns, it cancels and
 // joins the other. Parent cancellation is graceful, and Run closes the Session on return.
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
+	var discovery esphomeadapter.DiscoverySource
+	if config.Discovery.Enabled {
+		discovery = mdns.Browser{}
+	}
+	return runWithDiscovery(ctx, config, logger, discovery)
+}
+
+func runWithDiscovery(
+	ctx context.Context,
+	config Config,
+	logger *slog.Logger,
+	discovery esphomeadapter.DiscoverySource,
+) error {
 	prepared, err := adapterConfig(config)
 	if err != nil {
 		return err
@@ -51,6 +65,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		session,
 		prepared,
 		logger,
+		discovery,
 	)
 	if err != nil {
 		return err

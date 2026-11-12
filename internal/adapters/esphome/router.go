@@ -14,6 +14,18 @@ func newRouter() *router {
 	return &router{byEntity: map[string]*worker{}}
 }
 
+// seedOwned retains command ownership while a previously registered device awaits rediscovery.
+func (r *router) seedOwned(owned map[string]map[string]string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, entities := range owned {
+		for _, entityID := range entities {
+			r.byEntity[entityID] = nil
+		}
+	}
+	r.ready = true
+}
+
 // start installs each worker's startup-owned Entities and admits Commands.
 func (r *router) start(workers []*worker) {
 	r.mu.Lock()

@@ -1,4 +1,4 @@
-// Package esphome is the stateless ESPHome Adapter. It plans each configured device's entities into Hearth Entities,
+// Package esphome is the stateless ESPHome Adapter. It plans each allowed device's entities into Hearth Entities,
 // runs one serial worker per device, and routes Commands to the owning worker.
 package esphome
 
@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/adapters/esphome/nativeapi"
@@ -34,27 +33,31 @@ type Session interface {
 
 // Device is one configured ESPHome device.
 type Device struct {
-	MAC               MAC
-	Address           string
-	Port              uint16
-	PSK               nativeapi.PSK
-	InsecurePlaintext bool
-	Exposure          Exposure
+	MAC                     MAC
+	Address                 string
+	Port                    uint16
+	PSK                     nativeapi.PSK
+	InsecurePlaintext       bool
+	EncryptionKeyConfigured bool
+	Exposure                Exposure
 }
 
 // Config is the Adapter's validated configuration. Process assembly owns file and format validation.
 type Config struct {
-	Devices []Device
+	Devices   []Device
+	Discovery DiscoveryConfig
+	Blocklist map[MAC]struct{}
 }
 
-// Adapter supervises one worker per configured device.
+// Adapter supervises one worker per static or discovered device.
 type Adapter struct {
-	session Session
-	config  Config
-	logger  *slog.Logger
-	dialer  nativeapi.Dialer
-	router  *router
-	timing  timing
+	session   Session
+	config    Config
+	logger    *slog.Logger
+	dialer    nativeapi.Dialer
+	router    *router
+	timing    timing
+	discovery DiscoverySource
 }
 
 // timing holds the reconnect policy; tests replace jitter for determinism.
@@ -86,8 +89,8 @@ func (err *sessionError) Error() string { return err.operation + ": " + err.err.
 func (err *sessionError) Unwrap() error { return err.err }
 
 // New builds an Adapter that dials devices over TCP.
-func New(session Session, config Config, logger *slog.Logger) (*Adapter, error) {
-	return newAdapter(session, config, logger, nativeapi.NetDialer{}, defaultTiming())
+func New(session Session, config Config, logger *slog.Logger, discovery DiscoverySource) (*Adapter, error) {
+	return newAdapter(session, config, logger, nativeapi.NetDialer{}, defaultTiming(), discovery)
 }
 
 func newAdapter(
@@ -96,14 +99,19 @@ func newAdapter(
 	logger *slog.Logger,
 	dialer nativeapi.Dialer,
 	timing timing,
+	discovery DiscoverySource,
 ) (*Adapter, error) {
 	switch {
 	case session == nil:
 		return nil, errors.New("esphome adapter Session is required")
 	case dialer == nil:
 		return nil, errors.New("esphome dialer is required")
-	case len(config.Devices) == 0:
+	case len(config.Devices) == 0 && !config.Discovery.Enabled && len(config.Blocklist) == 0:
 		return nil, errors.New("esphome adapter needs at least one device")
+	case len(config.Devices) > maximumDevices:
+		return nil, errors.New("esphome adapter supports at most 64 configured devices")
+	case config.Discovery.Enabled && discovery == nil:
+		return nil, errors.New("esphome discovery source is required")
 	}
 	seen := map[MAC]struct{}{}
 	for _, device := range config.Devices {
@@ -116,12 +124,13 @@ func newAdapter(
 		logger = slog.Default()
 	}
 	return &Adapter{
-		session: session,
-		config:  config,
-		logger:  logger.With(slog.String("component", adapterComponent)),
-		dialer:  dialer,
-		router:  newRouter(),
-		timing:  timing,
+		session:   session,
+		config:    config,
+		logger:    logger.With(slog.String("component", adapterComponent)),
+		dialer:    dialer,
+		router:    newRouter(),
+		timing:    timing,
+		discovery: discovery,
 	}, nil
 }
 
@@ -141,30 +150,7 @@ func (a *Adapter) Run(ctx context.Context) error {
 		return a.terminal(ctx, &sessionError{operation: "set health", err: setHealthErr})
 	}
 
-	runContext, cancel := context.WithCancel(ctx)
-	defer cancel()
-	workers := make([]*worker, len(a.config.Devices))
-	for index, device := range a.config.Devices {
-		workers[index] = newWorker(a, index, device, owned[device.MAC.BindingKey()])
-	}
-	a.router.start(workers)
-
-	var group sync.WaitGroup
-	var firstErr error
-	var errOnce sync.Once
-	for _, current := range workers {
-		group.Go(func() {
-			if runErr := current.run(runContext); runErr != nil {
-				errOnce.Do(func() { firstErr = runErr })
-				cancel()
-			}
-		})
-	}
-	group.Wait()
-	if firstErr != nil {
-		return a.terminal(ctx, firstErr)
-	}
-	return nil
+	return a.terminal(ctx, a.runDevices(ctx, owned))
 }
 
 // HandleCommand is the SDK CommandHandler. It routes to the owning device worker.
@@ -175,6 +161,8 @@ func (a *Adapter) HandleCommand(ctx context.Context, command adapter.Command, re
 		return responder.RejectUnavailable("ESPHome adapter is starting")
 	case !found:
 		return responder.Reject("Entity is not owned by this ESPHome adapter")
+	case owner == nil:
+		return responder.RejectUnavailable("ESPHome device is awaiting discovery")
 	}
 	return owner.submit(ctx, command, responder)
 }
@@ -201,11 +189,13 @@ func (a *Adapter) listOwnedMappings(ctx context.Context) (map[string]map[string]
 	}
 }
 
-// reportUnconfigured marks every owned Entity of a device that is no longer configured as unavailable.
+// reportUnconfigured marks non-static owned Entities unavailable, distinguishing pending discovery from blocked config.
 func (a *Adapter) reportUnconfigured(ctx context.Context, owned map[string]map[string]string) error {
 	configured := map[string]struct{}{}
 	for _, device := range a.config.Devices {
-		configured[device.MAC.BindingKey()] = struct{}{}
+		if _, blocked := a.config.Blocklist[device.MAC]; !blocked && device.Address != "" {
+			configured[device.MAC.BindingKey()] = struct{}{}
+		}
 	}
 	now := time.Now().UTC()
 	var reports []adapter.EntityAvailabilityReport
@@ -213,10 +203,20 @@ func (a *Adapter) reportUnconfigured(ctx context.Context, owned map[string]map[s
 		if _, isConfigured := configured[bindingKey]; isConfigured || !strings.HasPrefix(bindingKey, bindingKeyPrefix) {
 			continue
 		}
+		reason := reasonDeviceNotConfigured
+		if a.config.Discovery.Enabled {
+			reason = reasonDiscoveryPending
+		}
+		for mac := range a.config.Blocklist {
+			if mac.BindingKey() == bindingKey {
+				reason = reasonDeviceBlocked
+				break
+			}
+		}
 		for _, entityID := range entities {
 			reports = append(reports, adapter.EntityAvailabilityReport{
 				EntityID: entityID, Status: adapter.AvailabilityUnavailable,
-				SourceObservedAt: now, ReasonCode: reasonDeviceNotConfigured,
+				SourceObservedAt: now, ReasonCode: reason,
 			})
 		}
 	}
@@ -235,16 +235,24 @@ func (a *Adapter) reportUnconfigured(ctx context.Context, owned map[string]map[s
 
 // terminal returns nil for parent cancellation and diagnoses every other failure once.
 func (a *Adapter) terminal(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
 	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 		return nil
 	}
 	operation := "unknown"
+	errorCode := "runtime_failed"
 	if session, ok := errors.AsType[*sessionError](err); ok {
 		operation = session.operation
+		errorCode = "session_operation_failed"
+	} else if _, discovery := errors.AsType[*discoveryError](err); discovery {
+		operation = "discovery"
+		errorCode = "discovery_failed"
 	}
 	a.logger.ErrorContext(ctx, "esphome adapter stopped",
 		slog.String("event", "adapter.stopped"),
-		slog.String("error_code", "session_operation_failed"),
+		slog.String("error_code", errorCode),
 		slog.String("operation", operation),
 	)
 	return err
