@@ -330,6 +330,47 @@ it("focuses the canvas on selection and the composer on customization, including
   expect(document.activeElement).toBe(screen.getByLabelText("Ask Hearth"));
 });
 
+it("shows and closes an unedited generated view from the composer chip", async () => {
+  const artifact = { kind: "hearth.view", artifact_id: "view-chip", definition };
+  vi.stubGlobal("fetch", vi.fn(async input => String(input).endsWith("/messages")
+    ? json({ messages: [
+      { message_id: 1, role: "assistant", content: "", calls: [{ id: "call-1", name: "present_view", arguments: "{}" }], created_at: "" },
+      { message_id: 2, role: "tool", content: "", tool_call_id: "call-1", tool_name: "present_view", artifacts: [artifact], created_at: "" },
+    ] })
+    : json({ conversations: [] })));
+  mount("/conversations/conv-1");
+  fireEvent.click(await screen.findByRole("button", { name: "Open in canvas" }));
+  const chip = screen.getByRole("group", { name: "Selected view" });
+  expect(chip.textContent).toBe("Warm house");
+  fireEvent.click(screen.getByRole("button", { name: "Conversation" }));
+  fireEvent.click(within(chip).getByRole("button", { name: "Show selected view: Warm house" }));
+  expect(screen.getByRole("button", { name: "Canvas" }).getAttribute("aria-pressed")).toBe("true");
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "View canvas" })));
+  fireEvent.click(within(chip).getByRole("button", { name: "Close selected view" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Selected view" })).toBeNull();
+});
+
+it("asks before the composer chip closes an edited view", async () => {
+  vi.stubGlobal("fetch", vi.fn(async input => String(input).startsWith("/v1/entities") ? json({ items: [], next_cursor: null }) : String(input).startsWith("/v1/agent") ? json({ conversations: [] }) : json(dashboard)));
+  mount("/dashboards/dash-1");
+  await screen.findByText("Hello home");
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Edited" } });
+  fireEvent.click(screen.getByRole("button", { name: "Ask Hearth to change" }));
+  const chip = await screen.findByRole("group", { name: "Selected view" });
+  expect(chip.textContent).toBe("Edited");
+  fireEvent.click(within(chip).getByRole("button", { name: "Close selected view" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect(screen.getByRole("group", { name: "Selected view" })).toBeTruthy();
+  fireEvent.click(within(screen.getByRole("group", { name: "Selected view" })).getByRole("button", { name: "Close selected view" }));
+  fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
+  await waitFor(() => expect(screen.queryByRole("group", { name: "Selected view" })).toBeNull());
+  expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
+});
+
 it("keeps focus on the canvas after discarding unsaved editor values", async () => {
   vi.stubGlobal("fetch", vi.fn(async input => String(input).startsWith("/v1/entities") ? json({ items: [], next_cursor: null }) : json(dashboard)));
   mount("/dashboards/dash-1");
