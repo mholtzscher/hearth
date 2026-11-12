@@ -45,7 +45,10 @@ describe("State field catalog", () => {
   });
   it("declares units for fixed numeric fields", () => {
     const fields = Object.values(stateFields).flatMap(fields => Object.values(fields));
-    expect(fields).toHaveLength(21);
+    expect(fields).toHaveLength(22);
+    expect(stateFields["hearth.lock/v1"][""]).toMatchObject({
+      value_type: "string", enum: ["locked", "unlocked", "locking", "unlocking", "jammed", "unknown"],
+    });
     expect(fields.filter(isQuantityField)).toHaveLength(12);
     for (const field of fields) {
       if (!isQuantityField(field) || typeof field.quantity.unit !== "string") continue;
