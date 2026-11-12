@@ -155,45 +155,6 @@ func (c *recordCache) wantedMissing() map[string]bool {
 	return wanted
 }
 
-func queryMissing(
-	sockets []browseSocket,
-	cache *recordCache,
-	scope string,
-	instances map[string]bool,
-	now time.Time,
-) error {
-	if len(instances) == 0 {
-		return nil
-	}
-	questions := cache.missingQuestions(scope, instances)
-	var send []dns.Question
-	for _, question := range questions {
-		if !cache.canAskMissing(scope, questionKey(question), now) {
-			continue
-		}
-		if err := cache.markMissing(scope, questionKey(question), now); err != nil {
-			return err
-		}
-		send = append(send, question)
-	}
-	for _, socket := range sockets {
-		if socket.scope != scope {
-			continue
-		}
-		for _, question := range send {
-			msg := dns.Msg{Question: []dns.Question{question}}
-			data, err := msg.Pack()
-			if err != nil {
-				return fmt.Errorf("pack mDNS resolution query: %w", err)
-			}
-			if _, writeErr := socket.conn.WriteToUDP(data, socket.group); writeErr != nil {
-				return fmt.Errorf("send mDNS resolution query on %s: %w", socket.scope, writeErr)
-			}
-		}
-	}
-	return nil
-}
-
 func (entry cachedRecord) refreshAt() time.Time {
 	if entry.refreshStep >= refreshSteps || !entry.flushAt.IsZero() {
 		return time.Time{}
@@ -202,13 +163,17 @@ func (entry cachedRecord) refreshAt() time.Time {
 	return entry.received.Add(ttl / 100 * time.Duration(refreshFirstPercent+entry.refreshStep*refreshStepPercent))
 }
 
-func (c *recordCache) nextMissingWake(now, wake time.Time) time.Time {
+func (c *recordCache) pruneMissing() {
 	wanted := c.wantedMissing()
 	for key := range c.missingLast {
 		if !wanted[key] {
 			delete(c.missingLast, key)
 		}
 	}
+}
+
+func (c *recordCache) nextMissingWake(now, wake time.Time) time.Time {
+	wanted := c.wantedMissing()
 	for key := range wanted {
 		if _, exists := c.missingLast[key]; !exists {
 			return now
@@ -228,13 +193,10 @@ func (c *recordCache) nextWake(now, browse time.Time) time.Time {
 	for _, entry := range c.records {
 		if _, ok := interested[entry.scope]; !ok {
 			interested[entry.scope] = make(map[string]bool)
-			for _, q := range c.questions(entry.scope, now) {
+			for _, q := range c.questions(entry.scope) {
 				interested[entry.scope][questionKey(q)] = true
 			}
 		}
-	}
-	if len(c.flushed) > 0 {
-		return now
 	}
 	wake = c.nextMissingWake(now, wake)
 	for _, entry := range c.records {
@@ -259,7 +221,7 @@ func (c *recordCache) nextWake(now, browse time.Time) time.Time {
 //
 //nolint:gocognit // Selection considers missing records, refresh deadlines, and known answers together.
 func (c *recordCache) queryPlan(scope string, now time.Time, browse bool) ([]dns.Msg, map[string]bool, error) {
-	questions := c.questions(scope, now)
+	questions := c.questions(scope)
 	wanted := c.wantedMissing()
 	byQuestion := make(map[string][]cachedRecord)
 	for _, entry := range c.records {
@@ -339,30 +301,6 @@ func packQuestions(q dns.Question, answers []dns.RR) ([]dns.Msg, error) {
 	}
 	parts = append(parts, msg)
 	return parts, nil
-}
-
-func query(sockets []browseSocket, cache *recordCache, now time.Time, browse bool) error {
-	plans := make(map[string][]dns.Msg)
-	selected := make(map[string]map[string]bool)
-	for _, socket := range sockets {
-		if _, ok := plans[socket.scope]; !ok {
-			messages, questions, err := cache.queryPlan(socket.scope, now, browse)
-			if err != nil {
-				return err
-			}
-			plans[socket.scope], selected[socket.scope] = messages, questions
-		}
-		for _, msg := range plans[socket.scope] {
-			data, err := msg.Pack()
-			if err != nil {
-				return fmt.Errorf("pack mDNS query: %w", err)
-			}
-			if _, writeErr := socket.conn.WriteToUDP(data, socket.group); writeErr != nil {
-				return fmt.Errorf("send mDNS query on %s: %w", socket.scope, writeErr)
-			}
-		}
-	}
-	return cache.advanceRefresh(selected, now)
 }
 
 func (c *recordCache) advanceRefresh(selected map[string]map[string]bool, now time.Time) error {

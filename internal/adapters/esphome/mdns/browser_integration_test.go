@@ -193,6 +193,41 @@ func TestBrowseRetransmissionIncludesKnownAnswer(t *testing.T) {
 	}
 }
 
+func TestMalformedPacketDoesNotRepeatPreviousQuery(t *testing.T) {
+	t.Parallel()
+	peer, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = peer.Close() })
+	client, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	done := make(chan error, 1)
+	go func() {
+		done <- runSockets(ctx, make(chan esphome.DiscoveryRecord, 1), []browseSocket{{
+			conn: client, group: peer.LocalAddr().(*net.UDPAddr), scope: "loopback",
+		}}, time.Hour)
+	}()
+	require.NoError(t, peer.SetReadDeadline(time.Now().Add(5*time.Second)))
+	buf := make([]byte, 512)
+	n, from, err := peer.ReadFromUDP(buf)
+	require.NoError(t, err)
+	var query dns.Msg
+	require.NoError(t, query.Unpack(buf[:n]))
+	require.Len(t, query.Question, 1)
+	require.Equal(t, dns.TypePTR, query.Question[0].Qtype)
+	_, err = peer.WriteToUDP([]byte{0xff}, from)
+	require.NoError(t, err)
+	require.NoError(t, peer.SetReadDeadline(time.Now().Add(150*time.Millisecond)))
+	_, _, err = peer.ReadFromUDP(buf)
+	require.Error(t, err)
+	var netErr net.Error
+	require.ErrorAs(t, err, &netErr)
+	require.True(t, netErr.Timeout(), "malformed packets must not trigger a query")
+	cancel()
+	require.NoError(t, <-done)
+}
+
 // The peer drops the first resolution questions and answers only their retries.
 func TestBrowserRetriesLostResolutionWhileBrowseIsBackedOff(t *testing.T) {
 	t.Parallel()

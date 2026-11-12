@@ -41,11 +41,11 @@ func TestBrowseBackoffAndKnownAnswerTTL(t *testing.T) {
 	require.Len(t, msgs, 1)
 	require.Equal(t, dns.TypePTR, msgs[0].Question[0].Qtype)
 	require.Empty(t, msgs[0].Answer)
-	require.Equal(t, now.Add(96*time.Second), c.nextWake(now.Add(95*time.Second), now.Add(time.Hour)))
+	require.Equal(t, now.Add(96*time.Second), wakeAt(c, now.Add(95*time.Second), now.Add(time.Hour)))
 	_, selected, err := c.queryPlan("eth0", now.Add(96*time.Second), false)
 	require.NoError(t, err)
 	require.NoError(t, c.advanceRefresh(map[string]map[string]bool{"eth0": selected}, now.Add(96*time.Second)))
-	require.Equal(t, now.Add(102*time.Second), c.nextWake(now.Add(96*time.Second), now.Add(time.Hour)))
+	require.Equal(t, now.Add(102*time.Second), wakeAt(c, now.Add(96*time.Second), now.Add(time.Hour)))
 	for _, elapsed := range []time.Duration{102 * time.Second, 108 * time.Second, 114 * time.Second} {
 		at := now.Add(elapsed)
 		_, selected, err = c.queryPlan("eth0", at, false)
@@ -53,7 +53,7 @@ func TestBrowseBackoffAndKnownAnswerTTL(t *testing.T) {
 		require.NotEmpty(t, selected)
 		require.NoError(t, c.advanceRefresh(map[string]map[string]bool{"eth0": selected}, at))
 	}
-	require.Equal(t, now.Add(120*time.Second), c.nextWake(now.Add(114*time.Second), now.Add(time.Hour)))
+	require.Equal(t, now.Add(120*time.Second), wakeAt(c, now.Add(114*time.Second), now.Add(time.Hour)))
 }
 
 func TestKnownAnswersSplitAcrossPackets(t *testing.T) {
@@ -121,37 +121,40 @@ func TestNewServiceRequestsMissingPartsWithoutResettingBrowse(t *testing.T) {
 func TestMissingComponentsRetryIndependentlyOfBrowse(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1000, 0)
-	c := newRecordCache()
+	state := newBrowserState([]string{"eth0"}, time.Hour, now)
+	tickAt(t, state, now)
 	ptr := rr(t, "_esphomelib._tcp.local. 120 IN PTR room._esphomelib._tcp.local.")
-	add(t, c, "eth0", now, ptr)
-	srvKey := questionKey(dns.Question{Name: "room._esphomelib._tcp.local.", Qtype: dns.TypeSRV})
-	txtKey := questionKey(dns.Question{Name: "room._esphomelib._tcp.local.", Qtype: dns.TypeTXT})
-	require.NoError(t, c.markMissing("eth0", srvKey, now))
-	require.NoError(t, c.markMissing("eth0", txtKey, now))
-	browse := now.Add(time.Hour)
-	require.Equal(t, now.Add(time.Second), c.nextWake(now, browse))
-	_, selected, err := c.queryPlan("eth0", now.Add(time.Second), false)
-	require.NoError(t, err)
-	require.Equal(t, map[string]bool{srvKey: true, txtKey: true}, selected)
-	require.NoError(t, c.advanceRefresh(map[string]map[string]bool{"eth0": selected}, now.Add(time.Second)))
-	add(t, c, "eth0", now.Add(2*time.Second), ptr)
-	require.Equal(
+	first := packetAt(t, state, now, ptr)
+	require.ElementsMatch(
 		t,
-		now.Add(3*time.Second),
-		c.nextWake(now.Add(2*time.Second), browse),
-		"PTR refresh must not reset retry backoff",
+		[]string{"room._esphomelib._tcp.local./SRV", "room._esphomelib._tcp.local./TXT"},
+		queryDescriptions(first),
 	)
-	_, selected, err = c.queryPlan("eth0", now.Add(3*time.Second), false)
-	require.NoError(t, err)
-	require.Equal(t, map[string]bool{srvKey: true, txtKey: true}, selected)
-	require.NoError(t, c.advanceRefresh(map[string]map[string]bool{"eth0": selected}, now.Add(3*time.Second)))
-	require.Equal(t, now.Add(7*time.Second), c.nextWake(now.Add(3*time.Second), browse))
-	add(t, c, "eth0", now.Add(4*time.Second),
+	require.Equal(t, now.Add(time.Second), first.wake)
+	retry := tickAt(t, state, now.Add(time.Second))
+	require.ElementsMatch(t, queryDescriptions(first), queryDescriptions(retry))
+	require.Equal(t, now.Add(3*time.Second), retry.wake)
+	refresh := packetAt(t, state, now.Add(2*time.Second), ptr)
+	require.Empty(t, refresh.queries)
+	require.Equal(t, now.Add(3*time.Second), refresh.wake, "PTR refresh must not reset retry backoff")
+	retry = tickAt(t, state, now.Add(3*time.Second))
+	require.ElementsMatch(t, queryDescriptions(first), queryDescriptions(retry))
+	require.Equal(t, now.Add(7*time.Second), retry.wake)
+	complete := packetAt(t, state, now.Add(4*time.Second),
 		rr(t, "room._esphomelib._tcp.local. 120 IN SRV 0 0 6053 room.local."),
 		rr(t, `room._esphomelib._tcp.local. 120 IN TXT "mac=aabbccddeeff"`),
 		rr(t, "room.local. 120 IN A 192.0.2.10"))
-	c.nextWake(now.Add(4*time.Second), browse)
-	require.Empty(t, c.missingLast, "answered questions must stop retrying")
+	require.Empty(t, complete.queries)
+	require.Equal(t, "192.0.2.10", complete.endpoints[0].Address)
+	require.Empty(t, state.cache.missingLast, "answered questions must stop retrying")
+}
+
+func queryDescriptions(effects browserEffects) []string {
+	var descriptions []string
+	for _, action := range effects.queries {
+		descriptions = append(descriptions, describeQuery(action.message))
+	}
+	return descriptions
 }
 
 func TestMissingAddressRetriesStopWhenAddressOrAssociationArrives(t *testing.T) {
@@ -166,12 +169,12 @@ func TestMissingAddressRetriesStopWhenAddressOrAssociationArrives(t *testing.T) 
 	aaaa := questionKey(dns.Question{Name: "room.local.", Qtype: dns.TypeAAAA})
 	require.NoError(t, c.markMissing("eth0", a, now))
 	require.NoError(t, c.markMissing("eth0", aaaa, now))
-	require.Equal(t, now.Add(time.Second), c.nextWake(now, now.Add(time.Hour)))
+	require.Equal(t, now.Add(time.Second), wakeAt(c, now, now.Add(time.Hour)))
 	_, selected, err := c.queryPlan("eth0", now.Add(time.Second), false)
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{a: true, aaaa: true}, selected)
 	add(t, c, "eth0", now.Add(2*time.Second), rr(t, "room.local. 120 IN A 192.0.2.10"))
-	c.nextWake(now.Add(2*time.Second), now.Add(time.Hour))
+	wakeAt(c, now.Add(2*time.Second), now.Add(time.Hour))
 	require.Empty(t, c.missingLast, "either address family completes resolution")
 	require.NoError(
 		t,
@@ -181,25 +184,45 @@ func TestMissingAddressRetriesStopWhenAddressOrAssociationArrives(t *testing.T) 
 			now.Add(2*time.Second),
 		),
 	)
-	c.nextWake(now.Add(11*time.Second), now.Add(time.Hour))
+	wakeAt(c, now.Add(11*time.Second), now.Add(time.Hour))
 	require.Empty(t, c.missingLast, "expired associations must not keep retries alive")
 }
 
 func TestPreviouslyCompleteAssociationStartsRetryWhenTXTExpires(t *testing.T) {
 	t.Parallel()
 	now := time.Unix(1000, 0)
-	c := newRecordCache()
-	add(t, c, "eth0", now,
+	state := newBrowserState([]string{"eth0"}, time.Hour, now)
+	tickAt(t, state, now)
+	initial := packetAt(t, state, now,
 		rr(t, "_esphomelib._tcp.local. 120 IN PTR room._esphomelib._tcp.local."),
 		rr(t, "room._esphomelib._tcp.local. 120 IN SRV 0 0 6053 room.local."),
 		rr(t, `room._esphomelib._tcp.local. 5 IN TXT "mac=aabbccddeeff"`),
 		rr(t, "room.local. 120 IN A 192.0.2.10"))
+	require.Len(t, initial.endpoints, 1)
+	require.Equal(t, now.Add(4*time.Second), initial.wake)
 	at := now.Add(6 * time.Second)
-	require.Equal(t, at, c.nextWake(at, now.Add(time.Hour)))
-	_, selected, err := c.queryPlan("eth0", at, false)
-	require.NoError(t, err)
-	txtKey := questionKey(dns.Question{Name: "room._esphomelib._tcp.local.", Qtype: dns.TypeTXT})
-	require.Equal(t, map[string]bool{txtKey: true}, selected)
-	require.NoError(t, c.advanceRefresh(map[string]map[string]bool{"eth0": selected}, at))
-	require.Equal(t, at.Add(time.Second), c.nextWake(at, now.Add(time.Hour)))
+	effects := tickAt(t, state, at)
+	require.Equal(t, []string{"room._esphomelib._tcp.local./TXT"}, queryDescriptions(effects))
+	require.Empty(t, effects.endpoints)
+	require.Equal(t, at.Add(time.Second), effects.wake)
+}
+
+func TestStateRefreshesAtEachTTLDeadline(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1000, 0)
+	state := newBrowserState([]string{"eth0"}, time.Hour, now)
+	tickAt(t, state, now)
+	initial := packetAt(t, state, now,
+		rr(t, "_esphomelib._tcp.local. 120 IN PTR room._esphomelib._tcp.local."),
+		rr(t, "room._esphomelib._tcp.local. 300 IN SRV 0 0 6053 room.local."),
+		rr(t, `room._esphomelib._tcp.local. 300 IN TXT "mac=aabbccddeeff"`),
+		rr(t, "room.local. 300 IN A 192.0.2.10"))
+	require.Equal(t, now.Add(96*time.Second), initial.wake)
+	for _, elapsed := range []time.Duration{96 * time.Second, 102 * time.Second, 108 * time.Second, 114 * time.Second} {
+		at := now.Add(elapsed)
+		effects := tickAt(t, state, at)
+		require.Equal(t, []string{"_esphomelib._tcp.local./PTR"}, queryDescriptions(effects))
+		require.Equal(t, at.Add(6*time.Second), effects.wake)
+		require.Empty(t, effects.endpoints)
+	}
 }

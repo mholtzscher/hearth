@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/netip"
-	"sort"
 	"sync"
 	"time"
 
@@ -156,7 +154,7 @@ func configureSocket(conn *net.UDPConn, iface *net.Interface, network string) er
 	return pc.SetControlMessage(ipv6.FlagInterface, true)
 }
 
-//nolint:gocognit,funlen // Socket ownership, event processing and joining share one lifetime.
+//nolint:gocognit // Socket ownership, event processing and joining share one lifetime.
 func runSockets(
 	ctx context.Context,
 	out chan<- esphome.DiscoveryRecord,
@@ -203,182 +201,53 @@ func runSockets(
 		}
 		readers.Wait()
 	}()
-	cache := newRecordCache()
-	sent := make(map[esphome.MAC]resolvedRecord)
+
+	scopes := make([]string, 0, len(sockets))
+	seen := make(map[string]bool)
+	for _, socket := range sockets {
+		if !seen[socket.scope] {
+			scopes = append(scopes, socket.scope)
+			seen[socket.scope] = true
+		}
+	}
 	now := time.Now()
-	if err := query(sockets, cache, now, true); err != nil {
+	state := newBrowserState(scopes, interval, now)
+	effects, err := state.tick(now)
+	if err != nil {
 		return err
 	}
-	nextBrowse := now.Add(interval)
-	timer := time.NewTimer(interval)
+	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
-		now = time.Now()
-		wake := cache.nextWake(now, nextBrowse)
+		if dispatchErr := dispatch(ctx, out, errs, sockets, effects); dispatchErr != nil {
+			return dispatchErr
+		}
+		effects.queries, effects.endpoints = nil, nil
 		if !timer.Stop() {
 			select {
 			case <-timer.C:
 			default:
 			}
 		}
-		timer.Reset(max(time.Until(wake), 0))
+		timer.Reset(max(time.Until(effects.wake), 0))
 		select {
 		case <-ctx.Done():
 			return nil
 		case readErr := <-errs:
 			return readErr
 		case now = <-timer.C:
-			browse := !now.Before(nextBrowse)
-			if err := query(sockets, cache, now, browse); err != nil {
-				return err
-			}
-			if browse {
-				interval = nextBrowseInterval(interval)
-				nextBrowse = now.Add(interval)
-			}
-			if err := emit(ctx, out, errs, sent, cache, now, nil); err != nil {
-				return err
-			}
+			effects, err = state.tick(now)
 		case p := <-packets:
 			var msg dns.Msg
-			if err := msg.Unpack(p.data); err != nil {
+			if unpackErr := msg.Unpack(p.data); unpackErr != nil {
 				continue
 			}
-			now = time.Now()
-			cache.expire(now)
-			instances := cache.newInstances(&msg, p.scope)
-			if err := cache.ingest(&msg, p.scope, now); err != nil {
-				return err
-			}
-			if err := queryMissing(sockets, cache, p.scope, instances, now); err != nil {
-				return err
-			}
-			evidence := positiveRecords(&msg, p.scope)
-			if err := emit(ctx, out, errs, sent, cache, now, evidence); err != nil {
-				return err
-			}
+			effects, err = state.handlePacket(&msg, p.scope, time.Now())
 		}
-	}
-}
-
-func emit(
-	ctx context.Context,
-	out chan<- esphome.DiscoveryRecord,
-	errs <-chan error,
-	sent map[esphome.MAC]resolvedRecord,
-	cache *recordCache,
-	now time.Time,
-	evidence map[string]bool,
-) error {
-	resolved := cache.resolve(now, sent, evidence)
-	current := preferred(resolved, sent)
-	observed := make(map[esphome.MAC]map[string]bool)
-	for _, candidate := range resolved {
-		mac := candidate.record.MAC
-		if observed[mac] == nil {
-			observed[mac] = make(map[string]bool)
-		}
-		for _, key := range candidate.addresses {
-			observed[mac][key] = true
-		}
-	}
-	historySize := 0
-	for _, previous := range sent {
-		historySize += len(previous.known)
-	}
-	flushed := cache.flushed
-	cache.flushed = make(map[string]bool)
-	keys := make([]esphome.MAC, 0, len(current))
-	for mac := range current {
-		keys = append(keys, mac)
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i].String() < keys[j].String() })
-	for _, mac := range keys {
-		r := current[mac]
-		previous, exists := sent[mac]
-		if exists {
-			r = evidencedUpdate(r, previous, evidence, flushed)
-		} else if len(sent) >= maxCacheRecords {
-			return fmt.Errorf("mDNS emitted endpoint limit (%d) exceeded", maxCacheRecords)
-		}
-		history, updatedSize, err := mergeKnown(previous.known, observed[mac], historySize)
 		if err != nil {
 			return err
 		}
-		historySize = updatedSize
-		r.known, r.addresses = history, nil
-		if exists && previous.record == r.record {
-			previous.known = history
-			sent[mac] = previous
-			continue
-		}
-		if r.record.Address == "" {
-			continue
-		}
-		select {
-		case out <- r.record:
-			sent[mac] = r
-		case <-ctx.Done():
-			return nil
-		case readErr := <-errs:
-			return readErr
-		}
 	}
-	return nil
-}
-
-func mergeKnown(previous, observed map[string]bool, size int) (map[string]bool, int, error) {
-	history := make(map[string]bool, len(previous)+len(observed))
-	for key := range previous {
-		history[key] = true
-	}
-	for key := range observed {
-		if history[key] {
-			continue
-		}
-		if size >= maxCacheRecords {
-			return nil, size, fmt.Errorf("mDNS known address limit (%d) exceeded", maxCacheRecords)
-		}
-		size++
-		history[key] = true
-	}
-	return history, size, nil
-}
-
-func evidencedUpdate(r, previous resolvedRecord, evidence, flushed map[string]bool) resolvedRecord {
-	oldAddr, oldErr := netip.ParseAddr(previous.record.Address)
-	newAddr, newErr := netip.ParseAddr(r.record.Address)
-	sameSource := r.instance == previous.instance && r.target == previous.target
-	sameFamily := oldErr == nil && newErr == nil && oldAddr.Is4() == newAddr.Is4()
-	flushReplacement := flushed[previous.addressKey] && sameSource && sameFamily
-	newAddress := evidence[r.addressKey] && !previous.known[r.addressKey]
-	if r.record.Address != previous.record.Address && !newAddress && !flushReplacement &&
-		(r.target == previous.target || !evidence[r.srvKey]) {
-		r.record.Address, r.addressKey = previous.record.Address, previous.addressKey
-	}
-	if r.record.Port != previous.record.Port && !evidence[r.srvKey] &&
-		(r.target == previous.target || !newAddress) {
-		r.record.Port = previous.record.Port
-	}
-	if r.record.Encrypted != previous.record.Encrypted && !evidence[r.txtKey] {
-		r.record.Encrypted = previous.record.Encrypted
-	}
-	return r
-}
-
-func positiveRecords(msg *dns.Msg, scope string) map[string]bool {
-	result := make(map[string]bool)
-	if !msg.Response || msg.Truncated {
-		return result
-	}
-	for _, records := range [][]dns.RR{msg.Answer, msg.Ns, msg.Extra} {
-		for _, rr := range records {
-			if rr.Header().Ttl > 0 && rr.Header().Class&0x7fff == dns.ClassINET && supported(rr) {
-				result[recordKey(rr, scope)] = true
-			}
-		}
-	}
-	return result
 }
 
 func (socket browseSocket) onInterface(oob []byte) bool {
@@ -393,30 +262,44 @@ func (socket browseSocket) onInterface(oob []byte) bool {
 	return control.Parse(oob) == nil && control.IfIndex == socket.ifIndex
 }
 
-func preferred(
-	instances map[string]resolvedRecord,
-	previous map[esphome.MAC]resolvedRecord,
-) map[esphome.MAC]resolvedRecord {
-	result := make(map[esphome.MAC]resolvedRecord)
-	for _, r := range instances {
-		mac := r.record.MAC
-		old, exists := result[mac]
-		if prior, ok := previous[mac]; ok && r.instance == prior.instance {
-			result[mac] = r
-			continue
-		}
-		if prior, ok := previous[mac]; ok && exists && old.instance == prior.instance {
-			continue
-		}
-		ip := net.ParseIP(r.record.Address)
-		oldIP := net.ParseIP(old.record.Address)
-		is4 := ip != nil && ip.To4() != nil
-		old4 := oldIP != nil && oldIP.To4() != nil
-		if !exists || is4 && !old4 ||
-			is4 == old4 &&
-				(r.record.Address < old.record.Address || r.record.Address == old.record.Address && (r.record.Port < old.record.Port || r.record.Port == old.record.Port && r.record.Encrypted && !old.record.Encrypted)) {
-			result[mac] = r
+// dispatch applies a step's queries before publishing its endpoint changes.
+//
+//nolint:gocognit // Query and output failures retain their distinct safe context.
+func dispatch(
+	ctx context.Context,
+	out chan<- esphome.DiscoveryRecord,
+	errs <-chan error,
+	sockets []browseSocket,
+	effects browserEffects,
+) error {
+	for _, socket := range sockets {
+		for _, action := range effects.queries {
+			if socket.scope != action.scope {
+				continue
+			}
+			data, err := action.message.Pack()
+			if err != nil {
+				if action.resolution {
+					return fmt.Errorf("pack mDNS resolution query: %w", err)
+				}
+				return fmt.Errorf("pack mDNS query: %w", err)
+			}
+			if _, err = socket.conn.WriteToUDP(data, socket.group); err != nil {
+				if action.resolution {
+					return fmt.Errorf("send mDNS resolution query on %s: %w", socket.scope, err)
+				}
+				return fmt.Errorf("send mDNS query on %s: %w", socket.scope, err)
+			}
 		}
 	}
-	return result
+	for _, record := range effects.endpoints {
+		select {
+		case out <- record:
+		case <-ctx.Done():
+			return nil
+		case err := <-errs:
+			return err
+		}
+	}
+	return nil
 }

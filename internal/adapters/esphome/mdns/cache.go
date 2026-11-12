@@ -27,7 +27,6 @@ type cachedRecord struct {
 
 type recordCache struct {
 	records     map[string]cachedRecord
-	flushed     map[string]bool
 	missingLast map[string]missingRetry
 	serial      uint64
 }
@@ -35,7 +34,6 @@ type recordCache struct {
 func newRecordCache() *recordCache {
 	return &recordCache{
 		records:     make(map[string]cachedRecord),
-		flushed:     make(map[string]bool),
 		missingLast: make(map[string]missingRetry),
 	}
 }
@@ -56,15 +54,17 @@ func recordKey(rr dns.RR, scope string) string {
 	return scope + "|" + cloned.String()
 }
 
-func (c *recordCache) expire(now time.Time) {
+func (c *recordCache) expire(now time.Time) map[string]bool {
+	flushed := make(map[string]bool)
 	for key, entry := range c.records {
 		if !entry.expires.After(now) {
 			if !entry.flushAt.IsZero() && !entry.flushAt.After(now) {
-				c.flushed[key] = true
+				flushed[key] = true
 			}
 			delete(c.records, key)
 		}
 	}
+	return flushed
 }
 
 // ingest applies an entire packet together, so a cache-flush RRset with multiple
@@ -75,7 +75,6 @@ func (c *recordCache) ingest(msg *dns.Msg, scope string, now time.Time) error {
 	if !msg.Response || msg.Truncated {
 		return nil
 	}
-	c.expire(now)
 	rrs := make([]dns.RR, 0, len(msg.Answer)+len(msg.Ns)+len(msg.Extra))
 	rrs = append(rrs, msg.Answer...)
 	rrs = append(rrs, msg.Ns...)
@@ -173,7 +172,7 @@ type resolvedRecord struct {
 	srvKey     string
 	txtKey     string
 	target     string
-	addresses  []string
+	addresses  []addressRecord
 	known      map[string]bool
 }
 
@@ -182,41 +181,10 @@ type addressRecord struct {
 	key  string
 }
 
-func chooseAddress(addresses []addressRecord, old resolvedRecord, evidence map[string]bool) addressRecord {
-	chosen := addresses[0]
-	for _, address := range addresses {
-		if address.key == old.addressKey {
-			if address.addr.Is4() || !chosen.addr.Is4() || !evidence[chosen.key] || old.known[chosen.key] {
-				return address
-			}
-			return chosen
-		}
-	}
-	for _, address := range addresses {
-		if evidence[address.key] && !old.known[address.key] {
-			return address
-		}
-	}
-	return chosen
-}
-
-func (c *recordCache) resolved(now time.Time) map[string]esphome.DiscoveryRecord {
-	result := make(map[string]esphome.DiscoveryRecord)
-	for key, entry := range c.resolve(now, nil, nil) {
-		result[key] = entry.record
-	}
-	return result
-}
-
-// resolve retains the selected address while it remains in the RRset.
+// resolve correlates complete services within each interface scope.
 //
-//nolint:gocognit,gocyclo,cyclop,funlen // Resolution checks association and each required RRset together.
-func (c *recordCache) resolve(
-	now time.Time,
-	previous map[esphome.MAC]resolvedRecord,
-	evidence map[string]bool,
-) map[string]resolvedRecord {
-	c.expire(now)
+//nolint:gocognit // Resolution checks association and each required RRset together.
+func (c *recordCache) resolve() map[string]resolvedRecord {
 	result := make(map[string]resolvedRecord)
 	for _, ptrEntry := range c.records {
 		ptr, ok := ptrEntry.rr.(*dns.PTR)
@@ -287,13 +255,6 @@ func (c *recordCache) resolve(
 			})
 			chosen := addresses[0]
 			instanceKey := ptrEntry.scope + "|" + instance
-			if old, exists := previous[mac]; exists && old.instance == instanceKey && old.target == name(srv.Target) {
-				chosen = chooseAddress(addresses, old, evidence)
-			}
-			keys := make([]string, 0, len(addresses))
-			for _, address := range addresses {
-				keys = append(keys, address.key)
-			}
 			result[instanceKey] = resolvedRecord{
 				record: esphome.DiscoveryRecord{
 					MAC:       mac,
@@ -306,7 +267,7 @@ func (c *recordCache) resolve(
 				srvKey:     srvKey,
 				txtKey:     txtKey,
 				target:     name(srv.Target),
-				addresses:  keys,
+				addresses:  addresses,
 			}
 		}
 	}
@@ -314,8 +275,7 @@ func (c *recordCache) resolve(
 }
 
 // questions asks for missing or refreshed components as well as browsing PTRs.
-func (c *recordCache) questions(scope string, now time.Time) []dns.Question {
-	c.expire(now)
+func (c *recordCache) questions(scope string) []dns.Question {
 	questions := []dns.Question{{Name: serviceName, Qtype: dns.TypePTR, Qclass: dns.ClassINET}}
 	seen := map[string]bool{}
 	appendQuestion := func(host string, typ uint16) {

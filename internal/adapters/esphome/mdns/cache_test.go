@@ -20,6 +20,7 @@ func rr(t *testing.T, text string) dns.RR {
 
 func add(t *testing.T, c *recordCache, scope string, now time.Time, records ...dns.RR) {
 	t.Helper()
+	c.expire(now)
 	msg := &dns.Msg{Answer: records}
 	msg.Response = true
 	require.NoError(t, c.ingest(msg, scope, now))
@@ -164,10 +165,26 @@ func TestQuestionsFollowKnownRecordsOnTheirInterface(t *testing.T) {
 		{Name: "device._esphomelib._tcp.local.", Qtype: dns.TypeTXT, Qclass: dns.ClassINET},
 		{Name: "host.local.", Qtype: dns.TypeA, Qclass: dns.ClassINET},
 		{Name: "host.local.", Qtype: dns.TypeAAAA, Qclass: dns.ClassINET},
-	}, c.questions("eth0", now))
+	}, c.questions("eth0"))
 	require.Equal(
 		t,
 		[]dns.Question{{Name: serviceName, Qtype: dns.TypePTR, Qclass: dns.ClassINET}},
-		c.questions("eth1", now),
+		c.questions("eth1"),
 	)
+}
+
+// resolved is test support for independent cache association invariants.
+func (c *recordCache) resolved(now time.Time) map[string]esphome.DiscoveryRecord {
+	c.expire(now)
+	result := make(map[string]esphome.DiscoveryRecord)
+	for key, entry := range c.resolve() {
+		result[key] = entry.record
+	}
+	return result
+}
+
+func wakeAt(c *recordCache, now, browse time.Time) time.Time {
+	c.expire(now)
+	c.pruneMissing()
+	return c.nextWake(now, browse)
 }
