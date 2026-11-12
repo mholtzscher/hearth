@@ -27,9 +27,10 @@ type CorrelationID string
 type DeviceKind string
 
 const (
-	DeviceKindLight  DeviceKind = "light"
-	DeviceKindRelay  DeviceKind = "relay"
-	DeviceKindSensor DeviceKind = "sensor"
+	DeviceKindLight       DeviceKind = "light"
+	DeviceKindRelay       DeviceKind = "relay"
+	DeviceKindSensor      DeviceKind = "sensor"
+	DeviceKindAirPurifier DeviceKind = "air-purifier"
 )
 
 type EntityTypeID string

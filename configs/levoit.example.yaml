@@ -1,0 +1,5 @@
+adapter_id: levoit-home
+nats_url: nats://127.0.0.1:4222
+credentials_file: /run/secrets/levoit.json
+poll_interval: 60s
+time_zone: UTC

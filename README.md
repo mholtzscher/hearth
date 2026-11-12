@@ -15,6 +15,11 @@ Entities and fresh hourly and daily forecast Functions for one configured locati
 It runs as the separate `hearth-adapter-pirateweather` companion using a secret-file
 API key; see `configs/pirateweather.example.yaml` for configuration.
 
+The [Levoit Adapter](docs/levoit.md) discovers Core 400S and 600S air purifiers
+through a US VeSync account. The separate `hearth-adapter-levoit` companion
+exposes power, mode, manual fan level, display, child lock, PM2.5, and filter life.
+Credentials stay in a private file; see `configs/levoit.example.yaml`.
+
 ## Development
 
 Install tools with `mise install`. Use `mise run simulator-start` for local NATS/JetStream and simulated Devices; it needs no Mosquitto broker. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, tests including runtime OpenAPI and recovery, and vetting. Tests are race-enabled in CI, not by default locally. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
