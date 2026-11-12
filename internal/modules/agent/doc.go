@@ -7,7 +7,10 @@
 // (user, assistant with tool calls, tool results), rebuilt on every turn. The
 // household tools are the MCP catalog itself: MCPTools dials the application's
 // MCP server over an in-memory transport, so the agent and every other MCP
-// client share one tool definition. Household effects stay durable in the
+// client share one tool definition. Device and Entity get/list tools stay
+// visible; other MCP schemas are deferred until selected with tool search.
+// Selection is reconstructed only from bounded conversation history; tool
+// visibility is not authorization. Household effects stay durable in the
 // commands tables exactly as REST and MCP see them: this history owns the
 // conversation only, never the outcome. An inline embedded automation skill is
 // available only to this agent, not external MCP clients. Model/tool hooks commit

@@ -58,12 +58,21 @@ func (service *Service) newAgentRunner(ctx context.Context, trace *turnTrace) (*
 	if err != nil {
 		return nil, err
 	}
+	staticTools, search, err := agentToolSearch(ctx, service.tools)
+	if err != nil {
+		return nil, err
+	}
+	handlers := []adk.ChatModelAgentMiddleware{skills, repair}
+	if search != nil {
+		handlers = append(handlers, search)
+	}
+	handlers = append(handlers, trace)
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name: "hearth", Instruction: defaultSystemPrompt,
 		Model:         turnModel{BaseChatModel: service.chatModel, trace: trace},
-		ToolsConfig:   adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{Tools: service.tools}},
+		ToolsConfig:   adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{Tools: staticTools}},
 		MaxIterations: service.maxIterations,
-		Handlers:      []adk.ChatModelAgentMiddleware{skills, repair, trace},
+		Handlers:      handlers,
 	})
 	if err != nil {
 		return nil, err

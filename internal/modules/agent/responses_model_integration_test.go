@@ -131,7 +131,6 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 func TestResponsesDashboardPresentation(t *testing.T) {
 	t.Parallel()
 	mcpServer := dashboardMCPServer(dashboards.NewService(nil, nil, nil))
-	wantSchema := dashboardAdvertisedSchema(t, mcpServer)
 	definition := dashboardDefinitionFixture(t, "Large draft", true)
 	arguments, err := json.Marshal(map[string]json.RawMessage{"definition": definition})
 	if err != nil {
@@ -279,14 +278,13 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 	}
 	for step := 1; step <= 3; step++ {
 		request := <-inputs
-		assertDashboardResponsesRequest(t, request, wantSchema, calls, turn.Artifacts[0].Artifact, step)
+		assertDashboardResponsesRequest(t, request, calls, turn.Artifacts[0].Artifact, step)
 	}
 }
 
 func assertDashboardResponsesRequest(
 	t *testing.T,
 	request responsesRequestFixture,
-	wantSchema map[string]any,
 	callOutput []byte,
 	artifact dashboards.Artifact,
 	step int,
@@ -296,18 +294,10 @@ func assertDashboardResponsesRequest(
 	for _, info := range request.Tools {
 		if info["name"] == "present_view" {
 			found = true
-			if info["strict"] != false || !reflect.DeepEqual(info["parameters"], wantSchema) {
-				t.Errorf("step %d dashboard schema mismatch: got %v want %v", step, info["parameters"], wantSchema)
-			}
-			parameters, marshalErr := json.Marshal(info["parameters"])
-			if marshalErr != nil {
-				t.Fatal(marshalErr)
-			}
-			t.Logf("Responses present_view parameter schema: %d compact JSON bytes", len(parameters))
 		}
 	}
-	if !found {
-		t.Error("dashboard tool missing")
+	if found {
+		t.Error("unselected dashboard tool was visible")
 	}
 	raw, err := json.Marshal(request.Input)
 	if err != nil || strings.Count(string(raw), "Selected view draft") != 1 ||
@@ -388,17 +378,9 @@ func assertResponsesRequest(t *testing.T, r *http.Request, request responsesRequ
 		if info["type"] != "function" || info["strict"] != false {
 			t.Errorf("tool changed MCP schema mode: %v", info)
 		}
-		if name == "present_view" {
-			raw, err := json.Marshal(info["parameters"])
-			if err != nil || !strings.Contains(string(raw), "schema_version") ||
-				!strings.Contains(string(raw), "Metric") ||
-				!strings.Contains(string(raw), "additionalProperties") {
-				t.Errorf("incomplete dashboard schema: %s (%v)", raw, err)
-			}
-		}
 	}
-	if !found["skill"] || !found["echo_text"] || !found["present_view"] {
-		t.Errorf("missing native or MCP tools: %v", found)
+	if !found["skill"] || !found["tool_search"] || found["echo_text"] || found["present_view"] {
+		t.Errorf("unexpected visible tools: %v", found)
 	}
 }
 
