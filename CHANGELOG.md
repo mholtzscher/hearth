@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.23.0](https://github.com/mholtzscher/hearth/compare/v0.22.0...v0.23.0) (2026-11-12)
+
+
+### Features
+
+* **agent:** discover deferred MCP tools with Eino search ([#339](https://github.com/mholtzscher/hearth/issues/339)) ([527051f](https://github.com/mholtzscher/hearth/commit/527051f1fb782212095c8023bdda32dbbf62953e))
+* **web:** group recent conversations and give phones one navigation drawer ([#337](https://github.com/mholtzscher/hearth/issues/337)) ([00b0ac4](https://github.com/mholtzscher/hearth/commit/00b0ac41dce613812f16edfd3a13ba56fee26168))
+* **web:** let the composer's selected view open and close the canvas ([#340](https://github.com/mholtzscher/hearth/issues/340)) ([544068e](https://github.com/mholtzscher/hearth/commit/544068e73230d1b6e498f69af22418230553f95d))
+* **web:** widen the sidebar on larger screens ([#334](https://github.com/mholtzscher/hearth/issues/334)) ([ce8c0f7](https://github.com/mholtzscher/hearth/commit/ce8c0f7d1edc8564fe43e01443ee5535ece7e4b1))
+
+
+### Bug Fixes
+
+* **views:** restore weather conditions, compass, and pressure tendency ([#331](https://github.com/mholtzscher/hearth/issues/331)) ([b2c9be4](https://github.com/mholtzscher/hearth/commit/b2c9be441d0392a02d6113c8407228a64f5e22a3))
+* **web:** size conversation and weather cards responsively ([#338](https://github.com/mholtzscher/hearth/issues/338)) ([1969139](https://github.com/mholtzscher/hearth/commit/196913910577da86c2737e847c379debcca7f8e8))
+
 ## [0.22.0](https://github.com/mholtzscher/hearth/compare/v0.21.0...v0.22.0) (2026-11-11)
 
 
