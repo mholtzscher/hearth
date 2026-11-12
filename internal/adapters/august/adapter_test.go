@@ -234,6 +234,58 @@ func TestSameCycleLockReadsDoNotSerializeDifferentLocks(t *testing.T) {
 	}
 }
 
+func TestStartupDefersAvailabilityUntilHealthyInventory(t *testing.T) {
+	t.Parallel()
+	session := newRecordingSession()
+	session.requireHealthy = true
+	session.bindings["front"] = adapter.Binding{
+		BindingKey: "front",
+		Entities:   []adapter.EntityBinding{{Key: "lock", EntityID: "ent_existing"}},
+	}
+	a := newTestAdapter(
+		t,
+		session,
+		syntheticTransport(func(_ *http.Request) (*http.Response, error) { return response(503, ""), nil }),
+	)
+	if err := a.loadMappings(t.Context()); err != nil {
+		t.Fatalf("mapping load reported availability while health was unknown: %v", err)
+	}
+	if len(session.availability) != 0 {
+		t.Fatal("startup availability reported before inventory")
+	}
+	if _, err := a.cycle(t.Context(), true); err != nil {
+		t.Fatalf("failed inventory attempted unavailable reports after unhealthy health: %v", err)
+	}
+	if session.health.Status != adapter.HealthUnhealthy {
+		t.Fatal("failed inventory did not establish unhealthy account")
+	}
+}
+
+func TestStatusInvalidBatteryWithdrawsOnlyPresentInvalidEvidence(t *testing.T) {
+	t.Parallel()
+	for _, battery := range []string{`,"battery":null`, `,"battery":1.1`, ""} {
+		t.Run(battery, func(t *testing.T) {
+			t.Parallel()
+			session := newRecordingSession()
+			a := newTestAdapter(t, session, syntheticTransport(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == inventoryPath {
+					return response(200, syntheticInventory("Front")), nil
+				}
+				if strings.HasSuffix(r.URL.Path, "/status") {
+					return response(200, `{"status":"locked","doorState":"closed"`+battery+`}`), nil
+				}
+				return response(200, syntheticDetail("Front", onlineBridge)), nil
+			}))
+			runCycle(t, a, true)
+			runtime := a.devices["front"]
+			if runtime.fields["battery"].available != (battery == "") || !runtime.fields["lock"].available ||
+				!runtime.fields["door-open"].available {
+				t.Fatal("present invalid battery was ignored or an absent battery invalidated valid detail evidence")
+			}
+		})
+	}
+}
+
 func TestInvalidSiblingDoesNotFabricateOrSuppressValidReadings(t *testing.T) {
 	t.Parallel()
 	session := newRecordingSession()

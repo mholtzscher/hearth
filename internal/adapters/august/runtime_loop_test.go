@@ -119,6 +119,41 @@ func TestOverflowEndsGenerationAndResynchronizesBeforeNextSubscription(t *testin
 	}
 }
 
+func TestMissingBatteryDoesNotSuppressHealthyBoltPush(t *testing.T) {
+	t.Parallel()
+	details := 0
+	session := newRecordingSession()
+	a := newTestAdapter(t, session, syntheticTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == inventoryPath {
+			return response(200, syntheticInventory("Front")), nil
+		}
+		if strings.HasSuffix(r.URL.Path, "/status") {
+			return response(200, `{"status":"locked","doorState":"closed","dateTime":"2020-01-01T00:00:00Z"}`), nil
+		}
+		details++
+		return response(
+			200,
+			strings.ReplaceAll(syntheticDetail("Front", onlineBridge), `"battery":0.7157`, `"battery":null`),
+		), nil
+	}))
+	runCycle(t, a, true)
+	for _, stamp := range []string{"2020-01-02T00:00:00Z", "2020-01-03T00:00:00Z"} {
+		r, err := decodeStatus([]byte(`{"status":"unlocked","dateTime":"`+stamp+`"}`), time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = a.applyPush(t.Context(), pushReport{DeviceID: testLockID, Report: r}); err != nil {
+			t.Fatal(err)
+		}
+		if a.devices["front"].fields["lock"].value != `"unlocked"` {
+			t.Fatal("missing battery suppressed eligible bolt push")
+		}
+	}
+	if a.devices["front"].fields["battery"].available || details != 2 {
+		t.Fatal("battery recovered without evidence or recovery reads were not coalesced")
+	}
+}
+
 func TestPushRecoveryIsCoalescedAndCannotAssertReachability(t *testing.T) {
 	t.Parallel()
 	reads := 0

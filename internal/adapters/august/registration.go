@@ -31,11 +31,6 @@ func (a *Adapter) loadMappings(ctx context.Context) error {
 		}
 		request.Cursor = page.NextCursor
 	}
-	for _, runtime := range a.devices {
-		if err := a.unavailable(ctx, runtime, "initializing"); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

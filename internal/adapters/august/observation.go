@@ -98,11 +98,15 @@ func fieldObservation(id, key string, r report) (adapter.Observation, *time.Time
 	return adapter.Observation{}, nil, false, nil
 }
 
-func (a *Adapter) unavailable(ctx context.Context, runtime *deviceRuntime, reason string) error {
+func invalidateRuntime(runtime *deviceRuntime) {
 	runtime.online = false
 	for _, field := range runtime.fields {
 		field.available = false
 	}
+}
+
+func (a *Adapter) unavailable(ctx context.Context, runtime *deviceRuntime, reason string) error {
+	invalidateRuntime(runtime)
 	reports := make([]adapter.EntityAvailabilityReport, 0, len(runtime.ids))
 	for _, id := range runtime.ids {
 		reports = append(

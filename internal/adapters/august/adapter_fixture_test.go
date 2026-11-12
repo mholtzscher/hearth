@@ -14,13 +14,14 @@ import (
 )
 
 type recordingSession struct {
-	mu            sync.Mutex
-	bindings      map[string]adapter.Binding
-	registrations []adapter.Registration
-	observations  []adapter.Observation
-	availability  map[string]adapter.EntityAvailabilityReport
-	health        adapter.HealthReport
-	publishErr    error
+	mu             sync.Mutex
+	bindings       map[string]adapter.Binding
+	registrations  []adapter.Registration
+	observations   []adapter.Observation
+	availability   map[string]adapter.EntityAvailabilityReport
+	health         adapter.HealthReport
+	publishErr     error
+	requireHealthy bool
 }
 
 func newRecordingSession() *recordingSession {
@@ -85,6 +86,9 @@ func (s *recordingSession) ReportEntityAvailability(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, r := range reports {
+		if s.requireHealthy && s.health.Status != adapter.HealthHealthy {
+			return fmt.Errorf("synthetic Core: adapter_unhealthy")
+		}
 		s.availability[r.EntityID] = r
 	}
 	return nil

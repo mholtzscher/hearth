@@ -26,14 +26,15 @@ type Session interface {
 
 // Adapter has one Run owner. Each physical lock has an independent evidence gate.
 type Adapter struct {
-	session        Session
-	client         *client
-	logger         *slog.Logger
-	config         Config
-	admission      *lifecycle.AdmissionGroup
-	devices        map[string]*deviceRuntime // Membership is owned by Run, never the push reader.
-	lastInventory  time.Time
-	forceInventory atomic.Bool // Authentication failures require a complete account check on the next scheduled cycle.
+	session         Session
+	client          *client
+	logger          *slog.Logger
+	config          Config
+	admission       *lifecycle.AdmissionGroup
+	devices         map[string]*deviceRuntime // Membership is owned by Run, never the push reader.
+	lastInventory   time.Time
+	forceInventory  atomic.Bool // Authentication failures require a complete account check on the next scheduled cycle.
+	needsAssessment atomic.Bool // Known mappings need an unavailable assessment after account health permits reports.
 }
 
 type deviceRuntime struct {
@@ -92,6 +93,7 @@ func New(session Session, config Config, credentials Credentials, transport http
 		runtime.config = &binding
 		a.devices[binding.BindingKey] = runtime
 	}
+	a.needsAssessment.Store(true)
 	return a, nil
 }
 
@@ -114,24 +116,11 @@ func (a *Adapter) CloseCommands(ctx context.Context) error {
 func (a *Adapter) cycle(ctx context.Context, refresh bool) (bool, error) {
 	refresh = a.forceInventory.Swap(false) || refresh
 	if refresh || a.lastInventory.IsZero() || time.Since(a.lastInventory) >= a.config.InventoryInterval {
-		entries, err := a.client.inventory(ctx)
-		if err != nil {
-			a.forceInventory.Store(true)
-			if ctx.Err() != nil {
-				return false, ctx.Err()
-			}
-			a.providerFailure(ctx, "inventory", err)
-			return false, a.accountUnavailable(ctx, failureCode(err))
+		complete, err := a.refreshInventory(ctx)
+		if !complete || err != nil {
+			return complete, err
 		}
-		a.reconcileMembership(entries)
-		a.lastInventory = time.Now()
 		refresh = true
-		if err = a.session.SetHealth(
-			ctx,
-			adapter.HealthReport{Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC()},
-		); err != nil {
-			return false, err
-		}
 	}
 	var workers sync.WaitGroup
 	errorsOut := make(chan error, len(a.devices))
@@ -149,6 +138,33 @@ func (a *Adapter) cycle(ctx context.Context, refresh bool) (bool, error) {
 		result = errors.Join(result, err)
 	}
 	return true, result
+}
+
+func (a *Adapter) refreshInventory(ctx context.Context) (bool, error) {
+	entries, err := a.client.inventory(ctx)
+	if err != nil {
+		a.forceInventory.Store(true)
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		a.providerFailure(ctx, "inventory", err)
+		return false, a.accountUnavailable(ctx, failureCode(err))
+	}
+	a.reconcileMembership(entries)
+	a.lastInventory = time.Now()
+	if err = a.session.SetHealth(
+		ctx,
+		adapter.HealthReport{Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC()},
+	); err != nil {
+		return false, err
+	}
+	if a.needsAssessment.Swap(false) {
+		if err = a.assessOwned(ctx); err != nil {
+			a.needsAssessment.Store(true)
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func (a *Adapter) reconcileMembership(entries []inventoryEntry) {
@@ -194,7 +210,7 @@ func (a *Adapter) pollDevice(ctx context.Context, runtime *deviceRuntime, refres
 		return a.unavailable(ctx, runtime, "device_offline")
 	}
 	keys := []string{keyLock, keyDoorOpen}
-	if report.Battery != nil {
+	if report.BatteryPresent {
 		keys = append(keys, keyBattery)
 	}
 	return a.publish(ctx, runtime, report, keys)
@@ -239,15 +255,19 @@ func (a *Adapter) targetFailure(ctx context.Context, runtime *deviceRuntime, ope
 	switch failureCode(err) {
 	case codeAuthRejected, codeValidation, codeExpired:
 		a.forceInventory.Store(true)
+		a.needsAssessment.Store(true)
+		invalidateRuntime(runtime)
 		if healthErr := a.session.SetHealth(ctx, adapter.HealthReport{Status: adapter.HealthUnhealthy,
 			SourceObservedAt: time.Now().UTC(), ReasonCode: reasonPrefix + failureCode(err)}); healthErr != nil {
 			return healthErr
 		}
+		return nil // Core derives unavailability from health and rejects explicit reports while unhealthy.
 	}
 	return a.unavailable(ctx, runtime, failureCode(err))
 }
 
 func (a *Adapter) accountUnavailable(ctx context.Context, reason string) error {
+	a.needsAssessment.Store(true)
 	if err := a.session.SetHealth(ctx, adapter.HealthReport{Status: adapter.HealthUnhealthy,
 		SourceObservedAt: time.Now().UTC(), ReasonCode: reasonPrefix + reason}); err != nil {
 		return err
@@ -256,7 +276,18 @@ func (a *Adapter) accountUnavailable(ctx context.Context, reason string) error {
 		if err := acquire(ctx, runtime.gate); err != nil {
 			return err
 		}
-		err := a.unavailable(ctx, runtime, reason)
+		invalidateRuntime(runtime)
+		<-runtime.gate
+	}
+	return nil
+}
+
+func (a *Adapter) assessOwned(ctx context.Context) error {
+	for _, runtime := range a.devices {
+		if err := acquire(ctx, runtime.gate); err != nil {
+			return err
+		}
+		err := a.unavailable(ctx, runtime, "initializing")
 		<-runtime.gate
 		if err != nil {
 			return err

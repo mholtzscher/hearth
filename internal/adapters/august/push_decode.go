@@ -21,6 +21,7 @@ func decodePushMessage(data json.RawMessage, id lockID, received time.Time) (rep
 	}
 	// A PubNub message is not authoritative Bridge or battery evidence.
 	result.Online, result.Battery = nil, nil
+	result.BatteryPresent = false
 	if pushExplicitlyOffline(fields["error"]) {
 		online := false
 		return report{ReceivedAt: received, Online: &online}, true

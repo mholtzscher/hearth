@@ -85,17 +85,21 @@ func (a *Adapter) applyDevicePush(ctx context.Context, runtime *deviceRuntime, i
 		return a.unavailable(ctx, runtime, "device_offline")
 	}
 	if needsRecovery(runtime) {
-		if runtime.pushRecoveryUsed {
-			return nil
+		if !runtime.pushRecoveryUsed {
+			runtime.pushRecoveryUsed = true
+			if err := a.refreshDetail(ctx, runtime); err != nil {
+				return err
+			}
 		}
-		runtime.pushRecoveryUsed = true
-		return a.refreshDetail(ctx, runtime)
+	}
+	if !runtime.online {
+		return nil
 	}
 	var keys []string
-	if input.Report.Lock != nil {
+	if input.Report.Lock != nil && runtime.fields[keyLock] != nil && runtime.fields[keyLock].available {
 		keys = append(keys, keyLock)
 	}
-	if input.Report.DoorOpen != nil {
+	if input.Report.DoorOpen != nil && runtime.fields[keyDoorOpen] != nil && runtime.fields[keyDoorOpen].available {
 		keys = append(keys, keyDoorOpen)
 	}
 	if len(keys) == 0 {

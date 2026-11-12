@@ -118,11 +118,12 @@ type reading[T any] struct {
 }
 
 type report struct {
-	ReceivedAt time.Time
-	Online     *bool
-	Lock       *reading[lockv1.State]
-	DoorOpen   *reading[bool]
-	Battery    *reading[float64]
+	BatteryPresent bool // Status omission preserves detail evidence; explicit invalidity withdraws availability.
+	ReceivedAt     time.Time
+	Online         *bool
+	Lock           *reading[lockv1.State]
+	DoorOpen       *reading[bool]
+	Battery        *reading[float64]
 }
 
 type deviceDetail struct {

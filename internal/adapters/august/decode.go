@@ -80,6 +80,7 @@ func decodeDetail(data []byte, entry inventoryEntry, received time.Time) (device
 	result.Report, _ = decodeStatus(wire.Status, received)
 	result.Report.ReceivedAt = received
 	result.Report.Battery = decodeBattery(wire.Battery)
+	result.Report.BatteryPresent = len(wire.Battery) > 0
 	result.Report.Online = decodeBridge(wire.Bridge)
 	return result, nil
 }
@@ -97,6 +98,7 @@ func decodeStatus(data []byte, received time.Time) (report, error) {
 		return result, &providerError{code: codeInvalid}
 	}
 	result.Battery, result.Online = decodeBattery(wire.Battery), decodeBridge(wire.Bridge)
+	result.BatteryPresent = len(wire.Battery) > 0
 	var source *time.Time
 	if len(wire.Time) > 0 {
 		source = decodeSourceTime(wire.Time)
