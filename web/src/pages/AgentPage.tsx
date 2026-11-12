@@ -1,5 +1,5 @@
 import { AssistantRuntimeProvider, ComposerPrimitive, SuggestionPrimitive, ThreadPrimitive, useExternalStoreRuntime, useThreadViewport, type ThreadMessageLike, type ThreadSuggestion } from "@assistant-ui/react";
-import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, PanelsTopLeftIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, PanelsTopLeftIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
@@ -19,6 +19,15 @@ const STARTERS: readonly ThreadSuggestion[] = [
 function JumpToLatest() {
   const isAtBottom = useThreadViewport(state => state.isAtBottom);
   return isAtBottom ? null : <ThreadPrimitive.ScrollToBottom className="jump-to-latest" aria-label="Jump to latest"><ArrowDownIcon aria-hidden="true" />Jump to latest</ThreadPrimitive.ScrollToBottom>;
+}
+
+// The view or Automation on the canvas travels with the next message; the chip shows it and closes it like the canvas's own Close.
+// Its revision and saved state stay in the canvas header, which is beside the composer or one tap away.
+function SelectedContextChip({ kind, title, closeDisabled, onShow, onClose }: { kind: string; title: string; closeDisabled: boolean; onShow: () => void; onClose: () => void }) {
+  return <div className="context-chip" role="group" aria-label={`Selected ${kind}`}>
+    <button type="button" className="context-chip-show" aria-label={`Show selected ${kind}: ${title}`} title={title} onClick={onShow}><PanelsTopLeftIcon aria-hidden="true" /><span className="context-chip-title">{title}</span></button>
+    <button type="button" className="context-chip-close" aria-label={`Close selected ${kind}`} title={`Close ${kind}`} disabled={closeDisabled} onClick={onClose}><XIcon aria-hidden="true" /></button>
+  </div>;
 }
 
 function convertMessage(item: ConversationItem, conversationId: string, running: boolean): ThreadMessageLike {
@@ -103,6 +112,8 @@ export default function AgentPage() {
   });
   useEffect(() => runtime.thread.composer.setText(failedPrompt), [session, failedPrompt, runtime]);
   const draft = workspace.canvasDraft;
+  const selected = workspace.automationDraft ? { kind: "Automation", title: workspace.automationDraft.document.definition.name }
+    : workspace.context && { kind: "view", title: workspace.context.definition.title };
   function showCanvas() {
     setMobileCanvas(true);
     requestAnimationFrame(() => canvas.current?.focus());
@@ -144,7 +155,7 @@ export default function AgentPage() {
         <div className="composer">
           <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><ComposerPrimitive.Input ref={prompt} id="hearth-prompt" minRows={1} maxRows={6} maxLength={4000} disabled={busy || loading} submitMode="enter" cancelOnEscape={false} addAttachmentOnPaste={false} placeholder="Ask about your home, or ask for a view…" />
           {/* The selected view and any note share Send's row rather than adding rows of their own. */}
-          <div className="composer-footer"><div className="composer-meta">{workspace.automationDraft ? <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected Automation: {workspace.automationDraft.document.definition.name} {workspace.automationDraft.base ? `· revision ${workspace.automationDraft.base.revision}` : "· unsaved"}</p> : workspace.context && <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</p>}{!workspace.editorValid && <p className="composer-note">Fix or discard invalid draft edits before sending</p>}</div><ComposerPrimitive.Send className="send" aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></ComposerPrimitive.Send></div></div>
+          <div className="composer-footer"><div className="composer-meta">{selected && <SelectedContextChip {...selected} closeDisabled={workspace.saving} onShow={showCanvas} onClose={workspace.closeDraft} />}{!workspace.editorValid && <p className="composer-note">Fix or discard invalid draft edits before sending</p>}</div><ComposerPrimitive.Send className="send" aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></ComposerPrimitive.Send></div></div>
       </ComposerPrimitive.Root>
     </ThreadPrimitive.ViewportProvider></ThreadPrimitive.Root></AssistantRuntimeProvider>{draft && <Canvas ref={canvas} active={!narrow || mobileCanvas} onClose={workspace.closeDraft} />}</div>
   </div>;
