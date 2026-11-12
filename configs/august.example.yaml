@@ -1,0 +1,12 @@
+adapter_id: august-home
+nats_url: nats://127.0.0.1:4222
+credentials_file: /path/to/private/august-credentials.json
+# Generate and preserve a unique UUID for this installation.
+installation_id: 00000000-0000-4000-8000-000000000001
+poll_interval: 5m
+inventory_interval: 15m
+locks:
+  - binding_key: front-door
+    lock_id: "11111111111111111111111111111111"
+    name: Front Door
+    commands_enabled: false
