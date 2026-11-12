@@ -220,8 +220,8 @@ func TestOpenFailsClosedBeforeAnyDeviceRequest(t *testing.T) {
 			mutate: func(device *nativeapitest.Device, _ *nativeapi.DialConfig) { device.APIMajor, device.APIMinor = 2, 0 },
 			want:   nativeapi.ErrIncompatibleAPI,
 		},
-		"minor version 13": {
-			mutate: func(device *nativeapitest.Device, _ *nativeapi.DialConfig) { device.APIMajor, device.APIMinor = 1, 13 },
+		"minor version 9": {
+			mutate: func(device *nativeapitest.Device, _ *nativeapi.DialConfig) { device.APIMajor, device.APIMinor = 1, 9 },
 			want:   nativeapi.ErrIncompatibleAPI,
 		},
 	}

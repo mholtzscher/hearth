@@ -129,6 +129,24 @@ func TestRunRejectsKeyBeforeInfrastructure(t *testing.T) {
 	}
 }
 
+func TestInsecurePlaintextRequiresExplicitOptInAndNoKey(t *testing.T) {
+	t.Parallel()
+	config := validConfig()
+	config.Devices[0].EncryptionKeyFile = ""
+	if err := config.Validate(); err == nil {
+		t.Fatal("absent key silently enabled plaintext")
+	}
+	config.Devices[0].InsecurePlaintext = true
+	prepared, err := adapterConfig(config)
+	if err != nil || !prepared.Devices[0].InsecurePlaintext {
+		t.Fatalf("explicit plaintext = %+v, %v", prepared, err)
+	}
+	config.Devices[0].EncryptionKeyFile = "/must/not/be/read"
+	if validationErr := config.Validate(); validationErr == nil {
+		t.Fatal("plaintext with encryption key accepted")
+	}
+}
+
 func TestSuperviseCancelsAndJoinsSibling(t *testing.T) {
 	t.Parallel()
 	started := make(chan struct{})

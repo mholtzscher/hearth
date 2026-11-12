@@ -25,6 +25,7 @@ import (
 
 const (
 	idHelloRequest           = 1
+	idAuthenticationRequest  = 3
 	idDisconnectRequest      = 5
 	idDisconnectResponse     = 6
 	idPingRequest            = 7
@@ -48,8 +49,12 @@ type Device struct {
 	Entities []proto.Message
 	// States are sent in order when the client subscribes.
 	States []proto.Message
-	// Plaintext answers the client hello with a plaintext frame, as a device without encryption does.
+	// Plaintext serves the unencrypted API. Encrypted clients receive a plaintext marker and are rejected.
 	Plaintext bool
+	// PasswordRequired rejects the empty legacy authentication request.
+	PasswordRequired bool
+	// AutoAuthenticate models passwordless firmware with the legacy authentication handler compiled out.
+	AutoAuthenticate bool
 	// IgnorePings leaves client pings unanswered.
 	IgnorePings bool
 }
@@ -65,6 +70,7 @@ type Session struct {
 	conn      net.Conn
 	writeMu   sync.Mutex
 	encrypt   *noise.CipherState
+	plaintext bool
 	received  chan Message
 	done      chan struct{}
 	closeOnce sync.Once
@@ -73,7 +79,12 @@ type Session struct {
 
 // Serve runs the device on conn in a goroutine. Close the Session or conn to stop it.
 func (device Device) Serve(conn net.Conn) *Session {
-	session := &Session{conn: conn, received: make(chan Message, receivedBuffer), done: make(chan struct{})}
+	session := &Session{
+		conn:      conn,
+		received:  make(chan Message, receivedBuffer),
+		done:      make(chan struct{}),
+		plaintext: device.Plaintext,
+	}
 	go session.run(device)
 	return session
 }
@@ -100,10 +111,16 @@ func (session *Session) Push(message proto.Message) error {
 	return session.SendRaw(id, data)
 }
 
-// SendRaw sends one encrypted message with an arbitrary type and payload.
+// SendRaw sends one message with an arbitrary type and payload over the selected transport.
 func (session *Session) SendRaw(id uint16, data []byte) error {
 	session.writeMu.Lock()
 	defer session.writeMu.Unlock()
+	if session.plaintext {
+		frame := binary.AppendUvarint([]byte{0}, uint64(len(data)))
+		frame = binary.AppendUvarint(frame, uint64(id))
+		_, err := session.conn.Write(append(frame, data...))
+		return err
+	}
 	if session.encrypt == nil {
 		return errors.New("handshake not complete")
 	}
@@ -132,6 +149,10 @@ func (session *Session) finish(err error) {
 
 func (session *Session) run(device Device) {
 	reader := bufio.NewReader(session.conn)
+	if device.Plaintext {
+		session.runPlaintext(device, reader)
+		return
+	}
 	decrypt, err := session.handshake(device, reader)
 	if err != nil {
 		session.finish(err)
@@ -150,15 +171,59 @@ func (session *Session) run(device Device) {
 	}
 }
 
+func (session *Session) runPlaintext(device Device, reader *bufio.Reader) {
+	marker, err := reader.Peek(1)
+	if err != nil {
+		session.finish(err)
+		return
+	}
+	if marker[0] != 0 {
+		_, _ = readFrame(reader)
+		_, _ = session.conn.Write([]byte{0, 0, 1})
+		session.finish(errors.New("device requires plaintext"))
+		return
+	}
+	for {
+		id, data, readErr := readPlainMessage(reader)
+		if readErr != nil {
+			session.finish(readErr)
+			return
+		}
+		if answerErr := session.answer(device, id, data); answerErr != nil {
+			session.finish(answerErr)
+			return
+		}
+	}
+}
+
+func readPlainMessage(reader *bufio.Reader) (uint16, []byte, error) {
+	marker, err := reader.ReadByte()
+	if err != nil {
+		return 0, nil, err
+	}
+	if marker != 0 {
+		return 0, nil, errors.New("bad plaintext indicator")
+	}
+	length, err := binary.ReadUvarint(reader)
+	if err != nil {
+		return 0, nil, err
+	}
+	id, err := binary.ReadUvarint(reader)
+	if err != nil {
+		return 0, nil, err
+	}
+	if length > 65535 || id > 65535 {
+		return 0, nil, errors.New("test frame exceeds limit")
+	}
+	payload := make([]byte, int(length))
+	_, err = io.ReadFull(reader, payload)
+	return uint16(id), payload, err
+}
+
 func (session *Session) handshake(device Device, reader *bufio.Reader) (*noise.CipherState, error) {
 	clientHello, err := readFrame(reader)
 	if err != nil {
 		return nil, err
-	}
-	if device.Plaintext {
-		// A plaintext-only device answers with a plaintext frame and stops.
-		_, _ = session.conn.Write([]byte{0x00, 0x00, 0x01})
-		return nil, errors.New("plaintext device")
 	}
 	if len(clientHello) != 0 {
 		return nil, errors.New("unexpected client hello payload")
@@ -210,6 +275,8 @@ func (session *Session) handshake(device Device, reader *bufio.Reader) (*noise.C
 
 func (session *Session) answer(device Device, id uint16, data []byte) error {
 	switch id {
+	case idAuthenticationRequest:
+		return session.answerAuthentication(device)
 	case idHelloRequest:
 		major, minor := device.APIMajor, device.APIMinor
 		if major == 0 && minor == 0 {
@@ -256,6 +323,14 @@ func (session *Session) answer(device Device, id uint16, data []byte) error {
 		return errors.New("received buffer full")
 	}
 	return nil
+}
+
+func (session *Session) answerAuthentication(device Device) error {
+	if device.AutoAuthenticate && !device.PasswordRequired {
+		return nil
+	}
+	//nolint:staticcheck // Emulate pre-1.14 firmware.
+	return session.Push(&apipb.AuthenticationResponse{InvalidPassword: device.PasswordRequired})
 }
 
 func readFrame(reader *bufio.Reader) ([]byte, error) {

@@ -486,7 +486,7 @@ Real evidence compatibility: the checked-in fixture `internal/adapters/ecowitt/t
 ### ESPHome adapter
 
 `hearth-adapter-esphome` connects directly to a configured list of ESPHome Native
-API devices over encrypted TCP. No reflashing or Home Assistant bridge is needed.
+API devices over encrypted TCP by default. No Home Assistant bridge is needed.
 Home Assistant can remain connected during device-by-device migration, subject
 to the firmware's API connection limit (normally five on ESP32; configurable
 with `api.max_connections`). Device Builder remains responsible for firmware
@@ -509,14 +509,20 @@ Never run two instances with the same Adapter ID against the same Core.
 Settings resolve from CLI flags, `HEARTH_ADAPTER_ESPHOME_` environment variables,
 optional `configs/esphome.yaml`, then defaults. The flags are `--config`,
 `--adapter-id`, `--nats-url`, `--log-level`, and `--log-format`. The device list
-is YAML-only. Each entry requires a colon-separated MAC, an address, and an
-`encryption_key_file`; `port` defaults to 6053. `.local` addresses are rejected:
+is YAML-only. Each entry requires a colon-separated MAC and an address. Encrypted
+connections also require `encryption_key_file`; `port` defaults to 6053. `.local` addresses are rejected:
 use a DHCP reservation or unicast DNS. Each key file contains the base64
 `api.encryption.key` from the device's configuration and must be readable by
 the Adapter user. Keep keys outside Git. Keys load at startup; restart after
-rotating a key file. Plaintext and password-only authentication are unsupported.
-The client targets API 1.14 or later (ESPHome 2026.1+), using the vendored
-ESPHome 2026.10.2 schema.
+rotating a key file.
+
+For firmware without encryption, explicitly set `insecure_plaintext: true` on
+that device and omit `encryption_key_file`. This exposes readings and controls
+to the network; use only on a trusted network. Encryption remains the default,
+and a failed encrypted connection never falls back to plaintext. The client
+supports API 1.10 or later (including ESPHome 2024.11.1), using the vendored
+ESPHome 2026.10.2 schema. Before API 1.14 it performs empty legacy authentication;
+password-protected devices are unsupported in either transport mode.
 
 Primary sensors and binary sensors are read-only; switches and lights support
 power, and brightness-capable lights also support brightness. Colour, effects,

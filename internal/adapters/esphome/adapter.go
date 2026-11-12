@@ -34,11 +34,12 @@ type Session interface {
 
 // Device is one configured ESPHome device.
 type Device struct {
-	MAC      MAC
-	Address  string
-	Port     uint16
-	PSK      nativeapi.PSK
-	Exposure Exposure
+	MAC               MAC
+	Address           string
+	Port              uint16
+	PSK               nativeapi.PSK
+	InsecurePlaintext bool
+	Exposure          Exposure
 }
 
 // Config is the Adapter's validated configuration. Process assembly owns file and format validation.

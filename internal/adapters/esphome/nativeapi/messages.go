@@ -19,6 +19,7 @@ import (
 const (
 	idHelloRequest             uint16 = 1
 	idHelloResponse            uint16 = 2
+	idAuthenticationResponse   uint16 = 4
 	idDisconnectRequest        uint16 = 5
 	idDisconnectResponse       uint16 = 6
 	idPingRequest              uint16 = 7

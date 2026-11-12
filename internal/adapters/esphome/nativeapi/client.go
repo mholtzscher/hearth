@@ -1,4 +1,4 @@
-// Package nativeapi is a private ESPHome Native API client: Noise transport, framing, and the message subset that
+// Package nativeapi is a private ESPHome Native API client: selected transport, framing, and the message subset that
 // hearth-adapter-esphome consumes. It owns no reconnect policy; callers dial a new Conn for each connection
 // generation.
 package nativeapi
@@ -24,8 +24,10 @@ const (
 	// clientAPIMajor and clientAPIMinor are the API version of the vendored schema (ESPHome 2026.10.2).
 	clientAPIMajor = 1
 	clientAPIMinor = 19
-	// minimumServerAPIMinor is ESPHome 2026.1.0, the first release without password authentication.
-	minimumServerAPIMinor = 14
+	// minimumServerAPIMinor is API 1.10, observed on the AIR-1 running ESPHome 2024.11.1.
+	minimumServerAPIMinor = 10
+	// authenticationRemovedMinor is API 1.14 (ESPHome 2026.1), without legacy authentication.
+	authenticationRemovedMinor = 14
 
 	// idleBeforePing is how long the client waits without incoming traffic before it pings.
 	idleBeforePing = 20 * time.Second
@@ -48,6 +50,8 @@ type DialConfig struct {
 	Address string
 	Port    uint16
 	PSK     PSK
+	// InsecurePlaintext explicitly selects unencrypted TCP. The secure default never falls back to this mode.
+	InsecurePlaintext bool
 	// ExpectMAC is checked against the server hello's MAC when the firmware sends one. Any common MAC text form is
 	// accepted; an empty value disables the check.
 	ExpectMAC  string
@@ -56,12 +60,12 @@ type DialConfig struct {
 
 // Dialer opens ready connections. It is the seam between the Adapter and the network.
 type Dialer interface {
-	// Dial connects, completes the Noise handshake and hello exchange, and returns a ready Conn. ctx bounds the
-	// whole sequence.
+	// Dial connects using the selected transport, completes hello and authentication, and returns a ready Conn.
+	// ctx bounds the whole sequence.
 	Dial(ctx context.Context, config DialConfig) (Conn, error)
 }
 
-// Conn is one live, encrypted API connection.
+// Conn is one live API connection using its explicitly selected transport.
 type Conn interface {
 	Server() ServerInfo
 	DeviceInfo(ctx context.Context) (DeviceInfo, error)
@@ -109,7 +113,7 @@ func Open(ctx context.Context, network net.Conn, config DialConfig) (Conn, error
 	defer stop()
 
 	reader := bufio.NewReaderSize(network, readBufferSize)
-	transport, _, err := handshake(reader, network, config.PSK, compactMAC(config.ExpectMAC))
+	transport, err := openTransport(reader, network, config)
 	if err != nil {
 		return nil, contextError(ctx, err)
 	}
@@ -139,11 +143,18 @@ func Open(ctx context.Context, network net.Conn, config DialConfig) (Conn, error
 	conn.workers.Add(2) //nolint:mnd // The reader and the keepalive loop.
 	go conn.readLoop()
 	go conn.keepalive() //nolint:gosec // The connection owns this loop beyond the handshake context; Close joins it.
+	if server.APIMinor < authenticationRemovedMinor {
+		if authErr := conn.authenticateWithoutPassword(ctx); authErr != nil {
+			conn.fail(authErr)
+			conn.workers.Wait()
+			return nil, contextError(ctx, conn.Err())
+		}
+	}
 	return conn, nil
 }
 
 // exchangeHello sends HelloRequest and validates HelloResponse before any goroutine starts.
-func exchangeHello(transport *noiseTransport, clientInfo string) (ServerInfo, error) {
+func exchangeHello(transport messageTransport, clientInfo string) (ServerInfo, error) {
 	id, data, err := encode(&apipb.HelloRequest{
 		ClientInfo:      clientInfo,
 		ApiVersionMajor: clientAPIMajor,
@@ -182,12 +193,12 @@ func exchangeHello(transport *noiseTransport, clientInfo string) (ServerInfo, er
 // conn owns one connection. The reader goroutine is the only receiver of frames and the only sender on events.
 type conn struct {
 	network   net.Conn
-	transport *noiseTransport
+	transport messageTransport
 	server    ServerInfo
 
 	writeGate chan struct{}
 
-	// requestMu admits one request at a time; mu guards the current waiter.
+	// requestGate admits one request at a time; mu guards the current waiter.
 	requestGate chan struct{}
 	mu          sync.Mutex
 	waiter      *waiter
@@ -449,6 +460,11 @@ func (c *conn) readLoop() {
 // dispatch handles one received message and reports whether reading continues.
 func (c *conn) dispatch(id uint16, data []byte) bool {
 	switch id {
+	case idAuthenticationResponse:
+		if err := checkAuthenticationResponse(data); err != nil {
+			c.fail(err)
+			return false
+		}
 	case idPingRequest:
 		_ = c.write(context.Background(), &apipb.PingResponse{})
 	case idPingResponse:

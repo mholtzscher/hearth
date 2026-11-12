@@ -35,6 +35,7 @@ type DeviceConfig struct {
 	Address           string   `yaml:"address"`
 	Port              *int     `yaml:"port"`
 	EncryptionKeyFile string   `yaml:"encryption_key_file"`
+	InsecurePlaintext bool     `yaml:"insecure_plaintext"`
 	Include           []string `yaml:"include"`
 	Exclude           []string `yaml:"exclude"`
 }
@@ -79,7 +80,10 @@ func (device DeviceConfig) validate(field string) error {
 	if device.Port != nil && (*device.Port < 1 || *device.Port > 65535) {
 		return fmt.Errorf("%s.port must be between 1 and 65535", field)
 	}
-	if strings.TrimSpace(device.EncryptionKeyFile) == "" {
+	if device.InsecurePlaintext && device.EncryptionKeyFile != "" {
+		return fmt.Errorf("%s.insecure_plaintext and encryption_key_file are mutually exclusive", field)
+	}
+	if !device.InsecurePlaintext && strings.TrimSpace(device.EncryptionKeyFile) == "" {
 		return fmt.Errorf("%s.encryption_key_file is required", field)
 	}
 	include, err := parseRefs(device.Include)
@@ -151,24 +155,13 @@ func adapterConfig(value Config) (esphomeadapter.Config, error) {
 	}
 	result := esphomeadapter.Config{Devices: make([]esphomeadapter.Device, 0, len(value.Devices))}
 	for index, device := range value.Devices {
-		file, err := os.Open(device.EncryptionKeyFile)
-		if err != nil {
-			return esphomeadapter.Config{}, &KeyFileError{Index: index, Reason: "could not be read"}
-		}
-		contents, readErr := io.ReadAll(io.LimitReader(file, maxKeyFileBytes+1))
-		closeErr := file.Close()
-		if readErr != nil || closeErr != nil || len(contents) > maxKeyFileBytes {
-			return esphomeadapter.Config{}, &KeyFileError{
-				Index:  index,
-				Reason: "could not be read or exceeds 4096 bytes",
+		var key nativeapi.PSK
+		if !device.InsecurePlaintext {
+			loaded, err := readKeyFile(device.EncryptionKeyFile, index)
+			if err != nil {
+				return esphomeadapter.Config{}, err
 			}
-		}
-		key, err := nativeapi.ParsePSK(strings.TrimSpace(string(contents)))
-		if err != nil {
-			return esphomeadapter.Config{}, &KeyFileError{
-				Index:  index,
-				Reason: "must contain a valid 32-byte base64 key",
-			}
+			key = loaded
 		}
 		mac, _ := esphomeadapter.ParseMAC(device.MAC)
 		include, _ := parseRefs(device.Include)
@@ -179,8 +172,26 @@ func adapterConfig(value Config) (esphomeadapter.Config, error) {
 		}
 		result.Devices = append(result.Devices, esphomeadapter.Device{
 			MAC: mac, Address: device.Address, Port: uint16(port), PSK: key,
-			Exposure: esphomeadapter.Exposure{Include: include, Exclude: exclude},
+			InsecurePlaintext: device.InsecurePlaintext,
+			Exposure:          esphomeadapter.Exposure{Include: include, Exclude: exclude},
 		})
 	}
 	return result, nil
+}
+
+func readKeyFile(path string, index int) (nativeapi.PSK, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nativeapi.PSK{}, &KeyFileError{Index: index, Reason: "could not be read"}
+	}
+	contents, readErr := io.ReadAll(io.LimitReader(file, maxKeyFileBytes+1))
+	closeErr := file.Close()
+	if readErr != nil || closeErr != nil || len(contents) > maxKeyFileBytes {
+		return nativeapi.PSK{}, &KeyFileError{Index: index, Reason: "could not be read or exceeds 4096 bytes"}
+	}
+	key, err := nativeapi.ParsePSK(strings.TrimSpace(string(contents)))
+	if err != nil {
+		return nativeapi.PSK{}, &KeyFileError{Index: index, Reason: "must contain a valid 32-byte base64 key"}
+	}
+	return key, nil
 }

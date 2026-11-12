@@ -10,3 +10,11 @@ devices:
     encryption_key_file: /run/secrets/esphome/office-air
     include: ["sensor/Uptime"]
     exclude: ["light/RGB Light"]
+
+# For a device whose firmware has encryption disabled, explicitly opt in instead
+# of setting encryption_key_file. Plaintext exposes readings and controls to the
+# network; use only on a trusted network. There is no automatic downgrade.
+#  - mac: "02:00:00:00:00:03"
+#    address: 192.0.2.30
+#    insecure_plaintext: true
+#    exclude: ["light/RGB Light"]
