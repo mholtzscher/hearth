@@ -17,6 +17,9 @@ import (
 const (
 	supportedModel = "AUG-SL05-M01-G01"
 	lockIDLength   = 32
+	keyLock        = "lock"
+	keyDoorOpen    = "door-open"
+	keyBattery     = "battery"
 )
 
 // Config describes one stateless account connection and its explicit bindings.
@@ -60,7 +63,8 @@ func (c Config) Validate() error {
 		if keys[binding.BindingKey] || ids[id] {
 			return errors.New("lock binding keys and lock IDs must be unique")
 		}
-		if !utf8.ValidString(binding.Name) || utf8.RuneCountInString(binding.Name) > 128 {
+		if !utf8.ValidString(binding.Name) || utf8.RuneCountInString(binding.Name) > 128 ||
+			(binding.Name != "" && strings.TrimSpace(binding.Name) == "") {
 			return errors.New("lock name must be valid UTF-8 with at most 128 characters")
 		}
 		keys[binding.BindingKey], ids[id] = true, true
