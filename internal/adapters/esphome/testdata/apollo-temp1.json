@@ -1,0 +1,274 @@
+{
+ "info": {
+  "MAC": "02:00:00:00:00:01",
+  "Name": "apollo-temp-1",
+  "FriendlyName": "Freezer Probe",
+  "ESPHomeVersion": "2026.4.0",
+  "Model": "esp32-c3-devkitm-1",
+  "Manufacturer": "Espressif",
+  "ProjectName": "ApolloAutomation.TEMP-1",
+  "ProjectVersion": "26.3.2.1"
+ },
+ "entities": [
+  {
+   "Type": "other",
+   "UpstreamType": "number",
+   "Key": 1,
+   "Name": "Board Temperature Offset",
+   "Category": 1,
+   "Unit": "°C"
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "number",
+   "Key": 2,
+   "Name": "Temp Probe Offset",
+   "Category": 1,
+   "Unit": "°C",
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "number",
+   "Key": 3,
+   "Name": "Board Humidity Offset",
+   "Category": 1,
+   "Unit": "%"
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "number",
+   "Key": 4,
+   "Name": "Food Probe Offset",
+   "Category": 1,
+   "Unit": "°C",
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "number",
+   "Key": 5,
+   "Name": "Max Probe Temp",
+   "Category": 1,
+   "Unit": "°C"
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "number",
+   "Key": 6,
+   "Name": "Min Probe Temp",
+   "Category": 1,
+   "Unit": "°C"
+  },
+  {
+   "Type": "binary_sensor",
+   "UpstreamType": "binary_sensor",
+   "Key": 10,
+   "Name": "Online",
+   "Category": 2,
+   "DeviceClass": "connectivity"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 20,
+   "Name": "ESP Temperature",
+   "Category": 2,
+   "DeviceClass": "temperature",
+   "Unit": "°C"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 21,
+   "Name": "Uptime",
+   "Category": 2,
+   "DeviceClass": "duration",
+   "Unit": "s"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 22,
+   "Name": "RSSI",
+   "Category": 2,
+   "DeviceClass": "signal_strength",
+   "Unit": "dBm"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 23,
+   "Name": "Temperature Probe",
+   "DeviceClass": "temperature",
+   "Unit": "°C"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 24,
+   "Name": "Temperature Probe 2",
+   "DeviceClass": "temperature",
+   "Unit": "°C",
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 25,
+   "Name": "Temperature Probe 3",
+   "DeviceClass": "temperature",
+   "Unit": "°C",
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 26,
+   "Name": "Temperature Probe 4",
+   "DeviceClass": "temperature",
+   "Unit": "°C",
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 27,
+   "Name": "Board Temperature",
+   "DeviceClass": "temperature",
+   "Unit": "°C"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 28,
+   "Name": "Board Humidity",
+   "DeviceClass": "humidity",
+   "Unit": "%"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 29,
+   "Name": "Food Probe",
+   "DeviceClass": "temperature",
+   "Unit": "°C"
+  },
+  {
+   "Type": "light",
+   "UpstreamType": "light",
+   "Key": 30,
+   "Name": "RGB Light",
+   "ColorModes": [
+    35
+   ]
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "button",
+   "Key": 40,
+   "Name": "ESP Reboot",
+   "Category": 1,
+   "DeviceClass": "restart"
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "button",
+   "Key": 41,
+   "Name": "Factory Reset ESP",
+   "Category": 1
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "select",
+   "Key": 50,
+   "Name": "Select Probe"
+  },
+  {
+   "Type": "switch",
+   "UpstreamType": "switch",
+   "Key": 60,
+   "Name": "Accessory Power"
+  },
+  {
+   "Type": "switch",
+   "UpstreamType": "switch",
+   "Key": 61,
+   "Name": "Alarm Outside Temp Range"
+  },
+  {
+   "Type": "switch",
+   "UpstreamType": "switch",
+   "Key": 62,
+   "Name": "Prevent Sleep",
+   "Category": 1
+  },
+  {
+   "Type": "switch",
+   "UpstreamType": "switch",
+   "Key": 63,
+   "Name": "Notify Only Outside Temp Difference",
+   "Category": 1,
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "text_sensor",
+   "Key": 70,
+   "Name": "IP Address",
+   "Category": 2
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "text_sensor",
+   "Key": 71,
+   "Name": "ESPHome Version",
+   "Category": 2
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "text_sensor",
+   "Key": 72,
+   "Name": "Apollo Firmware Version",
+   "Category": 2
+  }
+ ],
+ "states": [
+  {
+   "Type": "sensor",
+   "Key": 23,
+   "Number": -23.9
+  },
+  {
+   "Type": "sensor",
+   "Key": 27,
+   "Number": 35.02
+  },
+  {
+   "Type": "sensor",
+   "Key": 28,
+   "Number": 21.54
+  },
+  {
+   "Type": "sensor",
+   "Key": 29,
+   "Missing": true
+  },
+  {
+   "Type": "light",
+   "Key": 30,
+   "Bool": false,
+   "Brightness": 1
+  },
+  {
+   "Type": "switch",
+   "Key": 60,
+   "Bool": true
+  },
+  {
+   "Type": "switch",
+   "Key": 61,
+   "Bool": true
+  }
+ ]
+}

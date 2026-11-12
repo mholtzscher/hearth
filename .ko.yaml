@@ -11,6 +11,8 @@ builds:
     main: ./cmd/hearth-adapter-ecowitt
   - id: hearth-adapter-zwavejs
     main: ./cmd/hearth-adapter-zwavejs
+  - id: hearth-adapter-esphome
+    main: ./cmd/hearth-adapter-esphome
   - id: hearth-simulator
     main: ./cmd/hearth-simulator
   - id: hearth-adapter-discord

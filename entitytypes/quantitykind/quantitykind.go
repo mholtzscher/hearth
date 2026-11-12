@@ -35,6 +35,9 @@ const (
 	ElectricCurrent          = "electric_current"
 	Voltage                  = "voltage"
 	Duration                 = "duration"
+	CarbonDioxide            = "carbon_dioxide"
+	ParticulateMatter        = "particulate_matter"
+	AirQualityIndex          = "air_quality_index"
 )
 
 // Validate rejects unknown meanings and incompatible canonical stored unit codes.
@@ -47,6 +50,7 @@ func Validate(kind, unit string) error {
 		ColorSaturation: {"%"}, ColorTemperature: {"/MK", "mired"}, Chromaticity: {"10*-4"},
 		BatteryLevel: {"%"}, LinkQuality: {"lqi"}, Frequency: {"Hz"}, ElectricalPower: {"W"},
 		PowerFactor: {"ratio"}, Energy: {"kWh"}, ElectricCurrent: {"A"}, Voltage: {"V"}, Duration: {"s"},
+		CarbonDioxide: {"ppm"}, ParticulateMatter: {"µg/m³"}, AirQualityIndex: {"index"},
 	}
 	if !slices.Contains(units[kind], unit) {
 		return fmt.Errorf("invalid quantity kind %q and unit %q", kind, unit)

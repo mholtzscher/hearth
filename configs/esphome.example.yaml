@@ -1,0 +1,12 @@
+adapter_id: esphome
+nats_url: nats://127.0.0.1:4222
+devices:
+  - mac: "02:00:00:00:00:01"
+    address: 192.0.2.10
+    encryption_key_file: /run/secrets/esphome/freezer
+  - mac: "02:00:00:00:00:02"
+    address: office-air.lan
+    port: 6053
+    encryption_key_file: /run/secrets/esphome/office-air
+    include: ["sensor/Uptime"]
+    exclude: ["light/RGB Light"]

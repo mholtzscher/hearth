@@ -12,6 +12,7 @@ golangci-lint = "latest"
 ko = "latest"
 sqlc = "latest"
 "npm:mqtt" = "5.16.1"
+"aqua:bufbuild/buf" = "1.75.0"
 
 [settings]
 experimental = true
@@ -63,6 +64,26 @@ if [ ! -d web/node_modules ]; then mise run web-install; fi
 mise daemons start simulator-stack
 '''
 
+[daemons.esphome-adapter]
+run = "mkdir -p .data/simulator-stack && sed 's|^nats_url:.*$|nats_url: nats://127.0.0.1:'\"$SIM_NATS_PORT\"'|' configs/esphome.yaml > .data/simulator-stack/esphome.yaml && exec go run ./cmd/hearth-adapter-esphome --config .data/simulator-stack/esphome.yaml"
+depends = ["sim-core"]
+ready_cmd = "bash cmd/hearth-adapter-esphome/ready.sh"
+
+[tasks."esphome-start"]
+description = "Start the optional ESPHome adapter alongside the simulator stack"
+run = '''
+if [ ! -f configs/esphome.yaml ] || ! grep -q '^nats_url:' configs/esphome.yaml; then
+  printf '%s\n' 'esphome-start: copy configs/esphome.example.yaml to configs/esphome.yaml and configure devices and key files' >&2
+  exit 1
+fi
+mise run simulator-start
+mise daemons start esphome-adapter
+'''
+
+[tasks."esphome-stop"]
+description = "Stop the optional ESPHome adapter without stopping the simulator stack"
+run = '''mise daemons stop esphome-adapter'''
+
 [tasks."simulator-stop"]
 description = "Stop this worktree's simulator daemons without deleting evidence"
 run = '''mise daemons stop sim-web simulator sim-core sim-nats'''
@@ -87,6 +108,7 @@ description = "Regenerate checked-in code"
 depends = ["web-install"]
 run = '''
 go generate ./entitytypes
+buf generate --template internal/adapters/esphome/nativeapi/proto/buf.gen.yaml internal/adapters/esphome/nativeapi/proto
 sqlc generate
 pnpm --dir web exec tsx scripts/generate-view-schema.ts
 '''
@@ -108,7 +130,7 @@ run = '''
 KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags validation --push=false \
   ./cmd/hearthd ./cmd/hearth-adapter-zigbee2mqtt \
   ./cmd/hearth-adapter-ecowitt ./cmd/hearth-adapter-zwavejs ./cmd/hearth-simulator ./cmd/hearth-adapter-discord \
-  ./cmd/hearth-adapter-pirateweather ./cmd/hearth-adapter-levoit ./cmd/hearth-adapter-august
+  ./cmd/hearth-adapter-pirateweather ./cmd/hearth-adapter-levoit ./cmd/hearth-adapter-august ./cmd/hearth-adapter-esphome
 '''
 
 [tasks."web-docker-build"]

@@ -13,8 +13,9 @@ func TestValidate(t *testing.T) {
 		ColorTemperature: {"/MK", "mired"}, Chromaticity: {"10*-4"}, BatteryLevel: {"%"},
 		LinkQuality: {"lqi"}, Frequency: {"Hz"}, ElectricalPower: {"W"}, PowerFactor: {"ratio"},
 		Energy: {"kWh"}, ElectricCurrent: {"A"}, Voltage: {"V"}, Duration: {"s"},
+		CarbonDioxide: {"ppm"}, ParticulateMatter: {"µg/m³"}, AirQualityIndex: {"index"},
 	}
-	if len(pairs) != 26 {
+	if len(pairs) != 29 {
 		t.Fatalf("got %d kinds", len(pairs))
 	}
 	for kind, units := range pairs {

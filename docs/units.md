@@ -116,8 +116,12 @@ Hearth validates the bounded kind vocabulary and compatible canonical unit codes
 Percent-valued humidity, brightness, saturation, battery, cloud cover, and
 precipitation probability have distinct kinds. Color temperature remains in
 mired, not absolute temperature; chromaticity x/y share a kind but have distinct
-field pointers. Existing legacy codes such as `mired`, `ratio`, and `lqi` retain
-their storage spelling. Unknown generic measurements may remain unclassified;
+field pointers. Air-quality readings use `carbon_dioxide` in `ppm`,
+`particulate_matter` in `µg/m³`, and `air_quality_index` in `index`. PM1, PM2.5,
+PM4, and PM10 share `particulate_matter`; the Entity name identifies the particle
+size, as it identifies the axis for chromaticity. VOC and NOx indices share
+`air_quality_index`. Existing legacy codes such as `mired`, `ratio`, and `lqi`
+retain their storage spelling. Unknown generic measurements may remain unclassified;
 Core does not infer meaning from mutable names or unit dimensions.
 
 An existing generic field can acquire a previously absent kind once. Thereafter
