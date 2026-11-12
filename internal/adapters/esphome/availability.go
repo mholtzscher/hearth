@@ -109,3 +109,22 @@ func reportAvailability(ctx context.Context, session Session, reports []adapter.
 	}
 	return nil
 }
+
+// reportUnavailable handles bulk reconciliation outside a live worker's change tracker.
+func reportUnavailable(ctx context.Context, session Session, owned map[string]string, reason string) error {
+	now := time.Now().UTC()
+	reports := make([]adapter.EntityAvailabilityReport, 0, len(owned))
+	for _, entityID := range owned {
+		reports = append(reports, adapter.EntityAvailabilityReport{
+			EntityID: entityID, Status: adapter.AvailabilityUnavailable,
+			SourceObservedAt: now, ReasonCode: reason,
+		})
+	}
+	if err := reportAvailability(ctx, session, reports); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return &sessionError{operation: "report availability", err: err}
+	}
+	return nil
+}

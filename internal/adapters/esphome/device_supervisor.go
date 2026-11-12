@@ -91,7 +91,11 @@ func (supervisor *deviceSupervisor) browse(ctx context.Context, records chan<- D
 func (supervisor *deviceSupervisor) start(device Device) {
 	w := newWorker(supervisor.adapter, supervisor.nextIndex, device, supervisor.owned[device.MAC.BindingKey()])
 	supervisor.nextIndex++
-	supervisor.adapter.router.start([]*worker{w})
+	entityIDs := make([]string, 0, len(w.owned))
+	for _, entityID := range w.owned {
+		entityIDs = append(entityIDs, entityID)
+	}
+	supervisor.adapter.router.assign(w, entityIDs)
 	handle := lifecycle.StartWorker(supervisor.ctx, func(ctx context.Context) error {
 		err := w.run(ctx)
 		if err != nil {
@@ -114,7 +118,7 @@ func (supervisor *deviceSupervisor) discovered(record DiscoveryRecord) error {
 	if reason != "" {
 		delete(supervisor.pending, record.MAC)
 		if exists {
-			if err := supervisor.stop(record.MAC, reason); err != nil {
+			if err := supervisor.stop(record.MAC); err != nil {
 				return err
 			}
 		}
@@ -130,7 +134,15 @@ func (supervisor *deviceSupervisor) discovered(record DiscoveryRecord) error {
 		return nil
 	}
 	if exists {
-		if err := supervisor.stop(record.MAC, reasonDeviceUnreachable); err != nil {
+		if err := supervisor.stop(record.MAC); err != nil {
+			return err
+		}
+		if err := reportUnavailable(
+			supervisor.ctx,
+			supervisor.adapter.session,
+			supervisor.owned[record.MAC.BindingKey()],
+			reasonDeviceUnreachable,
+		); err != nil {
 			return err
 		}
 	}
@@ -170,15 +182,16 @@ func (supervisor *deviceSupervisor) admitPending() {
 	}
 }
 
-func (supervisor *deviceSupervisor) stop(mac MAC, reason string) error {
+func (supervisor *deviceSupervisor) stop(mac MAC) error {
 	current := supervisor.active[mac]
 	if err := current.handle.Stop(context.Background()); err != nil {
 		return err
 	}
 	// The worker has joined, so ownership and availability are no longer accessed concurrently.
 	supervisor.owned[mac.BindingKey()] = current.worker.owned
+	supervisor.adapter.router.release(current.worker)
 	delete(supervisor.active, mac)
-	return current.worker.markUnavailable(supervisor.ctx, reason)
+	return nil
 }
 
 func (supervisor *deviceSupervisor) reportSkipped(mac MAC, reason string) error {
@@ -191,6 +204,5 @@ func (supervisor *deviceSupervisor) reportSkipped(mac MAC, reason string) error 
 	supervisor.adapter.logger.WarnContext(supervisor.ctx, "discovered device skipped",
 		slog.String("event", "discovery.device_skipped"), slog.String("binding_key", mac.BindingKey()),
 		slog.String("reason_code", reason))
-	w := newWorker(supervisor.adapter, 0, Device{MAC: mac}, supervisor.owned[mac.BindingKey()])
-	return w.markUnavailable(supervisor.ctx, reason)
+	return reportUnavailable(supervisor.ctx, supervisor.adapter.session, supervisor.owned[mac.BindingKey()], reason)
 }

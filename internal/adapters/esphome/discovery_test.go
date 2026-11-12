@@ -217,6 +217,23 @@ func TestDiscoveryReconcilesOwnedEntitiesAndNeverDowngradesEncryptedAdvertisemen
 		if got := len(callsOfKind(session.snapshot(), "register")); got != 1 {
 			t.Fatalf("downgrade registered: %d", got)
 		}
+		unavailableReports := 0
+		for _, entry := range callsOfKind(session.snapshot(), "availability") {
+			for _, report := range entry.availability {
+				if report.EntityID == id && report.ReasonCode == reasonEncryptionKeyRequired {
+					unavailableReports++
+				}
+			}
+		}
+		if unavailableReports != 1 {
+			t.Errorf("same transition reported %d times, want 1", unavailableReports)
+		}
+		responder, done := command(t, source.instance, session, id, "cmd_skipped", `{"value":false}`)
+		synctest.Wait()
+		if err := <-done; err != nil || responder.result() != "unavailable" ||
+			responder.message != "ESPHome device is awaiting discovery" {
+			t.Errorf("stopped-device command = %s %q, %v", responder.result(), responder.message, err)
+		}
 		select {
 		case <-dialer.latest(t, record.Address).Done():
 		default:

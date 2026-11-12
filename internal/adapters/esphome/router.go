@@ -26,16 +26,15 @@ func (r *router) seedOwned(owned map[string]map[string]string) {
 	r.ready = true
 }
 
-// start installs each worker's startup-owned Entities and admits Commands.
-func (r *router) start(workers []*worker) {
+// release keeps ownership while removing every route to a joined worker.
+func (r *router) release(owner *worker) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, owner := range workers {
-		for _, entityID := range owner.owned {
-			r.byEntity[entityID] = owner
+	for entityID, current := range r.byEntity {
+		if current == owner {
+			r.byEntity[entityID] = nil
 		}
 	}
-	r.ready = true
 }
 
 // assign routes entityIDs to owner. Registration never moves an Entity between devices, so it only adds.

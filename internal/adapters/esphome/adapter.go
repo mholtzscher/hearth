@@ -197,8 +197,7 @@ func (a *Adapter) reportUnconfigured(ctx context.Context, owned map[string]map[s
 			configured[device.MAC.BindingKey()] = struct{}{}
 		}
 	}
-	now := time.Now().UTC()
-	var reports []adapter.EntityAvailabilityReport
+	entityCount := 0
 	for bindingKey, entities := range owned {
 		if _, isConfigured := configured[bindingKey]; isConfigured || !strings.HasPrefix(bindingKey, bindingKeyPrefix) {
 			continue
@@ -213,22 +212,17 @@ func (a *Adapter) reportUnconfigured(ctx context.Context, owned map[string]map[s
 				break
 			}
 		}
-		for _, entityID := range entities {
-			reports = append(reports, adapter.EntityAvailabilityReport{
-				EntityID: entityID, Status: adapter.AvailabilityUnavailable,
-				SourceObservedAt: now, ReasonCode: reason,
-			})
+		if err := reportUnavailable(ctx, a.session, entities, reason); err != nil {
+			return err
 		}
+		entityCount += len(entities)
 	}
-	if len(reports) == 0 {
+	if entityCount == 0 {
 		return nil
-	}
-	if err := reportAvailability(ctx, a.session, reports); err != nil {
-		return &sessionError{operation: "report availability", err: err}
 	}
 	a.logger.InfoContext(ctx, "unconfigured devices marked unavailable",
 		slog.String("event", "device.unconfigured_unavailable"),
-		slog.Int("entity_count", len(reports)),
+		slog.Int("entity_count", entityCount),
 	)
 	return nil
 }
