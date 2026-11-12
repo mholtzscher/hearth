@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
-	"slices"
 	"syscall"
 
 	"github.com/mholtzscher/hearth/internal/app/august"
@@ -15,19 +15,24 @@ import (
 func main() { os.Exit(run()) }
 
 func run() int {
-	ctx := context.Background()
-	// Authorization reads stdin synchronously. Leave the default signal action in
-	// place so Ctrl-C interrupts terminal input without an abandoned reader.
-	if !slices.Contains(os.Args[1:], "authorize") {
-		var stop context.CancelFunc
-		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-		defer stop()
-	}
-	if err := newCommand(august.Run, august.Authorize, os.Stdin, os.Stderr).Run(ctx, os.Args); err != nil {
+	// Authorization keeps the default signal action so Ctrl-C interrupts stdin
+	// without an abandoned reader. Only the monitoring process needs a graceful join.
+	if err := newCommand(
+		runMonitor,
+		august.Authorize,
+		os.Stdin,
+		os.Stderr,
+	).Run(context.Background(), os.Args); err != nil {
 		if !errors.Is(err, errAdapterFailed) {
 			fmt.Fprintln(os.Stderr, err)
 		}
 		return 1
 	}
 	return 0
+}
+
+func runMonitor(ctx context.Context, config august.Config, logger *slog.Logger) error {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return august.Run(ctx, config, logger)
 }

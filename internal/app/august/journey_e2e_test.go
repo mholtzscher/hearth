@@ -167,6 +167,9 @@ func TestMonitoringCoreJourney(
 	cloud.mu.Lock()
 	cloud.missing = true
 	cloud.mu.Unlock()
+	// The successful renamed runtime published fresh unchanged evidence. Capture
+	// its final retained identity after release, before testing absence/replacement.
+	coreJSON(t, base, http.MethodGet, "/v1/entities/"+lock.ID, "", &lock)
 	stop, join = startCompanion(t, c, cloud)
 	assertUnavailableRetained(t, base, lock, "device_missing")
 	stop()

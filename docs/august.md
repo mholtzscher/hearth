@@ -14,8 +14,9 @@ gate (D4/A9), command implementation (D5), and supervised trial (A13) have not
 been completed. This guide does not authorize any physical operation.
 
 **Monitoring is not yet deployment-validated.** The synthetic production-Core
-restart journey currently fails when startup availability is rejected while the
-new Session is unhealthy. Resolve and revalidate that lifecycle before rollout.
+journey covers restart, retained identity, enablement, history, missing Devices,
+and offline replacements. Native Go framing and actual lock/push behavior still
+need the deferred live checks below before rollout.
 
 ## Configure and authorize
 
