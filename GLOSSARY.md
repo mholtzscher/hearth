@@ -127,11 +127,11 @@ A named command capability within an Entity type. The type defines its support s
 _Avoid_: Command, service call
 
 **Observation**:
-A fresh value report Hearth durably receives from an Adapter, identified once despite redelivery and carrying Hearth receive time, Adapter acquisition time, and optional upstream change time. Its retained record includes the normalized value when accepted or rejection metadata without the value when rejected; neither the report nor its acceptance proves physical truth or causation.
+A fresh value report Hearth durably receives from an Adapter, identified once despite redelivery and carrying Hearth receive time, Adapter acquisition time, and optional upstream change time. Its retained record includes the normalized value when accepted or rejection metadata without the value when rejected; neither the report nor its acceptance proves physical truth or causation. The Levoit Adapter explicitly reports acknowledged control requests optimistically; those reports are not device measurements.
 _Avoid_: Physical confirmation, proof of causation
 
 **State**:
-The current value Hearth has accepted for an entity. It is the latest first-seen valid Observation from the owning adapter by core-assigned receive order; a same-value Observation advances its evidence and timestamps, and State is not a requested or desired value.
+The current value Hearth has accepted for an entity. It is the latest first-seen valid Observation from the owning adapter by core-assigned receive order; a same-value Observation advances its evidence and timestamps. State is not a desired-state queue. As an explicit Adapter-specific exception, Levoit control State includes optimistic requested values after cloud acceptance, until later cloud reports replace them. These values also enter history and automations.
 _Avoid_: Desired state, target
 
 **Forecast**:

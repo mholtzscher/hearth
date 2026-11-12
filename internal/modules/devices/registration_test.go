@@ -217,7 +217,7 @@ func TestRegisterAccepts64Entities(t *testing.T) {
 
 func TestRegisterAcceptsCanonicalDeviceKinds(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []DeviceKind{DeviceKindLight, DeviceKindRelay, DeviceKindSensor} {
+	for _, kind := range []DeviceKind{DeviceKindLight, DeviceKindRelay, DeviceKindSensor, DeviceKindAirPurifier} {
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
 			repository := &stubRegistrationRepository{}
