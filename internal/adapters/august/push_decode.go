@@ -21,10 +21,26 @@ func decodePushMessage(data json.RawMessage, id lockID, received time.Time) (rep
 	}
 	// A PubNub message is not authoritative Bridge or battery evidence.
 	result.Online, result.Battery = nil, nil
+	if pushExplicitlyOffline(fields["error"]) {
+		online := false
+		return report{ReceivedAt: received, Online: &online}, true
+	}
 	if action, exists := fields["lockAction"]; exists {
 		result.Lock = decodePushAction(action, fields["dateTime"])
 	}
 	return result, result.Lock != nil || result.DoorOpen != nil
+}
+
+func pushExplicitlyOffline(data json.RawMessage) bool {
+	var wire struct {
+		RestCode int    `json:"restCode"`
+		Name     string `json:"name"`
+	}
+	if json.Unmarshal(data, &wire) != nil {
+		return false
+	}
+	const bridgeOfflineCode = 98
+	return wire.RestCode == bridgeOfflineCode || wire.Name == "ERRNO_BRIDGE_OFFLINE"
 }
 
 func decodePushAction(action, rawTime json.RawMessage) *reading[lockv1.State] {

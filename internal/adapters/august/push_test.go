@@ -171,6 +171,18 @@ func TestPushFailuresEndGeneration(t *testing.T) {
 	}
 }
 
+func TestPushOfflineErrorDoesNotPublishCachedLockState(t *testing.T) {
+	t.Parallel()
+	got, ok := decodePushMessage(
+		[]byte(`{"error":{"restCode":98,"name":"ERRNO_BRIDGE_OFFLINE"},"status":"locked"}`),
+		testLockID,
+		time.Now(),
+	)
+	if !ok || got.Online == nil || *got.Online || got.Lock != nil || got.DoorOpen != nil {
+		t.Fatal("explicit offline evidence was discarded or cached State was published")
+	}
+}
+
 func TestPushCancellationInterruptsTransport(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())

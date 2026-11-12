@@ -20,6 +20,7 @@ const (
 	keyLock        = "lock"
 	keyDoorOpen    = "door-open"
 	keyBattery     = "battery"
+	roleSuperuser  = "superuser"
 )
 
 // Config describes one stateless account connection and its explicit bindings.

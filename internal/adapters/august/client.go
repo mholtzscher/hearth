@@ -269,7 +269,7 @@ func (c *client) selectedID(id lockID) bool {
 }
 
 func (c *client) detail(ctx context.Context, entry inventoryEntry) (deviceDetail, error) {
-	if !c.selectedID(entry.ID) || entry.UserType != "superuser" {
+	if !c.selectedID(entry.ID) || entry.UserType != roleSuperuser {
 		return deviceDetail{}, &providerError{code: codeRejected}
 	}
 	response, err := c.authorizedRead(ctx, "/locks/"+string(entry.ID))

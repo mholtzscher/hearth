@@ -37,14 +37,15 @@ type Adapter struct {
 }
 
 type deviceRuntime struct {
-	gate    chan struct{}
-	config  *BindingConfig // Nil for a previously owned, now unconfigured binding.
-	entry   *inventoryEntry
-	device  device
-	online  bool
-	channel string
-	ids     map[string]string
-	fields  map[string]*fieldRuntime
+	gate             chan struct{}
+	config           *BindingConfig // Nil for a previously owned, now unconfigured binding.
+	entry            *inventoryEntry
+	device           device
+	online           bool
+	channel          string
+	pushRecoveryUsed bool // Coalesce recovery-triggering push until the next scheduled acquisition.
+	ids              map[string]string
+	fields           map[string]*fieldRuntime
 }
 
 type fieldRuntime struct {
@@ -170,10 +171,11 @@ func (a *Adapter) pollDevice(ctx context.Context, runtime *deviceRuntime, refres
 		return err
 	}
 	defer func() { <-runtime.gate }()
+	runtime.pushRecoveryUsed = false
 	if runtime.entry == nil {
 		return a.unavailable(ctx, runtime, "device_missing")
 	}
-	if runtime.entry.UserType != "superuser" {
+	if runtime.entry.UserType != roleSuperuser {
 		return a.unavailable(ctx, runtime, "unsupported_role")
 	}
 	if refresh || needsRecovery(runtime) {
