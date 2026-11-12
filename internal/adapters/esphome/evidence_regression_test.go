@@ -223,7 +223,7 @@ func TestRegistrationValidationIsPerDeviceButDeadlineFailureIsTerminal(t *testin
 		dialer := newPipeDialer()
 		dialer.devices["one"] = testDevice("02:00:00:00:00:01")
 		device := harnessDevice(t, "02:00:00:00:00:01", "one")
-		connection, err := dialer.Dial(t.Context(), nativeapi.DialConfig{Address: "one", PSK: device.PSK})
+		connection, err := dialer.Dial(t.Context(), nativeapi.DialConfig{Address: "one", PSK: device.Transport.key})
 		if err != nil {
 			t.Fatal(err)
 		}

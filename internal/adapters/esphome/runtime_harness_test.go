@@ -234,7 +234,7 @@ func harnessDevice(t *testing.T, macText, address string) Device {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Device{MAC: mac, Address: address, Port: 6053, PSK: harnessPSK()}
+	return Device{MAC: mac, Address: address, Port: 6053, Transport: EncryptedTransport(harnessPSK())}
 }
 
 func harnessTiming() timing {
@@ -247,7 +247,7 @@ func harnessTiming() timing {
 func runAdapter(t *testing.T, session *fakeSession, dialer *pipeDialer, devices ...Device) (*Adapter, func() error) {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
-	instance, err := newAdapter(session, Config{Devices: devices}, logger, dialer, harnessTiming(), nil)
+	instance, err := newAdapter(session, Config{Static: devices}, logger, dialer, harnessTiming(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

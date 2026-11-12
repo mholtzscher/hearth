@@ -31,20 +31,19 @@ type Session interface {
 	PublishObservation(context.Context, adapter.Observation) (adapter.ObservationID, error)
 }
 
-// Device is one configured ESPHome device.
+// Device is a concrete endpoint with an authorized transport, ready for a worker.
 type Device struct {
-	MAC                     MAC
-	Address                 string
-	Port                    uint16
-	PSK                     nativeapi.PSK
-	InsecurePlaintext       bool
-	EncryptionKeyConfigured bool
-	Exposure                Exposure
+	MAC       MAC
+	Address   string
+	Port      uint16
+	Transport Transport
+	Exposure  Exposure
 }
 
 // Config is the Adapter's validated configuration. Process assembly owns file and format validation.
 type Config struct {
-	Devices   []Device
+	Static    []Device
+	Overrides map[MAC]DiscoveryOverride
 	Discovery DiscoveryConfig
 	Blocklist map[MAC]struct{}
 }
@@ -106,19 +105,25 @@ func newAdapter(
 		return nil, errors.New("esphome adapter Session is required")
 	case dialer == nil:
 		return nil, errors.New("esphome dialer is required")
-	case len(config.Devices) == 0 && !config.Discovery.Enabled && len(config.Blocklist) == 0:
+	case len(config.Static) == 0 && !config.Discovery.Enabled && len(config.Blocklist) == 0:
 		return nil, errors.New("esphome adapter needs at least one device")
-	case len(config.Devices) > maximumDevices:
+	case len(config.Static)+len(config.Overrides) > maximumDevices:
 		return nil, errors.New("esphome adapter supports at most 64 configured devices")
 	case config.Discovery.Enabled && discovery == nil:
 		return nil, errors.New("esphome discovery source is required")
 	}
 	seen := map[MAC]struct{}{}
-	for _, device := range config.Devices {
+	for _, device := range config.Static {
 		if _, duplicate := seen[device.MAC]; duplicate {
 			return nil, errors.New("esphome device MAC addresses must be unique")
 		}
 		seen[device.MAC] = struct{}{}
+		if _, overlap := config.Overrides[device.MAC]; overlap {
+			return nil, errors.New("esphome device MAC addresses must be unique")
+		}
+		if device.Address == "" || device.Port == 0 || device.Transport.mode == transportUnset {
+			return nil, errors.New("esphome static device requires an endpoint and transport")
+		}
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -192,8 +197,8 @@ func (a *Adapter) listOwnedMappings(ctx context.Context) (map[string]map[string]
 // reportUnconfigured marks non-static owned Entities unavailable, distinguishing pending discovery from blocked config.
 func (a *Adapter) reportUnconfigured(ctx context.Context, owned map[string]map[string]string) error {
 	configured := map[string]struct{}{}
-	for _, device := range a.config.Devices {
-		if _, blocked := a.config.Blocklist[device.MAC]; !blocked && device.Address != "" {
+	for _, device := range a.config.Static {
+		if _, blocked := a.config.Blocklist[device.MAC]; !blocked {
 			configured[device.MAC.BindingKey()] = struct{}{}
 		}
 	}

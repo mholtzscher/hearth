@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	esphomeadapter "github.com/mholtzscher/hearth/internal/adapters/esphome"
 )
 
 func validConfig() Config {
@@ -114,7 +116,7 @@ func TestAdapterConfigKeyFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	device := got.Devices[0]
+	device := got.Static[0]
 	if device.Port != 6053 || device.MAC.String() != "aa:bb:cc:dd:ee:ff" || len(device.Exposure.Include) != 1 {
 		t.Fatalf("converted device: MAC=%s port=%d includes=%d", device.MAC, device.Port, len(device.Exposure.Include))
 	}
@@ -138,7 +140,7 @@ func TestInsecurePlaintextRequiresExplicitOptInAndNoKey(t *testing.T) {
 	}
 	config.Devices[0].InsecurePlaintext = true
 	prepared, err := adapterConfig(config)
-	if err != nil || !prepared.Devices[0].InsecurePlaintext {
+	if err != nil || prepared.Static[0].Transport != esphomeadapter.PlaintextTransport() {
 		t.Fatalf("explicit plaintext = %+v, %v", prepared, err)
 	}
 	config.Devices[0].EncryptionKeyFile = "/must/not/be/read"

@@ -11,6 +11,14 @@ type DiscoveryConfig struct {
 	AllowInsecurePlaintext bool
 }
 
+// DiscoveryOverride supplies MAC-keyed policy without defining a static endpoint.
+// Port zero inherits the advertisement; Transport zero inherits discovery policy.
+type DiscoveryOverride struct {
+	Port      uint16
+	Transport Transport
+	Exposure  Exposure
+}
+
 // DiscoveryRecord is a resolved ESPHome DNS-SD advertisement, not authenticated device identity.
 type DiscoveryRecord struct {
 	MAC       MAC
@@ -42,26 +50,18 @@ func (a *Adapter) discoveredDevice(record DiscoveryRecord) (Device, string) {
 		return Device{}, reasonDeviceUnreachable
 	}
 	device := Device{MAC: record.MAC, Address: record.Address, Port: record.Port}
-	for _, configured := range a.config.Devices {
-		if configured.MAC != record.MAC {
-			continue
-		}
-		device = configured
-		if device.Address == "" {
-			device.Address = record.Address
-		}
-		if device.Port == 0 {
-			device.Port = record.Port
-		}
-		break
+	override := a.config.Overrides[record.MAC]
+	device.Transport = override.Transport
+	device.Exposure = override.Exposure
+	if override.Port != 0 {
+		device.Port = override.Port
 	}
 	switch {
-	case device.EncryptionKeyConfigured:
-		device.InsecurePlaintext = false
+	case device.Transport.mode == transportEncrypted:
 	case record.Encrypted:
 		return Device{}, reasonEncryptionKeyRequired
-	case device.InsecurePlaintext || a.config.Discovery.AllowInsecurePlaintext:
-		device.InsecurePlaintext = true
+	case device.Transport.mode == transportPlaintext || a.config.Discovery.AllowInsecurePlaintext:
+		device.Transport = PlaintextTransport()
 	default:
 		return Device{}, reasonPlaintextRejected
 	}

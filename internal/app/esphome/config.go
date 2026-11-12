@@ -52,70 +52,92 @@ type DeviceConfig struct {
 // Validate checks static configuration without opening encryption key files.
 // Errors identify fields by index without repeating their values.
 func (value Config) Validate() error {
+	_, _, err := value.prepare()
+	return err
+}
+
+type preparedDevice struct {
+	source   DeviceConfig
+	mac      esphomeadapter.MAC
+	exposure esphomeadapter.Exposure
+}
+
+// prepare shares parsed values within validation and assembly without reading key files.
+func (value Config) prepare() ([]preparedDevice, map[esphomeadapter.MAC]struct{}, error) {
 	if err := platformconfig.ValidateSlug("adapter_id", value.AdapterID); err != nil {
-		return err
+		return nil, nil, err
 	}
 	if err := platformconfig.ValidateNATSURL(value.NATSURL); err != nil {
-		return err
+		return nil, nil, err
 	}
 	if len(value.Devices) > 64 || (len(value.Devices) == 0 && !value.Discovery.Enabled) {
-		return errors.New("devices must contain 1 to 64 entries unless discovery is enabled")
+		return nil, nil, errors.New("devices must contain 1 to 64 entries unless discovery is enabled")
 	}
 	if value.Discovery.AllowInsecurePlaintext && !value.Discovery.Enabled {
-		return errors.New("discovery.allow_insecure_plaintext requires discovery.enabled")
+		return nil, nil, errors.New("discovery.allow_insecure_plaintext requires discovery.enabled")
 	}
-	if _, err := blockedMACs(value.Blocklist); err != nil {
-		return err
+	blocked, err := blockedMACs(value.Blocklist)
+	if err != nil {
+		return nil, nil, err
 	}
+	devices := make([]preparedDevice, 0, len(value.Devices))
 	seen := make(map[esphomeadapter.MAC]struct{}, len(value.Devices))
 	for index, device := range value.Devices {
 		field := fmt.Sprintf("devices[%d]", index)
 		if !macPattern.MatchString(device.MAC) {
-			return fmt.Errorf("%s.mac must contain six colon-separated hexadecimal octets", field)
+			return nil, nil, fmt.Errorf("%s.mac must contain six colon-separated hexadecimal octets", field)
 		}
-		mac, err := esphomeadapter.ParseMAC(device.MAC)
-		if err != nil {
-			return fmt.Errorf("%s.mac is invalid", field)
+		mac, parseErr := esphomeadapter.ParseMAC(device.MAC)
+		if parseErr != nil {
+			return nil, nil, fmt.Errorf("%s.mac is invalid", field)
 		}
 		if _, exists := seen[mac]; exists {
-			return fmt.Errorf("%s.mac must be unique", field)
+			return nil, nil, fmt.Errorf("%s.mac must be unique", field)
 		}
 		seen[mac] = struct{}{}
-		if err = device.validate(field, value.Discovery.Enabled); err != nil {
-			return err
+		exposure, prepareErr := device.prepare(field, value.Discovery.Enabled)
+		if prepareErr != nil {
+			return nil, nil, prepareErr
 		}
+		devices = append(devices, preparedDevice{source: device, mac: mac, exposure: exposure})
 	}
-	return nil
+	return devices, blocked, nil
 }
 
-func (device DeviceConfig) validate(field string, discovery bool) error {
+func (device DeviceConfig) prepare(field string, discovery bool) (esphomeadapter.Exposure, error) {
 	if (device.Address != "" || !discovery) && !validAddress(device.Address) {
-		return fmt.Errorf("%s.address must be an IP address or unicast DNS hostname (not .local)", field)
+		return esphomeadapter.Exposure{}, fmt.Errorf(
+			"%s.address must be an IP address or unicast DNS hostname (not .local)",
+			field,
+		)
 	}
 	if device.Port != nil && (*device.Port < 1 || *device.Port > 65535) {
-		return fmt.Errorf("%s.port must be between 1 and 65535", field)
+		return esphomeadapter.Exposure{}, fmt.Errorf("%s.port must be between 1 and 65535", field)
 	}
 	if device.InsecurePlaintext && device.EncryptionKeyFile != "" {
-		return fmt.Errorf("%s.insecure_plaintext and encryption_key_file are mutually exclusive", field)
+		return esphomeadapter.Exposure{}, fmt.Errorf(
+			"%s.insecure_plaintext and encryption_key_file are mutually exclusive",
+			field,
+		)
 	}
 	if (device.Address != "" || !discovery) && !device.InsecurePlaintext &&
 		strings.TrimSpace(device.EncryptionKeyFile) == "" {
-		return fmt.Errorf("%s.encryption_key_file is required", field)
+		return esphomeadapter.Exposure{}, fmt.Errorf("%s.encryption_key_file is required", field)
 	}
 	include, err := parseRefs(device.Include)
 	if err != nil {
-		return fmt.Errorf("%s.include contains an invalid entity reference", field)
+		return esphomeadapter.Exposure{}, fmt.Errorf("%s.include contains an invalid entity reference", field)
 	}
 	exclude, err := parseRefs(device.Exclude)
 	if err != nil {
-		return fmt.Errorf("%s.exclude contains an invalid entity reference", field)
+		return esphomeadapter.Exposure{}, fmt.Errorf("%s.exclude contains an invalid entity reference", field)
 	}
 	for ref := range include {
 		if _, exists := exclude[ref]; exists {
-			return fmt.Errorf("%s.include and %s.exclude must not overlap", field, field)
+			return esphomeadapter.Exposure{}, fmt.Errorf("%s.include and %s.exclude must not overlap", field, field)
 		}
 	}
-	return nil
+	return esphomeadapter.Exposure{Include: include, Exclude: exclude}, nil
 }
 
 func validAddress(address string) bool {
@@ -166,45 +188,51 @@ func (err *KeyFileError) Error() string {
 
 // adapterConfig validates, loads bounded key files, and prepares the Adapter configuration.
 func adapterConfig(value Config) (esphomeadapter.Config, error) {
-	if err := value.Validate(); err != nil {
+	devices, blocked, err := value.prepare()
+	if err != nil {
 		return esphomeadapter.Config{}, err
 	}
-	blocked, _ := blockedMACs(value.Blocklist)
 	result := esphomeadapter.Config{
-		Devices:   make([]esphomeadapter.Device, 0, len(value.Devices)),
+		Static:    make([]esphomeadapter.Device, 0, len(devices)),
+		Overrides: make(map[esphomeadapter.MAC]esphomeadapter.DiscoveryOverride),
 		Blocklist: blocked,
 		Discovery: esphomeadapter.DiscoveryConfig{
 			Enabled:                value.Discovery.Enabled,
 			AllowInsecurePlaintext: value.Discovery.AllowInsecurePlaintext,
 		},
 	}
-	for index, device := range value.Devices {
-		mac, _ := esphomeadapter.ParseMAC(device.MAC)
-		if _, isBlocked := blocked[mac]; isBlocked {
+	for index, prepared := range devices {
+		device := prepared.source
+		if _, isBlocked := blocked[prepared.mac]; isBlocked {
 			continue
 		}
-		var key nativeapi.PSK
+		var transport esphomeadapter.Transport
+		if device.InsecurePlaintext {
+			transport = esphomeadapter.PlaintextTransport()
+		}
 		if device.EncryptionKeyFile != "" {
-			loaded, err := readKeyFile(device.EncryptionKeyFile, index)
-			if err != nil {
-				return esphomeadapter.Config{}, err
+			loaded, keyErr := readKeyFile(device.EncryptionKeyFile, index)
+			if keyErr != nil {
+				return esphomeadapter.Config{}, keyErr
 			}
-			key = loaded
+			transport = esphomeadapter.EncryptedTransport(loaded)
 		}
-		include, _ := parseRefs(device.Include)
-		exclude, _ := parseRefs(device.Exclude)
-		port := defaultPort
-		if device.Address == "" {
-			port = 0 // Discovered overrides inherit the advertised API port.
-		}
+		port := 0
 		if device.Port != nil {
 			port = *device.Port
 		}
-		result.Devices = append(result.Devices, esphomeadapter.Device{
-			MAC: mac, Address: device.Address, Port: uint16(port), PSK: key,
-			InsecurePlaintext:       device.InsecurePlaintext,
-			EncryptionKeyConfigured: device.EncryptionKeyFile != "",
-			Exposure:                esphomeadapter.Exposure{Include: include, Exclude: exclude},
+		if device.Address == "" {
+			result.Overrides[prepared.mac] = esphomeadapter.DiscoveryOverride{
+				Port: uint16(port), Transport: transport, Exposure: prepared.exposure,
+			}
+			continue
+		}
+		if port == 0 {
+			port = defaultPort
+		}
+		result.Static = append(result.Static, esphomeadapter.Device{
+			MAC: prepared.mac, Address: device.Address, Port: uint16(port),
+			Transport: transport, Exposure: prepared.exposure,
 		})
 	}
 	return result, nil

@@ -72,7 +72,7 @@ func newWorker(owner *Adapter, index int, device Device, owned map[string]string
 // run connects, serves, and reconnects until ctx ends. It returns only Session failures.
 func (w *worker) run(ctx context.Context) error {
 	defer close(w.done)
-	if w.device.InsecurePlaintext {
+	if w.device.Transport.mode == transportPlaintext {
 		w.logger.WarnContext(ctx, "device transport is unencrypted",
 			slog.String("event", "device.insecure_plaintext"))
 	}
@@ -173,9 +173,9 @@ func (w *worker) attempt(ctx context.Context) connectResult {
 	deviceContext, cancel := context.WithTimeout(ctx, w.adapter.timing.connectTimeout)
 	defer cancel()
 	conn, err := w.adapter.dialer.Dial(deviceContext, nativeapi.DialConfig{
-		Address: w.device.Address, Port: w.device.Port, PSK: w.device.PSK,
+		Address: w.device.Address, Port: w.device.Port, PSK: w.device.Transport.key,
 		ExpectMAC: w.device.MAC.String(), ClientInfo: clientInfo,
-		InsecurePlaintext: w.device.InsecurePlaintext,
+		InsecurePlaintext: w.device.Transport.mode == transportPlaintext,
 	})
 	if err != nil {
 		return connectResult{err: err}

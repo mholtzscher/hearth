@@ -35,6 +35,7 @@ func TestDiscoveryTransportAndBlocklistPolicy(t *testing.T) {
 		{name: "global plaintext", global: true, plaintext: true},
 		{name: "individual plaintext", individual: true, plaintext: true},
 		{name: "encrypted requires key", global: true, encrypted: true, want: reasonEncryptionKeyRequired},
+		{name: "individual permission cannot downgrade encrypted", individual: true, encrypted: true, want: reasonEncryptionKeyRequired},
 		{name: "explicit key uses Noise", global: true, key: true},
 		{name: "encrypted with key", global: true, key: true, encrypted: true},
 		{name: "blocklist wins", global: true, key: true, encrypted: true, blocked: true, want: reasonDeviceBlocked},
@@ -43,13 +44,17 @@ func TestDiscoveryTransportAndBlocklistPolicy(t *testing.T) {
 			t.Parallel()
 			record := discoveredFixture(t, "192.0.2.10")
 			record.Encrypted = tc.encrypted
+			var transport Transport
+			if tc.individual {
+				transport = PlaintextTransport()
+			}
+			if tc.key {
+				transport = EncryptedTransport(harnessPSK())
+			}
 			config := Config{Discovery: DiscoveryConfig{Enabled: true, AllowInsecurePlaintext: tc.global},
-				Devices: []Device{
-					{
-						MAC:                     record.MAC,
-						InsecurePlaintext:       tc.individual,
-						EncryptionKeyConfigured: tc.key,
-						PSK:                     harnessPSK(),
+				Overrides: map[MAC]DiscoveryOverride{
+					record.MAC: {
+						Transport: transport,
 						Exposure: Exposure{
 							Exclude: map[EntityRef]struct{}{{Type: "light", Name: "Lamp"}: {}},
 						},
@@ -63,8 +68,9 @@ func TestDiscoveryTransportAndBlocklistPolicy(t *testing.T) {
 			if reason != tc.want {
 				t.Fatalf("reason = %s, want %s", reason, tc.want)
 			}
-			if reason == "" && (device.InsecurePlaintext != tc.plaintext || device.Address != record.Address ||
-				device.Port != 6053 || len(device.Exposure.Exclude) != 1) {
+			if reason == "" &&
+				((device.Transport.mode == transportPlaintext) != tc.plaintext || device.Address != record.Address ||
+					device.Port != 6053 || len(device.Exposure.Exclude) != 1) {
 				t.Fatalf("resolved device = %+v", device)
 			}
 		})
@@ -217,14 +223,7 @@ func TestDiscoveryReconcilesOwnedEntitiesAndNeverDowngradesEncryptedAdvertisemen
 		if got := len(callsOfKind(session.snapshot(), "register")); got != 1 {
 			t.Fatalf("downgrade registered: %d", got)
 		}
-		unavailableReports := 0
-		for _, entry := range callsOfKind(session.snapshot(), "availability") {
-			for _, report := range entry.availability {
-				if report.EntityID == id && report.ReasonCode == reasonEncryptionKeyRequired {
-					unavailableReports++
-				}
-			}
-		}
+		unavailableReports := countAvailabilityReports(session, id, reasonEncryptionKeyRequired)
 		if unavailableReports != 1 {
 			t.Errorf("same transition reported %d times, want 1", unavailableReports)
 		}
@@ -240,6 +239,18 @@ func TestDiscoveryReconcilesOwnedEntitiesAndNeverDowngradesEncryptedAdvertisemen
 			t.Fatal("plaintext connection retained after encryption advertisement")
 		}
 	})
+}
+
+func countAvailabilityReports(session *fakeSession, entityID, reason string) int {
+	count := 0
+	for _, entry := range callsOfKind(session.snapshot(), "availability") {
+		for _, report := range entry.availability {
+			if report.EntityID == entityID && report.ReasonCode == reason {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func TestDiscoveryBlocklistAndIdentityChecksBeforeRegistration(t *testing.T) {
@@ -333,7 +344,7 @@ func TestDiscoveryConfiguredKeyNeverFallsBackToPlaintext(t *testing.T) {
 		dialer.devices[record.Address] = device
 		source, _ := runDiscoveryHarness(t, session, dialer, Config{
 			Discovery: DiscoveryConfig{Enabled: true, AllowInsecurePlaintext: true},
-			Devices:   []Device{{MAC: record.MAC, PSK: harnessPSK(), EncryptionKeyConfigured: true}},
+			Overrides: map[MAC]DiscoveryOverride{record.MAC: {Transport: EncryptedTransport(harnessPSK())}},
 		})
 		source.records <- record // Omitted encryption TXT must not override configured credentials.
 		synctest.Wait()
@@ -354,7 +365,7 @@ func TestDiscoveryDoesNotDuplicateOrReplaceStaticEndpoint(t *testing.T) {
 		dialer := newPipeDialer()
 		dialer.devices["192.0.2.10"] = testDevice(record.MAC.String())
 		config := Config{Discovery: DiscoveryConfig{Enabled: true, AllowInsecurePlaintext: true},
-			Devices: []Device{harnessDevice(t, record.MAC.String(), "192.0.2.10")}}
+			Static: []Device{harnessDevice(t, record.MAC.String(), "192.0.2.10")}}
 		source, _ := runDiscoveryHarness(t, session, dialer, config)
 		synctest.Wait()
 		source.records <- record
@@ -366,6 +377,26 @@ func TestDiscoveryDoesNotDuplicateOrReplaceStaticEndpoint(t *testing.T) {
 		defer dialer.mu.Unlock()
 		if len(dialer.sessions[record.Address]) != 0 {
 			t.Fatal("discovery overrode static endpoint")
+		}
+	})
+}
+
+func TestRuntimeBlocklistWinsOverPreparedStaticEndpoint(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		record := discoveredFixture(t, "192.0.2.10")
+		session := &fakeSession{owned: []adapter.OwnedMapping{
+			{BindingKey: record.MAC.BindingKey(), EntityKey: "old", EntityID: "ent_old"},
+		}}
+		dialer := newPipeDialer()
+		_, _ = runDiscoveryHarness(t, session, dialer, Config{
+			Static:    []Device{harnessDevice(t, record.MAC.String(), record.Address)},
+			Blocklist: map[MAC]struct{}{record.MAC: {}},
+		})
+		synctest.Wait()
+		if len(callsOfKind(session.snapshot(), "register")) != 0 ||
+			lastAvailability(session.snapshot())["ent_old"].ReasonCode != reasonDeviceBlocked {
+			t.Fatal("runtime ignored static blocklist")
 		}
 	})
 }
@@ -410,10 +441,10 @@ func TestDiscoveryLimitCandidateStartsWhenCapacityIsFreed(t *testing.T) {
 		for index := range maximumDevices {
 			supervisor.start(
 				Device{
-					MAC:               MAC{2, 0, 0, 0, byte(index), 1},
-					Address:           "192.0.2.10",
-					Port:              6053,
-					InsecurePlaintext: true,
+					MAC:       MAC{2, 0, 0, 0, byte(index), 1},
+					Address:   "192.0.2.10",
+					Port:      6053,
+					Transport: PlaintextTransport(),
 				},
 			)
 		}

@@ -12,7 +12,7 @@ func TestDiscoveryOnlyConfigAndAddresslessOverrides(t *testing.T) {
 		Discovery: DiscoveryConfig{Enabled: true, AllowInsecurePlaintext: true}}
 	prepared, err := adapterConfig(config)
 	if err != nil || !prepared.Discovery.Enabled || !prepared.Discovery.AllowInsecurePlaintext ||
-		len(prepared.Devices) != 0 {
+		len(prepared.Static) != 0 || len(prepared.Overrides) != 0 {
 		t.Fatalf("discovery-only = %+v, %v", prepared, err)
 	}
 	config.Devices = []DeviceConfig{{MAC: "02:00:00:00:00:01", Exclude: []string{"light/RGB Light"}}}
@@ -20,8 +20,10 @@ func TestDiscoveryOnlyConfigAndAddresslessOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	device := prepared.Devices[0]
-	if device.Address != "" || device.Port != 0 || device.EncryptionKeyConfigured || len(device.Exposure.Exclude) != 1 {
+	mac, _ := esphomeadapter.ParseMAC(config.Devices[0].MAC)
+	device, found := prepared.Overrides[mac]
+	if !found || len(prepared.Static) != 0 || device.Port != 0 || device.Transport != (esphomeadapter.Transport{}) ||
+		len(device.Exposure.Exclude) != 1 {
 		t.Fatalf("override did not inherit endpoint: %+v", device)
 	}
 }
@@ -36,8 +38,43 @@ func TestDiscoveryBlocklistWinsBeforeOpeningKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	mac, _ := esphomeadapter.ParseMAC(config.Blocklist[0])
-	if _, blocked := prepared.Blocklist[mac]; !blocked || len(prepared.Devices) != 0 {
+	if _, blocked := prepared.Blocklist[mac]; !blocked || len(prepared.Static) != 0 || len(prepared.Overrides) != 0 {
 		t.Fatalf("blocklist lost: %+v", prepared)
+	}
+}
+
+func TestPreparationSeparatesStaticEndpointsAndOverrides(t *testing.T) {
+	t.Parallel()
+	apiPort := 6054
+	config := Config{AdapterID: "esphome", NATSURL: "nats://127.0.0.1:4222",
+		Discovery: DiscoveryConfig{Enabled: true},
+		Devices: []DeviceConfig{
+			{MAC: "02:00:00:00:00:01", Address: "192.0.2.10", InsecurePlaintext: true},
+			{
+				MAC:               "02:00:00:00:00:02",
+				Port:              &apiPort,
+				InsecurePlaintext: true,
+				Include:           []string{"sensor/Temperature"},
+			},
+		},
+	}
+	prepared, err := adapterConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.Static) != 1 || len(prepared.Overrides) != 1 {
+		t.Fatalf("classification = %+v", prepared)
+	}
+	static := prepared.Static[0]
+	if static.Address != "192.0.2.10" || static.Port != 6053 ||
+		static.Transport != esphomeadapter.PlaintextTransport() {
+		t.Fatalf("static endpoint = %+v", static)
+	}
+	mac, _ := esphomeadapter.ParseMAC(config.Devices[1].MAC)
+	override := prepared.Overrides[mac]
+	if override.Port != 6054 || override.Transport != esphomeadapter.PlaintextTransport() ||
+		len(override.Exposure.Include) != 1 {
+		t.Fatalf("override = %+v", override)
 	}
 }
 

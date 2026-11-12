@@ -47,9 +47,9 @@ func (a *Adapter) runDevices(ctx context.Context, owned map[string]map[string]st
 		}
 	}()
 	a.router.seedOwned(owned)
-	for _, device := range a.config.Devices {
+	for _, device := range a.config.Static {
 		_, blocked := a.config.Blocklist[device.MAC]
-		if !blocked && device.Address != "" {
+		if !blocked {
 			supervisor.start(device)
 		}
 	}
@@ -108,8 +108,8 @@ func (supervisor *deviceSupervisor) start(device Device) {
 
 func (supervisor *deviceSupervisor) discovered(record DiscoveryRecord) error {
 	// Explicit addresses remain authoritative, and discovery never creates a second worker for them.
-	for _, configured := range supervisor.adapter.config.Devices {
-		if configured.MAC == record.MAC && configured.Address != "" {
+	for _, configured := range supervisor.adapter.config.Static {
+		if configured.MAC == record.MAC {
 			return nil
 		}
 	}
@@ -130,7 +130,7 @@ func (supervisor *deviceSupervisor) discovered(record DiscoveryRecord) error {
 	}
 	delete(supervisor.skipped, record.MAC)
 	if exists && previous.worker.device.Address == device.Address && previous.worker.device.Port == device.Port &&
-		previous.worker.device.InsecurePlaintext == device.InsecurePlaintext {
+		previous.worker.device.Transport == device.Transport {
 		return nil
 	}
 	if exists {
