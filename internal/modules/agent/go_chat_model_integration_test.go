@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -49,7 +48,6 @@ func TestGoContinuationSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	mcpServer := newBridgeTestServer()
 	dashboardmcp.Register(mcpServer, dashboards.NewService(nil, nil, nil))
-	wantSchema := dashboardAdvertisedSchema(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil)))
 	requests := make(chan goChatRequestFixture, 3)
 	sessions := make(chan string, 3)
 	var count atomic.Int32
@@ -116,7 +114,7 @@ func TestGoContinuationSurvivesRestart(t *testing.T) {
 		if session := <-sessions; session != conversation.ID {
 			t.Fatalf("step %d session=%q", step, session)
 		}
-		assertGoRequest(t, request, wantSchema)
+		assertGoRequest(t, request)
 		if step > 1 {
 			assertGoContinuation(t, request.Messages, step == 3)
 		}
@@ -131,7 +129,7 @@ func TestGoContinuationSurvivesRestart(t *testing.T) {
 	}
 }
 
-func assertGoRequest(t *testing.T, request goChatRequestFixture, wantSchema map[string]any) {
+func assertGoRequest(t *testing.T, request goChatRequestFixture) {
 	t.Helper()
 	if request.Model != "deepseek-v4.1-flash" || request.ReasoningEffort != "max" {
 		t.Fatalf("Go settings: %+v", request)
@@ -142,19 +140,9 @@ func assertGoRequest(t *testing.T, request goChatRequestFixture, wantSchema map[
 		if info.Type != "function" || info.Function.Strict == nil || *info.Function.Strict {
 			t.Error("MCP schema strictness changed")
 		}
-		if info.Function.Name == "present_view" {
-			if !reflect.DeepEqual(info.Function.Parameters, wantSchema) {
-				t.Error("dashboard schema changed at the model boundary")
-			}
-			parameters, marshalErr := json.Marshal(info.Function.Parameters)
-			if marshalErr != nil {
-				t.Fatal(marshalErr)
-			}
-			t.Logf("Chat Completions present_view parameter schema: %d compact JSON bytes", len(parameters))
-		}
 	}
-	if !found["skill"] || !found["echo_text"] || !found["present_view"] {
-		t.Fatalf("missing tools: %v", found)
+	if !found["skill"] || !found["tool_search"] || found["echo_text"] || found["present_view"] {
+		t.Fatalf("unexpected visible tools: %v", found)
 	}
 }
 
