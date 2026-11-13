@@ -40,8 +40,8 @@ func TestRuntimeReportsHealthBeforeAvailabilityAndAvailabilityBeforeState(t *tes
 				t.Fatalf("State published before available: %+v", entry)
 			}
 		}
-		if got := len(callsOfKind(calls, "observation")); got != 5 {
-			t.Fatalf("observations = %d, want 5", got)
+		if got := len(callsOfKind(calls, "observation")); got != 6 {
+			t.Fatalf("observations = %d, want 6 including RGB color", got)
 		}
 		if err := stop(); err != nil {
 			t.Fatal(err)

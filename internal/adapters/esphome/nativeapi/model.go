@@ -28,6 +28,7 @@ type EntityType string
 
 const (
 	EntitySensor       EntityType = "sensor"
+	EntityTextSensor   EntityType = "text_sensor"
 	EntityBinarySensor EntityType = "binary_sensor"
 	EntitySwitch       EntityType = "switch"
 	EntityLight        EntityType = "light"
@@ -47,6 +48,9 @@ const (
 // ColorModeBrightness is the capability bit every brightness-capable light color mode includes.
 const ColorModeBrightness uint32 = 0x02
 
+// ColorModeRGB is the capability bit of RGB-bearing light modes.
+const ColorModeRGB uint32 = 0x20
+
 // EntityInfo is one ListEntities response. Type-specific fields are zero for other types.
 type EntityInfo struct {
 	Type EntityType
@@ -65,6 +69,7 @@ type EntityInfo struct {
 	AssumedState bool
 	// ColorModes lists a light's supported color modes as capability bitmasks.
 	ColorModes []uint32
+	Effects    []string
 }
 
 // StateUpdate is one state push. Fields that do not apply to Type are zero.
@@ -82,7 +87,17 @@ type StateUpdate struct {
 	Bool bool
 	// Brightness is a light's master brightness from 0 to 1.
 	Brightness float64
+	// Text is a text sensor's reported value, including a valid empty string.
+	Text      string
+	ColorMode uint32
+	RGB       RGB
+	// ColorBrightness is the RGB-only amplitude, independent of master Brightness and power.
+	ColorBrightness float64
+	Effect          string
 }
+
+// RGB is an upstream color with each channel in the range 0..1, separate from master brightness.
+type RGB struct{ Red, Green, Blue float64 }
 
 // Command is one entity command: SwitchCommand or LightCommand.
 type Command interface{ nativeCommand() }
@@ -94,12 +109,15 @@ type SwitchCommand struct {
 	On       bool
 }
 
-// LightCommand sets a light's on/off state and, when Brightness is non-nil, its brightness from 0 to 1.
+// LightCommand changes only the non-nil fields, preserving unrelated light settings.
 type LightCommand struct {
-	Key        uint32
-	DeviceID   uint32
-	On         bool
-	Brightness *float64
+	Key             uint32
+	DeviceID        uint32
+	On              *bool
+	Brightness      *float64
+	RGB             *RGB
+	ColorBrightness *float64
+	Effect          *string
 }
 
 func (SwitchCommand) nativeCommand() {}

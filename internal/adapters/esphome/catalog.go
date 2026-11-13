@@ -19,6 +19,9 @@ const (
 	routeSwitchPower
 	routeLightPower
 	routeLightBrightness
+	routeLightColor
+	routeLightEffect
+	routeText
 )
 
 // unitConversion converts an upstream sensor value into the route's canonical unit.

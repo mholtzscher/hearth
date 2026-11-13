@@ -553,13 +553,23 @@ supports API 1.10 or later (including ESPHome 2024.11.1), using the vendored
 ESPHome 2026.10.2 schema. Before API 1.14 it performs empty legacy authentication;
 password-protected devices are unsupported in either transport mode.
 
-Primary sensors and binary sensors are read-only; switches and lights support
-power, and brightness-capable lights also support brightness. Colour, effects,
-numbers, selects, buttons, events, text, covers, locks, climate, voice, and
-Bluetooth proxy functions are not mapped. Configuration, diagnostic, and
+Primary numeric, text, and binary sensors are read-only; switches and lights
+support power, and brightness-capable lights also support brightness. RGB-capable
+lights expose a separate color Entity with red, green, and blue channels from
+0 through 255. Lights with effects expose a setting restricted to their advertised
+effects plus `None`. Color Commands set RGB-only color brightness as part of the
+requested channel values, so grey and black survive firmware normalization.
+Color and effect Commands leave power and master brightness unchanged. Effect
+changes require the light to be on; an off or not-yet-known light state rejects
+the Command without sending it or implicitly turning the light on.
+Text sensors such as VOC Quality retain strings of up to 128 characters,
+including empty strings, and expose no Commands.
+Numbers, selects, buttons, events, covers, locks, climate, voice, and Bluetooth
+proxy functions are not mapped. Configuration, diagnostic, and
 disabled-by-default entities are hidden unless included by exact `<type>/<name>`
 reference, such as `include: ["sensor/Uptime"]`. `exclude: ["light/RGB Light"]`
-omits both light controls. Overrides never grant an unsupported entity type.
+omits every Entity derived from that light. Overrides never grant an unsupported
+entity type.
 Sub-devices, assumed-state switches, and devices reporting `has_deep_sleep` are
 unsupported. The last restriction also applies when a firmware switch currently
 prevents sleep; that switch does not change the reported capability.

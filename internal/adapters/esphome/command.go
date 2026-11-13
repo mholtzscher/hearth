@@ -11,6 +11,8 @@ import (
 	"time"
 
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
+	contractcolorrgbv1 "github.com/mholtzscher/hearth/entitytypes/colorrgbv1"
+	contractenumsettingv1 "github.com/mholtzscher/hearth/entitytypes/enumsettingv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/internal/adapters/esphome/nativeapi"
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -124,6 +126,10 @@ func (w *worker) startNext(ctx context.Context, gen *generation, queue *commandQ
 			attempt.request.finish(attempt.request.responder.RejectUnavailable("Command expired while queued"))
 			continue
 		}
+		if reason := effectDispatchRejection(gen, attempt.route); reason != "" {
+			attempt.request.finish(attempt.request.responder.RejectUnavailable(reason))
+			continue
+		}
 		sendContext, cancel := context.WithDeadline(
 			ctx,
 			earlierDeadline(attempt.request.deadline, time.Now().Add(commandWriteTimeout)),
@@ -154,6 +160,25 @@ func (w *worker) startNext(ctx context.Context, gen *generation, queue *commandQ
 		queue.active = attempt
 	}
 	return nil
+}
+
+// ESPHome discards effect changes while off. Check at dispatch, after earlier FIFO work has refreshed the cache.
+func effectDispatchRejection(gen *generation, route boundRoute) string {
+	if route.Kind != routeLightEffect {
+		return ""
+	}
+	for _, sibling := range gen.byUpstream[route.Upstream] {
+		if sibling.Kind != routeLightPower {
+			continue
+		}
+		if state, known := gen.cache[sibling.EntityID]; known {
+			if string(state.Value) == "true" {
+				return ""
+			}
+			return "turn the ESPHome light on before selecting an effect"
+		}
+	}
+	return "ESPHome light state is not known yet"
 }
 
 // publishLinked publishes a push through the active attempt's evidence and resolves the attempt on a match.
@@ -252,7 +277,7 @@ func prepareSet(route boundRoute, parameters json.RawMessage) (json.RawMessage, 
 		if route.Kind == routeSwitchPower {
 			return target, nativeapi.SwitchCommand{Key: key, DeviceID: deviceID, On: decoded.Value}, nil
 		}
-		return target, nativeapi.LightCommand{Key: key, DeviceID: deviceID, On: decoded.Value}, nil
+		return target, nativeapi.LightCommand{Key: key, DeviceID: deviceID, On: &decoded.Value}, nil
 	case routeLightBrightness:
 		decoded, err := decodeBrightnessSetParameters(parameters)
 		if err != nil {
@@ -260,15 +285,67 @@ func prepareSet(route boundRoute, parameters json.RawMessage) (json.RawMessage, 
 		}
 		target, _ := json.Marshal(decoded.Value)
 		if decoded.Value == 0 {
-			return target, nativeapi.LightCommand{Key: key, DeviceID: deviceID, On: false}, nil
+			return target, nativeapi.LightCommand{Key: key, DeviceID: deviceID, On: new(false)}, nil
 		}
 		brightness := float64(decoded.Value) / 100 //nolint:mnd // Percent to the device's 0..1 scale.
-		return target, nativeapi.LightCommand{Key: key, DeviceID: deviceID, On: true, Brightness: &brightness}, nil
-	case routeTemperature, routeHumidity, routePressure, routeNumeric, routeBinary:
+		return target, nativeapi.LightCommand{Key: key, DeviceID: deviceID, On: new(true), Brightness: &brightness}, nil
+	case routeLightColor:
+		decoded, err := decodeColorSetParameters(parameters)
+		if err != nil {
+			return nil, nil, err
+		}
+		target, _ := json.Marshal(contractcolorrgbv1.State{
+			Active: true, Red: decoded.Red, Green: decoded.Green, Blue: decoded.Blue,
+		})
+		rgb := nativeapi.RGB{Red: float64(decoded.Red) / rgbChannelMaximum,
+			Green: float64(decoded.Green) / rgbChannelMaximum, Blue: float64(decoded.Blue) / rgbChannelMaximum}
+		colorBrightness := max(rgb.Red, rgb.Green, rgb.Blue)
+		return target, nativeapi.LightCommand{
+			Key:             key,
+			DeviceID:        deviceID,
+			RGB:             &rgb,
+			ColorBrightness: &colorBrightness,
+		}, nil
+	case routeLightEffect:
+		decoded, err := decodeEffectSetParameters(route, parameters)
+		if err != nil {
+			return nil, nil, err
+		}
+		target, _ := json.Marshal(decoded.Value)
+		return target, nativeapi.LightCommand{Key: key, DeviceID: deviceID, Effect: &decoded.Value}, nil
+	case routeTemperature, routeHumidity, routePressure, routeNumeric, routeBinary, routeText:
 		fallthrough
 	default:
 		return nil, nil, errors.New("esphome: Entity has no set operation")
 	}
+}
+
+func decodeColorSetParameters(parameters json.RawMessage) (contractcolorrgbv1.SetParameters, error) {
+	codecs, err := contractcolorrgbv1.Compile()
+	if err != nil {
+		return contractcolorrgbv1.SetParameters{}, err
+	}
+	decoded, _, err := codecs.SetParameters.Decode(parameters)
+	if err == nil {
+		support := colorSupport()
+		err = contractcolorrgbv1.ValidateSetParameters(support, support.Operations.Set, decoded)
+	}
+	return decoded, err
+}
+
+func decodeEffectSetParameters(
+	route boundRoute,
+	parameters json.RawMessage,
+) (contractenumsettingv1.SetParameters, error) {
+	codecs, err := contractenumsettingv1.Compile()
+	if err != nil {
+		return contractenumsettingv1.SetParameters{}, err
+	}
+	decoded, _, err := codecs.SetParameters.Decode(parameters)
+	if err == nil {
+		err = contractenumsettingv1.ValidateSetParameters(route.Effect, route.Effect.Operations.Set, decoded)
+	}
+	return decoded, err
 }
 
 func decodePowerSetParameters(parameters json.RawMessage) (contractpowerv1.SetParameters, error) {

@@ -2,16 +2,20 @@ package esphome
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/mholtzscher/hearth/internal/adapters/esphome/nativeapi"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkbinarysensorv1 "github.com/mholtzscher/hearth/sdk/adapter/binarysensorv1"
 	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
+	sdkcolorrgbv1 "github.com/mholtzscher/hearth/sdk/adapter/colorrgbv1"
+	sdkenumsettingv1 "github.com/mholtzscher/hearth/sdk/adapter/enumsettingv1"
 	sdknumericsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsensorv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	sdkpressurev1 "github.com/mholtzscher/hearth/sdk/adapter/pressurev1"
 	sdkrelativehumidityv1 "github.com/mholtzscher/hearth/sdk/adapter/relativehumidityv1"
 	sdktemperaturev1 "github.com/mholtzscher/hearth/sdk/adapter/temperaturev1"
+	sdktextsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/textsensorv1"
 )
 
 const (
@@ -170,29 +174,57 @@ func (planner *entityPlanner) add(entity nativeapi.EntityInfo) error {
 		)
 	case nativeapi.EntityBinarySensor:
 		return planner.plan(name, identity, entityRoute{Upstream: upstream, Kind: routeBinary})
+	case nativeapi.EntityTextSensor:
+		return planner.plan(name, identity, entityRoute{Upstream: upstream, Kind: routeText})
 	case nativeapi.EntitySwitch:
 		return planner.plan(name, identity+"#power", entityRoute{Upstream: upstream, Kind: routeSwitchPower})
 	case nativeapi.EntityLight:
-		if err := planner.plan(
-			name,
-			identity+"#power",
-			entityRoute{Upstream: upstream, Kind: routeLightPower},
-		); err != nil {
-			return err
-		}
-		if supportsBrightness(entity.ColorModes) {
-			return planner.plan(
-				name+" Brightness",
-				identity+"#brightness",
-				entityRoute{Upstream: upstream, Kind: routeLightBrightness},
-			)
-		}
-		return nil
+		return planner.planLight(name, identity, upstream, entity)
 	case nativeapi.EntityOther:
 		return nil
 	default:
 		return nil
 	}
+}
+
+func (planner *entityPlanner) planLight(
+	name, identity string,
+	upstream upstreamRef,
+	entity nativeapi.EntityInfo,
+) error {
+	if err := planner.plan(
+		name,
+		identity+"#power",
+		entityRoute{Upstream: upstream, Kind: routeLightPower},
+	); err != nil {
+		return err
+	}
+	if supportsBrightness(entity.ColorModes) {
+		if err := planner.plan(name+" Brightness", identity+"#brightness",
+			entityRoute{Upstream: upstream, Kind: routeLightBrightness}); err != nil {
+			return err
+		}
+	}
+	if supportsRGB(entity.ColorModes) {
+		if err := planner.plan(name+" Color", identity+"#color",
+			entityRoute{Upstream: upstream, Kind: routeLightColor}); err != nil {
+			return err
+		}
+	}
+	if len(entity.Effects) > 0 {
+		choices := slices.Clone(entity.Effects)
+		if !slices.Contains(choices, "None") {
+			choices = append([]string{"None"}, choices...)
+		}
+		return planner.plan(name+" Effect", identity+"#effect", entityRoute{
+			Upstream: upstream, Kind: routeLightEffect, Effect: effectSupport(choices),
+		})
+	}
+	return nil
+}
+
+func supportsRGB(modes []uint32) bool {
+	return slices.ContainsFunc(modes, func(mode uint32) bool { return mode&nativeapi.ColorModeRGB != 0 })
 }
 
 // skipReason applies the eligibility and exposure rules in order. An empty reason plans the entity.
@@ -240,12 +272,12 @@ func (planner *entityPlanner) deviceKind() string {
 	hasBrightness := false
 	for _, route := range planner.routes {
 		switch route.Kind {
-		case routeTemperature, routeHumidity, routePressure, routeNumeric, routeBinary:
+		case routeTemperature, routeHumidity, routePressure, routeNumeric, routeBinary, routeText:
 			return deviceKindSensor
 		case routeLightBrightness:
 			hasBrightness = true
-		case routeSwitchPower, routeLightPower:
-			// Power routes do not distinguish the device kind.
+		case routeSwitchPower, routeLightPower, routeLightColor, routeLightEffect:
+			// These controls do not distinguish the device kind.
 		}
 	}
 	if hasBrightness {
@@ -270,6 +302,12 @@ func newDescriptor(metadata adapter.EntityMetadata, route entityRoute) (adapter.
 		return sdkpowerv1.NewEntityDescriptor(metadata, powerSupport())
 	case routeLightBrightness:
 		return sdkbrightnessv1.NewEntityDescriptor(metadata, brightnessSupport())
+	case routeLightColor:
+		return sdkcolorrgbv1.NewEntityDescriptor(metadata, colorSupport())
+	case routeLightEffect:
+		return sdkenumsettingv1.NewEntityDescriptor(metadata, route.Effect)
+	case routeText:
+		return sdktextsensorv1.NewEntityDescriptor(metadata, sdktextsensorv1.Support{})
 	default:
 		return adapter.EntityDescriptor{}, fmt.Errorf("route kind %d has no Entity type", route.Kind)
 	}
