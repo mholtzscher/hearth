@@ -33,4 +33,9 @@ describe("forecastSummary", () => {
     expect(stateCellText(daily, { periods: [{ starts_at: "2026-11-09T06:00:00Z", date: "2026-11-09" }] }))
       .toBe("1 daily period from Mon, Nov 9");
   });
+
+  it("shows string State without JSON quotes, including empty strings", () => {
+    expect(stateCellText("hearth.textsensor/v1", "Good")).toBe("Good");
+    expect(stateCellText("hearth.textsensor/v1", "")).toBe("");
+  });
 });

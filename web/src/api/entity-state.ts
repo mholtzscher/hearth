@@ -3,6 +3,7 @@ import type { Entity } from "./types";
 /** Display a returned State with its own presentation metadata, without conversion. */
 export function formatEntityState(entity: Pick<Entity, "state" | "quantities">): string {
   if (!entity.state) return "—";
+  if (typeof entity.state.value === "string") return entity.state.value;
   function format(value: unknown, path: string): string {
     const quantity = entity.quantities?.[path];
     if (typeof value === "number" && quantity) {

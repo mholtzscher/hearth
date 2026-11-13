@@ -9,3 +9,9 @@ it("formats projected State and nested fields with supplied metadata", () => {
   } })).toBe("{active: true, x: 0.3127, y: 0.3290}");
   expect(formatEntityState({ state: null, quantities: { "": { unit: "Cel", label: "°C", fraction_digits: 1 } } })).toBe("—");
 });
+
+it("shows root text as reported, including an empty string", () => {
+  expect(formatEntityState({ state: state("Good"), quantities: {} })).toBe("Good");
+  expect(formatEntityState({ state: state(""), quantities: {} })).toBe("");
+  expect(formatEntityState({ state: state({ choice: "Auto" }), quantities: {} })).toBe('{choice: "Auto"}');
+});

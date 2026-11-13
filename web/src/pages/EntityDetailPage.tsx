@@ -51,6 +51,13 @@ function presetsFor(type: string | undefined, support?: Record<string, unknown>)
       return colorXYPresets();
     case "hearth.colorhs/v1":
       return colorHSPresets();
+    case "hearth.colorrgb/v1":
+      return [
+        { label: "red", params: '{"red":255,"green":0,"blue":0}' },
+        { label: "green", params: '{"red":0,"green":255,"blue":0}' },
+        { label: "blue", params: '{"red":0,"green":0,"blue":255}' },
+        { label: "white", params: '{"red":255,"green":255,"blue":255}' },
+      ];
     case "hearth.enumsetting/v1":
       return stringChoices(support, "choices").map((choice) => ({
         label: choice,
@@ -140,6 +147,9 @@ function exampleParams(type: string | undefined, support?: Record<string, unknow
   }
   if (type === "hearth.colorhs/v1") {
     return '{"hue":120,"saturation":80}';
+  }
+  if (type === "hearth.colorrgb/v1") {
+    return '{"red":255,"green":0,"blue":0}';
   }
   if (type === "hearth.enumsetting/v1") {
     return `{"value":${JSON.stringify(stringChoices(support, "choices")[0] ?? "")}}`;
@@ -238,6 +248,11 @@ function formatStateSummary(
       const v = value as { active?: unknown; hue?: unknown; saturation?: unknown };
       if (typeof v.active !== "boolean" || typeof v.hue !== "number" || typeof v.saturation !== "number") return null;
       return `hue ${numeric(v.hue, "/hue")}, saturation ${numeric(v.saturation, "/saturation")}, ${v.active ? "active" : "inactive"}`;
+    }
+    case "hearth.colorrgb/v1": {
+      const v = value as { active?: unknown; red?: unknown; green?: unknown; blue?: unknown };
+      if (typeof v.active !== "boolean" || typeof v.red !== "number" || typeof v.green !== "number" || typeof v.blue !== "number") return null;
+      return `RGB ${numeric(v.red, "/red")}, ${numeric(v.green, "/green")}, ${numeric(v.blue, "/blue")}, ${v.active ? "active" : "inactive"}`;
     }
     case "hearth.colortemp/v1": {
       const v = value as { active?: unknown; value?: unknown };

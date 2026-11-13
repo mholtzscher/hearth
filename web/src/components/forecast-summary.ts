@@ -38,7 +38,8 @@ export function forecastSummary(type: string | undefined, value: unknown): strin
   return `${count} daily ${count === 1 ? "period" : "periods"} from ${when}`;
 }
 
-/** A State value for a compact table cell: a forecast summary, or raw JSON. */
+/** A State value for a compact table cell: a forecast summary, plain text, or raw JSON. */
 export function stateCellText(type: string | undefined, value: unknown): string {
+  if (typeof value === "string") return value;
   return forecastSummary(type, value) ?? JSON.stringify(value) ?? String(value);
 }

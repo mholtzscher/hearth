@@ -110,7 +110,7 @@ export type LightReading = {
   on?: boolean; level?: MetricData; colorText?: string; swatch?: string; colorPreviewUnavailable?: boolean;
 };
 
-const colorTypes = ["hearth.colorhs/v1", "hearth.colorxy/v1", "hearth.colortemp/v1"] as const;
+const colorTypes = ["hearth.colorhs/v1", "hearth.colorrgb/v1", "hearth.colorxy/v1", "hearth.colortemp/v1"] as const;
 const colorModes: Record<string, (typeof colorTypes)[number]> = { hs: "hearth.colorhs/v1", xy: "hearth.colorxy/v1", color_temp: "hearth.colortemp/v1" };
 
 /** The color Entity in use: the one the color mode names, else the active one, else the only one. */
@@ -151,6 +151,10 @@ export function lightReading(entities: FieldEntity[], canonicalEntities: FieldEn
 
 function colorWords(entity: FieldEntity, data: MetricData | TextData): string {
   if (entity.type === "hearth.colortemp/v1" && "value" in data) return `Color temperature ${formatted(data)}`;
+  if (entity.type === "hearth.colorrgb/v1" && entity.state) {
+    const red = pointer(entity.state.value, "/red"), green = pointer(entity.state.value, "/green"), blue = pointer(entity.state.value, "/blue");
+    if (typeof red === "number" && typeof green === "number" && typeof blue === "number") return `RGB ${red}, ${green}, ${blue}`;
+  }
   return "text" in data ? data.text : formatted(data);
 }
 
@@ -160,6 +164,10 @@ export function swatchColor(entity: FieldEntity): string | undefined {
   const value = entity.state?.value;
   const get = (path: string) => { const v = pointer(value, path); return typeof v === "number" ? v : undefined; };
   switch (entity.type) {
+    case "hearth.colorrgb/v1": {
+      const red = get("/red"), green = get("/green"), blue = get("/blue");
+      return red === undefined || green === undefined || blue === undefined ? undefined : rgb([red / 255, green / 255, blue / 255]);
+    }
     case "hearth.colorhs/v1": {
       const hue = get("/hue"), saturation = get("/saturation");
       return hue === undefined || saturation === undefined ? undefined : rgb(hsv(hue, saturation / 100));

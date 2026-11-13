@@ -77,6 +77,7 @@ const entity = (type: string, value: unknown, i = 1): FieldEntity => ({ id: id.s
   quantities: type === "brightness" ? { "": { unit: "%", label: "%", fraction_digits: 0, range: { minimum: 0, maximum: 100 } } }
     : type === "colorhs" ? { "/hue": { unit: "deg", label: "°", fraction_digits: 0 }, "/saturation": { unit: "%", label: "%", fraction_digits: 0, range: { minimum: 0, maximum: 100 } } }
     : type === "colorxy" ? { "/x": { unit: "1", label: "", fraction_digits: 4 }, "/y": { unit: "1", label: "", fraction_digits: 4 } }
+    : type === "colorrgb" ? Object.fromEntries(["red", "green", "blue"].map(channel => [`/${channel}`, { unit: "1", label: "", fraction_digits: 0 }]))
     : type === "numericsetting" ? { "/value": { unit: "1", label: "", fraction_digits: 1 } } : {},
   state: value === undefined ? null : { value, observed_at: at, observation_id: `obs_${i}` } });
 
@@ -88,6 +89,15 @@ it("Device handles never observed colors and skips event sources, not malformed 
   render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: device }} />, { wrapper: MemoryRouter });
   expect(screen.getByText("Never observed")).toBeTruthy();
   expect(() => parseDevice({ id: deviceId, name: "Lamp", entities: [entity("brightness", "bad")] }, deviceId)).toThrow();
+});
+
+it("renders RGB in the light composite without a duplicate color row", () => {
+  const data = parseDevice({ id: deviceId, name: "Lamp", entities: [entity("power", true), entity("brightness", 64, 2), entity("colorrgb", { active: true, red: 12, green: 128, blue: 255 }, 3), entity("textsensor", "Good", 4)] }, deviceId);
+  render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} />, { wrapper: MemoryRouter });
+  expect(document.querySelector<HTMLElement>(".view-light-swatch")?.style.backgroundColor).toBe("rgb(12, 128, 255)");
+  expect(screen.getByText("RGB 12, 128, 255")).toBeTruthy();
+  expect(screen.getByText("Good")).toBeTruthy();
+  expect(document.querySelectorAll(".view-row")).toHaveLength(1);
 });
 
 it("Device settings use their selected choice and honor the twelve row cap", () => {
