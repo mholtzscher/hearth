@@ -95,8 +95,8 @@ func upstreamIdentity(info nativeapi.EntityInfo) string {
 	return fmt.Sprintf("%d/%s/%s", info.DeviceID, info.Type, info.Name)
 }
 
-// entityKey derives a registration key from the Entity's own external ID only, so sibling changes never move it.
-func entityKey(name, externalID string) string {
+// entityKey retains the original MAC-less hash input so existing Binding-local mappings survive external-ID scoping.
+func entityKey(name, identity string) string {
 	slug := slugify(name)
 	if len(slug) > entityKeySlugBytes {
 		slug = strings.TrimRight(slug[:entityKeySlugBytes], "-")
@@ -104,7 +104,7 @@ func entityKey(name, externalID string) string {
 	if slug == "" {
 		slug = "entity"
 	}
-	sum := sha256.Sum256([]byte(externalID))
+	sum := sha256.Sum256([]byte(identity))
 	return slug + "-" + hex.EncodeToString(sum[:])[:entityKeyHashHex]
 }
 

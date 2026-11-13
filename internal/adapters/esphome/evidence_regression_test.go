@@ -27,8 +27,8 @@ func TestLightFrameRefreshesSiblingCacheBeforeFIFOAdvances(t *testing.T) {
 			t.Fatal(err)
 		}
 		synctest.Wait()
-		power := entityIDFor(t, session, "0/light/Lamp#power")
-		brightness := entityIDFor(t, session, "0/light/Lamp#brightness")
+		power := entityIDFor(t, session, "02:00:00:00:00:01/0/light/Lamp#power")
+		brightness := entityIDFor(t, session, "02:00:00:00:00:01/0/light/Lamp#brightness")
 		_, off := command(t, instance, session, power, "off", `{"value":false}`)
 		synctest.Wait()
 		<-off
@@ -59,7 +59,7 @@ func TestMissingSwitchInvalidatesCachedEvidence(t *testing.T) {
 			t.Fatal(err)
 		}
 		synctest.Wait()
-		relay := entityIDFor(t, session, "0/switch/Relay#power")
+		relay := entityIDFor(t, session, "02:00:00:00:00:01/0/switch/Relay#power")
 		_, done := command(t, instance, session, relay, "missing", `{"value":false}`)
 		synctest.Wait()
 		<-done
@@ -84,7 +84,7 @@ func TestCachedEvidencePreservesFrameReceiptTime(t *testing.T) {
 		dialer.devices["one"] = testDevice("02:00:00:00:00:01")
 		instance, _ := runAdapter(t, session, dialer, harnessDevice(t, "02:00:00:00:00:01", "one"))
 		synctest.Wait()
-		relay := entityIDFor(t, session, "0/switch/Relay#power")
+		relay := entityIDFor(t, session, "02:00:00:00:00:01/0/switch/Relay#power")
 		var received string
 		for _, entry := range callsOfKind(session.snapshot(), "observation") {
 			if entry.observation.EntityID == relay {

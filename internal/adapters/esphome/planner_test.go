@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/adapters/esphome/nativeapi"
@@ -12,6 +13,50 @@ import (
 )
 
 var registrationKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+
+func TestPlanIdenticalDevicesScopeExternalIDsWithoutChangingEntityKeys(t *testing.T) {
+	t.Parallel()
+	fixture := loadFixture(t, "apollo-air1.json")
+	firstMAC := MAC{2, 0, 0, 0, 0, 1}
+	secondMAC := MAC{2, 0, 0, 0, 0, 2}
+	first, err := planDevice(firstMAC, fixture.Info, fixture.Entities, Exposure{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := planDevice(secondMAC, fixture.Info, fixture.Entities, Exposure{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Registration.BindingKey == second.Registration.BindingKey ||
+		*first.Registration.Device.ExternalID == *second.Registration.Device.ExternalID {
+		t.Fatal("identical Devices share a Binding or Device external ID")
+	}
+	if len(first.Registration.Entities) != 18 || len(second.Registration.Entities) != 18 {
+		t.Fatal("both Apollo plans must contain eighteen Entities")
+	}
+	for index, entity := range first.Registration.Entities {
+		other := second.Registration.Entities[index]
+		if entity.ExternalID == other.ExternalID {
+			t.Fatalf("two physical Devices share Entity external ID %q", entity.ExternalID)
+		}
+		identity, scoped := strings.CutPrefix(entity.ExternalID, firstMAC.String()+"/")
+		if !scoped || other.ExternalID != secondMAC.String()+"/"+identity {
+			t.Fatalf("external IDs are not MAC-scoped: %q, %q", entity.ExternalID, other.ExternalID)
+		}
+		if entity.Key != other.Key {
+			t.Fatalf("device-scoping changed Binding-local Entity keys: %q, %q", entity.Key, other.Key)
+		}
+	}
+	for identity, want := range map[string]string{
+		"0/sensor/CO2":                 "co2-23443a6e",
+		"0/light/RGB Light#power":      "rgb-light-d64ac854",
+		"0/light/RGB Light#brightness": "rgb-light-brightness-cd5fa35a",
+	} {
+		if got := descriptorByExternalID(t, first, firstMAC.String()+"/"+identity).Key; got != want {
+			t.Errorf("legacy Entity key for %q changed: got %q, want %q", identity, got, want)
+		}
+	}
+}
 
 func externalIDs(plan devicePlan) []string {
 	ids := make([]string, 0, len(plan.Registration.Entities))
@@ -55,6 +100,9 @@ func TestPlanDeviceMapsOnlyPrimaryEntitiesByDefault(t *testing.T) {
 			t.Parallel()
 			fixture := loadFixture(t, name)
 			plan := mustPlan(t, fixture, Exposure{})
+			for index, identity := range want {
+				want[index] = fixtureMAC(t, fixture).String() + "/" + identity
+			}
 			if got := externalIDs(plan); !slices.Equal(got, want) {
 				t.Fatalf("planned = %q\nwant %q", got, want)
 			}
@@ -124,11 +172,12 @@ func TestPlanDeviceAppliesOverrides(t *testing.T) {
 		Exclude: refs(t, "light/RGB Light"),
 	})
 	ids := externalIDs(plan)
-	if !slices.Contains(ids, "0/sensor/Uptime") {
+	if !slices.Contains(ids, fixtureMAC(t, fixture).String()+"/0/sensor/Uptime") {
 		t.Error("include did not add the diagnostic uptime sensor")
 	}
 	for _, id := range ids {
-		if id == "0/light/RGB Light#power" || id == "0/light/RGB Light#brightness" {
+		if id == fixtureMAC(t, fixture).String()+"/0/light/RGB Light#power" ||
+			id == fixtureMAC(t, fixture).String()+"/0/light/RGB Light#brightness" {
 			t.Errorf("exclude left %s", id)
 		}
 	}
@@ -169,7 +218,7 @@ func TestPlanDeviceTypesAirQualityAndGenericSensors(t *testing.T) {
 		{"0/sensor/Ammonia", nil, "ppm", -1e12, 1e12},
 	}
 	for _, test := range cases {
-		descriptor := descriptorByExternalID(t, plan, test.externalID)
+		descriptor := descriptorByExternalID(t, plan, "02:00:00:00:00:02/"+test.externalID)
 		if descriptor.Type != "hearth.numericsensor/v1" {
 			t.Errorf("%s type = %s", test.externalID, descriptor.Type)
 			continue
@@ -187,7 +236,7 @@ func TestPlanDeviceTypesAirQualityAndGenericSensors(t *testing.T) {
 		"0/light/RGB Light#power":      "hearth.power/v1",
 		"0/light/RGB Light#brightness": "hearth.brightness/v1",
 	} {
-		if got := descriptorByExternalID(t, plan, externalID).Type; got != wantType {
+		if got := descriptorByExternalID(t, plan, "02:00:00:00:00:02/"+externalID).Type; got != wantType {
 			t.Errorf("%s type = %s, want %s", externalID, got, wantType)
 		}
 	}
@@ -225,7 +274,7 @@ func TestPlanDeviceSkipsSubDevicesAssumedStateAndLongUnits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := externalIDs(plan); !slices.Equal(got, []string{"0/binary_sensor/Motion"}) {
+	if got := externalIDs(plan); !slices.Equal(got, []string{"02:00:00:00:00:09/0/binary_sensor/Motion"}) {
 		t.Fatalf("planned = %q", got)
 	}
 	reasons := []string{}
@@ -315,7 +364,7 @@ func TestEntityKeysDependOnlyOnOwnIdentity(t *testing.T) {
 			t.Errorf("%s key moved from %s to %s", entity.ExternalID, previous, entity.Key)
 		}
 	}
-	if keys["0/light/RGB Light#power"] == keys["0/light/RGB Light#brightness"] {
+	if keys["02:00:00:00:00:02/0/light/RGB Light#power"] == keys["02:00:00:00:00:02/0/light/RGB Light#brightness"] {
 		t.Error("light Entities share a key")
 	}
 }
