@@ -19,6 +19,17 @@ function fixture() {
 }
 
 describe("CommandQueue", () => {
+  it("preserves structured color parameters, including a newer queued color", async () => {
+    const { queue, commands, execute, settle } = fixture();
+    const color: ControlTarget = { entityId: "ent_color", operation: "set" };
+    queue.request(color, { red: 128, green: 32, blue: 16 });
+    queue.request(color, { red: 0, green: 0, blue: 0 });
+    expect(execute).toHaveBeenNthCalledWith(1, "ent_color", { operation: "set", parameters: { red: 128, green: 32, blue: 16 } });
+    commands[0].resolve(satisfied({ red: 128, green: 32, blue: 16 }));
+    await settle();
+    expect(execute).toHaveBeenNthCalledWith(2, "ent_color", { operation: "set", parameters: { red: 0, green: 0, blue: 0 } });
+    expect(queue.snapshot(color)).toEqual({ phase: "pending", requested: { red: 0, green: 0, blue: 0 } });
+  });
   it("shows the request as pending, then confirming until the State read lands, then idle", async () => {
     const { queue, commands, refreshes, execute, settle } = fixture();
     const listener = vi.fn();

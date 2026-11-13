@@ -10,12 +10,14 @@ import { BrightnessSlider } from "../../controls/BrightnessSlider";
 import { ControlStatus } from "../../controls/ControlStatus";
 import { PowerSwitch } from "../../controls/PowerSwitch";
 import { supportsOperation } from "../../controls/support";
+import { LightColorPicker } from "../../controls/LightColorPicker";
+import type { FieldEntity } from "../../bindings/entity";
 
 /**
  * The reading shows observed State. While a Command is pending, and until the
  * State refresh that follows it lands, the switch and slider show the request.
  */
-function Light({ light, rows, name }: { light: LightReading; rows: ReturnType<typeof rowStates>; name: string }) {
+function Light({ light, rows, name, entities }: { light: LightReading; rows: ReturnType<typeof rowStates>; name: string; entities: FieldEntity[] }) {
   const power = rows.find(row => row.key === light.power.id)!;
   const brightness = rows.find(row => row.key === light.brightness.id)!;
   const color = rows.find(row => row.key === light.color?.id);
@@ -43,6 +45,7 @@ function Light({ light, rows, name }: { light: LightReading; rows: ReturnType<ty
     </p>}
     {light.colorPreviewUnavailable && <p className="view-chart-note">Color preview unavailable; canonical reading is missing or out of date.</p>}
     {dimmable && <BrightnessSlider key={light.brightness.id} entity={light.brightness} label={`${name} brightness`} />}
+    <LightColorPicker entities={entities} activeId={light.color?.id} name={name} observed={light.colorText} swatch={light.swatch} />
     {rows.filter(row => row.status.entries.length).map(row => <div className="view-light-status" key={row.key}>
       <span>{row.name}</span><StatusList entries={row.status.entries} />
     </div>)}
@@ -81,7 +84,7 @@ export function DeviceCard({ deviceId, label, resource, canonical, canonicalErro
   return <CardFrame title={title} className="view-device" status={status}
     observedAt={oldestObservation(displayed)} observedLabel="Oldest reading" arrivals={arrivals} sources={rowSources(allRows)}
     sourceExtra={<p><Link to={`/devices/${deviceId}`}>Device details</Link> <code>{deviceId}</code></p>}>
-    {light && <Light light={light} rows={compositeStates} name={title} />}
+    {light && device && <Light light={light} rows={compositeStates} name={title} entities={device.entities} />}
     {shown.length > 0 && <ReadingRows rows={states} />}
     {device && !light && shown.length === 0 && <p className="view-empty">No readable Entities on this Device.</p>}
     {additional.length > MAX_DEVICE_ROWS && <p className="view-chart-note">Showing {MAX_DEVICE_ROWS} of {additional.length} readings. Open Source for every Entity.</p>}

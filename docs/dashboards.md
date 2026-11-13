@@ -329,8 +329,21 @@ disable a control, because Core still attempts a Command for an unavailable
 Entity whose Adapter is healthy. Controls work wherever a view renders: saved
 dashboards, the canvas, and conversation replies.
 
+A light with a settable color-temperature, RGB, or hue/saturation Entity adds
+**Adjust white or color**, or the single supported choice. It opens an anchored
+desktop popover or a modal phone sheet, outside the card grid. The wheel and
+hue/saturation sliders select color; RGB and hex forms accept precise values.
+Native RGB channels remain exact. Hue/saturation-only lights convert RGB input
+and state that limitation without changing brightness. White temperature shows
+mireds and equivalent Kelvin, using the Entity's bounds and absolute step
+multiples. Ambiguous endpoints and unsupported XY-only controls are omitted.
+Choosing a tab or opening the picker sends nothing. A color set changes mode
+through the upstream light; the read-only color-mode Entity receives no Command.
+Pending and failure feedback remains on the card after the picker closes.
+
 Only a gesture sends a Command: a switch press, the end of a slider drag, or
-keyboard steps that have settled for half a second. Reading, rendering,
+keyboard steps that have settled for half a second, or an exact-value form
+submission. Reading, rendering,
 refreshing and saving never send one. Controls use the existing
 `POST /v1/entities/{entity_id}/commands`, which waits for the Command outcome.
 
