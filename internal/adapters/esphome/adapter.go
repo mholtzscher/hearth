@@ -146,13 +146,14 @@ func (a *Adapter) Run(ctx context.Context) error {
 	if err != nil {
 		return a.terminal(ctx, err)
 	}
-	if reportUnconfiguredErr := a.reportUnconfigured(ctx, owned); reportUnconfiguredErr != nil {
-		return a.terminal(ctx, reportUnconfiguredErr)
-	}
+	// Core admits Entity availability only after this runtime reports healthy.
 	if setHealthErr := a.session.SetHealth(ctx, adapter.HealthReport{
 		Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC(),
 	}); setHealthErr != nil {
 		return a.terminal(ctx, &sessionError{operation: "set health", err: setHealthErr})
+	}
+	if reportUnconfiguredErr := a.reportUnconfigured(ctx, owned); reportUnconfiguredErr != nil {
+		return a.terminal(ctx, reportUnconfiguredErr)
 	}
 
 	return a.terminal(ctx, a.runDevices(ctx, owned))
