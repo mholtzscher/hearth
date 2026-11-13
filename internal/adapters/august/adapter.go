@@ -35,6 +35,8 @@ type Adapter struct {
 	lastInventory   time.Time
 	forceInventory  atomic.Bool   // Authentication failures require a complete account check on the next scheduled cycle.
 	needsAssessment atomic.Uint64 // A changed generation requires another unavailable assessment after account recovery.
+	healthMu        sync.Mutex    // Orders account assessments, never route lookup or Device work.
+	healthFailures  atomic.Uint64
 }
 
 type deviceRuntime struct {
@@ -42,7 +44,6 @@ type deviceRuntime struct {
 	pushTarget       atomic.Pointer[pushTarget]
 	config           *BindingConfig // Nil for a previously owned, now unconfigured binding.
 	entry            *inventoryEntry
-	device           device
 	online           bool
 	channel          string
 	pushRecoveryUsed bool // Coalesce recovery-triggering push until the next scheduled acquisition.
@@ -142,6 +143,7 @@ func (a *Adapter) cycle(ctx context.Context, refresh bool) (bool, error) {
 }
 
 func (a *Adapter) refreshInventory(ctx context.Context) (bool, error) {
+	healthEpoch := a.healthFailures.Load()
 	entries, err := a.client.inventory(ctx)
 	if err != nil {
 		a.forceInventory.Store(true)
@@ -155,11 +157,8 @@ func (a *Adapter) refreshInventory(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	a.lastInventory = time.Now()
-	if err = a.session.SetHealth(
-		ctx,
-		adapter.HealthReport{Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC()},
-	); err != nil {
-		return false, err
+	if healthy, healthErr := a.healthyInventory(ctx, healthEpoch); !healthy || healthErr != nil {
+		return false, healthErr
 	}
 	if assessment := a.needsAssessment.Load(); assessment != 0 {
 		if err = a.assessOwned(ctx); err != nil {
@@ -269,8 +268,7 @@ func (a *Adapter) targetFailure(ctx context.Context, runtime *deviceRuntime, ope
 		a.needsAssessment.Add(1)
 		invalidateRuntime(runtime)
 		runtime.updatePushTarget()
-		if healthErr := a.session.SetHealth(ctx, adapter.HealthReport{Status: adapter.HealthUnhealthy,
-			SourceObservedAt: time.Now().UTC(), ReasonCode: reasonPrefix + failureCode(err)}); healthErr != nil {
+		if healthErr := a.unhealthyAccount(ctx, failureCode(err)); healthErr != nil {
 			return healthErr
 		}
 		return nil // Core derives unavailability from health and rejects explicit reports while unhealthy.
@@ -280,8 +278,7 @@ func (a *Adapter) targetFailure(ctx context.Context, runtime *deviceRuntime, ope
 
 func (a *Adapter) accountUnavailable(ctx context.Context, reason string) error {
 	a.needsAssessment.Add(1)
-	if err := a.session.SetHealth(ctx, adapter.HealthReport{Status: adapter.HealthUnhealthy,
-		SourceObservedAt: time.Now().UTC(), ReasonCode: reasonPrefix + reason}); err != nil {
+	if err := a.unhealthyAccount(ctx, reason); err != nil {
 		return err
 	}
 	for _, runtime := range a.devices {
@@ -293,6 +290,28 @@ func (a *Adapter) accountUnavailable(ctx context.Context, reason string) error {
 		<-runtime.gate
 	}
 	return nil
+}
+
+func (a *Adapter) healthyInventory(ctx context.Context, epoch uint64) (bool, error) {
+	a.healthMu.Lock()
+	defer a.healthMu.Unlock()
+	if a.healthFailures.Load() != epoch {
+		a.forceInventory.Store(true)
+		return false, nil
+	}
+	err := a.session.SetHealth(
+		ctx,
+		adapter.HealthReport{Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC()},
+	)
+	return err == nil, err
+}
+
+func (a *Adapter) unhealthyAccount(ctx context.Context, reason string) error {
+	a.healthFailures.Add(1)
+	a.healthMu.Lock()
+	defer a.healthMu.Unlock()
+	return a.session.SetHealth(ctx, adapter.HealthReport{Status: adapter.HealthUnhealthy,
+		SourceObservedAt: time.Now().UTC(), ReasonCode: reasonPrefix + reason})
 }
 
 func (a *Adapter) assessOwned(ctx context.Context) error {

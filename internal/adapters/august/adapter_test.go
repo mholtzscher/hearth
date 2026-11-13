@@ -261,6 +261,45 @@ func TestStartupDefersAvailabilityUntilHealthyInventory(t *testing.T) {
 	}
 }
 
+func TestOlderInventoryCannotOverwriteNewerAuthenticationFailure(t *testing.T) {
+	t.Parallel()
+	started, release := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	session := newRecordingSession()
+	a := newTestAdapter(t, session, syntheticTransport(func(_ *http.Request) (*http.Response, error) {
+		if calls.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+		return response(200, syntheticInventory("Front")), nil
+	}))
+	type result struct {
+		complete bool
+		err      error
+	}
+	done := make(chan result, 1)
+	go func() { complete, err := a.refreshInventory(t.Context()); done <- result{complete, err} }()
+	<-started
+	runtime := a.devices["front"]
+	if err := acquire(t.Context(), runtime.gate); err != nil {
+		t.Fatal(err)
+	}
+	err := a.targetFailure(t.Context(), runtime, "detail", &providerError{code: codeAuthRejected})
+	<-runtime.gate
+	close(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := <-done
+	if got.err != nil || got.complete || session.health.Status != adapter.HealthUnhealthy {
+		t.Fatal("older inventory completion overwrote a newer authentication failure")
+	}
+	complete, err := a.refreshInventory(t.Context())
+	if err != nil || !complete || session.health.Status != adapter.HealthHealthy {
+		t.Fatal("fresh complete inventory could not restore account health")
+	}
+}
+
 func TestStatusInvalidBatteryWithdrawsOnlyPresentInvalidEvidence(t *testing.T) {
 	t.Parallel()
 	for _, battery := range []string{`,"battery":null`, `,"battery":1.1`, ""} {

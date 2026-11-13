@@ -65,7 +65,7 @@ func (a *Adapter) register(ctx context.Context, runtime *deviceRuntime, d device
 			return errors.New("august registration mapping mismatch")
 		}
 	}
-	runtime.device, runtime.ids = d, ids
+	runtime.ids = ids
 	return nil
 }
 
