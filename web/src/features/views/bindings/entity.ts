@@ -7,7 +7,7 @@ import { quantitySchema } from "./quantity";
 
 const timestamp = z.string().datetime({ offset: true });
 export const entityBody = z.object({
-  id: z.string(), type: z.string(), name: z.string(), enabled: z.boolean(),
+  id: z.string(), device_id: z.string().optional(), type: z.string(), name: z.string(), enabled: z.boolean(),
   availability: z.object({ status: z.string() }), support: z.unknown().optional(),
   quantities: z.record(z.string(), quantitySchema).optional(),
   state: z.object({ value: z.unknown(), observed_at: timestamp, observation_id: z.string().min(1).optional() }).nullable(),
