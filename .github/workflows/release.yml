@@ -55,6 +55,7 @@ jobs:
             ./cmd/hearth-adapter-discord \
             ./cmd/hearth-adapter-pirateweather \
             ./cmd/hearth-adapter-levoit \
+            ./cmd/hearth-adapter-august \
             ./cmd/hearth-simulator
       - name: Log in to GHCR
         uses: docker/login-action@v4

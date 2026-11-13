@@ -10,6 +10,21 @@ callers, see [service input contracts](service-input-contracts.md).
 
 ## Accepted constraints
 
+- August connectivity belongs to the stateless `hearth-adapter-august` companion,
+  not Core. Explicit binding keys and normalized lock IDs select supported US
+  account records; display names never select a Device. Each `lock` Device has
+  a six-State `hearth.lock/v1` Entity and separate DoorSense and reported battery
+  Entities. Monitoring advertises no operations. Control remains blocked until
+  separately authorized direct-response and timestamp checks pass on the intended
+  firmware versions; the Levoit optimistic exception does not apply.
+  Polling and one selected-channel PubNub subscription publish ordinary evidence.
+  Independent per-field source-time bounds live only in memory. Availability
+  recovery needs explicit online Bridge detail and valid field evidence, not
+  cached State or an HTTP 200. The companion owns bounded ingress, subscription
+  recovery, provider credentials, installation authorization, and worker joining.
+  Native Go GET framing and live push semantics remain unverified.
+  See [August setup and limitations](august.md).
+
 - Levoit Core 400S and 600S connectivity runs in a stateless first-party
   `hearth-adapter-levoit` companion against the unofficial US VeSync HTTPS API.
   It discovers supported account Devices with kind `air-purifier` and uses
