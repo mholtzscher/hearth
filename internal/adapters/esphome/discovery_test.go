@@ -156,7 +156,7 @@ func TestDiscoveryRegistersOnceAndAddressChangePreservesIdentityAndJoinsOldWorke
 		if got := len(callsOfKind(session.snapshot(), "register")); got != 1 {
 			t.Fatalf("registrations = %d", got)
 		}
-		id := entityIDFor(t, session, "0/sensor/Temperature")
+		id := entityIDFor(t, session, record.MAC.String()+"/0/sensor/Temperature")
 		old := dialer.latest(t, record.Address)
 		source.records <- record
 		synctest.Wait()
@@ -169,7 +169,7 @@ func TestDiscoveryRegistersOnceAndAddressChangePreservesIdentityAndJoinsOldWorke
 		if got := len(callsOfKind(session.snapshot(), "register")); got != 2 {
 			t.Fatalf("new address registrations = %d", got)
 		}
-		if entityIDFor(t, session, "0/sensor/Temperature") != id ||
+		if entityIDFor(t, session, record.MAC.String()+"/0/sensor/Temperature") != id ||
 			lastAvailability(session.snapshot())[id].Status != adapter.AvailabilityAvailable {
 			t.Fatal("address change lost identity or availability")
 		}
@@ -213,7 +213,7 @@ func TestDiscoveryReconcilesOwnedEntitiesAndNeverDowngradesEncryptedAdvertisemen
 		}
 		source.records <- record
 		synctest.Wait()
-		id := entityIDFor(t, session, "0/sensor/Temperature")
+		id := entityIDFor(t, session, record.MAC.String()+"/0/sensor/Temperature")
 		record.Encrypted = true
 		source.records <- record
 		synctest.Wait()

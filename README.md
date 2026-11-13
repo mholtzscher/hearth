@@ -572,6 +572,9 @@ health remains healthy while its runtime works. The client reconnects and
 re-registers without replaying Commands. Entity identities depend on the MAC,
 platform, and upstream name. Renaming an entity in firmware creates a new Entity
 and leaves the old one unavailable; dashboards and Automations need retargeting.
+Entity external IDs include the MAC so identical names on different devices do
+not collide. Existing Binding-local Entity keys stay unchanged when upgrading
+from MAC-less external IDs, preserving canonical IDs, enablement, and history.
 
 ESPHome supplies no command acknowledgement or physical-outcome guarantee.
 Successful socket writes permit acceptance; matching reports satisfy Commands.

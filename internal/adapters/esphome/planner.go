@@ -76,6 +76,7 @@ func planDevice(
 		deviceName = mac.String()
 	}
 	planner := entityPlanner{
+		mac:        mac,
 		exposure:   exposure,
 		deviceName: deviceName,
 		seen:       map[EntityRef]struct{}{},
@@ -118,13 +119,14 @@ func planDevice(
 
 // entityPlanner accumulates descriptors and routes in upstream list order.
 type entityPlanner struct {
+	mac         MAC
 	exposure    Exposure
 	deviceName  string
 	descriptors []adapter.EntityDescriptor
 	routes      []entityRoute
 	skipped     []skippedEntity
 	seen        map[EntityRef]struct{}
-	// keys maps each planned Entity key to its external ID to detect collisions.
+	// keys maps each planned Entity key to its upstream identity to detect collisions.
 	keys map[string]string
 }
 
@@ -216,12 +218,13 @@ func (planner *entityPlanner) skipReason(entity nativeapi.EntityInfo, ref Entity
 }
 
 // plan builds one descriptor through its typed facade and records its route.
-func (planner *entityPlanner) plan(name, externalID string, route entityRoute) error {
-	key := entityKey(name, externalID)
-	if previous, collides := planner.keys[key]; collides && previous != externalID {
+func (planner *entityPlanner) plan(name, identity string, route entityRoute) error {
+	key := entityKey(name, identity)
+	if previous, collides := planner.keys[key]; collides && previous != identity {
 		return &unsupportedDeviceError{Reason: reasonPlanningFailed, Detail: "Entity key collision"}
 	}
-	planner.keys[key] = externalID
+	planner.keys[key] = identity
+	externalID := planner.mac.String() + "/" + identity
 	metadata := adapter.EntityMetadata{Key: key, ExternalID: externalID, Name: truncateName(name)}
 	descriptor, err := newDescriptor(metadata, route)
 	if err != nil {
