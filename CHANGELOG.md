@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/mholtzscher/hearth/compare/v0.24.0...v0.24.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **esphome:** namespace entity external IDs by device ([#345](https://github.com/mholtzscher/hearth/issues/345)) ([3391e76](https://github.com/mholtzscher/hearth/commit/3391e76316f696b23df5e89970d5fc3403c7f329))
+
 ## [0.24.0](https://github.com/mholtzscher/hearth/compare/v0.23.0...v0.24.0) (2026-11-13)
 
 
