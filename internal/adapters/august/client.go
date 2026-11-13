@@ -14,22 +14,22 @@ import (
 )
 
 const (
-	apiOrigin            = "https://api-production.august.com"
-	sessionPath          = "/session"
-	inventoryPath        = "/users/locks/mine"
-	maximumResponseBytes = 1024 * 1024
-	readTimeout          = 10 * time.Second
-	mutationTimeout      = 20 * time.Second
-	applicationID        = "79fd0eb6-381d-4adf-95a0-47721289d1d9" // Public US client key; see pinned provenance in the spec.
-	codeAuthRejected     = "auth_rejected"
-	codeValidation       = "validation_required"
-	codeExpired          = "session_expired"
-	codeThrottled        = "throttled"
-	codeOffline          = "device_offline"
-	codeRejected         = "upstream_rejected"
-	codeInvalid          = "invalid_response"
-	codeIndeterminate    = "dispatch_indeterminate"
-	codeUnavailable      = "provider_unavailable"
+	apiOrigin                       = "https://api-production.august.com"
+	sessionPath                     = "/session"
+	inventoryPath                   = "/users/locks/mine"
+	maximumResponseBytes            = 1024 * 1024
+	readTimeout                     = 10 * time.Second
+	applicationID                   = "79fd0eb6-381d-4adf-95a0-47721289d1d9" // Public US client key; see pinned provenance in the spec.
+	codeAuthRejected                = "auth_rejected"
+	codeValidation                  = "validation_required"
+	codeExpired                     = "session_expired"
+	codeThrottled                   = "throttled"
+	codeRejected                    = "upstream_rejected"
+	codeInvalid                     = "invalid_response"
+	codeUnavailable                 = "provider_unavailable"
+	codeVerificationInputInvalid    = "verification_input_invalid"
+	codeVerificationInputUnreadable = "verification_input_unreadable"
+	codeVerificationRejected        = "verification_rejected"
 )
 
 type providerError struct {
@@ -41,6 +41,9 @@ type providerError struct {
 func (e *providerError) Error() string { return "August: " + e.code }
 
 func (e *providerError) Unwrap() error { return e.cause }
+
+// SafeCode exposes only the fixed classification for process diagnostics.
+func (e *providerError) SafeCode() string { return e.code }
 
 func failureCode(err error) string {
 	if failure, ok := errors.AsType[*providerError](err); ok {

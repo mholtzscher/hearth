@@ -21,7 +21,7 @@ func run(ctx context.Context, config Config, logger *slog.Logger, transport http
 	}
 	for _, lock := range config.Locks {
 		if lock.CommandsEnabled {
-			return errors.New("august commands require the uncompleted live evidence gate")
+			return &startupError{code: failureCommandsBlocked}
 		}
 	}
 	credentials, err := readCredentials(config.CredentialsFile)

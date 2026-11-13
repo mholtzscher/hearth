@@ -84,6 +84,7 @@ func newCommand(run runFunc, authorize authorizeFunc, stdin io.Reader, stderr io
 					slog.String("event", "process.failed"),
 					slog.String("stage", "load_config"),
 					slog.String("error_code", "config_invalid"),
+					slog.String("reason", platformconfig.Reason(err)),
 				)
 				return errAdapterFailed
 			}
@@ -101,7 +102,7 @@ func newCommand(run runFunc, authorize authorizeFunc, stdin io.Reader, stderr io
 					"August Adapter failed",
 					slog.String("event", "process.failed"),
 					slog.String("stage", "run"),
-					slog.String("error_code", "run_failed"),
+					slog.String("error_code", august.FailureCode(err)),
 				)
 				return errAdapterFailed
 			}
@@ -115,7 +116,7 @@ func newCommand(run runFunc, authorize authorizeFunc, stdin io.Reader, stderr io
 		ErrWriter: stderr,
 		Flags:     flags(),
 		Action:    action(false),
-		Commands:  []*cli.Command{{Name: "authorize", Flags: flags(), Action: action(true)}},
+		Commands:  []*cli.Command{{Name: "authorize", Action: action(true)}},
 	}
 }
 

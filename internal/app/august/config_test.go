@@ -33,7 +33,7 @@ func TestConfigDefaultsAndGate(t *testing.T) {
 	if err = c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if err = run(t.Context(), c, nil, nil); err == nil || !strings.Contains(err.Error(), "gate") {
+	if err = run(t.Context(), c, nil, nil); err == nil || FailureCode(err) != failureCommandsBlocked {
 		t.Fatalf("command gate not enforced before credentials: %v", err)
 	}
 	interval := 30 * time.Second
@@ -114,5 +114,68 @@ func TestAuthorizeAssemblyDoesNotConnectCore(t *testing.T) {
 	)
 	if err != nil || len(paths) != 1 || paths[0] != "/session" {
 		t.Fatalf("authorization: %v %v", paths, err)
+	}
+}
+
+func TestAuthorizationFailuresExposeOnlySafeActionableCodes(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, code    string
+		passwordValid bool
+		input         string
+		verifyStatus  int
+	}{
+		{"password", "auth_rejected", false, "123456", 200},
+		{"input", "verification_input_invalid", true, "private-code", 200},
+		{"verification", "verification_rejected", true, "123456", 400},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "credentials.json")
+			if err := os.WriteFile(
+				path,
+				[]byte(`{"email":"private@example.com","password":"private-password"}`),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+			transport := authorizationFailurePeer(t, test.passwordValid, test.verifyStatus)
+			err := authorize(
+				t.Context(),
+				testConfig(path),
+				func() (string, error) { return test.input, nil },
+				transport,
+			)
+			if err == nil || FailureCode(err) != test.code {
+				t.Fatalf("safe classification = %s, want %s", FailureCode(err), test.code)
+			}
+			for _, secret := range []string{path, "private@example.com", "private-password", "private-code"} {
+				if strings.Contains(err.Error(), secret) {
+					t.Fatal("authorization failure leaked private input")
+				}
+			}
+		})
+	}
+}
+
+func authorizationFailurePeer(t *testing.T, passwordValid bool, verifyStatus int) transportFunc {
+	t.Helper()
+	return func(r *http.Request) (*http.Response, error) {
+		body, status := `{}`, http.StatusOK
+		switch r.URL.Path {
+		case "/session":
+			body = `{"vPassword":true,"vInstallId":false,"expiresAt":"2099-01-01T00:00:00Z"}`
+			if !passwordValid {
+				body = `{"vPassword":false,"vInstallId":true}`
+			}
+		case "/validate/email":
+			body, status = `{"error":"private-code"}`, verifyStatus
+		case "/validation/email":
+		default:
+			t.Fatal("unexpected authorization route")
+		}
+		header := make(http.Header)
+		header.Set("X-August-Access-Token", "synthetic")
+		return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader(body))}, nil
 	}
 }

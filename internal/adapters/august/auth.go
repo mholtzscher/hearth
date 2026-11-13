@@ -3,7 +3,6 @@ package august
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -115,7 +114,7 @@ func Authorize(ctx context.Context, config Config, credentials Credentials,
 		return err
 	}
 	if codeReader == nil {
-		return errors.New("verification code input is required")
+		return &providerError{code: codeVerificationInputUnreadable}
 	}
 	_, err = c.request(ctx, http.MethodPost, "/validation/email", struct {
 		Value string `json:"value"`
@@ -125,17 +124,20 @@ func Authorize(ctx context.Context, config Config, credentials Credentials,
 	}
 	code, err := codeReader()
 	if err != nil {
-		return errors.New("verification code input could not be read")
+		return &providerError{code: codeVerificationInputUnreadable, cause: err}
 	}
 	code = strings.TrimSpace(code)
 	if len(code) != 6 || strings.IndexFunc(code, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
-		return errors.New("verification code must contain six digits")
+		return &providerError{code: codeVerificationInputInvalid}
 	}
 	_, err = c.request(ctx, http.MethodPost, "/validate/email", struct {
 		Email string `json:"email"`
 		Code  string `json:"code"`
 	}{credentials.Email, code}, result.session.token)
 	if err != nil {
+		if classification := failureCode(err); classification == codeRejected || classification == codeAuthRejected {
+			return &providerError{code: codeVerificationRejected, cause: err}
+		}
 		return err
 	}
 	result, err = c.login(ctx)

@@ -48,6 +48,27 @@ interval and at most 1 hour. Two locks at the defaults produce 576 scheduled
 status reads and 288 inventory/detail reads daily, plus startup, authentication,
 recovery, and PubNub traffic. This is arithmetic, not a vendor quota guarantee.
 
+## Diagnose setup failures
+
+Process failures report fixed `error_code` values. Configuration validation also
+reports a path-free `reason`; malformed files do not echo rejected input.
+
+| Code | Operator action |
+| --- | --- |
+| `credentials_file_unreadable` | Check that the configured file exists and the companion user can read it. |
+| `credentials_file_invalid` | Use a private regular JSON file, at most 16 KiB, with email and password. |
+| `auth_rejected` | Check the independently provisioned account credentials. |
+| `validation_required` | Explicitly authorize the preserved installation UUID. Runtime sends no code. |
+| `verification_input_invalid`, `verification_input_unreadable` | Supply one six-digit code on stdin. The process does not retry automatically. |
+| `verification_rejected` | The validation endpoint rejected the attempt. Check the code and installation before another explicit authorization. |
+| `throttled` | Wait for the account cooldown; do not run repeated authorization attempts. |
+| `session_expired`, `upstream_rejected` | The service refused that authorization request. Check the installation and account before retrying. |
+| `provider_unavailable`, `invalid_response` | Investigate service reachability or unofficial API compatibility. |
+| `commands_blocked` | Leave every `commands_enabled` setting false until the live evidence and implementation gates pass. |
+
+Unknown runtime failures keep the fixed `run_failed` classification rather than
+printing dependency messages, credentials, file paths, or verification codes.
+
 ## What the readings mean
 
 Each selected Device has `Lock`, `Door open`, and `Reported battery estimate`

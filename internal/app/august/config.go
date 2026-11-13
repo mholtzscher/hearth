@@ -75,28 +75,31 @@ func (c Config) runtimeConfig() (provider.Config, error) {
 func readCredentials(path string) (provider.Credentials, error) {
 	const maximumBytes = 16 * 1024
 	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return provider.Credentials{}, errors.New("credentials must reference a regular file")
+	if err != nil {
+		return provider.Credentials{}, &startupError{code: failureCredentialsRead, cause: err}
+	}
+	if !info.Mode().IsRegular() {
+		return provider.Credentials{}, &startupError{code: failureCredentialsInvalid}
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return provider.Credentials{}, errors.New("credentials file could not be read")
+		return provider.Credentials{}, &startupError{code: failureCredentialsRead, cause: err}
 	}
 	defer file.Close()
 	info, err = file.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return provider.Credentials{}, errors.New("credentials must be a private regular file")
+		return provider.Credentials{}, &startupError{code: failureCredentialsInvalid, cause: err}
 	}
 	data, err := io.ReadAll(io.LimitReader(file, maximumBytes+1))
 	if err != nil || len(data) > maximumBytes {
-		return provider.Credentials{}, errors.New("credentials file is unreadable or oversized")
+		return provider.Credentials{}, &startupError{code: failureCredentialsInvalid, cause: err}
 	}
 	var credentials provider.Credentials
 	if err = json.Unmarshal(data, &credentials); err != nil {
-		return provider.Credentials{}, errors.New("credentials must be a JSON object with email and password")
+		return provider.Credentials{}, &startupError{code: failureCredentialsInvalid, cause: err}
 	}
 	if err = credentials.Validate(); err != nil {
-		return provider.Credentials{}, err
+		return provider.Credentials{}, &startupError{code: failureCredentialsInvalid, cause: err}
 	}
 	return credentials, nil
 }
