@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/mholtzscher/hearth/compare/v0.24.1...v0.24.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **esphome:** report health before startup availability ([#347](https://github.com/mholtzscher/hearth/issues/347)) ([2d28bfe](https://github.com/mholtzscher/hearth/commit/2d28bfeb85064aaadfff50d7130f7a7b1b66a3e5))
+
 ## [0.24.1](https://github.com/mholtzscher/hearth/compare/v0.24.0...v0.24.1) (2026-11-13)
 
 
