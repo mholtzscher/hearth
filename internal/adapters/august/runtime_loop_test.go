@@ -149,7 +149,11 @@ func TestMissingBatteryDoesNotSuppressHealthyBoltPush(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err = a.applyPush(t.Context(), pushReport{DeviceID: testLockID, Report: r}); err != nil {
+		if err = a.applyDevicePush(
+			t.Context(),
+			a.devices["front"],
+			pushReport{DeviceID: testLockID, Report: r},
+		); err != nil {
 			t.Fatal(err)
 		}
 		if a.devices["front"].fields["lock"].value != `"unlocked"` {
@@ -175,7 +179,11 @@ func TestPushRecoveryIsCoalescedAndCannotAssertReachability(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 4 {
-		if err = a.applyPush(t.Context(), pushReport{DeviceID: testLockID, Report: r}); err != nil {
+		if err = a.applyDevicePush(
+			t.Context(),
+			a.devices["front"],
+			pushReport{DeviceID: testLockID, Report: r},
+		); err != nil {
 			t.Fatal(err)
 		}
 	}

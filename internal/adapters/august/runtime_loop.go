@@ -139,15 +139,6 @@ func (generation *pushGeneration) stop(ctx context.Context) {
 	}
 }
 
-func (a *Adapter) applyPush(ctx context.Context, input pushReport) error {
-	for _, runtime := range a.devices {
-		if runtime.config != nil && runtime.config.LockID == string(input.DeviceID) {
-			return a.applyDevicePush(ctx, runtime, input)
-		}
-	}
-	return nil
-}
-
 func (a *Adapter) applyDevicePush(ctx context.Context, runtime *deviceRuntime, input pushReport) error {
 	if err := acquire(ctx, runtime.gate); err != nil {
 		return err
