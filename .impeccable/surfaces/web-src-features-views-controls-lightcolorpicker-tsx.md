@@ -25,7 +25,9 @@ STORY: Choose white or color, preview an adjustment, and send on release or
 explicit numeric submission. Observed State stays distinct from a request.
 Pending/failure feedback remains accessible after closing.
 
-FIRST VIEWPORT: A compact outlined color trigger under the brightness slider.
+FIRST VIEWPORT: A color-wheel edit button beside On/Off replaces the redundant
+brightness percentage when a slider exists. The observed swatch stays passive.
+Use existing control-status reservations for concise feedback; no added rows.
 Desktop opens a bounded anchored popover; phone opens a focus-contained,
 scrollable bottom sheet. The wheel, sliders, and exact forms stay inside it.
 
@@ -44,9 +46,13 @@ There are no shipping raster assets.
 
 ## Finish
 
-Independent finish review: **ship**, no material fixes. The reviewer accepted
-the scrollable desktop/phone adaptation of the prototype, typography, evidence
-labels, and numeric alternatives. Pending/failure presentation was verified
-through implementation/component coverage, not the final screenshots.
+Initial finish review: **superseded by user rejection of added card height**.
+User approved the revised inline color-wheel mockup and production implementation.
+Revised production finish review: **ship**, no material fixes. The reviewer
+accepted the inline wheel, original-height cards, shared feedback reservations,
+and visible Pending/Failed words when only color is writable. Browser checks
+cover responsive overlays, complete request details, focus, and persistent
+accessible failure descriptions. Pending/failure layout screenshots use
+scripted HTTP outcomes, not Core failures.
 Documentation and media: `docs/dashboards.md` and `docs/design/light-color-picker/`.
 Global DESIGN.md and sidecar remain unchanged.

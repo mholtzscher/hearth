@@ -4,7 +4,7 @@ import type { CommandResult } from "../../../api/types";
 /** One controllable Operation on one Entity. */
 export type ControlTarget = { entityId: string; operation: "set" };
 /** Scalar setters use { value }; structured color setters use their named fields. */
-export type ControlValue = boolean | number | Record<string, unknown>;
+export type ControlValue = string | boolean | number | Record<string, unknown>;
 
 /**
  * requested: the value the user most recently asked for.

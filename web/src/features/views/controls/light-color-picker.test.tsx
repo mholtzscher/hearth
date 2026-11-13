@@ -21,9 +21,11 @@ const temperature = () => ({ ...entity("colortemp", { active: true, value: 370 }
 type Post = { entityId: string; body: { operation: string; parameters: Record<string, unknown> }; respond: (response: Response) => void };
 
 /** Real view parsing/cache/queue, with HTTP held at the documented Core boundary. */
-async function mount(colors: FieldEntity[], cards = 1) {
+async function mount(colors: FieldEntity[], cards = 1, brightnessSettable = true, powerSettable = true) {
   const posts: Post[] = [];
   const entities = [entity("power", true), entity("brightness", 64), ...colors];
+  if (!brightnessSettable) entities[1].support = { state: {}, operations: {} };
+  if (!powerSettable) entities[0].support = { state: {}, operations: {} };
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     if (init?.method === "POST") return new Promise<Response>(respond => posts.push({
       entityId: String(input).split("/")[3], body: JSON.parse(String(init.body)), respond,
@@ -88,9 +90,9 @@ it("keeps native RGB values exact and shares pending/failure state after the pic
   await act(() => vi.advanceTimersByTimeAsync(0));
   expect(core.posts[0].body.parameters).toEqual({ red: 128, green: 32, blue: 16 });
   fireEvent.click(within(picker).getByRole("button", { name: "Close color picker" }));
-  expect(screen.getByText("Setting color to #802010…")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Setting color… · Details" })).toBeTruthy();
   await core.settle(0, 502);
-  expect(screen.getByRole("alert").textContent).toContain("The light rejected the change.");
+  expect(screen.getByRole("alert").textContent).toContain("Color rejected");
   const reopened = open();
   expect(within(reopened).getByRole("spinbutton", { name: "R" }).getAttribute("value")).toBe("255");
   fireEvent.change(within(reopened).getByRole("textbox", { name: "Hex" }), { target: { value: "#000000" } });
@@ -147,7 +149,7 @@ it("has one accessible announcement owner while open and after closing", async (
   fireEvent.change(within(picker).getByRole("textbox", { name: "Hex" }), { target: { value: "#802010" } });
   fireEvent.submit(within(picker).getByRole("button", { name: "Set hex" }).closest("form")!);
   await act(() => vi.advanceTimersByTimeAsync(0));
-  const pending = () => screen.getAllByRole("status").filter(status => status.textContent === "Setting color to #802010…");
+  const pending = () => screen.getAllByRole("status").filter(status => status.textContent?.startsWith("Setting color"));
   expect(pending()).toHaveLength(1);
   fireEvent.click(within(picker).getByRole("button", { name: "Close color picker" }));
   expect(pending()).toHaveLength(1);
@@ -195,4 +197,93 @@ it("uses the established modal phone sheet and omits the trigger without color s
   expect(picker.getAttribute("aria-modal")).toBe("true");
   expect(picker.classList.contains("view-source-sheet")).toBe(true);
   expect(within(picker).queryByRole("button", { name: "Color" })).toBeNull();
+});
+
+it("places the wheel beside On, leaves the swatch passive, and shows brightness once", async () => {
+  await mount([temperature()]);
+  const article = screen.getByRole("article"), row = article.querySelector(".view-light")!;
+  expect(within(row as HTMLElement).getByRole("button", { name: /Adjust/ }).parentElement?.previousElementSibling?.textContent).toBe("On");
+  expect(row.querySelector(".view-light-swatch")?.tagName).toBe("SPAN");
+  expect(row.querySelector(".view-color-wheel-icon")).toBeTruthy();
+  expect(within(article).getAllByText("64 %")).toHaveLength(1);
+  expect(article.querySelectorAll(".view-control-status")).toHaveLength(2);
+  expect(article.querySelector(".view-control-slider .view-light-feedback")).toBeTruthy();
+});
+
+it("retains the observed brightness without a slider and reuses the power feedback row", async () => {
+  await mount([temperature()], 1, false);
+  const article = screen.getByRole("article");
+  expect(within(article).getByText("64 %")).toBeTruthy();
+  expect(within(article).queryByRole("slider")).toBeNull();
+  expect(article.querySelectorAll(".view-control-status")).toHaveLength(1);
+});
+
+it("summarizes concurrent brightness, white and color requests in one existing row with complete details", async () => {
+  const core = await mount([temperature(), entity("colorhs", { active: false, hue: 200, saturation: 80 })]);
+  const brightness = screen.getByRole("slider", { name: "Lamp brightness" });
+  fireEvent.change(brightness, { target: { value: "40" } });
+  await act(() => vi.advanceTimersByTimeAsync(KEYBOARD_SETTLE_MS));
+  let picker = open();
+  fireEvent.change(within(picker).getByRole("spinbutton", { name: /Exact value/ }), { target: { value: "250" } });
+  fireEvent.submit(within(picker).getByRole("button", { name: "Set white" }).closest("form")!);
+  fireEvent.click(within(picker).getByRole("button", { name: "Color" }));
+  fireEvent.change(within(picker).getByRole("slider", { name: "Hue" }), { target: { value: "210" } });
+  await act(() => vi.advanceTimersByTimeAsync(KEYBOARD_SETTLE_MS));
+  expect(core.posts).toHaveLength(3);
+  fireEvent.click(within(picker).getByRole("button", { name: "Close color picker" }));
+  expect(screen.getByRole("button", { name: "3 pending · Details" })).toBeTruthy();
+  await core.settle(1, 502);
+  expect(screen.getByRole("alert").textContent).toBe("1 failed · 2 pending · Details");
+  const article = screen.getByRole("article");
+  expect(article.querySelectorAll(".view-control-status")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "1 failed · 2 pending · Details" }));
+  picker = screen.getByRole("dialog", { name: "Light color" });
+  expect(within(picker).getByText("Setting brightness to 40 %…")).toBeTruthy();
+  expect(within(picker).getByText("Setting color to #3399FF…")).toBeTruthy();
+  expect(within(picker).getByRole("alert").textContent).toBe("White: The light rejected the change.");
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+});
+
+it("keeps power failures in their original reservation and in phone picker details", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+  const core = await mount([temperature()]);
+  fireEvent.click(screen.getByRole("switch", { name: "Lamp power" }));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  const picker = open();
+  expect(within(picker).getByText("Turning off…")).toBeTruthy();
+  expect(screen.getAllByRole("status").filter(el => el.textContent === "Turning off…")).toHaveLength(1);
+  await core.settle(0, 502);
+  expect(within(picker).getByRole("alert").textContent).toBe("Power: The light rejected the change.");
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  fireEvent.click(within(picker).getByRole("button", { name: "Close color picker" }));
+  expect(screen.getByRole("button", { name: "Power rejected · Details" })).toBeTruthy();
+});
+
+it("initializes the active color tab when opening from feedback rather than the wheel", async () => {
+  const white = temperature();
+  white.state!.value = { active: false, value: 370 };
+  await mount([white, entity("colorhs", { active: true, hue: 200, saturation: 80 })]);
+  fireEvent.change(screen.getByRole("slider", { name: "Lamp brightness" }), { target: { value: "40" } });
+  await act(() => vi.advanceTimersByTimeAsync(KEYBOARD_SETTLE_MS));
+  fireEvent.click(screen.getByRole("button", { name: "Setting brightness… · Details" }));
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Color" }).getAttribute("aria-pressed")).toBe("true");
+});
+
+it("uses a wheel indicator rather than adding a feedback row when only color is writable", async () => {
+  const core = await mount([temperature()], 1, false, false);
+  expect(screen.getByRole("article").querySelectorAll(".view-control-status")).toHaveLength(0);
+  const picker = open();
+  fireEvent.change(within(picker).getByRole("spinbutton", { name: /Exact value/ }), { target: { value: "250" } });
+  fireEvent.submit(within(picker).getByRole("button", { name: "Set white" }).closest("form")!);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  fireEvent.click(within(picker).getByRole("button", { name: "Close color picker" }));
+  expect(screen.getByText("Pending")).toBeTruthy();
+  await core.settle(0, 502);
+  expect(screen.getByText("Failed")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toBe("White rejected");
+  const trigger = screen.getByRole("button", { name: /Lamp: Adjust/ });
+  expect(document.getElementById(trigger.getAttribute("aria-describedby")!)?.textContent).toBe("White rejected");
+  expect(trigger.contains(screen.getByRole("alert"))).toBe(false);
+  expect(screen.getByRole("article").querySelectorAll(".view-control-status")).toHaveLength(0);
+  expect(within(open()).getByRole("alert").textContent).toBe("White: The light rejected the change.");
 });

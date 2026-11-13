@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { CommandFailure } from "../../../api/commands";
 import { useControl } from "../data/provider";
 
-const failures: Record<CommandFailure["kind"], string> = {
+export const lightFailures: Record<CommandFailure["kind"], string> = {
   disabled: "Couldn't change the light. This Entity is disabled.",
   unreachable: "Couldn't reach the light. Its adapter or the light is offline.",
   rejected: "The light rejected the change.",
@@ -40,7 +40,7 @@ export function ControlStatus({ entityId, pending, subject = "light", idle }: { 
       {state.phase === "idle" && idle}
     </p>
     {state.phase === "failed" && <p role="alert" data-tone="error">
-      <span className="view-status-dot" aria-hidden="true" />{(subject === "power" ? powerFailures : failures)[state.failure.kind]}
+      <span className="view-status-dot" aria-hidden="true" />{(subject === "power" ? powerFailures : lightFailures)[state.failure.kind]}
     </p>}
   </div>;
 }

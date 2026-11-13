@@ -120,9 +120,13 @@ describe("CommandQueue", () => {
   it("keeps targets independent", () => {
     const { queue, execute } = fixture();
     const brightness: ControlTarget = { entityId: "ent_brightness", operation: "set" };
+    const mode: ControlTarget = { entityId: "ent_mode", operation: "set" };
     queue.request(power, true);
     queue.request(brightness, 40);
-    expect(execute).toHaveBeenCalledTimes(2);
+    queue.request(mode, "auto");
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledWith("ent_mode", { operation: "set", parameters: { value: "auto" } });
+    expect(queue.snapshot(mode)).toEqual({ phase: "pending", requested: "auto" });
     expect(queue.snapshot(brightness)).toEqual({ phase: "pending", requested: 40 });
   });
 

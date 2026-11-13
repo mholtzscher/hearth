@@ -1,12 +1,11 @@
-import { useEffect, useId, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
-import { ChevronRightIcon, XIcon } from "lucide-react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { XIcon } from "lucide-react";
 import { Dialog, Popover } from "radix-ui";
-import type { FieldEntity } from "../bindings/entity";
 import { pointer } from "../bindings/state-fields";
-import { ControlStatus } from "./ControlStatus";
+import { LightControlFeedback } from "./LightControlFeedback";
 import { ColorWheel } from "./ColorWheel";
 import { useColorSetting } from "./useColorSetting";
-import { colorHex, colorHS, colorRGB, hsRGB, lightColorControls, parseHex, readColor, rgbHS, type ColorControl, type ColorValue, type HS, type LightColorControls, type RGB, type TemperatureControl } from "./light-color";
+import { colorHex, colorHS, colorRGB, hsRGB, parseHex, readColor, rgbHS, type ColorControl, type ColorValue, type HS, type LightColorControls, type RGB, type TemperatureControl } from "./light-color";
 
 const phoneQuery = "(max-width: 720px)";
 function subscribePhone(change: () => void) {
@@ -127,41 +126,32 @@ function Color({ control }: { control: ColorControl }) {
   </fieldset>;
 }
 
-function Feedback({ controls }: { controls: LightColorControls }) {
-  const colorControl = controls.color;
-  return <div className="view-color-feedback">
-    {controls.temperature && <ControlStatus entityId={controls.temperature.entity.id} pending={value => `Setting white to ${String(value)} mired…`} />}
-    {colorControl && <ControlStatus entityId={colorControl.entity.id} pending={value => {
-      const color = readColor(value, colorControl.kind);
-      return color ? `Setting color to ${colorHex(color)}…` : "Setting color…";
-    }} />}
-  </div>;
-}
-
 /** Capability-derived color control; the queue and observed reading outlive the overlay. */
-export function LightColorPicker({ entities, activeId, name, observed, swatch }: {
-  entities: FieldEntity[]; activeId?: string; name: string; observed?: string; swatch?: string;
+export function LightColorPicker({ controls, activeId, name, observed, open, onOpenChange, brightnessId, powerId, inlineFeedback = false }: {
+  controls: LightColorControls; activeId?: string; name: string; observed?: string;
+  open: boolean; onOpenChange: (open: boolean) => void; brightnessId?: string; powerId?: string;
+  inlineFeedback?: boolean;
 }) {
-  const controls = lightColorControls(entities);
-  const [open, setOpen] = useState(false);
   const phone = useSyncExternalStore(subscribePhone, isPhone);
   const [mode, setMode] = useState<"white" | "color">("white");
-  const headingId = useId(), descriptionId = useId();
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) setMode(controls.color?.entity.id === activeId ? "color" : controls.temperature ? "white" : "color");
+    wasOpen.current = open;
+  }, [open, activeId, controls.color?.entity.id, controls.temperature]);
+  const headingId = useId(), descriptionId = useId(), feedbackId = useId();
   if (!controls.temperature && !controls.color) return null;
   const selected = mode === "white" && controls.temperature ? "white" : controls.color ? "color" : "white";
   const both = !!controls.temperature && !!controls.color;
   const triggerText = both ? "Adjust white or color" : controls.temperature ? "Adjust white" : "Adjust color";
-  function changeOpen(next: boolean) {
-    if (next) setMode(controls.color?.entity.id === activeId ? "color" : controls.temperature ? "white" : "color");
-    setOpen(next);
-  }
-  const trigger = <button type="button" className="view-color-trigger" aria-label={`${name}: ${triggerText}`} aria-expanded={open}>
-    <span className="view-color-trigger-label"><span className="view-color-chip" style={{ backgroundColor: swatch }} aria-hidden="true" />{triggerText}</span><ChevronRightIcon aria-hidden="true" />
+  const trigger = <button type="button" className="view-color-trigger" aria-label={`${name}: ${triggerText}`} title={triggerText} aria-expanded={open}
+    aria-describedby={inlineFeedback ? feedbackId : undefined}>
+    <span className="view-color-wheel-icon" aria-hidden="true" />
   </button>;
   const body: ReactNode = <>
     <header className="view-source-header">
       {phone ? <Dialog.Title>Light color</Dialog.Title> : <h2 id={headingId}>Light color</h2>}
-      <button type="button" className="view-source-close" aria-label="Close color picker" onClick={() => setOpen(false)}><XIcon aria-hidden="true" /></button>
+      <button type="button" className="view-source-close" aria-label="Close color picker" onClick={() => onOpenChange(false)}><XIcon aria-hidden="true" /></button>
     </header>
     {phone ? <Dialog.Description className="view-source-description">{name}</Dialog.Description> : <p className="view-source-description" id={descriptionId}>{name}</p>}
     {both && <div className="view-color-tabs" role="group" aria-label="Light color mode">
@@ -171,19 +161,19 @@ export function LightColorPicker({ entities, activeId, name, observed, swatch }:
     {selected === "white" && controls.temperature && <Temperature key={controls.temperature.entity.id} control={controls.temperature} />}
     {selected === "color" && controls.color && <Color key={controls.color.entity.id} control={controls.color} />}
     <div className="view-color-observed"><span>Observed</span><span>{observed ?? "No color observed"}</span></div>
-    <Feedback controls={controls} />
+    <LightControlFeedback controls={controls} brightnessId={brightnessId} powerId={powerId} detailed />
   </>;
-  return <>
-    {phone ? <Dialog.Root open={open} onOpenChange={changeOpen}>
+  return <span className="view-color-trigger-wrap">
+    {phone ? <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
       <Dialog.Portal><Dialog.Overlay className="view-source-backdrop" />
         <Dialog.Content className="view-source view-source-sheet view-color-picker" aria-modal="true">{body}</Dialog.Content>
       </Dialog.Portal>
-    </Dialog.Root> : <Popover.Root open={open} onOpenChange={changeOpen}>
+    </Dialog.Root> : <Popover.Root open={open} onOpenChange={onOpenChange}>
       <Popover.Trigger asChild>{trigger}</Popover.Trigger>
       <Popover.Portal><Popover.Content className="view-source view-color-picker" align="end" sideOffset={8} collisionPadding={12}
         aria-labelledby={headingId} aria-describedby={descriptionId}>{body}</Popover.Content></Popover.Portal>
     </Popover.Root>}
-    <div aria-hidden={open || undefined}><Feedback controls={controls} /></div>
-  </>;
+    {inlineFeedback && <LightControlFeedback controls={controls} inline hidden={open} descriptionId={feedbackId} />}
+  </span>;
 }

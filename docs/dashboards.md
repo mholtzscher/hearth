@@ -329,8 +329,10 @@ disable a control, because Core still attempts a Command for an unavailable
 Entity whose Adapter is healthy. Controls work wherever a view renders: saved
 dashboards, the canvas, and conversation replies.
 
-A light with a settable color-temperature, RGB, or hue/saturation Entity adds
-**Adjust white or color**, or the single supported choice. It opens an anchored
+A light with a settable color-temperature, RGB, or hue/saturation Entity shows
+a color-wheel button beside **On** or **Off**. The observed swatch stays
+display-only; brightness appears above its slider rather than beside **On**.
+Read-only lights retain their brightness reading. The button opens an anchored
 desktop popover or a modal phone sheet, outside the card grid. The wheel and
 hue/saturation sliders select color; RGB and hex forms accept precise values.
 Native RGB channels remain exact. Hue/saturation-only lights convert RGB input
@@ -339,7 +341,12 @@ mireds and equivalent Kelvin, using the Entity's bounds and absolute step
 multiples. Ambiguous endpoints and unsupported XY-only controls are omitted.
 Choosing a tab or opening the picker sends nothing. A color set changes mode
 through the upstream light; the read-only color-mode Entity receives no Command.
-Pending and failure feedback remains on the card after the picker closes.
+Pending and failure feedback reuses the card's existing control-status rows.
+Concurrent brightness, white, and color requests share a concise summary;
+**Details** opens every request's pending value or failure in the picker.
+Power keeps its own reserved row when a brightness slider exists. If only color
+is writable, a **Pending** or **Failed** label beside the wheel and an accessible announcement provide
+feedback without adding a row. Full details remain in the picker.
 
 Only a gesture sends a Command: a switch press, the end of a slider drag, or
 keyboard steps that have settled for half a second, or an exact-value form

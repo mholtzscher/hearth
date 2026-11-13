@@ -496,11 +496,20 @@
 .view-control-status [data-tone=info] .view-status-dot { background:var(--info); }
 .view-control-status [data-tone=error] { color:var(--error); }
 .view-control-status [data-tone=error] .view-status-dot { background:var(--error); }
-.view-color-trigger { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:44px; margin-top:12px; padding:10px 12px; border:1px solid var(--gray-4); border-radius:8px; color:var(--gray-10); cursor:pointer; text-align:start; }
+.view-color-trigger-wrap { position:relative; flex-shrink:0; width:28px; height:28px; margin-inline-start:-6px; }
+.view-color-trigger-wrap:has(.view-color-feedback-indicator) { display:inline-flex; align-items:center; gap:4px; width:auto; }
+.view-color-trigger { display:grid; place-items:center; position:relative; flex-shrink:0; width:28px; height:28px; padding:0; border-radius:50%; cursor:pointer; }
+.view-color-trigger::before { content:""; position:absolute; inset:-8px; border-radius:8px; }
 .view-color-trigger:hover { background:var(--gray-2); }
-.view-color-trigger-label { display:flex; align-items:center; gap:9px; }
-.view-color-trigger>svg { flex-shrink:0; width:18px; height:18px; color:var(--gray-8); }
-.view-color-chip { flex-shrink:0; width:22px; height:22px; border:1px solid var(--gray-6); border-radius:50%; }
+.view-color-wheel-icon { display:block; position:relative; width:20px; height:20px; border:1px solid var(--gray-8); border-radius:50%; background:conic-gradient(#ff4848,#ffd54a,#62d67c,#50d8ef,#8581ff,#ef70cb,#ff4848); }
+.view-color-wheel-icon::after { content:""; position:absolute; inset:6px; border-radius:50%; background:var(--gray-10); }
+.view-light-feedback p { white-space:nowrap; }
+.view-light-feedback button { position:relative; display:flex; align-items:baseline; gap:6px; max-width:100%; padding:0; color:inherit; font:inherit; text-align:start; cursor:pointer; }
+.view-light-feedback button::before { content:""; position:absolute; inset:-11.5px 0; }
+.view-light-feedback button>span:last-child { overflow:hidden; text-overflow:ellipsis; }
+.view-light-feedback .view-status-dot { flex-shrink:0; }
+.view-color-feedback-indicator { color:var(--info); font-size:13px; white-space:nowrap; }
+.view-color-feedback-indicator[data-tone=error] { color:var(--error); }
 .view-color-picker { width:min(370px,calc(100vw - 24px)); }
 .view-color-editor { min-width:0; margin:0; padding:0; border:0; }
 .view-color-tabs { display:flex; gap:4px; padding:4px; margin:0 0 20px; border-radius:8px; background:var(--gray-3); }

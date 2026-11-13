@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useState } from "react";
 import { ApiError } from "../../../../api/client";
 import { useRead } from "../../data/provider";
 import { deviceReading, deviceRequest, lightEntities, lightReading, MAX_DEVICE_ROWS, type FieldDevice, type LightReading } from "../../bindings/device";
@@ -11,6 +12,8 @@ import { ControlStatus } from "../../controls/ControlStatus";
 import { PowerSwitch } from "../../controls/PowerSwitch";
 import { supportsOperation } from "../../controls/support";
 import { LightColorPicker } from "../../controls/LightColorPicker";
+import { LightControlFeedback } from "../../controls/LightControlFeedback";
+import { lightColorControls } from "../../controls/light-color";
 import type { FieldEntity } from "../../bindings/entity";
 
 /**
@@ -18,6 +21,7 @@ import type { FieldEntity } from "../../bindings/entity";
  * State refresh that follows it lands, the switch and slider show the request.
  */
 function Light({ light, rows, name, entities }: { light: LightReading; rows: ReturnType<typeof rowStates>; name: string; entities: FieldEntity[] }) {
+  const [colorOpen, setColorOpen] = useState(false);
   const power = rows.find(row => row.key === light.power.id)!;
   const brightness = rows.find(row => row.key === light.brightness.id)!;
   const color = rows.find(row => row.key === light.color?.id);
@@ -28,24 +32,35 @@ function Light({ light, rows, name, entities }: { light: LightReading; rows: Ret
   const level = brightness.status.value !== "empty" && light.level ? light.level.value.toFixed(light.level.format.fraction_digits) : undefined;
   const switchable = supportsOperation(light.power, "set");
   const dimmable = supportsOperation(light.brightness, "set");
+  const controls = lightColorControls(entities);
+  const adjustableColor = !!controls.temperature || !!controls.color;
+  const powerFeedback = adjustableColor && switchable ? <LightControlFeedback controls={{}}
+    powerId={light.power.id} hidden={colorOpen} onDetails={() => setColorOpen(true)} /> : undefined;
+  const feedback = adjustableColor ? <LightControlFeedback controls={controls}
+    brightnessId={dimmable ? light.brightness.id : undefined}
+    powerId={!dimmable && switchable ? light.power.id : undefined}
+    hidden={colorOpen} onDetails={() => setColorOpen(true)} /> : undefined;
   // The slider states the level, so the detail line doesn't repeat it.
   const detailLevel = !light.on && level !== undefined && !dimmable;
   return <>
     <div className="view-light">
       <span className="view-light-swatch" aria-hidden="true" data-off={!light.on || empty || undefined} data-dimmed={dimmed || colorDimmed || undefined} style={{ backgroundColor: light.on && !empty ? light.swatch : undefined }} />
       <p className="view-metric-value" data-value={empty ? "empty" : dimmed ? "dimmed" : "live"}>
-        {empty ? "—" : light.on ? <>On{level !== undefined && <small>{level} %</small>}</> : "Off"}
+        {empty ? "—" : light.on ? <>On{!dimmable && level !== undefined && <small>{level} %</small>}</> : "Off"}
       </p>
+      <LightColorPicker controls={controls} activeId={light.color?.id} name={name} observed={light.colorText}
+        open={colorOpen} onOpenChange={setColorOpen} brightnessId={dimmable ? light.brightness.id : undefined}
+        powerId={switchable ? light.power.id : undefined}
+        inlineFeedback={!dimmable && !switchable} />
       {switchable && <PowerSwitch entity={light.power} label={`${name} power`} />}
     </div>
-    {switchable && <ControlStatus entityId={light.power.id} pending={requested => requested === true ? "Turning on…" : "Turning off…"} />}
+    {switchable && ((!dimmable ? feedback : powerFeedback) ?? <ControlStatus entityId={light.power.id} pending={requested => requested === true ? "Turning on…" : "Turning off…"} />)}
     {!empty && (detailLevel || light.colorText) && <p className="view-light-detail">
       {detailLevel && <span data-dimmed={brightness.status.value === "dimmed" || undefined}>Brightness {level} %{light.colorText ? " · " : ""}</span>}
       <span data-dimmed={colorDimmed || undefined}>{light.colorText}</span>
     </p>}
     {light.colorPreviewUnavailable && <p className="view-chart-note">Color preview unavailable; canonical reading is missing or out of date.</p>}
-    {dimmable && <BrightnessSlider key={light.brightness.id} entity={light.brightness} label={`${name} brightness`} />}
-    <LightColorPicker entities={entities} activeId={light.color?.id} name={name} observed={light.colorText} swatch={light.swatch} />
+    {dimmable && <BrightnessSlider key={light.brightness.id} entity={light.brightness} label={`${name} brightness`} feedback={feedback} />}
     {rows.filter(row => row.status.entries.length).map(row => <div className="view-light-status" key={row.key}>
       <span>{row.name}</span><StatusList entries={row.status.entries} />
     </div>)}
