@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.0](https://github.com/mholtzscher/hearth/compare/v0.23.0...v0.24.0) (2026-11-13)
+
+
+### Features
+
+* **august:** add read-only cloud lock monitoring ([#344](https://github.com/mholtzscher/hearth/issues/344)) ([b75678a](https://github.com/mholtzscher/hearth/commit/b75678adf6d943acd41552efacbc03d6d35215a5))
+* **esphome:** add native adapter with mDNS discovery ([#341](https://github.com/mholtzscher/hearth/issues/341)) ([144f4de](https://github.com/mholtzscher/hearth/commit/144f4de83e732d65ab3cadfb64224e28c45c5d75))
+* **levoit:** add native air purifier adapter ([#342](https://github.com/mholtzscher/hearth/issues/342)) ([ebb1ac2](https://github.com/mholtzscher/hearth/commit/ebb1ac28323bc739555d9b4b09ded8d5d27e8ccd))
+
 ## [0.23.0](https://github.com/mholtzscher/hearth/compare/v0.22.0...v0.23.0) (2026-11-12)
 
 
