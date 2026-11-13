@@ -1,0 +1,296 @@
+package esphome
+
+import (
+	"fmt"
+
+	"github.com/mholtzscher/hearth/internal/adapters/esphome/nativeapi"
+	"github.com/mholtzscher/hearth/sdk/adapter"
+	sdkbinarysensorv1 "github.com/mholtzscher/hearth/sdk/adapter/binarysensorv1"
+	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
+	sdknumericsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsensorv1"
+	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
+	sdkpressurev1 "github.com/mholtzscher/hearth/sdk/adapter/pressurev1"
+	sdkrelativehumidityv1 "github.com/mholtzscher/hearth/sdk/adapter/relativehumidityv1"
+	sdktemperaturev1 "github.com/mholtzscher/hearth/sdk/adapter/temperaturev1"
+)
+
+const (
+	// maximumPlannedEntities is Core's per-registration limit; a physical device is never split.
+	maximumPlannedEntities = 64
+
+	deviceKindSensor = "sensor"
+	deviceKindLight  = "light"
+	deviceKindRelay  = "relay"
+)
+
+// Skip reasons logged for entities the plan leaves out.
+const (
+	skipExposureDefault = "exposure_default"
+	skipExcluded        = "excluded"
+	skipTypeUnsupported = "type_unsupported"
+	skipSubDevice       = "sub_device"
+	skipAssumedState    = "assumed_state"
+	skipUnitUnsupported = "unit_unsupported"
+)
+
+// unsupportedDeviceError reports a device the Adapter registers nothing for. Reason is an availability reason code.
+type unsupportedDeviceError struct {
+	Reason string
+	Detail string
+}
+
+func (err *unsupportedDeviceError) Error() string {
+	return "esphome: device unsupported: " + err.Detail
+}
+
+// devicePlan is one device's registration and the routes that feed its Entities.
+type devicePlan struct {
+	Registration adapter.Registration
+	Routes       []entityRoute
+	Skipped      []skippedEntity
+	// UnmatchedOverrides lists include or exclude entries that name no entity on the device.
+	UnmatchedOverrides []EntityRef
+}
+
+type skippedEntity struct {
+	Ref          EntityRef
+	UpstreamType string
+	Reason       string
+}
+
+// planDevice maps one device's entities into a Registration. It is pure: it reads only its arguments.
+func planDevice(
+	mac MAC,
+	info nativeapi.DeviceInfo,
+	entities []nativeapi.EntityInfo,
+	exposure Exposure,
+) (devicePlan, error) {
+	if info.HasDeepSleep {
+		return devicePlan{}, &unsupportedDeviceError{Reason: reasonDeepSleepUnsupported, Detail: "deep sleep"}
+	}
+	deviceName := info.FriendlyName
+	if deviceName == "" {
+		deviceName = info.Name
+	}
+	if deviceName == "" {
+		deviceName = mac.String()
+	}
+	planner := entityPlanner{
+		exposure:   exposure,
+		deviceName: deviceName,
+		seen:       map[EntityRef]struct{}{},
+		keys:       map[string]string{},
+	}
+	for _, entity := range entities {
+		if err := planner.add(entity); err != nil {
+			return devicePlan{}, err
+		}
+	}
+	if len(planner.descriptors) > maximumPlannedEntities {
+		return devicePlan{}, &unsupportedDeviceError{
+			Reason: reasonPlanningFailed,
+			Detail: fmt.Sprintf("%d planned Entities exceed %d", len(planner.descriptors), maximumPlannedEntities),
+		}
+	}
+	externalID := mac.String()
+	plan := devicePlan{
+		Registration: adapter.Registration{
+			BindingKey: mac.BindingKey(),
+			Device: adapter.DeviceDescriptor{
+				ExternalID: &externalID,
+				Name:       truncateName(deviceName),
+				Kind:       planner.deviceKind(),
+			},
+			Entities: planner.descriptors,
+		},
+		Routes:  planner.routes,
+		Skipped: planner.skipped,
+	}
+	for _, overrides := range []map[EntityRef]struct{}{exposure.Include, exposure.Exclude} {
+		for ref := range overrides {
+			if _, seen := planner.seen[ref]; !seen {
+				plan.UnmatchedOverrides = append(plan.UnmatchedOverrides, ref)
+			}
+		}
+	}
+	return plan, nil
+}
+
+// entityPlanner accumulates descriptors and routes in upstream list order.
+type entityPlanner struct {
+	exposure    Exposure
+	deviceName  string
+	descriptors []adapter.EntityDescriptor
+	routes      []entityRoute
+	skipped     []skippedEntity
+	seen        map[EntityRef]struct{}
+	// keys maps each planned Entity key to its external ID to detect collisions.
+	keys map[string]string
+}
+
+func (planner *entityPlanner) add(entity nativeapi.EntityInfo) error {
+	ref := EntityRef{Type: entity.Type, Name: entity.Name}
+	if entity.Type != nativeapi.EntityOther {
+		planner.seen[ref] = struct{}{}
+	}
+	if reason := planner.skipReason(entity, ref); reason != "" {
+		planner.skipped = append(
+			planner.skipped,
+			skippedEntity{Ref: ref, UpstreamType: entity.UpstreamType, Reason: reason},
+		)
+		return nil
+	}
+	upstream := upstreamRef{Type: entity.Type, DeviceID: entity.DeviceID, Key: entity.Key}
+	identity := upstreamIdentity(entity)
+	name := entity.Name
+	if name == "" {
+		name = planner.deviceName
+	}
+	switch entity.Type {
+	case nativeapi.EntitySensor:
+		mapping, ok := catalogSensor(entity.DeviceClass, entity.Unit)
+		if !ok {
+			planner.skipped = append(
+				planner.skipped,
+				skippedEntity{Ref: ref, UpstreamType: entity.UpstreamType, Reason: skipUnitUnsupported},
+			)
+			return nil
+		}
+		return planner.plan(
+			name,
+			identity,
+			entityRoute{
+				Upstream:   upstream,
+				Kind:       mapping.kind,
+				Conversion: mapping.conversion,
+				Numeric:    numericSupport(mapping),
+			},
+		)
+	case nativeapi.EntityBinarySensor:
+		return planner.plan(name, identity, entityRoute{Upstream: upstream, Kind: routeBinary})
+	case nativeapi.EntitySwitch:
+		return planner.plan(name, identity+"#power", entityRoute{Upstream: upstream, Kind: routeSwitchPower})
+	case nativeapi.EntityLight:
+		if err := planner.plan(
+			name,
+			identity+"#power",
+			entityRoute{Upstream: upstream, Kind: routeLightPower},
+		); err != nil {
+			return err
+		}
+		if supportsBrightness(entity.ColorModes) {
+			return planner.plan(
+				name+" Brightness",
+				identity+"#brightness",
+				entityRoute{Upstream: upstream, Kind: routeLightBrightness},
+			)
+		}
+		return nil
+	case nativeapi.EntityOther:
+		return nil
+	default:
+		return nil
+	}
+}
+
+// skipReason applies the eligibility and exposure rules in order. An empty reason plans the entity.
+func (planner *entityPlanner) skipReason(entity nativeapi.EntityInfo, ref EntityRef) string {
+	switch {
+	case entity.DeviceID != eligibleDeviceID:
+		return skipSubDevice
+	case entity.Type == nativeapi.EntityOther:
+		return skipTypeUnsupported
+	case entity.Type == nativeapi.EntitySwitch && entity.AssumedState:
+		return skipAssumedState
+	}
+	if _, excluded := planner.exposure.Exclude[ref]; excluded {
+		return skipExcluded
+	}
+	if _, included := planner.exposure.Include[ref]; included {
+		return ""
+	}
+	if entity.Category != nativeapi.CategoryNone || entity.DisabledByDefault {
+		return skipExposureDefault
+	}
+	return ""
+}
+
+// plan builds one descriptor through its typed facade and records its route.
+func (planner *entityPlanner) plan(name, externalID string, route entityRoute) error {
+	key := entityKey(name, externalID)
+	if previous, collides := planner.keys[key]; collides && previous != externalID {
+		return &unsupportedDeviceError{Reason: reasonPlanningFailed, Detail: "Entity key collision"}
+	}
+	planner.keys[key] = externalID
+	metadata := adapter.EntityMetadata{Key: key, ExternalID: externalID, Name: truncateName(name)}
+	descriptor, err := newDescriptor(metadata, route)
+	if err != nil {
+		return &unsupportedDeviceError{Reason: reasonPlanningFailed, Detail: err.Error()}
+	}
+	route.EntityKey = key
+	planner.descriptors = append(planner.descriptors, descriptor)
+	planner.routes = append(planner.routes, route)
+	return nil
+}
+
+func (planner *entityPlanner) deviceKind() string {
+	hasBrightness := false
+	for _, route := range planner.routes {
+		switch route.Kind {
+		case routeTemperature, routeHumidity, routePressure, routeNumeric, routeBinary:
+			return deviceKindSensor
+		case routeLightBrightness:
+			hasBrightness = true
+		case routeSwitchPower, routeLightPower:
+			// Power routes do not distinguish the device kind.
+		}
+	}
+	if hasBrightness {
+		return deviceKindLight
+	}
+	return deviceKindRelay
+}
+
+func newDescriptor(metadata adapter.EntityMetadata, route entityRoute) (adapter.EntityDescriptor, error) {
+	switch route.Kind {
+	case routeTemperature:
+		return sdktemperaturev1.NewEntityDescriptor(metadata, temperatureSupport())
+	case routeHumidity:
+		return sdkrelativehumidityv1.NewEntityDescriptor(metadata, humiditySupport())
+	case routePressure:
+		return sdkpressurev1.NewEntityDescriptor(metadata, pressureSupport())
+	case routeNumeric:
+		return sdknumericsensorv1.NewEntityDescriptor(metadata, route.Numeric)
+	case routeBinary:
+		return sdkbinarysensorv1.NewEntityDescriptor(metadata, binarySensorSupport())
+	case routeSwitchPower, routeLightPower:
+		return sdkpowerv1.NewEntityDescriptor(metadata, powerSupport())
+	case routeLightBrightness:
+		return sdkbrightnessv1.NewEntityDescriptor(metadata, brightnessSupport())
+	default:
+		return adapter.EntityDescriptor{}, fmt.Errorf("route kind %d has no Entity type", route.Kind)
+	}
+}
+
+func numericSupport(mapping sensorMapping) sdknumericsensorv1.Support {
+	if mapping.kind != routeNumeric {
+		return sdknumericsensorv1.Support{}
+	}
+	support := sdknumericsensorv1.Support{State: sdknumericsensorv1.StateSupport{
+		Minimum: mapping.minimum, Maximum: mapping.maximum, Unit: mapping.unit,
+	}}
+	if mapping.quantityKind != "" {
+		kind := mapping.quantityKind
+		support.State.QuantityKind = &kind
+	}
+	return support
+}
+
+func supportsBrightness(colorModes []uint32) bool {
+	for _, mode := range colorModes {
+		if mode&nativeapi.ColorModeBrightness != 0 {
+			return true
+		}
+	}
+	return false
+}

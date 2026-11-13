@@ -52,6 +52,7 @@ jobs:
             ./cmd/hearth-adapter-zigbee2mqtt \
             ./cmd/hearth-adapter-ecowitt \
             ./cmd/hearth-adapter-zwavejs \
+            ./cmd/hearth-adapter-esphome \
             ./cmd/hearth-adapter-discord \
             ./cmd/hearth-adapter-pirateweather \
             ./cmd/hearth-adapter-levoit \

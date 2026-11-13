@@ -483,6 +483,103 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 
 Real evidence compatibility: the checked-in fixture `internal/adapters/ecowitt/testdata/gw2000-ws90-report.txt` preserves the field names and representative value shapes of a captured 712-byte GW2000B V3.3.2 report for a WS90 array, with the PASSKEY and source timestamp sanitized. The capture arrived roughly every eight seconds, unretained, at effective QoS 0 while the subscriber requested QoS 1; the example's 16-second upload interval is an operator cadence choice, and unknown firmware works only when it keeps the specified field semantics.
 
+### ESPHome adapter
+
+`hearth-adapter-esphome` connects directly to ESPHome Native API devices,
+using mDNS discovery or static addresses. TCP encryption is the default.
+No Home Assistant bridge is needed.
+Home Assistant can remain connected during device-by-device migration, subject
+to the firmware's API connection limit (normally five on ESP32; configurable
+with `api.max_connections`). Device Builder remains responsible for firmware
+configuration and updates.
+
+```sh
+cp -n configs/esphome.example.yaml configs/esphome.yaml
+# Configure discovery, the MAC blocklist, and any encryption keys or overrides.
+mise run esphome-start
+mise daemons status esphome-adapter
+# Stop only the adapter: mise run esphome-stop
+# Stop the simulator stack afterwards: mise run simulator-stop
+```
+
+The optional daemon shares this worktree's simulator Core, NATS, database, and
+dashboard. It is not part of the default simulator group. `esphome-start` calls
+`simulator-start`, whose Core requires its selected agent provider credential.
+Never run two instances with the same Adapter ID against the same Core.
+
+Settings resolve from CLI flags, `HEARTH_ADAPTER_ESPHOME_` environment variables,
+optional `configs/esphome.yaml`, then defaults. The flags are `--config`,
+`--adapter-id`, `--nats-url`, `--log-level`, and `--log-format`. Device, discovery,
+and blocklist settings are YAML-only. Enable `discovery.enabled` to browse `_esphomelib._tcp.local` and
+automatically register supported devices not in `blocklist`. The list of
+`devices` then becomes optional: MAC-keyed entries can supply credentials and
+entity overrides without an address. Encrypted advertisements without a key are
+skipped with an `encryption_key_required` diagnostic, not tried in plaintext.
+
+To enroll unencrypted devices automatically, explicitly set
+`discovery.allow_insecure_plaintext: true`. This trusts LAN advertisements and
+exposes readings and controls to the network. mDNS and MAC comparisons are not
+cryptographic authentication. This permission is false by default; an individual
+addressless entry can instead opt in with `insecure_plaintext: true`.
+An explicit key always selects encryption, even if an advertisement omits it.
+
+Discovery uses resolved IP addresses, including address updates, rather than
+the system `.local` resolver. It needs multicast reachability on the host's
+network interfaces. Container bridge networks and VLAN boundaries may need
+host networking or an operator-managed mDNS reflector. At most 64 devices run
+concurrently, with up to 64 additional candidates waiting for capacity. Repeated
+announcements do not reconnect an unchanged device.
+Missing advertisements alone do not interrupt a live subscription; a device
+outage retains its identity/history and becomes unavailable. After restart,
+previously discovered Entities remain unavailable until rediscovered.
+
+For static operation, give a `devices` entry a colon-separated MAC and an
+address. The address remains authoritative when discovery is also enabled.
+Encrypted static entries require `encryption_key_file`; `port` defaults to 6053.
+Static `.local` addresses are rejected: use a fixed IP or unicast DNS instead.
+The MAC blocklist wins over both modes and marks already-owned Entities
+unavailable without deleting them. Configuration changes require a restart.
+
+Each key file contains the base64
+`api.encryption.key` from the device's configuration and must be readable by
+the Adapter user. Keep keys outside Git. Keys load at startup; restart after
+rotating a key file.
+
+For a static device without encryption, explicitly set `insecure_plaintext: true`
+on that device and omit `encryption_key_file`. The network-wide discovery
+permission does not authorize static plaintext entries. A failed encrypted
+connection never falls back to plaintext. The client
+supports API 1.10 or later (including ESPHome 2024.11.1), using the vendored
+ESPHome 2026.10.2 schema. Before API 1.14 it performs empty legacy authentication;
+password-protected devices are unsupported in either transport mode.
+
+Primary sensors and binary sensors are read-only; switches and lights support
+power, and brightness-capable lights also support brightness. Colour, effects,
+numbers, selects, buttons, events, text, covers, locks, climate, voice, and
+Bluetooth proxy functions are not mapped. Configuration, diagnostic, and
+disabled-by-default entities are hidden unless included by exact `<type>/<name>`
+reference, such as `include: ["sensor/Uptime"]`. `exclude: ["light/RGB Light"]`
+omits both light controls. Overrides never grant an unsupported entity type.
+Sub-devices, assumed-state switches, and devices reporting `has_deep_sleep` are
+unsupported. The last restriction also applies when a firmware switch currently
+prevents sleep; that switch does not change the reported capability.
+
+Temperature, humidity, pressure, CO₂, particulate mass, and air-quality indices
+use typed canonical units. Unknown sensor measurements retain their upstream
+unit as generic numeric readings. Missing or invalid readings preserve the last
+State. Device outages affect only that device's Entity availability; Adapter
+health remains healthy while its runtime works. The client reconnects and
+re-registers without replaying Commands. Entity identities depend on the MAC,
+platform, and upstream name. Renaming an entity in firmware creates a new Entity
+and leaves the old one unavailable; dashboards and Automations need retargeting.
+
+ESPHome supplies no command acknowledgement or physical-outcome guarantee.
+Successful socket writes permit acceptance; matching reports satisfy Commands.
+For an already-matching request, the Adapter links its cached reading from the
+current live subscription. That receipt is weaker evidence than a fresh device
+read and is not proof of a physical effect. Observations already stored in Core
+are never used as this cache.
+
 ### Z-Wave JS adapter
 
 `hearth-adapter-zwavejs` connects an operator-managed Z-Wave JS UI service to Hearth through the embedded Z-Wave JS server's WebSocket API. It targets API schema 29, and its wire shapes are derived from Z-Wave JS server 3.10.1 sources (driver 15.x, schema range 0–50). Read-only discovery and State projection have been smoke-tested against a live Home Assistant Z-Wave JS app; physical Commands have not yet been validated. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its Home ID agrees with the `start_listening` snapshot. The Adapter never reads or receives S0/S2 keys, never changes network membership, and never sends inclusion, exclusion, SmartStart, interview, healing, route-rebuild, association, configuration, firmware, or controller-backup operations.

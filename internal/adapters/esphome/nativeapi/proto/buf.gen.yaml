@@ -1,0 +1,11 @@
+# Generates Go types for the vendored ESPHome Native API schema. Run through `mise run generate`.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package
+      value: github.com/mholtzscher/hearth/internal/adapters/esphome/nativeapi/apipb
+plugins:
+  - local: ["go", "tool", "protoc-gen-go"]
+    out: internal/adapters/esphome/nativeapi/apipb
+    opt: paths=source_relative

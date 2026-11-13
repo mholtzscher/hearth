@@ -1,0 +1,327 @@
+{
+ "info": {
+  "MAC": "02:00:00:00:00:02",
+  "Name": "apollo-air-1",
+  "FriendlyName": "Office Air",
+  "ESPHomeVersion": "2026.4.0",
+  "Model": "esp32-c3-devkitm-1",
+  "Manufacturer": "Espressif",
+  "ProjectName": "ApolloAutomation.AIR-1",
+  "ProjectVersion": "26.3.2.1"
+ },
+ "entities": [
+  {
+   "Type": "other",
+   "UpstreamType": "number",
+   "Key": 1,
+   "Name": "SEN55 Temperature Offset",
+   "Category": 1,
+   "Unit": "°C"
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "number",
+   "Key": 2,
+   "Name": "SEN55 Humidity Offset",
+   "Category": 1,
+   "Unit": "%"
+  },
+  {
+   "Type": "binary_sensor",
+   "UpstreamType": "binary_sensor",
+   "Key": 10,
+   "Name": "Online",
+   "Category": 2,
+   "DeviceClass": "connectivity"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 20,
+   "Name": "ESP Temperature",
+   "Category": 2,
+   "DeviceClass": "temperature",
+   "Unit": "°C"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 21,
+   "Name": "Uptime",
+   "Category": 2,
+   "DeviceClass": "duration",
+   "Unit": "s"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 22,
+   "Name": "RSSI",
+   "Category": 2,
+   "DeviceClass": "signal_strength",
+   "Unit": "dBm"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 23,
+   "Name": "CO2",
+   "DeviceClass": "carbon_dioxide",
+   "Unit": "ppm"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 24,
+   "Name": "DPS310 Pressure",
+   "DeviceClass": "pressure",
+   "Unit": "hPa"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 25,
+   "Name": "PM <1µm Weight concentration",
+   "DeviceClass": "pm1",
+   "Unit": "µg/m³"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 26,
+   "Name": "PM <2.5µm Weight concentration",
+   "DeviceClass": "pm25",
+   "Unit": "µg/m³"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 27,
+   "Name": "PM <4µm Weight concentration",
+   "Unit": "µg/m³"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 28,
+   "Name": "PM <10µm Weight concentration",
+   "DeviceClass": "pm10",
+   "Unit": "µg/m³"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 29,
+   "Name": "SEN55 Temperature",
+   "DeviceClass": "temperature",
+   "Unit": "°C"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 30,
+   "Name": "SEN55 Humidity",
+   "DeviceClass": "humidity",
+   "Unit": "%"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 31,
+   "Name": "SEN55 VOC",
+   "DeviceClass": "aqi"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 32,
+   "Name": "SEN55 NOX",
+   "DeviceClass": "aqi"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 33,
+   "Name": "PM 0.3 To 1 µm",
+   "Unit": "µg/m³",
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 34,
+   "Name": "PM 1 To 2.5 µm",
+   "Unit": "µg/m³",
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 35,
+   "Name": "PM 2.5 To 4 µm",
+   "Unit": "µg/m³",
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 36,
+   "Name": "PM 4 To 10 µm",
+   "Unit": "µg/m³",
+   "DisabledByDefault": true
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 37,
+   "Name": "Nitrogen Dioxide",
+   "Unit": "ppm"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 38,
+   "Name": "Carbon Monoxide",
+   "Unit": "ppm"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 39,
+   "Name": "Hydrogen",
+   "Unit": "ppm"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 40,
+   "Name": "Ethanol",
+   "Unit": "ppm"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 41,
+   "Name": "Methane",
+   "Unit": "ppm"
+  },
+  {
+   "Type": "sensor",
+   "UpstreamType": "sensor",
+   "Key": 42,
+   "Name": "Ammonia",
+   "Unit": "ppm"
+  },
+  {
+   "Type": "light",
+   "UpstreamType": "light",
+   "Key": 50,
+   "Name": "RGB Light",
+   "ColorModes": [
+    35
+   ]
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "button",
+   "Key": 60,
+   "Name": "ESP Reboot",
+   "Category": 1,
+   "DeviceClass": "restart"
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "button",
+   "Key": 61,
+   "Name": "Factory Reset ESP",
+   "Category": 1
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "button",
+   "Key": 62,
+   "Name": "Calibrate SCD40 To 420ppm"
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "button",
+   "Key": 63,
+   "Name": "Clean SEN55"
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "text_sensor",
+   "Key": 70,
+   "Name": "VOC Quality"
+  },
+  {
+   "Type": "other",
+   "UpstreamType": "text_sensor",
+   "Key": 71,
+   "Name": "IP Address",
+   "Category": 2
+  },
+  {
+   "Type": "switch",
+   "UpstreamType": "switch",
+   "Key": 80,
+   "Name": "Prevent Sleep",
+   "Category": 1
+  },
+  {
+   "Type": "switch",
+   "UpstreamType": "switch",
+   "Key": 81,
+   "Name": "CO2 Auto Calibration",
+   "Category": 1
+  }
+ ],
+ "states": [
+  {
+   "Type": "sensor",
+   "Key": 23,
+   "Number": 1572
+  },
+  {
+   "Type": "sensor",
+   "Key": 24,
+   "Number": 985.4
+  },
+  {
+   "Type": "sensor",
+   "Key": 26,
+   "Number": 0.2
+  },
+  {
+   "Type": "sensor",
+   "Key": 29,
+   "Number": 21.03
+  },
+  {
+   "Type": "sensor",
+   "Key": 30,
+   "Number": 44.36
+  },
+  {
+   "Type": "sensor",
+   "Key": 31,
+   "Number": 112
+  },
+  {
+   "Type": "sensor",
+   "Key": 32,
+   "Number": 1
+  },
+  {
+   "Type": "sensor",
+   "Key": 38,
+   "Number": 4.998
+  },
+  {
+   "Type": "light",
+   "Key": 50,
+   "Bool": true,
+   "Brightness": 0.5
+  }
+ ]
+}

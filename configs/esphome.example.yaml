@@ -1,0 +1,30 @@
+adapter_id: esphome
+nats_url: nats://127.0.0.1:4222
+discovery:
+  enabled: true
+  # Set true only to trust unencrypted ESPHome devices discovered on your LAN.
+  # Encrypted advertisements still require a key; there is never a downgrade.
+  allow_insecure_plaintext: false
+blocklist:
+  - "02:00:00:00:00:03"
+
+# Optional MAC-keyed credentials and exposure overrides. Addresses are discovered.
+# Omit devices entirely when no keys or overrides are needed.
+devices:
+  - mac: "02:00:00:00:00:01"
+    encryption_key_file: /run/secrets/esphome/freezer
+  - mac: "02:00:00:00:00:02"
+    include: ["sensor/Uptime"]
+    exclude: ["light/RGB Light"]
+
+# For a device whose firmware has encryption disabled, explicitly opt in instead
+# of setting encryption_key_file. Plaintext exposes readings and controls to the
+# network; use only on a trusted network. There is no automatic downgrade.
+#  - mac: "02:00:00:00:00:04"
+#    address: 192.0.2.30
+#    insecure_plaintext: true
+#    exclude: ["light/RGB Light"]
+
+# Supplying address opts an entry into static operation, even with discovery off.
+# Static encrypted entries require encryption_key_file; static plaintext entries
+# require their own insecure_plaintext: true. Blocklist wins over either mode.
