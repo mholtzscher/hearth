@@ -1418,6 +1418,70 @@
                   "props"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "AirPurifier"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "tile"
+                        ],
+                        "description": "card: Power, readings, and every bound control. tile: a whole-card power press with mode and PM2.5, for grids of quick switches."
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "power": {
+                        "$ref": "#/$defs/PowerSource"
+                      },
+                      "pm25": {
+                        "description": "Numeric sensor in µg/m³ on the power Entity's Device.",
+                        "$ref": "#/$defs/NumericStateSource"
+                      },
+                      "mode": {
+                        "description": "Enum setting with 2 to 5 choices, such as auto, sleep, manual.",
+                        "$ref": "#/$defs/ChoiceSource"
+                      },
+                      "fan_level": {
+                        "description": "Enum setting whose choices are \"1\" to \"N\", N from 2 to 10.",
+                        "$ref": "#/$defs/ChoiceSource"
+                      },
+                      "display": {
+                        "description": "Screen on/off. A power Entity other than the main power.",
+                        "$ref": "#/$defs/PowerSource"
+                      },
+                      "child_lock": {
+                        "description": "Child lock on/off. A power Entity other than the main power.",
+                        "$ref": "#/$defs/PowerSource"
+                      },
+                      "filter_life": {
+                        "description": "Numeric sensor in % on the same Device.",
+                        "$ref": "#/$defs/NumericStateSource"
+                      }
+                    },
+                    "required": [
+                      "layout",
+                      "power",
+                      "pm25"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
               }
             ]
           }
@@ -1561,6 +1625,32 @@
         "entity_type": {
           "type": "string",
           "const": "hearth.power/v1"
+        },
+        "field": {
+          "type": "string",
+          "const": ""
+        }
+      },
+      "required": [
+        "kind",
+        "entity_id",
+        "entity_type"
+      ],
+      "additionalProperties": false
+    },
+    "ChoiceSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "entity-state"
+        },
+        "entity_id": {
+          "$ref": "#/$defs/EntityID"
+        },
+        "entity_type": {
+          "type": "string",
+          "const": "hearth.enumsetting/v1"
         },
         "field": {
           "type": "string",

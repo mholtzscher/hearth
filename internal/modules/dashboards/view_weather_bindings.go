@@ -48,7 +48,7 @@ var weatherUnitReasons = map[string]string{
 // weatherReading marks a weather slot as a numeric read, pinned to unit when
 // the slot accepts a generic numeric sensor.
 func weatherReading(b binding, unit string) binding {
-	b.ValueKind, b.RequiredUnit = numericValueKind, unit
+	b.ValueKind, b.RequiredUnit, b.UnitReason = numericValueKind, unit, weatherUnitReasons[unit]
 	return b
 }
 

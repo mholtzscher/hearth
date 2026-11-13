@@ -31,6 +31,12 @@ export const powerBindingSchema = z.strictObject({
   entity_type: z.literal("hearth.power/v1"), field: z.literal("").optional(),
 }).meta({ id: "PowerSource" });
 export type PowerSource = z.infer<typeof powerBindingSchema>;
+/** An enum setting's root choice. Its choices come from the Entity's support. */
+export const choiceBindingSchema = z.strictObject({
+  kind: z.literal("entity-state"), entity_id: entityID,
+  entity_type: z.literal("hearth.enumsetting/v1"), field: z.literal("").optional(),
+}).meta({ id: "ChoiceSource" });
+export type ChoiceSource = z.infer<typeof choiceBindingSchema>;
 /** Words for a yes/no field, such as Open and Closed for a door contact. Text fields ignore them. */
 export const wordsSchema = z.strictObject({ true: plainText(40), false: plainText(40) })
   .describe("Words for a yes/no field's true and false values, such as Open and Closed for a door contact. Only yes/no fields accept words.")
