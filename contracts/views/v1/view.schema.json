@@ -1446,7 +1446,7 @@
                       },
                       "pm25": {
                         "description": "Numeric sensor in µg/m³ on the power Entity's Device.",
-                        "$ref": "#/$defs/NumericStateSource"
+                        "$ref": "#/$defs/NumericSensorSource"
                       },
                       "mode": {
                         "description": "Enum setting with 2 to 5 choices, such as auto, sleep, manual.",
@@ -1466,7 +1466,7 @@
                       },
                       "filter_life": {
                         "description": "Numeric sensor in % on the same Device.",
-                        "$ref": "#/$defs/NumericStateSource"
+                        "$ref": "#/$defs/NumericSensorSource"
                       }
                     },
                     "required": [
@@ -1625,6 +1625,32 @@
         "entity_type": {
           "type": "string",
           "const": "hearth.power/v1"
+        },
+        "field": {
+          "type": "string",
+          "const": ""
+        }
+      },
+      "required": [
+        "kind",
+        "entity_id",
+        "entity_type"
+      ],
+      "additionalProperties": false
+    },
+    "NumericSensorSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "entity-state"
+        },
+        "entity_id": {
+          "$ref": "#/$defs/EntityID"
+        },
+        "entity_type": {
+          "type": "string",
+          "const": "hearth.numericsensor/v1"
         },
         "field": {
           "type": "string",

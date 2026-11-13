@@ -15,7 +15,7 @@ type Entity = FieldEntity & { device_id: string };
 const binding = (n: number, type: string) => ({ kind: "entity-state" as const, entity_id: id(n), entity_type: type });
 const powerBinding = (n: number) => ({ ...binding(n, "hearth.power/v1"), entity_type: "hearth.power/v1" as const });
 const choiceBinding = (n: number) => ({ ...binding(n, "hearth.enumsetting/v1"), entity_type: "hearth.enumsetting/v1" as const });
-const numericBinding = (n: number) => ({ ...binding(n, "hearth.numericsensor/v1") });
+const numericBinding = (n: number) => ({ ...binding(n, "hearth.numericsensor/v1"), entity_type: "hearth.numericsensor/v1" as const });
 const props: AirPurifierProps = { layout: "card", label: "Purifier", power: powerBinding(1), pm25: numericBinding(2), filter_life: numericBinding(3), mode: choiceBinding(4), fan_level: choiceBinding(5), display: powerBinding(6), child_lock: powerBinding(7) };
 function entity(n: number, type: string, value: unknown, state: object = {}, set = false): Entity {
   return { id: id(n), device_id: device, name: `Entity ${n}`, type, enabled: true, availability: { status: "available" }, support: { state, operations: set ? { set: {} } : {} }, state: { value, observed_at: at } };
@@ -174,4 +174,21 @@ it("does not make a read-only tile a press target", async () => {
   expect(screen.getByText("Read-only")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Source" }));
   expect(api.posts).toHaveLength(0);
+});
+
+it("states the oldest reading it shows, not a hidden read-only setting", async () => {
+  const values = fixture(); values[6].support = { state: {}, operations: {} };
+  values[6].state = { value: false, observed_at: "2026-11-01T10:00:00Z" };
+  core(values); await mount(<BoundAirPurifier {...props} />);
+  expect(screen.getByRole("article").querySelector("time")?.textContent).not.toMatch(/d ago/);
+});
+
+it("lights the tile's edge for a changed PM2.5 reading but not for a power change", async () => {
+  const values = fixture(); core(values); await mount(<BoundAirPurifier {...props} layout="tile" />);
+  values[0].state = { value: false, observed_at: "2026-11-09T10:00:01Z" };
+  await act(() => vi.advanceTimersByTimeAsync(10000));
+  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  values[1].state = { value: 15, observed_at: "2026-11-09T10:00:02Z" };
+  await act(() => vi.advanceTimersByTimeAsync(10000));
+  expect(document.querySelector(".view-card-arrival")).toBeTruthy();
 });

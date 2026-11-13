@@ -211,6 +211,7 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		"air-purifier-missing-pm25":        schema,
 		"air-purifier-unknown-layout":      schema,
 		"air-purifier-mode-wrong-type":     schema,
+		"air-purifier-filter-humidity":     schema,
 	}
 	var examples []struct {
 		Name       string          `json:"name"`

@@ -44,7 +44,12 @@ export function AirPurifierCard({ props, title }: { props: AirPurifierProps; tit
   const observedMode = mode?.data && "text" in mode.data ? mode.data.text : undefined;
   const observedFan = fan?.data && "text" in fan.data ? fan.data.text : undefined;
   const numeric = rows.filter(item => item.key === "pm25" || item.key === "filter_life");
-  return <CardFrame title={title} className="view-air-purifier" status={status} observedAt={oldestObservation(rows)} observedLabel="Oldest reading" arrivals={listArrivals(numeric)} sources={sources} sourceExtra={sourceExtra}>
+  // The footer states the oldest reading the card shows; a read-only setting it hides doesn't count.
+  const shown = rows.filter(item => item.key === "power" || item.key === "pm25" || item.key === "filter_life" ||
+    (item.key === "mode" && observedMode !== undefined) ||
+    (item.key === "fan_level" && (controllable("fan_level") || observedMode === "manual")) ||
+    ((item.key === "display" || item.key === "child_lock") && controllable(item.key)));
+  return <CardFrame title={title} className="view-air-purifier" status={status} observedAt={oldestObservation(shown)} observedLabel="Oldest reading" arrivals={listArrivals(numeric)} sources={sources} sourceExtra={sourceExtra}>
     <div className="view-air-purifier-head"><div><p className="view-metric-value" data-value={power?.status.value}>{power?.data && "text" in power.data ? power.data.text : "—"}</p>
       {observedMode && <p className="view-air-purifier-detail" data-value={mode?.status.value}>{choiceWords(observedMode)}{observedMode === "manual" && observedFan && ` · fan ${observedFan}`}</p>}</div>
       {controllable("power") && <PowerSwitch entity={entities.power!} label={`${title} power`} />}
