@@ -304,9 +304,39 @@ forecasts, not station readings:
 - The footer states the forecast's observation time. An unavailable or disabled
   Entity keeps its last forecast, dimmed.
 
-Grid accepts 1–4 columns as a ceiling. Grids containing only ToggleTiles use a
-160px minimum and can retain two columns on phones; other grids keep the
-248px minimum and single-column phone layout. Metering ToggleTiles span the full
+AirPurifier binds each purifier role to an explicit Entity's root: `power`
+(`hearth.power/v1`) and `pm25` (a numeric sensor in `µg/m³`) are required;
+`filter_life` (a numeric sensor in `%`), `mode` and `fan_level`
+(`hearth.enumsetting/v1`), `display`, and `child_lock` (`hearth.power/v1`) are
+optional. Roles are explicit because Power, Display, and Child lock share one
+Entity type, and a card never chooses by name or list order. On presentation
+and save, Core checks each role's type and unit, that `mode` has 2–5 choices,
+that `fan_level` choices are exactly `1` to `N` with N from 2 to 10, that every
+role names a different Entity, and that all of them belong to the power
+Entity's Device. A full card uses 7 of the view's 16 references.
+
+- `layout:"card"` shows Power at the reading scale with a switch, PM2.5 with its
+  air category, filter life, a segmented Mode control, a fan-level stepper, and
+  Display and Child lock switches. A control appears only when its role is bound
+  and the Entity supports `set`. The air category uses the EPA 2024 PM2.5
+  breakpoints (9.0, 35.4, 55.4, 125.4, and 225.4 µg/m³): Good, Moderate,
+  Unhealthy for sensitive groups, Unhealthy, Very unhealthy, and Hazardous. They
+  are 24-hour outdoor bands applied to an instant indoor reading, which Source
+  states. When `mode` is bound, has a `manual` choice, and shows another mode,
+  the stepper draws the stored manual level hollow; stepping still sends the next
+  level, and the card claims nothing about the resulting mode. Filter life at or
+  below 10 % adds **Replace the filter soon**.
+- `layout:"tile"` is a ToggleTile-style power press that also shows the mode and
+  PM2.5 with its category. It uses `power`, `mode`, and `pm25`; other bound roles
+  appear only in Source.
+
+Only PM2.5 and filter-life changes light AirPurifier's afterglow. Power and
+settings changes don't, so an optimistic Observation published after a
+Command never reads as a Command result.
+
+Grid accepts 1–4 columns as a ceiling. Grids containing only ToggleTiles and
+tile-layout AirPurifiers use a 160px minimum and can retain two columns on
+phones; other grids keep the 248px minimum and single-column phone layout. Metering ToggleTiles span the full
 row on phones, with tighter spacing and the measurement opposite the power State.
 Each metering card uses its content height rather than stretching to a neighbor
 with an additional reading. Narrow ordinary ToggleTiles use the compact
@@ -343,7 +373,10 @@ the reading keeps showing observed State. A satisfied Command re-reads every
 State entry at once; a read already in flight is followed by one more, because
 it may predate the change. The pending line clears when that read lands. Each
 control reserves the row for that line, so the card doesn't move when the line
-appears and clears. A
+appears and clears. A card with more than two controls, such as an AirPurifier
+card, reserves one shared line instead: it shows the most recently changed
+control's pending words, or its failure prefixed by the control's name, such as
+**Fan level: Change rejected. Try again.** A
 failure returns the control to observed State and names the reason under it
 until the next request. After a timeout or a lost connection, the message says
 the change may still apply. A changed reading glows, whatever caused the change.

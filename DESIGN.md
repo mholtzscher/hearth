@@ -208,8 +208,27 @@ action sits above the footer. Its feedback counts observed Off values and
 per-Entity failures, not a transactional multi-Device result. Since lines use
 recorded State changes, never the age of an observation.
 
-Grids containing only ToggleTiles, or only Metric and State cards, use a 160px
-minimum, including on phones. Requested columns remain a ceiling. Other grids
+AirPurifier cards bind each purifier role explicitly. The card layout leads
+with Power at the 40px reading scale and the switch at the end of its row, with
+the mode (and the manual fan level) in 14px `--gray-9` beneath. PM2.5 and
+Filter life follow as 20px compact rows. PM2.5 names its air category in words
+beside the value, after a 6px dot: Good takes `--ok`; Moderate and Unhealthy
+for sensitive groups take `--warn`; Unhealthy and worse take `--error`. Good's
+words stay `--gray-9`; warn and error words take their tone. The category is a
+reading, never a Status entry, and dims with an unavailable or disabled PM2.5.
+Filter life at or below 10 % adds **Replace the filter soon** in `--warn`.
+Mode is a segmented control: a 1px `--gray-4` frame on `--gray-0` with 2px
+padding and 38px segments, the shown choice in `--violet-soft` with a 1px violet
+inset and `--violet-text`. Fan level is a stepper: 44px outline minus and plus
+buttons around the 20px level and one 14 × 6px pip per level, violet up to the
+level. When another mode drives the fan, the pips draw hollow in `--gray-6`
+and the row says **Level N kept for Manual**. Display and Child lock share a
+two-column row of switches. Only PM2.5 and Filter life light the afterglow.
+The tile layout is a ToggleTile with the mode word after On at the 20px
+compact scale and a line naming PM2.5 and its category.
+
+Grids containing only ToggleTiles and tile-layout AirPurifiers, or only Metric
+and State cards, use a 160px minimum, including on phones. Requested columns remain a ceiling. Other grids
 keep their 248px minimum and single-column phone layout.
 Metering variants span the full grid row on phones, so the history range and
 additional reading stay readable instead of wrapping into tall, narrow tiles.
@@ -375,6 +394,10 @@ controls from Entity support; definitions never declare them.
   says **Turning on…** or **Setting brightness to 40 %…**. Each control reserves
   that line's row, empty while idle, so a Command that settles in milliseconds
   doesn't move the card. A failure uses the same row.
+- A card with more than two controls, such as AirPurifier, reserves one shared
+  line at the end of its body instead. It shows the most recently changed
+  control: its pending words, or its failure after the control's name, such as
+  **Fan level: Change rejected. Try again.**
 - A failure returns the control to observed State. A line with a red-pink dot
   names the problem, such as **The light rejected the change.**, until the next
   attempt. After a timeout or a lost connection, it says the change may still

@@ -61,7 +61,8 @@ Each purifier is one Device of kind `air-purifier`, containing these Entities:
 
 Use the existing Entity APIs, MCP tools, history, and automations. For example,
 `power.set` takes `{"value":true}` and `fan-level.set` takes `{"value":"3"}`.
-There are no Adapter Functions or dedicated purifier dashboard controls.
+There are no Adapter Functions. Dashboards show and control a purifier with the
+AirPurifier card or tile; see [dashboards](dashboards.md).
 
 Upgrade Core before the Levoit Adapter. An upgraded Adapter declaring `µg/m³`
 against an unmigrated Core is rejected with `immutable_interpretation_change`
