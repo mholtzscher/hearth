@@ -45,6 +45,8 @@ type generation struct {
 	// cache holds each Entity's last projected value on this connection.
 	cache  map[string]adapter.Observation
 	queues map[upstreamRef]*commandQueue
+	// coverTargets await position evidence but never block another cover write.
+	coverTargets map[upstreamRef][]*commandAttempt
 }
 
 type boundRoute struct {
@@ -276,11 +278,12 @@ func (w *worker) prepareGeneration(ctx context.Context, gen *generation, result 
 // install binds planned routes to registered Entity IDs and records ownership.
 func (w *worker) install(result connectResult) (*generation, error) {
 	gen := &generation{
-		conn:       result.conn,
-		byUpstream: map[upstreamRef][]boundRoute{},
-		byEntityID: map[string]boundRoute{},
-		cache:      map[string]adapter.Observation{},
-		queues:     map[upstreamRef]*commandQueue{},
+		conn:         result.conn,
+		byUpstream:   map[upstreamRef][]boundRoute{},
+		byEntityID:   map[string]boundRoute{},
+		cache:        map[string]adapter.Observation{},
+		queues:       map[upstreamRef]*commandQueue{},
+		coverTargets: map[upstreamRef][]*commandAttempt{},
 	}
 	if len(result.plan.Routes) == 0 {
 		return gen, nil
@@ -397,6 +400,9 @@ func (w *worker) publish(
 	route boundRoute,
 	observation adapter.Observation,
 ) error {
+	if route.Kind == routeCover {
+		return w.publishCover(ctx, gen, upstream, observation)
+	}
 	if queue := gen.queues[upstream]; queue != nil && queue.active != nil &&
 		queue.active.route.EntityID == route.EntityID {
 		return w.publishLinked(ctx, queue, observation)
@@ -426,6 +432,9 @@ func (w *worker) publicationFailure(ctx context.Context, err error) error {
 // endGeneration closes the connection and settles every Command the generation held.
 func (w *worker) endGeneration(gen *generation) {
 	_ = gen.conn.Close()
+	for upstream := range gen.coverTargets {
+		clearCoverTargets(gen, upstream)
+	}
 	for _, queue := range gen.queues {
 		if queue.active != nil {
 			queue.active.stopTimer()

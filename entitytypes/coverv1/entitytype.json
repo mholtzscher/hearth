@@ -1,0 +1,27 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.cover/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "operations": {
+    "set": {
+      "parameters_schema": "set-parameters.schema.json",
+      "deadline_ms": 60000,
+      "outcome": "observed",
+      "satisfied_when": [
+        {
+          "op": "near", "tolerance": 1,
+          "left": {"root": "parameters", "path": "/position"},
+          "right": {"root": "state", "path": "/position"}
+        }
+      ]
+    },
+    "stop": {
+      "parameters_schema": "stop-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "dispatched",
+      "satisfied_when": []
+    }
+  },
+  "examples": "examples.json"
+}

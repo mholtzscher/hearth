@@ -33,6 +33,10 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 		{Path: "/x", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "10*-4"}, Kind: FixedKind{Code: "chromaticity"}}},
 		{Path: "/y", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "10*-4"}, Kind: FixedKind{Code: "chromaticity"}}},
 	},
+	EntityTypeCoverV1: {
+		{Path: "/motion", Presence: "always", Value: StringField{Enum: []string{"idle", "opening", "closing"}}},
+		{Path: "/position", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
+	},
 	EntityTypeDailyforecastV1: {},
 	EntityTypeEnumactionV1:    {},
 	EntityTypeEnumeventV1:     {},

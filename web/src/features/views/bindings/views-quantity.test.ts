@@ -39,19 +39,27 @@ describe("State field catalog", () => {
   it("derives numeric eligibility without enabling nonnumeric cards", () => {
     expect(quantityTypes).toEqual([
       "hearth.brightness/v1", "hearth.colorhs/v1", "hearth.colorrgb/v1", "hearth.colortemp/v1", "hearth.colorxy/v1",
-      "hearth.numericsensor/v1", "hearth.numericsetting/v1", "hearth.pressure/v1",
+      "hearth.cover/v1", "hearth.numericsensor/v1", "hearth.numericsetting/v1", "hearth.pressure/v1",
       "hearth.relativehumidity/v1", "hearth.speed/v1", "hearth.temperature/v1",
     ]);
     expect(textTypes).toContain("hearth.textsensor/v1");
     expect(textTypes).toContain("hearth.colorrgb/v1");
+    expect(textTypes).toContain("hearth.cover/v1");
   });
   it("declares units for fixed numeric fields", () => {
     const fields = Object.values(stateFields).flatMap(fields => Object.values(fields));
-    expect(fields).toHaveLength(27);
+    expect(fields).toHaveLength(29);
     expect(stateFields["hearth.lock/v1"][""]).toMatchObject({
       value_type: "string", enum: ["locked", "unlocked", "locking", "unlocking", "jammed", "unknown"],
     });
-    expect(fields.filter(isQuantityField)).toHaveLength(15);
+    expect(stateFields["hearth.cover/v1"]["/position"]).toEqual({
+      value_type: "integer", presence: "always",
+      quantity: { unit: "%", range: { minimum: 0, maximum: 100 } },
+    });
+    expect(stateFields["hearth.cover/v1"]["/motion"]).toEqual({
+      value_type: "string", presence: "always", enum: ["idle", "opening", "closing"],
+    });
+    expect(fields.filter(isQuantityField)).toHaveLength(16);
     for (const field of fields) {
       if (!isQuantityField(field) || typeof field.quantity.unit !== "string") continue;
       expect(field.quantity.unit.length).toBeGreaterThan(0);

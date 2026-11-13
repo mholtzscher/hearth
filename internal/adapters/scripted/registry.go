@@ -19,6 +19,7 @@ import (
 	contractcolormodev1 "github.com/mholtzscher/hearth/entitytypes/colormodev1"
 	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
 	contractcolorxyv1 "github.com/mholtzscher/hearth/entitytypes/colorxyv1"
+	contractcoverv1 "github.com/mholtzscher/hearth/entitytypes/coverv1"
 	contractdailyforecastv1 "github.com/mholtzscher/hearth/entitytypes/dailyforecastv1"
 	contractenumactionv1 "github.com/mholtzscher/hearth/entitytypes/enumactionv1"
 	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
@@ -140,6 +141,9 @@ func buildRegistry() (map[string]*TypeCodecs, error) {
 		{contractdailyforecastv1.TypeID, false,
 			contractdailyforecastv1.StateSchemaID, contractdailyforecastv1.SupportSchemaID,
 			contractdailyforecastv1.SchemaFiles(), contractdailyforecastv1.FS.ReadFile},
+		{contractcoverv1.TypeID, false,
+			contractcoverv1.StateSchemaID, contractcoverv1.SupportSchemaID,
+			contractcoverv1.SchemaFiles(), contractcoverv1.FS.ReadFile},
 		{contractenumactionv1.TypeID, false,
 			contractenumactionv1.StateSchemaID, contractenumactionv1.SupportSchemaID,
 			contractenumactionv1.SchemaFiles(), contractenumactionv1.FS.ReadFile},

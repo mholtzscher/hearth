@@ -22,6 +22,8 @@ const (
 	routeLightColor
 	routeLightEffect
 	routeText
+	routeCover
+	routeLock
 )
 
 // unitConversion converts an upstream sensor value into the route's canonical unit.

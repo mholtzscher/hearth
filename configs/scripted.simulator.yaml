@@ -40,6 +40,26 @@ adapters:
         output_schema: {type: object}
         hold: true
     devices:
+      # This is an independent reported-state series, not a physical travel model.
+      - binding_key: simulated-garage-door
+        name: Simulated garage door
+        kind: cover
+        entities:
+          - key: door
+            name: Door
+            type: hearth.cover/v1
+            support: {state: {}, operations: {set: {}, stop: {}}}
+            initial: {position: 0, motion: idle}
+            outputs:
+              interval: 5s
+              values:
+                - {position: 0, motion: idle}
+                - {position: 50, motion: opening}
+                - {position: 100, motion: idle}
+                - {position: 50, motion: closing}
+            commands:
+              set: {behavior: accept-and-publish, apply_parameters: false}
+              stop: {behavior: accept-no-publish}
       - binding_key: simulated-air-purifier
         name: Simulated air purifier
         kind: air-purifier

@@ -13,7 +13,8 @@ import (
 // when a new Entity type is introduced. Later fields of that type still need
 // a backfill, so exempting a whole type would hide missing history.
 func historyRollupFieldsWithoutHistory() []string {
-	return []string{"hearth.colorrgb/v1 /red", "hearth.colorrgb/v1 /green", "hearth.colorrgb/v1 /blue"}
+	return []string{"hearth.colorrgb/v1 /red", "hearth.colorrgb/v1 /green", "hearth.colorrgb/v1 /blue",
+		"hearth.cover/v1 /position"}
 }
 
 var historyRollupFieldRow = regexp.MustCompile(`\('([^']+)', '([^']*)'\)`)

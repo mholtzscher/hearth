@@ -147,6 +147,41 @@
         }
       }
     },
+    "hearth.cover/v1": {
+      "operations": {
+        "set": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:cover:v1:set-parameters",
+            "title": "Hearth cover/v1 set parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "position"
+            ],
+            "properties": {
+              "position": {
+                "description": "Percent open: 0 closes, 100 opens, intermediate values request partial travel.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        },
+        "stop": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:cover:v1:stop-parameters",
+            "title": "Hearth cover/v1 stop parameters",
+            "description": "Dispatch a stop request. Dispatch does not confirm that travel stopped.",
+            "type": "object",
+            "additionalProperties": false,
+            "maxProperties": 0
+          }
+        }
+      }
+    },
     "hearth.dailyforecast/v1": {
       "operations": {}
     },

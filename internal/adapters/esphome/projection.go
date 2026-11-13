@@ -9,6 +9,7 @@ import (
 	contractbinarysensorv1 "github.com/mholtzscher/hearth/entitytypes/binarysensorv1"
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
 	contractcolorrgbv1 "github.com/mholtzscher/hearth/entitytypes/colorrgbv1"
+	contractcoverv1 "github.com/mholtzscher/hearth/entitytypes/coverv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	contractpressurev1 "github.com/mholtzscher/hearth/entitytypes/pressurev1"
 	contractrelativehumidityv1 "github.com/mholtzscher/hearth/entitytypes/relativehumidityv1"
@@ -18,7 +19,9 @@ import (
 	sdkbinarysensorv1 "github.com/mholtzscher/hearth/sdk/adapter/binarysensorv1"
 	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
 	sdkcolorrgbv1 "github.com/mholtzscher/hearth/sdk/adapter/colorrgbv1"
+	sdkcoverv1 "github.com/mholtzscher/hearth/sdk/adapter/coverv1"
 	sdkenumsettingv1 "github.com/mholtzscher/hearth/sdk/adapter/enumsettingv1"
+	sdklockv1 "github.com/mholtzscher/hearth/sdk/adapter/lockv1"
 	sdknumericsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsensorv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	sdkpressurev1 "github.com/mholtzscher/hearth/sdk/adapter/pressurev1"
@@ -40,6 +43,8 @@ type entityRoute struct {
 	Numeric sdknumericsensorv1.Support
 	// Effect constrains State and Commands to effects advertised by this light.
 	Effect sdkenumsettingv1.Support
+	Cover  sdkcoverv1.Support
+	Lock   sdklockv1.Support
 }
 
 // project converts one push into the Entity's canonical Observation. ok is false when the push carries no value;
@@ -73,6 +78,21 @@ func buildObservation(
 	receivedAt time.Time,
 ) (adapter.Observation, error) {
 	switch route.Kind {
+	case routeCover:
+		state, err := coverState(update)
+		if err != nil {
+			return adapter.Observation{}, err
+		}
+		return sdkcoverv1.NewObservation(sdkcoverv1.ObservationInput{
+			EntityID: entityID, Support: route.Cover, State: state, AdapterReceivedAt: receivedAt,
+		})
+	case routeLock:
+		return sdklockv1.NewObservation(sdklockv1.ObservationInput{
+			EntityID:          entityID,
+			Support:           route.Lock,
+			State:             sdklockv1.State(update.LockState),
+			AdapterReceivedAt: receivedAt,
+		})
 	case routeText:
 		return sdktextsensorv1.NewObservation(sdktextsensorv1.ObservationInput{
 			EntityID: entityID, Support: sdktextsensorv1.Support{}, State: sdktextsensorv1.State(update.Text),
@@ -154,9 +174,17 @@ func lightBrightness(update nativeapi.StateUpdate) int64 {
 	return max(percent, 1)
 }
 
-// stateMatches uses Core's RGB satisfaction rule and one-percentage-point brightness tolerance.
-// Other routes require exact value equality.
+// stateMatches uses Core's generated RGB and cover matchers and one-point brightness tolerance.
+// Remaining routes require exact value equality.
 func stateMatches(kind routeKind, value json.RawMessage, target json.RawMessage) bool {
+	if kind == routeCover {
+		var observed contractcoverv1.State
+		var parameters contractcoverv1.SetParameters
+		if json.Unmarshal(value, &observed) != nil || json.Unmarshal(target, &parameters) != nil {
+			return false
+		}
+		return contractcoverv1.SetSatisfied(parameters, observed)
+	}
 	if kind == routeLightColor {
 		var observed, wanted contractcolorrgbv1.State
 		if json.Unmarshal(value, &observed) != nil || json.Unmarshal(target, &wanted) != nil {

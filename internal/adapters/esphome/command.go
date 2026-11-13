@@ -1,6 +1,6 @@
-// command.go owns Command admission, per-upstream FIFO dispatch, and evidence linking. ESPHome commands have no
-// acknowledgement: a successful frame write permits acceptance, and only state pushes on the same live subscription
-// become linked evidence.
+// command.go owns ordinary Command admission, per-upstream FIFO dispatch, and evidence linking.
+// Covers use the nonblocking-target dispatch policy in cover.go. ESPHome commands have no acknowledgement:
+// a successful frame write permits acceptance; State on the same live subscription supplies linked evidence.
 
 package esphome
 
@@ -87,6 +87,9 @@ func (w *worker) handleCommand(ctx context.Context, gen *generation, request *co
 	if !found {
 		request.finish(request.responder.RejectUnavailable("Entity is not available on the connected ESPHome device"))
 		return nil
+	}
+	if route.Kind == routeCover {
+		return w.handleCoverCommand(ctx, gen, route, request)
 	}
 	if request.command.OperationName != operationSet {
 		request.finish(request.responder.Reject("unsupported operation"))
@@ -245,6 +248,15 @@ func earlierDeadline(first, second time.Time) time.Time {
 
 // handleExpiry drops an awaiting attempt whose deadline passed and starts the next one.
 func (w *worker) handleExpiry(ctx context.Context, gen *generation, token uint64) error {
+	for upstream, attempts := range gen.coverTargets {
+		for index, attempt := range attempts {
+			if attempt.token == token {
+				attempt.stopTimer()
+				gen.coverTargets[upstream] = append(attempts[:index], attempts[index+1:]...)
+				return nil
+			}
+		}
+	}
 	for _, queue := range gen.queues {
 		if queue.active != nil && queue.active.token == token {
 			queue.active = nil
@@ -268,6 +280,8 @@ func (w *worker) expireAt(deadline time.Time, token uint64) *time.Timer {
 func prepareSet(route boundRoute, parameters json.RawMessage) (json.RawMessage, nativeapi.Command, error) {
 	key, deviceID := route.Upstream.Key, route.Upstream.DeviceID
 	switch route.Kind {
+	case routeLock:
+		return prepareLockSet(route, parameters)
 	case routeSwitchPower, routeLightPower:
 		decoded, err := decodePowerSetParameters(parameters)
 		if err != nil {
@@ -313,7 +327,7 @@ func prepareSet(route boundRoute, parameters json.RawMessage) (json.RawMessage, 
 		}
 		target, _ := json.Marshal(decoded.Value)
 		return target, nativeapi.LightCommand{Key: key, DeviceID: deviceID, Effect: &decoded.Value}, nil
-	case routeTemperature, routeHumidity, routePressure, routeNumeric, routeBinary, routeText:
+	case routeTemperature, routeHumidity, routePressure, routeNumeric, routeBinary, routeText, routeCover:
 		fallthrough
 	default:
 		return nil, nil, errors.New("esphome: Entity has no set operation")
