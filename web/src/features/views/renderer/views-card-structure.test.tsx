@@ -70,12 +70,15 @@ it("separates combined statuses into distinct list items", async () => {
 it.each([
   ["single readings", ["Metric", "State"], "view-grid-reading"],
   ["quick switches", ["ToggleTile", "ToggleTile"], "view-grid-toggle"],
+  ["purifier tiles", ["AirPurifierTile", "AirPurifierTile"], "view-grid-toggle"],
+  ["purifier tiles and switches", ["AirPurifierTile", "ToggleTile"], "view-grid-toggle"],
+  ["purifier card mixed with tiles", ["AirPurifierTile", "AirPurifierCard"], null],
   ["mixed content", ["Metric", "Heading"], null],
 ])("selects the compact grid layout only for %s", async (_name, types, expected) => {
   respond("available");
   const power = { ...source, entity_type: "hearth.power/v1" };
   const elements = Object.fromEntries(types.map((type, i) => [`child${i}`, {
-    type, props: type === "Heading" ? { text: "Heading" } : { source: type === "Metric" ? source : power },
+    type: type.startsWith("AirPurifier") ? "AirPurifier" : type, props: type.startsWith("AirPurifier") ? { layout: type === "AirPurifierTile" ? "tile" : "card", power, pm25: { ...source, entity_id: "ent_019a3e6a-4111-7000-8000-000000000002", entity_type: "hearth.numericsensor/v1" } } : type === "Heading" ? { text: "Heading" } : { source: type === "Metric" ? source : power },
   }]));
   const definition = { ...view, spec: { root: "root", elements: {
     ...elements, root: { type: "Grid", props: { columns: 3 }, children: types.map((_, i) => `child${i}`) },

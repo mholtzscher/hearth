@@ -11,6 +11,7 @@ import { BoundStateTimeline } from "../cards/state-timeline/StateTimeline";
 import { BoundWeekPattern } from "../cards/week-pattern/WeekPattern";
 import { BoundToggleTile } from "../cards/toggle-tile/ToggleTile";
 import { BoundToggleList } from "../cards/toggle-list/ToggleList";
+import { BoundAirPurifier } from "../cards/air-purifier/AirPurifier";
 import { BoundOutsideNow } from "../cards/outside-now/OutsideNow";
 import { BoundRain } from "../cards/rain/Rain";
 import { BoundWind } from "../cards/wind/Wind";
@@ -25,8 +26,10 @@ type Graph = { root: string; elements: Record<string, ViewElement | null>; child
  * grids made only of them keep more columns, including on phones.
  */
 function gridKind(graph: Graph, id: string) {
-  const types = graph.children[id].map(child => graph.elements[child]?.type);
-  if (types.every(type => type === "ToggleTile")) return " view-grid-toggle";
+  const elements = graph.children[id].map(child => graph.elements[child]);
+  const types = elements.map(element => element?.type);
+  const isTile = (element: ViewElement | null | undefined) => element?.type === "ToggleTile" || (element?.type === "AirPurifier" && element.props.layout === "tile");
+  if (elements.every(isTile)) return " view-grid-toggle";
   if (types.every(type => type === "Metric" || type === "State")) return " view-grid-reading";
   return "";
 }
@@ -69,6 +72,7 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
     case "WeekPattern": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "State"}><BoundWeekPattern {...node.props} /></CardBoundary>;
     case "ToggleTile": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Power"}><BoundToggleTile {...node.props} /></CardBoundary>;
     case "ToggleList": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundToggleList {...node.props} /></CardBoundary>;
+    case "AirPurifier": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Air purifier"}><BoundAirPurifier {...node.props} /></CardBoundary>;
     case "OutsideNow": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Outside"}><BoundOutsideNow {...node.props} /></CardBoundary>;
     case "Rain": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Rain"}><BoundRain {...node.props} /></CardBoundary>;
     case "Wind": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Wind"}><BoundWind {...node.props} /></CardBoundary>;

@@ -11,6 +11,7 @@ import { StateTimelineEditor } from "../cards/state-timeline/Editor";
 import { WeekPatternEditor } from "../cards/week-pattern/Editor";
 import { ToggleTileEditor } from "../cards/toggle-tile/Editor";
 import { ToggleListEditor } from "../cards/toggle-list/Editor";
+import { AirPurifierEditor } from "../cards/air-purifier/Editor";
 import { OutsideNowEditor } from "../cards/outside-now/Editor";
 import { RainEditor } from "../cards/rain/Editor";
 import { WindEditor } from "../cards/wind/Editor";
@@ -34,7 +35,7 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
   const version = useBaseUrlVersion();
   const readable = new Set<string>([...fieldTypes, forecastTypes.hourly, forecastTypes.daily]);
   // Entity names repeat across Devices ("Humidity"), so cards that pick sources by name also show the Device.
-  const deviceNames = Object.values(definition.spec.elements).some(node => ["ToggleTile", "ToggleList", "OutsideNow", "Rain", "Wind", "Pressure", "Forecast"].includes(node.type));
+  const deviceNames = Object.values(definition.spec.elements).some(node => ["ToggleTile", "ToggleList", "AirPurifier", "OutsideNow", "Rain", "Wind", "Pressure", "Forecast"].includes(node.type));
   useEffect(() => {
     const controller = new AbortController();
     setChoices([]);
@@ -86,6 +87,7 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
       {node.type === "WeekPattern" && <WeekPatternEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
       {node.type === "ToggleTile" && <ToggleTileEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "ToggleList" && <ToggleListEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "AirPurifier" && <AirPurifierEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "OutsideNow" && <OutsideNowEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "Rain" && <RainEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "Wind" && <WindEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}

@@ -13,7 +13,7 @@ const failures: Record<CommandFailure["kind"], string> = {
   internal: "Couldn't change the light.",
 };
 
-const powerFailures: Record<CommandFailure["kind"], string> = {
+export const powerFailures: Record<CommandFailure["kind"], string> = {
   disabled: "This Entity is disabled.",
   unreachable: "Couldn't reach this Device.",
   rejected: "Change rejected. Try again.",
