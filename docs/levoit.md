@@ -56,12 +56,18 @@ Each purifier is one Device of kind `air-purifier`, containing these Entities:
 | `fan-level` | Stored manual selection `1`–`4`, as a string | String `set` |
 | `display` | Configured screen enabled flag | Boolean `set` |
 | `child-lock` | Boolean child lock | Boolean `set` |
-| `pm25` | PM2.5 concentration, `ug/m3` | Read-only |
+| `pm25` | PM2.5 concentration, `µg/m³` | Read-only |
 | `filter-life` | Remaining filter life, percent | Read-only |
 
 Use the existing Entity APIs, MCP tools, history, and automations. For example,
 `power.set` takes `{"value":true}` and `fan-level.set` takes `{"value":"3"}`.
-There are no Adapter Functions or dedicated purifier dashboard controls.
+There are no Adapter Functions. Dashboards show and control a purifier with the
+AirPurifier card or tile; see [dashboards](dashboards.md).
+
+Upgrade Core before the Levoit Adapter. An upgraded Adapter declaring `µg/m³`
+against an unmigrated Core is rejected with `immutable_interpretation_change`
+and exits. Rolling the Adapter back after Core migration 33 fails registration
+the same way; restore a pre-upgrade backup with matching binaries instead.
 
 Setting a fan level selects manual mode. Selecting `manual` explicitly starts
 at level 1. Mode and fan-level Commands optimistically report power on as well.

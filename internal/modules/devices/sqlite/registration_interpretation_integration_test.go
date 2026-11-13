@@ -12,7 +12,40 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
+
+func TestParticulateMatterMigrationPreservesRegistrationIdentity(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := dbtest.OpenAtVersion(t, filepath.Join(t.TempDir(), "hearth.db"), 32)
+	claimRegistrationAdapters(t, database)
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
+	registration := validDomainRegistration()
+	registration.Entities[0].Key = "pm25"
+	registration.Entities[0].TypeID = devices.EntityTypeNumericsensorV1
+	const oldSupport = `{"state":{"minimum":0,"maximum":1000,"unit":"ug/m3"},"operations":{}}`
+	registration.Entities[0].Support = devices.EntitySupport(oldSupport)
+	first, err := service.Register(ctx, "simulator", testRuntimeID, registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Migrate(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	registration.Entities[0].Support = devices.EntitySupport(
+		`{"state":{"minimum":0,"maximum":1000,"unit":"µg/m³","quantity_kind":"particulate_matter"},"operations":{}}`,
+	)
+	next, err := service.Register(ctx, "simulator", testRuntimeID, registration)
+	if err != nil || !reflect.DeepEqual(first, next) {
+		t.Fatalf("canonical registration = %+v, %v; original = %+v", next, err, first)
+	}
+	registration.Entities[0].Support = devices.EntitySupport(oldSupport)
+	_, err = service.Register(ctx, "simulator", testRuntimeID, registration)
+	assertRegistrationRejection(t, err, devices.RegistrationImmutableInterpretationChange)
+}
 
 //nolint:gocognit // Each row drives registration, mutable support, permanent rejection, and the retained baseline.
 func TestRegistrationFreezesOnlyInterpretationReferences(t *testing.T) {

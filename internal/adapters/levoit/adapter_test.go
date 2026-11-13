@@ -153,6 +153,42 @@ func syntheticInventory(name string) string {
 	)
 }
 
+func TestSensorDescriptorsDeclareUnitsAndKind(t *testing.T) {
+	t.Parallel()
+	a := newTestAdapter(t, newRecordingSession(), nil)
+	plans, err := a.entities(device{CID: "purifier"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]struct{ unit, kind string }{
+		"pm25":        {"µg/m³", "particulate_matter"},
+		"filter-life": {"%", ""},
+	}
+	for _, plan := range plans {
+		expected, ok := want[plan.descriptor.Key]
+		if !ok {
+			continue
+		}
+		var support struct {
+			State struct {
+				Unit string  `json:"unit"`
+				Kind *string `json:"quantity_kind"`
+			} `json:"state"`
+		}
+		if err = json.Unmarshal(plan.descriptor.Support, &support); err != nil {
+			t.Fatal(err)
+		}
+		if support.State.Unit != expected.unit || (expected.kind == "" && support.State.Kind != nil) ||
+			(expected.kind != "" && (support.State.Kind == nil || *support.State.Kind != expected.kind)) {
+			t.Errorf("%s support = %s", plan.descriptor.Key, plan.descriptor.Support)
+		}
+		delete(want, plan.descriptor.Key)
+	}
+	if len(want) != 0 {
+		t.Errorf("missing sensor descriptors: %v", want)
+	}
+}
+
 //nolint:gocognit // One ordered recovery journey with explicit assertions.
 func TestRegistrationPartialStateAndRestartMembership(
 	t *testing.T,

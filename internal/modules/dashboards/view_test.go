@@ -47,6 +47,28 @@ var exampleSensorUnits = map[string]string{
 	"ent_01900000-0000-7000-8000-000000000108": "mm",
 	"ent_01900000-0000-7000-8000-000000000109": "mm",
 	"ent_01900000-0000-7000-8000-000000000110": "mm",
+	"ent_01900000-0000-7000-8000-000000000302": "µg/m³",
+	"ent_01900000-0000-7000-8000-000000000303": "%",
+}
+
+// exampleChoices gives the air purifier example's enum settings the choices
+// their roles require; other enum settings use exampleSupport.
+//
+//nolint:gochecknoglobals // Immutable test fixture keyed by Entity ID.
+var exampleChoices = map[string]string{
+	"ent_01900000-0000-7000-8000-000000000304": `["manual","auto","sleep"]`,
+	"ent_01900000-0000-7000-8000-000000000305": `["1","2","3","4"]`,
+}
+
+// exampleEntitySupport is the stored Support for one example Entity.
+func exampleEntitySupport(id, entityType string) string {
+	if unit, ok := exampleSensorUnits[id]; ok {
+		return `{"state":{"minimum":0,"maximum":10000,"unit":"` + unit + `"},"operations":{}}`
+	}
+	if choices, ok := exampleChoices[id]; ok {
+		return `{"state":{"choices":` + choices + `},"operations":{"set":{}}}`
+	}
+	return exampleSupport[entityType]
 }
 
 // exampleEntities supplies every Entity a definition references, wherever its
@@ -65,10 +87,7 @@ func exampleEntities(definition json.RawMessage) chartReader {
 			id, _ := value["entity_id"].(string)
 			entityType, _ := value["entity_type"].(string)
 			if id != "" && entityType != "" {
-				support := exampleSupport[entityType]
-				if unit, ok := exampleSensorUnits[id]; ok {
-					support = `{"state":{"minimum":0,"maximum":10000,"unit":"` + unit + `"},"operations":{}}`
-				}
+				support := exampleEntitySupport(id, entityType)
 				result[devices.EntityID(id)] = devices.EntityWithState{Entity: devices.Entity{
 					ID: devices.EntityID(
 						id,
@@ -188,6 +207,11 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		"timeline-unknown-style":           schema,
 		"week-pattern-text-field":          weekBool,
 		"week-pattern-window":              schema,
+		"air-purifier-duplicate-role":      "each AirPurifier role must name a different Entity",
+		"air-purifier-missing-pm25":        schema,
+		"air-purifier-unknown-layout":      schema,
+		"air-purifier-mode-wrong-type":     schema,
+		"air-purifier-filter-humidity":     schema,
 	}
 	var examples []struct {
 		Name       string          `json:"name"`

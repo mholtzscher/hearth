@@ -64,6 +64,10 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"All ToggleTile numeric sources must belong to the power Entity's Device; do not guess a source by name or list order. " +
 	"ToggleList groups 1–12 distinct hearth.power/v1 Entities with Device-name row labels; all_off:true offers native Turn all off. " +
 	"Use a Grid of ToggleTiles for quick switches, with up to 4 columns. Ordinary toggle tiles have no sparkline. " +
+	"For a Device of kind air-purifier, use AirPurifier. Bind power and a PM2.5 numeric sensor in µg/m³; bind mode, " +
+	"fan_level, display, child_lock, and filter_life when the Device has a matching Entity. Identify Display and Child " +
+	"lock by their Entity names; never guess. Omit a role you cannot identify. Use layout card on its own or in a " +
+	"dashboard, and layout tile in a Grid of quick switches. Every bound Entity must belong to the power Entity's Device. " +
 	"For a weather station, prefer the weather cards over separate Metrics. They bind named slots, each read from an Entity's root: " +
 	"OutsideNow needs an outdoor hearth.temperature/v1 and optionally humidity, wind (speed), wind_direction, rain_rate, and rain_today; " +
 	"it words conditions from the rain rate and wind speed but shows no feels-like or dew point. " +

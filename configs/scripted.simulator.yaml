@@ -40,6 +40,51 @@ adapters:
         output_schema: {type: object}
         hold: true
     devices:
+      - binding_key: simulated-air-purifier
+        name: Simulated air purifier
+        kind: air-purifier
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: display
+            name: Display
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: child-lock
+            name: Child lock
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: mode
+            name: Mode
+            type: hearth.enumsetting/v1
+            support: {state: {choices: [manual, auto, sleep]}, operations: {set: {}}}
+            initial: auto
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: fan-level
+            name: Manual fan level
+            type: hearth.enumsetting/v1
+            support: {state: {choices: ["1", "2", "3", "4"]}, operations: {set: {}}}
+            initial: "2"
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: pm25
+            name: PM2.5
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 1000, unit: "µg/m³", quantity_kind: particulate_matter}, operations: {}}
+            initial: 6
+            outputs: {interval: 20s, values: [6, 7, 12, 38, 9]}
+          - key: filter-life
+            name: Filter life
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 82
       - binding_key: simulated-light
         name: Simulated light
         kind: light
@@ -534,7 +579,7 @@ adapters:
           - key: pm25
             name: Fine particulate matter concentration (PM2.5)
             type: hearth.numericsensor/v1
-            support: {state: {minimum: 0, maximum: 1000, unit: "ug/m3"}, operations: {}}
+            support: {state: {minimum: 0, maximum: 1000, unit: "µg/m³", quantity_kind: particulate_matter}, operations: {}}
             initial: 2.5
             outputs: {interval: 7s, values: [2.5, 8.2, 35.5, 8.2]}
           - key: voc

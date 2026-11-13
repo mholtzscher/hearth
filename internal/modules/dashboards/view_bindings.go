@@ -22,11 +22,17 @@ type binding struct {
 	WithWords  bool   `json:"-"`
 	// BooleanOnly rejects text fields: a WeekPattern measures time true.
 	BooleanOnly bool `json:"-"`
-	// SameDeviceAs ties a ToggleTile's numeric reading to its power Entity.
+	// SameDeviceAs ties a reading or control to its card's power Entity.
 	SameDeviceAs string `json:"-"`
-	// RequiredUnit pins a weather card's numeric-sensor slot to one stored unit:
-	// the Entity type alone cannot tell rain from wind direction.
+	// SameDeviceReason is the fixed rejection when SameDeviceAs is violated.
+	SameDeviceReason string `json:"-"`
+	// RequiredUnit pins a numeric-sensor slot to one stored unit: the Entity
+	// type alone cannot tell rain from wind direction, or PM2.5 from filter life.
 	RequiredUnit string `json:"-"`
+	// UnitReason is the fixed rejection when RequiredUnit is violated.
+	UnitReason string `json:"-"`
+	// Choices constrains an enum setting's support.state.choices.
+	Choices choiceRule `json:"-"`
 }
 
 const (
@@ -64,6 +70,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		"Wind":          windBindings,
 		"Pressure":      pressureBindings,
 		"Forecast":      forecastBindings,
+		"AirPurifier":   airPurifierBindings,
 	}
 	var all []binding
 	ids := map[string]bool{}
@@ -221,6 +228,8 @@ func deviceBindings(raw json.RawMessage) ([]binding, error) {
 	return []binding{props.Device}, nil
 }
 
+const toggleTileSameDevice = "ToggleTile metrics and details must belong to the power Entity's Device"
+
 func toggleTileBindings(raw json.RawMessage) ([]binding, error) {
 	var props struct {
 		Source binding `json:"source"`
@@ -240,12 +249,14 @@ func toggleTileBindings(raw json.RawMessage) ([]binding, error) {
 	if props.Metric != nil {
 		metric := props.Metric.Source
 		metric.ValueKind, metric.SameDeviceAs = powerMetricValueKind, props.Source.EntityID
+		metric.SameDeviceReason = toggleTileSameDevice
 		history := metric
 		history.Kind, history.Window = seriesBindingKind, props.Metric.Window
 		result = append(result, metric, history)
 		if props.Metric.Detail != nil {
 			detail := props.Metric.Detail.Source
 			detail.ValueKind, detail.SameDeviceAs = powerMetricValueKind, props.Source.EntityID
+			detail.SameDeviceReason = toggleTileSameDevice
 			result = append(result, detail)
 		}
 	}
@@ -364,15 +375,16 @@ func validateEntityBindings(ctx context.Context, reader EntityReader, bindings [
 			axes[b.Chart] = unit
 		}
 	}
-	return validatePowerDevices(bindings, entities)
+	return validateSameDevice(bindings, entities)
 }
 
-// validatePowerDevices keeps a tile's measurements attached to the Device it controls.
-func validatePowerDevices(bindings []binding, entities map[devices.EntityID]devices.EntityWithState) error {
+// validateSameDevice keeps a card's readings and controls attached to the
+// Device its power Entity controls.
+func validateSameDevice(bindings []binding, entities map[devices.EntityID]devices.EntityWithState) error {
 	for _, b := range bindings {
 		if b.SameDeviceAs != "" &&
 			entities[devices.EntityID(b.EntityID)].Entity.DeviceID != entities[devices.EntityID(b.SameDeviceAs)].Entity.DeviceID {
-			return invalidDefinition("ToggleTile metrics and details must belong to the power Entity's Device")
+			return invalidDefinition(b.SameDeviceReason)
 		}
 	}
 	return nil
@@ -398,6 +410,9 @@ func bindingUnit(b binding, entity devices.Entity) (string, error) {
 	if b.ValueKind == forecastValueKind {
 		return "", nil
 	}
+	if err := validateChoices(b, json.RawMessage(entity.Support)); err != nil {
+		return "", err
+	}
 	field, found := devices.BuiltinStateField(entity.TypeID, b.Field)
 	if !found {
 		return "", invalidDefinition("the field is not a State field of the Entity")
@@ -416,7 +431,7 @@ func bindingUnit(b binding, entity devices.Entity) (string, error) {
 		return "", invalidDefinition("the Entity declares no usable unit")
 	}
 	if b.RequiredUnit != "" && quantity.Unit != b.RequiredUnit {
-		return "", invalidDefinition(weatherUnitReasons[b.RequiredUnit])
+		return "", invalidDefinition(b.UnitReason)
 	}
 	return quantity.Unit, nil
 }

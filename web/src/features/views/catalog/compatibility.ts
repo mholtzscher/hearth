@@ -3,6 +3,7 @@ import { definitionSchema, elementSchema, type ViewDefinition, type ViewElement 
 import { childrenSchema, elementKey, plainText } from "./primitives";
 import { quantityField, stateField, textField } from "../bindings/state-fields";
 import type { Words } from "../bindings/types";
+import { boundRoles } from "../cards/air-purifier/schema";
 
 export const MAX_DEFINITION_BYTES = 16 * 1024;
 const storedNode = z.object({ type: z.string().min(1).max(120), props: z.record(z.string(), z.unknown()), children: childrenSchema.optional() }).passthrough();
@@ -71,6 +72,13 @@ function validReferences(elements: ViewElement[]): boolean {
     }
     if (element.type === "Device") ids.add(element.props.device.device_id);
     if (element.type === "Forecast") ids.add(element.props.source.entity_id);
+    if (element.type === "AirPurifier") {
+      // Each role names a different Entity; Core checks types, units, choices, and the shared Device.
+      const roleIDs = boundRoles(element.props).map(([, source]) => source.entity_id);
+      if (new Set(roleIDs).size !== roleIDs.length || !quantityField(element.props.pm25) ||
+          (element.props.filter_life && !quantityField(element.props.filter_life))) return false;
+      roleIDs.forEach(id => ids.add(id));
+    }
     if (element.type === "ToggleTile") {
       ids.add(element.props.source.entity_id);
       const metric = element.props.metric;
