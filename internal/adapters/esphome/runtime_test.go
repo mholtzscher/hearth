@@ -12,7 +12,7 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-func TestRuntimeReconcilesUnconfiguredBeforeHealthAndAvailabilityBeforeState(t *testing.T) {
+func TestRuntimeReportsHealthBeforeAvailabilityAndAvailabilityBeforeState(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		session := &fakeSession{owned: []adapter.OwnedMapping{{
@@ -23,12 +23,12 @@ func TestRuntimeReconcilesUnconfiguredBeforeHealthAndAvailabilityBeforeState(t *
 		_, stop := runAdapter(t, session, dialer, harnessDevice(t, "02:00:00:00:00:01", "one"))
 		synctest.Wait()
 		calls := session.snapshot()
-		if len(calls) < 4 || calls[0].kind != "availability" || calls[1].kind != "health" ||
+		if len(calls) < 4 || calls[0].kind != "health" || calls[1].kind != "availability" ||
 			calls[2].kind != "register" {
 			t.Fatalf("startup calls = %+v", calls)
 		}
-		if calls[0].availability[0].ReasonCode != reasonDeviceNotConfigured ||
-			calls[1].health.Status != adapter.HealthHealthy {
+		if calls[1].availability[0].ReasonCode != reasonDeviceNotConfigured ||
+			calls[0].health.Status != adapter.HealthHealthy {
 			t.Fatalf("startup = %+v", calls[:2])
 		}
 		available := map[string]bool{}
