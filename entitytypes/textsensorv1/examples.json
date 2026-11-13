@@ -1,0 +1,16 @@
+{
+  "cases": [
+    {
+      "name": "text-reading",
+      "support": {"state": {}, "operations": {}},
+      "states": [
+        {"value": "", "valid": true},
+        {"value": "Clean", "valid": true},
+        {"value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "valid": true},
+        {"value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "valid": false},
+        {"value": 1, "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

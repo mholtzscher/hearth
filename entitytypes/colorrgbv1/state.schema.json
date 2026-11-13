@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:colorrgb:v1:state",
+  "title": "Hearth colorrgb/v1 State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["active", "red", "green", "blue"],
+  "properties": {
+    "active": {"type": "boolean"},
+    "red": {"type": "integer", "minimum": 0, "maximum": 255},
+    "green": {"type": "integer", "minimum": 0, "maximum": 255},
+    "blue": {"type": "integer", "minimum": 0, "maximum": 255}
+  }
+}

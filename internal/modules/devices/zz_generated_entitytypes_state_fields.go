@@ -18,6 +18,12 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 	EntityTypeColormodeV1: {
 		{Path: "", Presence: "always", Value: StringField{Enum: []string{"xy", "hs", "color_temp"}}},
 	},
+	EntityTypeColorrgbV1: {
+		{Path: "/active", Presence: "always", Value: BooleanField{}},
+		{Path: "/blue", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "1"}}},
+		{Path: "/green", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "1"}}},
+		{Path: "/red", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "1"}}},
+	},
 	EntityTypeColortempV1: {
 		{Path: "/active", Presence: "always", Value: BooleanField{}},
 		{Path: "/value", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "/MK"}, Kind: FixedKind{Code: "color_temperature"}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
@@ -59,6 +65,9 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 	},
 	EntityTypeTemperatureV1: {
 		{Path: "", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "mCel"}, Kind: FixedKind{Code: "temperature"}}},
+	},
+	EntityTypeTextsensorV1: {
+		{Path: "", Presence: "always", Value: StringField{Enum: []string(nil)}},
 	},
 }
 

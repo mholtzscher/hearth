@@ -1,0 +1,41 @@
+{
+  "cases": [
+    {
+      "name": "rgb-target",
+      "support": {"state": {}, "operations": {"set": {}}},
+      "states": [
+        {"value": {"active": true, "red": 255, "green": 255, "blue": 255}, "valid": true},
+        {"value": {"active": true, "red": 128, "green": 128, "blue": 128}, "valid": true},
+        {"value": {"active": false, "red": 0, "green": 0, "blue": 0}, "valid": true},
+        {"value": {"active": true, "red": -1, "green": 0, "blue": 0}, "valid": false},
+        {"value": {"active": true, "red": 0, "green": 256, "blue": 0}, "valid": false},
+        {"value": {"active": true, "red": 0, "green": 0, "blue": 1.5}, "valid": false},
+        {"value": {"active": "true", "red": 0, "green": 0, "blue": 0}, "valid": false},
+        {"value": {"red": 0, "green": 0, "blue": 0}, "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"red": 255, "green": 255, "blue": 255}, "valid": true},
+            {"value": {"red": 128, "green": 128, "blue": 128}, "valid": true},
+            {"value": {"red": 0, "green": 0, "blue": 0}, "valid": true},
+            {"value": {"red": 256, "green": 0, "blue": 0}, "valid": false},
+            {"value": {"red": 0, "green": -1, "blue": 0}, "valid": false},
+            {"value": {"red": 0, "green": 0, "blue": "0"}, "valid": false},
+            {"value": {"red": 0, "green": 0}, "valid": false},
+            {"value": {"active": true, "red": 0, "green": 0, "blue": 0}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"red": 255, "green": 255, "blue": 255}, "state": {"active": true, "red": 255, "green": 255, "blue": 255}, "satisfied": true},
+            {"parameters": {"red": 128, "green": 128, "blue": 128}, "state": {"active": true, "red": 128, "green": 128, "blue": 128}, "satisfied": true},
+            {"parameters": {"red": 0, "green": 128, "blue": 255}, "state": {"active": true, "red": 1, "green": 129, "blue": 254}, "satisfied": true},
+            {"parameters": {"red": 100, "green": 100, "blue": 100}, "state": {"active": true, "red": 102, "green": 100, "blue": 100}, "satisfied": false},
+            {"parameters": {"red": 100, "green": 100, "blue": 100}, "state": {"active": true, "red": 100, "green": 98, "blue": 100}, "satisfied": false},
+            {"parameters": {"red": 100, "green": 100, "blue": 100}, "state": {"active": true, "red": 100, "green": 100, "blue": 102}, "satisfied": false},
+            {"parameters": {"red": 128, "green": 128, "blue": 128}, "state": {"active": false, "red": 128, "green": 128, "blue": 128}, "satisfied": false}
+          ]
+        }
+      }
+    }
+  ]
+}

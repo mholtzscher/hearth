@@ -196,6 +196,61 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 			t.Error("catalog accepted event support for a closed type")
 		}
 	})
+	t.Run("hearth.colorrgb/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_colorrgbv1"), TypeID: EntityTypeColorrgbV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"set\":{}}}")}
+		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {
+			t.Errorf("catalog stateless = %v, %v, want false", stateless, err)
+		}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set\":{}}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{\"set\":{}}}")
+		}
+		normalizedState, err := catalog.NormalizeState(entity, Value("{\"active\":true,\"red\":255,\"green\":255,\"blue\":255}"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{\"active\":true,\"red\":255,\"green\":255,\"blue\":255}")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"active\":true,\"red\":255,\"green\":255,\"blue\":255}")
+		}
+		resolvedSet, err := catalog.ResolveCommand(entity, OperationName("set"), CommandParameters("{\"red\":255,\"green\":255,\"blue\":255}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSet.Parameters, []byte("{\"red\":255,\"green\":255,\"blue\":255}")) {
+			t.Errorf("catalog normalized set parameters = %s, want %s", resolvedSet.Parameters, "{\"red\":255,\"green\":255,\"blue\":255}")
+		}
+		if resolvedSet.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set deadline = %v, want %v", resolvedSet.Deadline, 10000*time.Millisecond)
+		}
+		if resolvedSet.Outcome != OutcomeObserved {
+			t.Errorf("catalog set outcome = %v, want %v", resolvedSet.Outcome, OutcomeObserved)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"red\":255,\"green\":255,\"blue\":255}")}, Value("{\"active\":true,\"red\":255,\"green\":255,\"blue\":255}")); err != nil || !satisfied {
+			t.Errorf("catalog set satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set"), Parameters: CommandParameters("{\"red\":100,\"green\":100,\"blue\":100}")}, Value("{\"active\":true,\"red\":102,\"green\":100,\"blue\":100}")); err != nil || satisfied {
+			t.Errorf("catalog set unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"red\":255,\"green\":255,\"blue\":255}"), Value("{\"active\":true,\"red\":255,\"green\":255,\"blue\":255}")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"active\":true,\"red\":128,\"green\":128,\"blue\":128}"), Value("{\"active\":true,\"red\":255,\"green\":255,\"blue\":255}")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_colorrgbv1"), TypeID: EntityTypeColorrgbV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set\":{}},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
+	})
 	t.Run("hearth.colortemp/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_colortempv1"), TypeID: EntityTypeColortempV1, Support: EntitySupport("{\"state\":{\"minimum\":153,\"maximum\":500},\"operations\":{\"set\":{\"step\":1}}}")}
 		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {
@@ -886,6 +941,42 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
 		}
 		malformedNonEventEntity := Entity{ID: EntityID("generated_temperaturev1"), TypeID: EntityTypeTemperatureV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
+	})
+	t.Run("hearth.textsensor/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_textsensorv1"), TypeID: EntityTypeTextsensorV1, Support: EntitySupport("{\"state\":{},\"operations\":{}}")}
+		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {
+			t.Errorf("catalog stateless = %v, %v, want false", stateless, err)
+		}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{}}")
+		}
+		normalizedState, err := catalog.NormalizeState(entity, Value("\"\""))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("\"\"")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "\"\"")
+		}
+		if equal, err := catalog.EqualState(entity, Value("\"\""), Value("\"\"")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("\"Clean\""), Value("\"\"")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_textsensorv1"), TypeID: EntityTypeTextsensorV1, Support: EntitySupport("[]")}
 		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
 			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
 		}

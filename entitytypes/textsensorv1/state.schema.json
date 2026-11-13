@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:textsensor:v1:state",
+  "title": "Hearth textsensor/v1 State",
+  "description": "Read-only text reading.",
+  "type": "string",
+  "maxLength": 128
+}

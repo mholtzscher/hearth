@@ -32,6 +32,12 @@ func TestNewCardsValidateFieldsAtWriteBoundary(t *testing.T) {
 	}{
 		{"boolean", `{"type":"State","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.binarysensor/v1"},"words":{"true":"Open","false":"Closed"}}}`, true},
 		{"choice", `{"type":"State","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.enumsetting/v1"}}}`, true},
+		{"text sensor", `{"type":"State","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.textsensor/v1"}}}`, true},
+		{"rgb active", `{"type":"State","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.colorrgb/v1","field":"/active"}}}`, true},
+		{"rgb red", `{"type":"Metric","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.colorrgb/v1","field":"/red"}}}`, true},
+		{"rgb green", `{"type":"Metric","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.colorrgb/v1","field":"/green"}}}`, true},
+		{"rgb blue", `{"type":"Metric","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.colorrgb/v1","field":"/blue"}}}`, true},
+		{"rgb object root", `{"type":"Metric","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.colorrgb/v1"}}}`, false},
 		{"numeric State", `{"type":"State","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.temperature/v1"}}}`, false},
 		{"words on string", `{"type":"State","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.enumsetting/v1"},"words":{"true":"A","false":"B"}}}`, false},
 		{"range percent", `{"type":"Metric","props":{"source":{"kind":"entity-state",` + id + `,"entity_type":"hearth.brightness/v1"},"range":true,"trend":"24h"}}`, true},

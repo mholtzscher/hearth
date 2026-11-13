@@ -9,6 +9,7 @@ import (
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
 	contractcolorhsv1 "github.com/mholtzscher/hearth/entitytypes/colorhsv1"
 	contractcolormodev1 "github.com/mholtzscher/hearth/entitytypes/colormodev1"
+	contractcolorrgbv1 "github.com/mholtzscher/hearth/entitytypes/colorrgbv1"
 	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
 	contractcolorxyv1 "github.com/mholtzscher/hearth/entitytypes/colorxyv1"
 	contractdailyforecastv1 "github.com/mholtzscher/hearth/entitytypes/dailyforecastv1"
@@ -24,6 +25,7 @@ import (
 	contractrelativehumidityv1 "github.com/mholtzscher/hearth/entitytypes/relativehumidityv1"
 	contractspeedv1 "github.com/mholtzscher/hearth/entitytypes/speedv1"
 	contracttemperaturev1 "github.com/mholtzscher/hearth/entitytypes/temperaturev1"
+	contracttextsensorv1 "github.com/mholtzscher/hearth/entitytypes/textsensorv1"
 )
 
 const (
@@ -31,6 +33,7 @@ const (
 	EntityTypeBrightnessV1       EntityTypeID = "hearth.brightness/v1"
 	EntityTypeColorhsV1          EntityTypeID = "hearth.colorhs/v1"
 	EntityTypeColormodeV1        EntityTypeID = "hearth.colormode/v1"
+	EntityTypeColorrgbV1         EntityTypeID = "hearth.colorrgb/v1"
 	EntityTypeColortempV1        EntityTypeID = "hearth.colortemp/v1"
 	EntityTypeColorxyV1          EntityTypeID = "hearth.colorxy/v1"
 	EntityTypeDailyforecastV1    EntityTypeID = "hearth.dailyforecast/v1"
@@ -46,10 +49,11 @@ const (
 	EntityTypeRelativehumidityV1 EntityTypeID = "hearth.relativehumidity/v1"
 	EntityTypeSpeedV1            EntityTypeID = "hearth.speed/v1"
 	EntityTypeTemperatureV1      EntityTypeID = "hearth.temperature/v1"
+	EntityTypeTextsensorV1       EntityTypeID = "hearth.textsensor/v1"
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 19)
+	definitions := make([]EntityTypeDefinition, 0, 21)
 	binarysensorV1, err := newBinarysensorV1TypeDefinition(EntityTypeBinarysensorV1)
 	if err != nil {
 		return nil, err
@@ -70,6 +74,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, colormodeV1)
+	colorrgbV1, err := newColorrgbV1TypeDefinition(EntityTypeColorrgbV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, colorrgbV1)
 	colortempV1, err := newColortempV1TypeDefinition(EntityTypeColortempV1)
 	if err != nil {
 		return nil, err
@@ -145,6 +154,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, temperatureV1)
+	textsensorV1, err := newTextsensorV1TypeDefinition(EntityTypeTextsensorV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, textsensorV1)
 	return NewTypeCatalog(definitions)
 }
 
@@ -212,6 +226,29 @@ func newColormodeV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error)
 		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.colormode/v1 codecs: %w", err)
 	}
 	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolormodev1.ValidateSupport, contractcolormodev1.ValidateState, contractcolormodev1.EqualState)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newColorrgbV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractcolorrgbv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.colorrgb/v1 codecs: %w", err)
+	}
+	set := DefineOperation(
+		OperationName(contractcolorrgbv1.OperationSet),
+		codecs.SetParameters,
+		func(support contractcolorrgbv1.Support) (contractcolorrgbv1.SetSupport, bool) {
+			return support.Operations.Set, true
+		},
+		contractcolorrgbv1.ValidateSetParameters,
+		contractcolorrgbv1.SetDeadline,
+		OutcomeObserved,
+		contractcolorrgbv1.SetSatisfied,
+	)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolorrgbv1.ValidateSupport, contractcolorrgbv1.ValidateState, contractcolorrgbv1.EqualState, set)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}
@@ -481,6 +518,18 @@ func newTemperatureV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, erro
 		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.temperature/v1 codecs: %w", err)
 	}
 	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contracttemperaturev1.ValidateSupport, contracttemperaturev1.ValidateState, contracttemperaturev1.EqualState)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newTextsensorV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contracttextsensorv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.textsensor/v1 codecs: %w", err)
+	}
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contracttextsensorv1.ValidateSupport, contracttextsensorv1.ValidateState, contracttextsensorv1.EqualState)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

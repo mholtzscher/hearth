@@ -60,6 +60,41 @@
     "hearth.colormode/v1": {
       "operations": {}
     },
+    "hearth.colorrgb/v1": {
+      "operations": {
+        "set": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:colorrgb:v1:set-parameters",
+            "title": "Hearth colorrgb/v1 set parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "red",
+              "green",
+              "blue"
+            ],
+            "properties": {
+              "red": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "green": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "blue": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            }
+          }
+        }
+      }
+    },
     "hearth.colortemp/v1": {
       "operations": {
         "set": {
@@ -292,6 +327,9 @@
       "operations": {}
     },
     "hearth.temperature/v1": {
+      "operations": {}
+    },
+    "hearth.textsensor/v1": {
       "operations": {}
     }
   }
