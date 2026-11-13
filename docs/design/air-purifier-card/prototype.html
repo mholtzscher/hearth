@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearth air purifier card prototype</title>
+<style>
+  @font-face { font-family:"Figtree Variable"; font-style:normal; font-display:swap; font-weight:300 900;
+    src:url("../../../web/node_modules/@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2") format("woff2-variations"); }
+  :root {
+    --gray-0:#000; --gray-1:#0c0c0c; --gray-2:#151515; --gray-3:#1f1f1f; --gray-4:#2c2c2c;
+    --gray-5:#3d3d3d; --gray-6:#575757; --gray-7:#7d7d7d; --gray-8:#a6a6a6; --gray-9:#d1d1d1; --gray-10:#f4f4f4;
+    --violet:#a77bff; --violet-text:#c4a8ff; --violet-soft:color-mix(in oklch, #a77bff 16%, transparent);
+    --orange:#ff8a3d; --ok:#5ad19a; --warn:#f2c94c; --error:#ff5c7a; --info:#7fb4ff;
+    --ink:var(--gray-10); --quiet:var(--gray-8); --edge:var(--gray-3);
+    --ease:cubic-bezier(.16,1,.3,1);
+    color-scheme:dark;
+  }
+  * { box-sizing:border-box; margin:0; }
+  html { scrollbar-color:var(--gray-5) transparent; }
+  ::selection { background:color-mix(in oklch, #a77bff 40%, transparent); color:var(--gray-10); }
+  body { background:var(--gray-0); color:var(--ink); font:14px/1.5 "Figtree Variable", sans-serif; padding:32px 24px 64px; caret-color:var(--violet); }
+  button, select { font:inherit; color:inherit; }
+  :focus-visible { outline:2px solid var(--violet); outline-offset:2px; }
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+  /* ---------- Prototype chrome (not part of any card) ---------- */
+  .proto { max-width:1440px; margin:0 auto; display:grid; gap:28px; }
+  .proto-head { display:grid; gap:8px; }
+  .proto-head h1 { font-size:26px; font-weight:500; line-height:1.3; letter-spacing:-.03em; }
+  .proto-head p { color:var(--quiet); max-width:78ch; }
+  .controls { position:sticky; top:0; z-index:20; display:flex; flex-wrap:wrap; gap:12px 24px; padding:12px 16px; border:1px dashed var(--gray-4); border-radius:12px; background:color-mix(in oklch, var(--gray-0) 92%, transparent); backdrop-filter:blur(8px); }
+  .controls fieldset { border:0; padding:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
+  .controls legend { float:left; color:var(--quiet); margin-right:4px; }
+  .pseg { display:inline-flex; flex-wrap:wrap; border:1px solid var(--gray-4); border-radius:8px; overflow:hidden; }
+  .pseg button { background:var(--gray-1); border:0; padding:6px 10px; cursor:pointer; color:var(--gray-9); }
+  .pseg button + button { border-left:1px solid var(--gray-4); }
+  .pseg button[aria-pressed="true"] { background:var(--violet-soft); color:var(--violet-text); }
+  .pbtn { background:var(--gray-1); border:1px solid var(--gray-4); border-radius:8px; padding:6px 10px; cursor:pointer; color:var(--gray-9); }
+  .pbtn:hover, .pseg button:hover { color:var(--gray-10); }
+
+  .direction { display:grid; gap:14px; }
+  .direction-head { display:grid; gap:2px; max-width:80ch; }
+  .direction-head h2 { font-size:18px; font-weight:600; }
+  .direction-head p { color:var(--quiet); }
+  .pick { margin-inline-start:8px; padding:2px 8px; border:1px solid var(--violet); border-radius:8px; background:var(--violet-soft); color:var(--violet-text); font-size:14px; font-weight:500; vertical-align:2px; }
+  .pick[data-not] { border-color:var(--gray-4); background:none; color:var(--gray-8); }
+  .stage { display:grid; gap:48px; }
+  .tile .pm small { margin-inline-start:3px; color:var(--quiet); }
+  .stage[data-width="phone"] { max-width:390px; padding:12px; border:1px dashed var(--gray-4); border-radius:20px; }
+
+  /* ---------- Grid and card frame (mirrors web/src/index.css) ---------- */
+  .view-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, var(--min, 300px)), 1fr)); gap:12px; align-items:stretch; }
+  .view-grid.wide-grid { --min:460px; }
+  .view-grid.toggle-grid { --min:160px; grid-template-columns:repeat(auto-fill, minmax(160px, 220px)); }
+  .stage[data-width="phone"] .view-grid:not(.toggle-grid) { grid-template-columns:1fr; }
+  .stage[data-width="phone"] .view-grid.toggle-grid { grid-template-columns:1fr 1fr; }
+  @media (max-width:720px) { body { padding:16px 12px 48px; } .view-grid:not(.toggle-grid) { grid-template-columns:1fr; } .view-grid.toggle-grid { grid-template-columns:1fr 1fr; } }
+
+  .view-card { position:relative; display:flex; flex-direction:column; gap:12px; min-width:0; padding:18px; background:var(--gray-1); border:1px solid var(--edge); border-radius:12px; container-type:inline-size; }
+  .view-card-header { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; }
+  .view-card-title { min-width:0; color:var(--ink); font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+  .view-card-header > .view-status { margin-inline-start:auto; justify-content:flex-end; }
+  .view-card-body { min-width:0; display:flex; flex-direction:column; }
+  .view-card-footer { position:relative; display:flex; align-items:center; gap:12px; margin-top:auto; color:var(--quiet); font-variant-numeric:tabular-nums; }
+  .view-card-footer time { white-space:nowrap; }
+  .source-btn { margin-inline-start:auto; min-height:28px; background:none; border:0; color:var(--quiet); cursor:pointer; padding:0 4px; margin-inline-end:-4px; border-radius:6px; text-decoration:underline; text-underline-offset:3px; text-decoration-color:var(--gray-5); }
+  .source-btn:hover { color:var(--gray-10); }
+  .source-pop { position:absolute; right:0; bottom:calc(100% + 8px); z-index:15; width:min(360px, 82vw); max-height:420px; overflow:auto; background:var(--gray-2); border-radius:12px; padding:18px; box-shadow:0 18px 60px #0008; color:var(--gray-9); }
+  .source-pop h3 { font-size:18px; font-weight:600; color:var(--ink); margin-bottom:4px; }
+  .source-pop > p { color:var(--quiet); margin-bottom:12px; }
+  .source-pop ul { list-style:none; padding:0; display:grid; gap:10px; }
+  .source-pop a { color:var(--violet-text); text-underline-offset:3px; }
+  .source-pop code { display:block; font-size:12px; color:var(--quiet); }
+  .source-pop .avail { color:var(--quiet); }
+  .source-pop .avail[data-tone="warn"] { color:var(--warn); }
+
+  .view-status { display:flex; flex-wrap:wrap; gap:0 8px; list-style:none; padding:0; color:var(--gray-9); }
+  .view-status li { display:inline-flex; align-items:baseline; gap:6px; }
+  .view-status li + li::before { content:"·"; color:var(--gray-6); }
+  .dot { flex-shrink:0; align-self:center; width:6px; height:6px; border-radius:50%; background:var(--gray-7); }
+  [data-tone="warn"] { color:var(--warn); } [data-tone="warn"] > .dot { background:var(--warn); }
+  [data-tone="error"] { color:var(--error); } [data-tone="error"] > .dot { background:var(--error); }
+  [data-tone="ok"] > .dot { background:var(--ok); }
+  [data-tone="info"] > .dot { background:var(--info); }
+
+  .arrival { position:absolute; inset:0 0 auto; height:2px; border-radius:12px 12px 0 0; background:var(--orange); pointer-events:none; animation:arrival 10s var(--ease) forwards; z-index:3; }
+  .row-arrival { position:absolute; inset:auto 0 -1px; height:2px; background:var(--orange); pointer-events:none; animation:arrival 10s var(--ease) forwards; z-index:1; }
+  @keyframes arrival { to { opacity:0; } }
+
+  /* ---------- Readings ---------- */
+  .reading { color:var(--ink); font-size:40px; font-weight:350; line-height:1.15; letter-spacing:-.03em; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .reading small { margin-inline-start:4px; color:var(--quiet); font-size:14px; letter-spacing:0; }
+  .compact { color:var(--ink); font-size:20px; font-weight:400; line-height:1.3; letter-spacing:-.02em; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .compact small { margin-inline-start:3px; color:var(--quiet); font-size:14px; letter-spacing:0; }
+  [data-value="dimmed"] { color:var(--gray-8) !important; }
+  [data-value="empty"] { color:var(--gray-6) !important; }
+  .detail { color:var(--gray-9); font-variant-numeric:tabular-nums; }
+  .detail [data-value="dimmed"] { color:var(--gray-8); }
+
+  /* Air category: tone dot and words, opposite the PM2.5 value. */
+  .aq { display:inline-flex; align-items:baseline; gap:6px; color:var(--gray-9); font-size:14px; }
+  .aq[data-tone="ok"] { color:var(--gray-9); }
+  .aq[data-dim] { color:var(--gray-8) !important; } .aq[data-dim] > .dot { background:var(--gray-6) !important; }
+  [data-aq="neutral"] .aq { color:var(--gray-9) !important; } [data-aq="neutral"] .aq > .dot { background:var(--gray-7) !important; }
+  [data-aq="off"] .aq { display:none; }
+
+  .rows { display:grid; list-style:none; padding:0; }
+  .row { position:relative; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 16px; padding:10px 0; border-top:1px solid var(--edge); }
+  .row-name { flex:1 1 7em; color:var(--gray-9); }
+  .row-value { margin-inline-start:auto; text-align:right; }
+  .row .view-status, .row .row-note { flex-basis:100%; }
+  .row-note { color:var(--quiet); }
+
+  /* ---------- Controls ---------- */
+  .switch { position:relative; flex-shrink:0; width:44px; height:24px; border:1px solid var(--gray-7); border-radius:12px; background:var(--gray-3); cursor:pointer; padding:0; transition:background-color 160ms var(--ease), border-color 160ms var(--ease); }
+  .switch::before { content:""; position:absolute; inset:-11px -1px; }
+  .switch-thumb { position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:var(--gray-8); transition:transform 160ms var(--ease), background-color 160ms var(--ease); }
+  .switch[aria-checked="true"] { border-color:var(--violet); background:var(--violet); }
+  .switch[aria-checked="true"] .switch-thumb { transform:translateX(20px); background:var(--gray-10); }
+  .switch:disabled { border-color:var(--gray-4); background:var(--gray-3); cursor:not-allowed; }
+  .switch:disabled .switch-thumb { background:var(--gray-6); }
+
+  .ctl { display:grid; gap:8px; padding:12px 0; border-top:1px solid var(--edge); }
+  .ctl-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+  .ctl-name { color:var(--gray-9); }
+  .ctl-aside { color:var(--quiet); text-align:right; font-variant-numeric:tabular-nums; }
+  .ctl.inline { grid-template-columns:minmax(0,1fr) auto; align-items:center; }
+  .ctl.inline .ctl-head { display:grid; gap:0; }
+  .ctl.inline .ctl-aside { text-align:left; }
+
+  /* Segmented: violet marks the selected choice; a dashed outline marks a stored choice that isn't driving the fan. */
+  .segctl { display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:2px; padding:2px; border:1px solid var(--gray-4); border-radius:8px; background:var(--gray-0); }
+  .segctl button { min-height:38px; padding:0 8px; border:0; border-radius:6px; background:none; color:var(--gray-9); cursor:pointer; font-variant-numeric:tabular-nums; transition:background-color 160ms var(--ease), color 160ms var(--ease); white-space:nowrap; }
+  .segctl button:hover:not(:disabled):not([aria-pressed="true"]) { background:var(--gray-3); color:var(--gray-10); }
+  .segctl button[aria-pressed="true"] { background:var(--violet-soft); color:var(--violet-text); box-shadow:inset 0 0 0 1px var(--violet); }
+  .segctl button[data-stored] { outline:1px dashed var(--gray-6); outline-offset:-3px; color:var(--gray-10); }
+  .segctl button:focus-visible { outline:2px solid var(--violet); outline-offset:1px; }
+  .segctl button:disabled { color:var(--gray-6); cursor:not-allowed; }
+  .segctl button:disabled[aria-pressed="true"] { background:var(--gray-3); color:var(--gray-7); box-shadow:inset 0 0 0 1px var(--gray-5); }
+
+  .menu { appearance:none; -webkit-appearance:none; min-height:44px; min-width:9.5em; padding:0 36px 0 12px; border:1px solid var(--gray-4); border-radius:8px; background:var(--gray-1) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23a6a6a6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 12px center; color:var(--ink); cursor:pointer; }
+  .menu:hover:not(:disabled) { border-color:var(--gray-6); }
+  .menu:focus-visible { outline:2px solid var(--violet); outline-offset:2px; }
+  .menu:disabled { background-color:var(--gray-3); color:var(--gray-6); border-color:var(--gray-4); cursor:not-allowed; }
+  .menu option { background:var(--gray-2); color:var(--gray-10); }
+
+  .stepper { display:grid; grid-template-columns:44px minmax(0,1fr) 44px; align-items:center; gap:8px; }
+  .stepper button { width:44px; height:44px; display:grid; place-items:center; border:1px solid var(--gray-4); border-radius:8px; background:var(--gray-1); color:var(--gray-10); cursor:pointer; padding:0; }
+  .stepper button:hover:not(:disabled) { border-color:var(--gray-6); }
+  .stepper button:disabled { background:var(--gray-3); color:var(--gray-6); cursor:not-allowed; }
+  .stepper svg { width:16px; height:16px; }
+  .stepper-mid { display:flex; align-items:center; justify-content:center; gap:12px; }
+  .pips { display:flex; gap:4px; }
+  .pips i { width:14px; height:6px; border-radius:3px; background:var(--gray-4); }
+  .pips i[data-on] { background:var(--violet); }
+  .pips[data-stored] i[data-on] { background:transparent; box-shadow:inset 0 0 0 1px var(--gray-6); }
+  .pips[data-disabled] i[data-on] { background:var(--gray-5); }
+
+  .settings { display:grid; grid-template-columns:1fr 1fr; gap:4px 20px; padding:12px 0 2px; border-top:1px solid var(--edge); }
+  .setting { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:44px; color:var(--gray-9); }
+
+  /* One shared reserved line per card: pending, failure, and lag notes name their control. */
+  .ctl-status { min-height:21px; color:var(--gray-9); }
+  .ctl-status p { display:flex; align-items:baseline; gap:6px; }
+  .ctl-status p > .dot { align-self:baseline; transform:translateY(-1px); }
+
+  /* ---------- A · Controls first ---------- */
+  .a-head { display:flex; align-items:center; gap:14px; padding-bottom:12px; }
+  .a-head .a-reading { flex:1; min-width:0; }
+  .a-head .switch { margin-inline-start:auto; }
+
+  /* ---------- B · Air first ---------- */
+  .b-split { display:grid; gap:16px; }
+  .b-air { display:grid; align-content:start; gap:4px; }
+  .b-air-line { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 12px; }
+  .b-air-label { color:var(--gray-9); }
+  .range { position:relative; display:grid; gap:6px; margin-top:10px; }
+  .range-track { position:relative; height:4px; border-radius:2px; background:var(--gray-3); }
+  .range-tick { position:absolute; top:-3px; width:1px; height:10px; background:var(--gray-6); }
+  .range-marker { position:absolute; top:50%; width:2px; height:14px; margin-left:-1px; border-radius:1px; background:var(--gray-10); transform:translateY(-50%); transition:left 600ms var(--ease); }
+  .range[data-value="dimmed"] .range-marker { background:var(--gray-8); }
+  .range-labels { position:relative; height:21px; color:var(--quiet); font-variant-numeric:tabular-nums; }
+  .range-labels span { position:absolute; transform:translateX(-50%); white-space:nowrap; }
+  .range-labels span:first-child { transform:none; }
+  .range-labels span:last-child { transform:translateX(-100%); }
+  .trend { display:grid; gap:4px; margin-top:8px; }
+  .trend svg { display:block; width:100%; height:44px; overflow:visible; }
+  .trend .band { fill:var(--gray-10); fill-opacity:.08; }
+  .trend .mean { fill:none; stroke:var(--gray-9); stroke-width:1.5; stroke-linejoin:round; stroke-linecap:round; vector-effect:non-scaling-stroke; }
+  .trend[data-value="dimmed"] .mean { stroke:var(--gray-7); stroke-dasharray:4 3; opacity:.6; }
+  .trend[data-value="dimmed"] .band { display:none; }
+  .trend p { color:var(--quiet); font-variant-numeric:tabular-nums; }
+  .b-controls { display:grid; }
+  .b-power { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--edge); }
+  .b-power .ctl-name { flex:1; }
+  .b-filter { display:flex; justify-content:space-between; gap:12px; padding:10px 0 0; border-top:1px solid var(--edge); color:var(--gray-9); }
+  @container (min-width:500px) {
+    .b-split { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; }
+    .b-controls > :first-child { border-top:0; padding-top:0; }
+    .b-split .trend svg { height:72px; }
+  }
+
+  /* ---------- C · Tile ---------- */
+  .tile { transition:background-color 180ms var(--ease), border-color 180ms var(--ease); }
+  .tile.is-on { background:color-mix(in oklch, var(--violet) 11%, var(--gray-1)); border-color:color-mix(in oklch, var(--violet) 38%, var(--gray-3)); }
+  .tile.is-interactive:hover { border-color:var(--gray-6); }
+  .tile.is-on.is-interactive:hover { border-color:color-mix(in oklch, var(--violet) 60%, var(--gray-3)); }
+  .tile-action { display:block; width:100%; padding:0; border:0; background:none; color:inherit; text-align:left; cursor:pointer; }
+  .tile-action:disabled { cursor:default; }
+  .tile-action::after { content:""; position:absolute; inset:0; z-index:1; border-radius:12px; }
+  .tile-action:focus-visible { outline:none; }
+  .tile:has(.tile-action:focus-visible) { outline:2px solid var(--violet); outline-offset:3px; }
+  .tile .view-card-body { gap:6px; }
+  .tile .reading .mode { font-size:20px; letter-spacing:-.02em; color:var(--gray-9); margin-inline-start:6px; white-space:nowrap; }
+  .tile.is-on .detail, .tile.is-on .aq { color:color-mix(in oklch, var(--violet) 14%, var(--gray-9)); }
+  .tile.is-on .view-card-footer, .tile.is-on .source-btn { color:color-mix(in oklch, var(--violet) 12%, var(--gray-8)); }
+  .tile .view-card-footer { z-index:2; pointer-events:none; gap:8px; }
+  .tile .source-btn { pointer-events:auto; }
+  .tile-air { display:flex; flex-wrap:wrap; align-items:baseline; gap:0 10px; }
+  @container (max-width:200px) {
+    .tile .reading { font-size:32px; }
+    .tile .time-label { display:none; }
+  }
+
+  .notes { color:var(--quiet); border-top:1px solid var(--gray-3); padding-top:20px; display:grid; gap:10px; max-width:84ch; }
+  .notes h2 { font-size:18px; font-weight:600; color:var(--ink); }
+  .notes strong { color:var(--gray-9); font-weight:500; }
+  .notes ul { padding-left:18px; display:grid; gap:6px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition:none !important; }
+    .arrival, .row-arrival { animation:arrival-hold 10s steps(1, end) forwards !important; }
+    @keyframes arrival-hold { to { opacity:0; } }
+  }
+</style>
+</head>
+<body>
+<main class="proto">
+  <header class="proto-head">
+    <h1>Air purifier cards</h1>
+    <p>Three directions for the Levoit <code>air-purifier</code> Device and its seven Entities (power, mode, manual fan level, display, child lock, PM2.5, filter life). Data is synthetic. Controls run a simulated Command: about a second pending, then the optimistic Observation the Adapter publishes. The <strong>state</strong> presets apply to the Living room purifier; Bedroom stays ready for comparison.</p>
+  </header>
+
+  <section class="controls" aria-label="Prototype controls">
+    <fieldset><legend>State</legend><div class="pseg" data-group="preset"></div></fieldset>
+    <fieldset><legend>Mode &amp; fan</legend><div class="pseg" data-group="style"></div></fieldset>
+    <fieldset><legend>Air category</legend><div class="pseg" data-group="aq"></div></fieldset>
+    <fieldset><legend>Trend</legend><div class="pseg" data-group="window"></div></fieldset>
+    <fieldset><legend>Width</legend><div class="pseg" data-group="width"></div></fieldset>
+    <fieldset><button class="pbtn" type="button" data-act="new-reading">Simulate a new PM2.5 reading</button></fieldset>
+  </section>
+
+  <div id="stage" class="stage" data-width="desktop"></div>
+
+  <section class="notes" aria-labelledby="notes-title">
+    <h2 id="notes-title">What to decide</h2>
+    <ul>
+      <li><strong>A, B, or C, or a mix.</strong> A leads with Power, like the light composite. B leads with the air reading and puts the controls beside it once the card has at least 500px of content width. C is a ToggleTile for grids of quick switches: a press toggles Power, with no mode or fan controls.</li>
+      <li><strong>Mode and fan control.</strong> Segmented shows every choice and takes one press. Menus are smaller but take two presses. The stepper keeps Mode segmented and changes the fan one level at a time. In Auto and Sleep, the stored manual level gets a dashed outline, because it isn't measured fan speed. Picking a level switches to Manual, which is how the Adapter behaves.</li>
+      <li><strong>Air category tone.</strong> You chose words plus tone: Good has a green dot, Moderate and Unhealthy for sensitive groups use warn, and Unhealthy or worse uses error. The bands are EPA's 2024 24-hour outdoor breakpoints applied to an instant indoor reading, which is an approximation; Source should say so. The category sits beside PM2.5 rather than in the Status slot, which stays for Entity status.</li>
+      <li><strong>One shared status line per card.</strong> Each light control reserves its own line. With five purifier controls that would add about 105px of mostly empty space, so each card reserves a single line that names the control (“Switching to Sleep…”). This differs from DESIGN.md and needs your decision.</li>
+      <li><strong>Lag after a poll.</strong> The <em>Rolled back</em> preset shows the documented VeSync lag: a power-off was accepted, then the next poll reported On again. Showing that note needs the card to read the retained Command outcome next to State. Cards don't do that today. If we skip it, the card silently flips back to On.</li>
+      <li><strong>Afterglow.</strong> Only a new PM2.5 or filter reading lights the afterglow. Optimistic control changes don't glow, so the glow never reads as a Command result.</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+const ENTITY_DEFS = [
+  ["power", "Power"], ["mode", "Mode"], ["fan-level", "Manual fan level"], ["display", "Display"],
+  ["child-lock", "Child lock"], ["pm25", "PM2.5"], ["filter-life", "Filter life"],
+];
+const MODES = [["auto", "Auto"], ["sleep", "Sleep"], ["manual", "Manual"]];
+const MODE_WORD = Object.fromEntries(MODES);
+
+const ui = { preset:"ready", style:"stepper", aq:"tone", window:"24h", width:"desktop", source:null };
+const GROUPS = {
+  preset: [["ready","Ready"],["auto","Auto"],["off","Off"],["pending","Pending"],["failure","Rejected"],["timeout","No reply"],["rollback","Rolled back"],["fan-unknown","Fan level unknown"],["filter-low","Filter low"],["poor-air","Poor air"],["offline","Offline"],["loading","Loading"]],
+  style: [["segmented","Segmented"],["menu","Menus"],["stepper","Fan stepper"]],
+  aq: [["tone","Words + tone"],["neutral","Words only"],["off","None"]],
+  window: [["1h","1 h"],["6h","6 h"],["24h","24 h"]],
+  width: [["desktop","Desktop"],["phone","Phone 390"]],
+};
+
+function bedroom() {
+  return { id:"bedroom", name:"Bedroom purifier", model:"Core 400S", cid:"vs-4b1e", power:true, mode:"sleep", level:1, display:false, lock:true, pm:3, filter:47, unavailable:new Set(), loading:false, pending:null, message:null, oldest:"2m ago", glowAt:0, seed:7 };
+}
+function livingRoom(preset) {
+  const r = { id:"living", name:"Living room purifier", model:"Core 600S", cid:"vs-9c02", power:true, mode:"manual", level:2, display:true, lock:false, pm:7, filter:82, unavailable:new Set(), loading:false, pending:null, message:null, oldest:"1m ago", glowAt:0, seed:3 };
+  switch (preset) {
+    case "auto": Object.assign(r, { mode:"auto", level:3, pm:18 }); break;
+    case "off": Object.assign(r, { power:false, mode:"auto", level:3, pm:4 }); break;
+    case "pending": r.pending = { entity:"mode", value:"sleep", text:"Switching to Sleep…" }; break;
+    case "failure": r.message = { tone:"error", text:"Fan level: VeSync didn't accept the change." }; break;
+    case "timeout": r.message = { tone:"error", text:"Power: no reply from VeSync. The change may still apply." }; break;
+    case "rollback": r.message = { tone:"neutral", text:"Turned off at 4:12 PM, but VeSync still reports On. It can lag a few minutes." }; break;
+    case "fan-unknown": Object.assign(r, { mode:"auto", level:null, pm:11 }); r.unavailable.add("fan-level"); break;
+    case "filter-low": r.filter = 6; break;
+    case "poor-air": Object.assign(r, { mode:"auto", level:3, pm:62 }); break;
+    case "offline": ENTITY_DEFS.forEach(([k]) => r.unavailable.add(k)); r.oldest = "38m ago"; break;
+    case "loading": r.loading = true; break;
+  }
+  return r;
+}
+let rooms = [livingRoom("ready"), bedroom()];
+
+// EPA 2024 PM2.5 breakpoints (24-hour, µg/m³).
+function category(pm) {
+  if (pm == null) return null;
+  if (pm <= 9) return { words:"Good", tone:"ok" };
+  if (pm <= 35.4) return { words:"Moderate", tone:"warn" };
+  if (pm <= 55.4) return { words:"Unhealthy for sensitive groups", tone:"warn" };
+  if (pm <= 125.4) return { words:"Unhealthy", tone:"error" };
+  if (pm <= 225.4) return { words:"Very unhealthy", tone:"error" };
+  return { words:"Hazardous", tone:"error" };
+}
+
+// ---------- helpers ----------
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+const dim = (r, k) => r.loading ? "empty" : r.unavailable.has(k) ? "dimmed" : "";
+const unavailableCount = r => r.unavailable.size;
+const allUnavailable = r => r.unavailable.size === ENTITY_DEFS.length;
+const canSet = (r, k) => !r.loading && !r.unavailable.has(k);
+const requested = (r, k, observed) => r.pending && r.pending.entity === k ? r.pending.value : observed;
+
+function cardStatus(r) {
+  if (r.loading) return `<li><span class="dot"></span>Loading…</li>`;
+  if (allUnavailable(r)) return `<li data-tone="warn"><span class="dot"></span>Unavailable</li>`;
+  return "";
+}
+function rowStatus(r, k) {
+  if (!r.loading && !allUnavailable(r) && r.unavailable.has(k))
+    return `<ul class="view-status"><li data-tone="warn"><span class="dot"></span>Unavailable</li></ul>`;
+  return "";
+}
+function aqBadge(r) {
+  const c = category(r.pm);
+  if (!c || r.loading) return "";
+  const d = r.unavailable.has("pm25") ? " data-dim" : "";
+  return `<span class="aq" data-tone="${c.tone}"${d}><span class="dot"></span>${c.words}</span>`;
+}
+function pmValue(r, cls) {
+  if (r.loading || r.pm == null) return `<span class="${cls}" data-value="empty">—</span>`;
+  return `<span class="${cls}" data-value="${dim(r, "pm25")}">${r.pm}<small>µg/m³</small></span>`;
+}
+function powerWord(r) { return r.loading ? "—" : r.power ? "On" : "Off"; }
+function glow(r, cls) {
+  if (!r.glowAt) return "";
+  const elapsed = performance.now() - r.glowAt;
+  if (elapsed > 10000) return "";
+  return `<span class="${cls}" style="animation-delay:-${Math.round(elapsed)}ms" aria-hidden="true"></span>`;
+}
+function ctlStatus(r) {
+  let p = "";
+  if (r.pending) p = `<p data-tone="info"><span class="dot"></span>${esc(r.pending.text)}</p>`;
+  else if (r.message) p = `<p data-tone="${r.message.tone}"><span class="dot"></span>${esc(r.message.text)}</p>`;
+  return `<div class="ctl-status" role="status">${p}</div>`;
+}
+function footer(r, cardKey) {
+  const open = ui.source === cardKey;
+  const time = r.loading ? "" : `<time datetime="2026-11-13T16:11:00-06:00" aria-label="Oldest reading ${r.oldest}"><span class="time-label">Oldest </span>${r.oldest}</time>`;
+  return `<footer class="view-card-footer">${time}
+    <button class="source-btn" type="button" data-act="source" data-card="${cardKey}" data-key="${cardKey}-src" aria-expanded="${open}">Source</button>
+    ${open ? sourcePop(r) : ""}</footer>`;
+}
+function sourcePop(r) {
+  const items = ENTITY_DEFS.map(([k, n]) => {
+    const u = r.unavailable.has(k);
+    return `<li><a href="#" onclick="return false">${r.name.replace(" purifier", "")} ${n.toLowerCase()}</a>
+      <code>levoit/${r.cid}/${k}</code>
+      <span class="avail" ${u ? 'data-tone="warn"' : ""}>${u ? "Unavailable" : "Available"} · Enabled</span></li>`;
+  }).join("");
+  return `<div class="source-pop" role="dialog" aria-label="Source for ${esc(r.name)}">
+    <h3>Source</h3><p>Levoit ${r.model} via VeSync cloud. Polled every 60 s. Air category uses EPA 2024 24-hour PM2.5 bands.</p><ul>${items}</ul></div>`;
+}
+function sw(r, k, value, label, extraAttrs = "") {
+  const on = requested(r, k, value);
+  return `<button class="switch" type="button" role="switch" aria-checked="${!!on && !r.loading}" aria-label="${label}"
+    data-act="toggle" data-room="${r.id}" data-entity="${k}" data-key="${r.id}-${k}-${extraAttrs}" ${canSet(r, k) ? "" : "disabled"}><span class="switch-thumb"></span></button>`;
+}
+
+// ---------- mode and fan, in three styles ----------
+function modeControl(r, keySuffix) {
+  const sel = requested(r, "mode", r.mode);
+  const dis = canSet(r, "mode") ? "" : "disabled";
+  const name = `<span class="ctl-name" id="${r.id}-mode-${keySuffix}">Mode</span>`;
+  if (ui.style === "menu") {
+    const opts = MODES.map(([v, w]) => `<option value="${v}" ${v === sel ? "selected" : ""}>${w}</option>`).join("");
+    return `<div class="ctl inline"><div class="ctl-head">${name}</div>
+      <select class="menu" data-act="mode-menu" data-room="${r.id}" data-key="${r.id}-mode-menu-${keySuffix}" aria-labelledby="${r.id}-mode-${keySuffix}" ${dis}>${r.loading ? "<option>—</option>" : opts}</select></div>`;
+  }
+  const btns = MODES.map(([v, w]) => `<button type="button" aria-pressed="${!r.loading && v === sel}" data-act="mode" data-room="${r.id}" data-value="${v}" data-key="${r.id}-mode-${v}-${keySuffix}" ${dis}>${w}</button>`).join("");
+  return `<div class="ctl"><div class="ctl-head">${name}</div><div class="segctl" role="group" aria-labelledby="${r.id}-mode-${keySuffix}">${btns}</div></div>`;
+}
+function fanControl(r, keySuffix) {
+  const mode = requested(r, "mode", r.mode);
+  const sel = requested(r, "fan-level", r.level);
+  const manual = mode === "manual" || (r.pending && r.pending.entity === "fan-level");
+  const dis = canSet(r, "fan-level") ? "" : "disabled";
+  const unknown = sel == null && !r.loading;
+  const aside = r.loading ? "" : unknown ? (r.unavailable.has("fan-level") && !allUnavailable(r) ? "VeSync didn't report it" : "") : manual ? `Level ${sel} of 4` : `Level ${sel} kept for Manual`;
+  const name = `<span class="ctl-name" id="${r.id}-fan-${keySuffix}">Fan level</span>`;
+  const head = `<div class="ctl-head">${name}<span class="ctl-aside">${aside}</span></div>`;
+  const status = rowStatus(r, "fan-level");
+  if (ui.style === "menu") {
+    const opts = (unknown || r.loading ? `<option selected>—</option>` : "") + [1,2,3,4].map(v => `<option value="${v}" ${v === sel ? "selected" : ""}>Level ${v}</option>`).join("");
+    return `<div class="ctl inline"><div class="ctl-head">${name}<span class="ctl-aside">${manual || unknown || r.loading ? (unknown && aside ? aside : "") : "Kept for Manual"}</span></div>
+      <select class="menu" data-act="level-menu" data-room="${r.id}" data-key="${r.id}-fan-menu-${keySuffix}" aria-labelledby="${r.id}-fan-${keySuffix}" ${dis}>${opts}</select>${status}</div>`;
+  }
+  if (ui.style === "stepper") {
+    const v = sel ?? 0;
+    const pips = [1,2,3,4].map(i => `<i ${i <= v ? "data-on" : ""}></i>`).join("");
+    const minus = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3.5 8h9"/></svg>`;
+    const plus = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3.5 8h9M8 3.5v9"/></svg>`;
+    const lowDis = dis || (sel != null && sel <= 1 && manual) ? "disabled" : "";
+    const highDis = dis || (sel != null && sel >= 4 && manual) ? "disabled" : "";
+    return `<div class="ctl">${head}<div class="stepper" role="group" aria-labelledby="${r.id}-fan-${keySuffix}">
+      <button type="button" aria-label="Lower fan level" data-act="level-step" data-step="-1" data-room="${r.id}" data-key="${r.id}-fan-dn-${keySuffix}" ${lowDis}>${minus}</button>
+      <div class="stepper-mid"><span class="compact" ${unknown || r.loading ? 'data-value="empty"' : ""}>${unknown || r.loading ? "—" : v}</span><span class="pips" aria-hidden="true" ${manual ? "" : "data-stored"} ${dis ? "data-disabled" : ""}>${pips}</span></div>
+      <button type="button" aria-label="Raise fan level" data-act="level-step" data-step="1" data-room="${r.id}" data-key="${r.id}-fan-up-${keySuffix}" ${highDis}>${plus}</button></div>${status}</div>`;
+  }
+  const btns = [1,2,3,4].map(v => {
+    const pressed = !r.loading && manual && v === sel;
+    const stored = !r.loading && !manual && v === sel;
+    return `<button type="button" aria-pressed="${pressed}" ${stored ? "data-stored" : ""} aria-label="Level ${v}${stored ? ", kept for Manual" : ""}" data-act="level" data-room="${r.id}" data-value="${v}" data-key="${r.id}-fan-${v}-${keySuffix}" ${dis}>${v}</button>`;
+  }).join("");
+  return `<div class="ctl">${head}<div class="segctl" role="group" aria-labelledby="${r.id}-fan-${keySuffix}">${btns}</div>${status}</div>`;
+}
+function settings(r, keySuffix) {
+  return `<div class="settings">
+    <label class="setting"><span>Display</span>${sw(r, "display", r.display, "Display", keySuffix)}</label>
+    <label class="setting"><span>Child lock</span>${sw(r, "child-lock", r.lock, "Child lock", keySuffix)}</label>
+  </div>`;
+}
+function filterValue(r) {
+  if (r.loading || r.filter == null) return `<span class="compact" data-value="empty">—</span>`;
+  return `<span class="compact" data-value="${dim(r, "filter-life")}">${r.filter}<small>%</small></span>`;
+}
+function filterNote(r) {
+  if (r.loading || r.filter == null || r.filter > 10) return "";
+  return `<span class="row-note" data-tone="warn">Replace the filter soon</span>`;
+}
+
+// ---------- A · Controls first ----------
+function cardA(r) {
+  const key = `a-${r.id}`;
+  const mode = r.loading ? "" : MODE_WORD[r.mode];
+  const fan = r.mode === "manual" && r.level != null ? ` · fan ${r.level}` : "";
+  return `<article class="view-card" aria-labelledby="${key}-t">
+    ${glow(r, "arrival")}
+    <header class="view-card-header"><h4 class="view-card-title" id="${key}-t">${r.name}</h4><ul class="view-status">${cardStatus(r)}</ul></header>
+    <div class="view-card-body">
+      <div class="a-head">
+        <div class="a-reading"><div class="reading" data-value="${dim(r, "power")}">${powerWord(r)}</div>
+          <div class="detail"><span data-value="${dim(r, "mode")}">${mode}${fan}</span></div></div>
+        ${sw(r, "power", r.power, `Power, ${r.name}`, "a")}
+      </div>
+      <ul class="rows">
+        <li class="row"><span class="row-name">PM2.5</span>${aqBadge(r)}<span class="row-value">${pmValue(r, "compact")}</span>${rowStatus(r, "pm25")}</li>
+        <li class="row"><span class="row-name">Filter life</span><span class="row-value">${filterValue(r)}</span>${filterNote(r)}${rowStatus(r, "filter-life")}</li>
+      </ul>
+      ${modeControl(r, "a")}
+      ${fanControl(r, "a")}
+      ${settings(r, "a")}
+      ${ctlStatus(r)}
+    </div>
+    ${footer(r, key)}
+  </article>`;
+}
+
+// ---------- B · Air first ----------
+function series(r) {
+  const n = { "1h":60, "6h":72, "24h":96 }[ui.window];
+  let s = r.seed * 9301 + 49297;
+  const rand = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+  const base = r.pm ?? 6;
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const wave = Math.sin(t * Math.PI * (ui.window === "24h" ? 3 : 1.4) + r.seed) * base * .35;
+    // A broad evening bump, such as cooking, rather than a single-sample spike.
+    const spike = ui.window === "1h" ? 0 : base * .8 * Math.exp(-((t - .62) ** 2) / (2 * .035 ** 2));
+    const mean = Math.max(0, base + wave + spike + (rand() - .5) * base * .2);
+    pts.push({ mean, lo:Math.max(0, mean - base * (.1 + rand() * .15)), hi:mean + base * (.1 + rand() * .2) });
+  }
+  pts[n - 1].mean = base;
+  return pts;
+}
+function trend(r) {
+  if (r.loading) return `<div class="trend"><svg aria-hidden="true"></svg><p>&nbsp;</p></div>`;
+  const pts = series(r), n = pts.length, W = 100, H = 44;
+  const max = Math.max(...pts.map(p => p.hi)) * 1.1, min = 0;
+  const x = i => (i / (n - 1)) * W, y = v => H - ((v - min) / (max - min)) * H;
+  const mean = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(p.mean).toFixed(2)}`).join("");
+  const band = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(2)},${y(p.hi).toFixed(2)}`).join("") +
+    pts.slice().reverse().map((p, j) => `L${x(n - 1 - j).toFixed(2)},${y(p.lo).toFixed(2)}`).join("") + "Z";
+  const lo = Math.round(Math.min(...pts.map(p => p.mean))), hi = Math.round(Math.max(...pts.map(p => p.mean)));
+  const label = { "1h":"1 h", "6h":"6 h", "24h":"24 h" }[ui.window];
+  return `<div class="trend" data-value="${dim(r, "pm25")}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="band" d="${band}"/><path class="mean" d="${mean}"/></svg>
+    <p>${label} range ${lo}–${hi} µg/m³</p></div>`;
+}
+function range(r) {
+  const cap = 55.4;
+  const pos = r.pm == null || r.loading ? null : Math.min(r.pm / cap, 1) * 100;
+  const tick = v => `<span class="range-tick" style="left:${(v / cap) * 100}%"></span>`;
+  return `<div class="range" data-value="${dim(r, "pm25")}" aria-hidden="true">
+    <div class="range-track">${tick(9)}${tick(35.4)}${pos == null ? "" : `<span class="range-marker" style="left:${pos}%"></span>`}</div>
+    <div class="range-labels"><span style="left:0">0</span><span style="left:${(9 / cap) * 100}%">9</span><span style="left:${(35.4 / cap) * 100}%">35</span><span style="left:100%">55+</span></div></div>`;
+}
+function cardB(r) {
+  const key = `b-${r.id}`;
+  const c = category(r.pm);
+  return `<article class="view-card" aria-labelledby="${key}-t">
+    ${glow(r, "arrival")}
+    <header class="view-card-header"><h4 class="view-card-title" id="${key}-t">${r.name}</h4><ul class="view-status">${cardStatus(r)}</ul></header>
+    <div class="view-card-body">
+      <div class="b-split">
+        <div class="b-air">
+          <div class="reading-line">${pmValue(r, "reading")}</div>
+          <div class="b-air-line"><span class="b-air-label">PM2.5</span>${aqBadge(r)}</div>
+          ${rowStatus(r, "pm25")}
+          ${range(r)}
+          <span class="sr-only">${c ? `PM2.5 ${r.pm} µg/m³, ${c.words}. Bands: Good up to 9, Moderate up to 35.4, Unhealthy for sensitive groups up to 55.4.` : ""}</span>
+          ${trend(r)}
+        </div>
+        <div class="b-controls">
+          <div class="b-power"><span class="ctl-name">Power</span><span class="compact" data-value="${dim(r, "power") || (r.loading ? "empty" : "")}">${powerWord(r)}</span>${sw(r, "power", r.power, `Power, ${r.name}`, "b")}</div>
+          ${modeControl(r, "b")}
+          ${fanControl(r, "b")}
+          ${settings(r, "b")}
+          <div class="b-filter"><span>Filter life</span>${filterValue(r)}</div>
+          ${filterNote(r) ? `<div>${filterNote(r)}</div>` : ""}
+          ${rowStatus(r, "filter-life")}
+        </div>
+      </div>
+      ${ctlStatus(r)}
+    </div>
+    ${footer(r, key)}
+  </article>`;
+}
+
+// ---------- C · Tile ----------
+function cardC(r) {
+  const key = `c-${r.id}`;
+  const on = !r.loading && requested(r, "power", r.power);
+  const observedOn = !r.loading && r.power && !r.unavailable.has("power");
+  const interactive = canSet(r, "power");
+  const mode = r.loading || !r.power ? "" : `<span class="mode" data-value="${dim(r, "mode")}">${MODE_WORD[r.mode]}</span>`;
+  const status = r.pending && r.pending.entity === "power" ? `<p data-tone="info"><span class="dot"></span>${esc(r.pending.text)}</p>`
+    : r.message ? `<p data-tone="${r.message.tone}"><span class="dot"></span>${esc(r.message.text)}</p>` : "";
+  return `<article class="view-card tile ${observedOn ? "is-on" : ""} ${interactive ? "is-interactive" : ""}" aria-labelledby="${key}-t">
+    ${glow(r, "arrival")}
+    <header class="view-card-header"><h4 class="view-card-title" id="${key}-t">${r.name}</h4><ul class="view-status">${cardStatus(r)}</ul></header>
+    <div class="view-card-body">
+      <button class="tile-action" type="button" role="switch" aria-checked="${!!on}" aria-labelledby="${key}-t" data-act="toggle" data-room="${r.id}" data-entity="power" data-key="${key}-press" ${interactive ? "" : "disabled"}>
+        <span class="reading" data-value="${dim(r, "power")}">${powerWord(r)}${mode}</span>
+      </button>
+      <div class="tile-air detail"><span>PM2.5 ${pmValue(r, "pm")}</span>${aqBadge(r)}</div>
+      <div class="ctl-status" role="status">${status}</div>
+    </div>
+    ${footer(r, key)}
+  </article>`;
+}
+function lampTile() {
+  return `<article class="view-card tile is-on" aria-labelledby="lamp-t"><header class="view-card-header"><h4 class="view-card-title" id="lamp-t">Hall lamp</h4></header>
+    <div class="view-card-body"><button class="tile-action" type="button" role="switch" aria-checked="true" aria-labelledby="lamp-t" disabled style="cursor:default"><span class="reading">On</span></button>
+    <div class="ctl-status"></div></div>
+    <footer class="view-card-footer"><time aria-label="Observed 4m ago"><span class="time-label">Observed </span>4m ago</time><button class="source-btn" type="button">Source</button></footer></article>`;
+}
+
+// ---------- render ----------
+const stage = document.getElementById("stage");
+function render() {
+  const focusKey = document.activeElement?.dataset?.key;
+  stage.dataset.width = ui.width;
+  stage.dataset.aq = ui.aq;
+  stage.innerHTML = `
+    <section class="direction" aria-labelledby="dir-a">
+      <div class="direction-head"><h2 id="dir-a">A · Controls first <span class="pick">Chosen</span></h2><p>A Device composite like the light card: Power is the reading, with the switch at the end of its row. Air and filter readings are compact rows, then the controls.</p></div>
+      <div class="view-grid">${rooms.map(cardA).join("")}</div>
+    </section>
+    <section class="direction" aria-labelledby="dir-b">
+      <div class="direction-head"><h2 id="dir-b">B · Air first <span class="pick" data-not>Not chosen</span></h2><p>PM2.5 is the reading, with its EPA band, range, and trend. Power and settings are underneath, or beside it once the card has at least 500px of content width.</p></div>
+      <div class="view-grid wide-grid">${rooms.map(cardB).join("")}</div>
+    </section>
+    <section class="direction" aria-labelledby="dir-c">
+      <div class="direction-head"><h2 id="dir-c">C · Quick tile <span class="pick">Chosen</span></h2><p>A ToggleTile with air quality: a press toggles Power. It sits in the 160px grid next to other tiles, with no mode or fan controls.</p></div>
+      <div class="view-grid toggle-grid">${rooms.map(cardC).join("")}${lampTile()}</div>
+    </section>`;
+  if (focusKey) stage.querySelector(`[data-key="${CSS.escape(focusKey)}"]`)?.focus();
+}
+function renderControls() {
+  for (const [group, opts] of Object.entries(GROUPS)) {
+    const el = document.querySelector(`[data-group="${group}"]`);
+    el.innerHTML = opts.map(([v, w]) => `<button type="button" aria-pressed="${ui[group] === v}" data-ui="${group}" data-value="${v}">${w}</button>`).join("");
+  }
+}
+
+// ---------- simulated Commands ----------
+function roomById(id) { return rooms.find(r => r.id === id); }
+function send(r, entity, value, text, predict) {
+  r.message = null;
+  r.pending = { entity, value, text };
+  render();
+  setTimeout(() => {
+    if (!r.pending || r.pending.entity !== entity || r.pending.value !== value) return;
+    r.pending = null;
+    predict(r);
+    render();
+  }, 1100);
+}
+function setMode(r, v) {
+  if (v === requested(r, "mode", r.mode) && r.power) return;
+  send(r, "mode", v, `Switching to ${MODE_WORD[v]}…`, x => { x.mode = v; x.power = true; if (v === "manual") x.level = 1; });
+}
+function setLevel(r, v) {
+  v = Math.max(1, Math.min(4, v));
+  const manual = requested(r, "mode", r.mode) === "manual";
+  if (manual && v === requested(r, "fan-level", r.level) && r.power) return;
+  send(r, "fan-level", v, manual ? `Setting fan level to ${v}…` : `Setting fan level to ${v} and switching to Manual…`, x => { x.level = v; x.mode = "manual"; x.power = true; x.unavailable.delete("fan-level"); });
+}
+function toggle(r, entity) {
+  const field = { power:"power", display:"display", "child-lock":"lock" }[entity];
+  const next = !requested(r, entity, r[field]);
+  const words = { power:["Turning on…","Turning off…"], display:["Turning the display on…","Turning the display off…"], "child-lock":["Locking the controls…","Unlocking the controls…"] }[entity];
+  send(r, entity, next, next ? words[0] : words[1], x => { x[field] = next; });
+}
+
+document.addEventListener("click", e => {
+  const u = e.target.closest("[data-ui]");
+  if (u) {
+    ui[u.dataset.ui] = u.dataset.value;
+    if (u.dataset.ui === "preset") rooms[0] = livingRoom(ui.preset);
+    ui.source = null;
+    renderControls(); render(); return;
+  }
+  const a = e.target.closest("[data-act]");
+  if (!a) { if (ui.source && !e.target.closest(".source-pop")) { ui.source = null; render(); } return; }
+  const r = roomById(a.dataset.room);
+  switch (a.dataset.act) {
+    case "toggle": e.preventDefault(); toggle(r, a.dataset.entity); break;
+    case "mode": setMode(r, a.dataset.value); break;
+    case "level": setLevel(r, +a.dataset.value); break;
+    case "level-step": setLevel(r, (requested(r, "fan-level", r.level) ?? 1) + (requested(r, "mode", r.mode) === "manual" ? +a.dataset.step : 0)); break;
+    case "source": ui.source = ui.source === a.dataset.card ? null : a.dataset.card; render(); break;
+    case "new-reading": {
+      for (const room of rooms) {
+        if (room.loading || room.unavailable.has("pm25")) continue;
+        const delta = [-3, -2, 2, 4, 6][Math.floor(Math.random() * 5)];
+        room.pm = Math.max(1, room.pm + delta);
+        room.glowAt = performance.now();
+        room.oldest = "just now";
+      }
+      render(); break;
+    }
+  }
+});
+document.addEventListener("change", e => {
+  const a = e.target.closest("[data-act]");
+  if (!a) return;
+  const r = roomById(a.dataset.room);
+  if (a.dataset.act === "mode-menu") setMode(r, a.value);
+  if (a.dataset.act === "level-menu") setLevel(r, +a.value);
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && ui.source) { const k = ui.source; ui.source = null; render(); stage.querySelector(`[data-key="${k}-src"]`)?.focus(); }
+});
+
+// Review links: #preset=offline&style=menu&width=phone
+for (const [k, v] of new URLSearchParams(location.hash.slice(1))) {
+  if (GROUPS[k]?.some(([value]) => value === v)) ui[k] = v;
+}
+addEventListener("hashchange", () => location.reload());
+rooms[0] = livingRoom(ui.preset);
+renderControls();
+render();
+</script>
+</body>
+</html>
