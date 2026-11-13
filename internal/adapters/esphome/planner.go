@@ -9,7 +9,9 @@ import (
 	sdkbinarysensorv1 "github.com/mholtzscher/hearth/sdk/adapter/binarysensorv1"
 	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
 	sdkcolorrgbv1 "github.com/mholtzscher/hearth/sdk/adapter/colorrgbv1"
+	sdkcoverv1 "github.com/mholtzscher/hearth/sdk/adapter/coverv1"
 	sdkenumsettingv1 "github.com/mholtzscher/hearth/sdk/adapter/enumsettingv1"
+	sdklockv1 "github.com/mholtzscher/hearth/sdk/adapter/lockv1"
 	sdknumericsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsensorv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	sdkpressurev1 "github.com/mholtzscher/hearth/sdk/adapter/pressurev1"
@@ -29,12 +31,13 @@ const (
 
 // Skip reasons logged for entities the plan leaves out.
 const (
-	skipExposureDefault = "exposure_default"
-	skipExcluded        = "excluded"
-	skipTypeUnsupported = "type_unsupported"
-	skipSubDevice       = "sub_device"
-	skipAssumedState    = "assumed_state"
-	skipUnitUnsupported = "unit_unsupported"
+	skipExposureDefault       = "exposure_default"
+	skipExcluded              = "excluded"
+	skipTypeUnsupported       = "type_unsupported"
+	skipSubDevice             = "sub_device"
+	skipAssumedState          = "assumed_state"
+	skipUnitUnsupported       = "unit_unsupported"
+	skipCapabilityUnsupported = "capability_unsupported"
 )
 
 // unsupportedDeviceError reports a device the Adapter registers nothing for. Reason is an availability reason code.
@@ -180,6 +183,12 @@ func (planner *entityPlanner) add(entity nativeapi.EntityInfo) error {
 		return planner.plan(name, identity+"#power", entityRoute{Upstream: upstream, Kind: routeSwitchPower})
 	case nativeapi.EntityLight:
 		return planner.planLight(name, identity, upstream, entity)
+	case nativeapi.EntityCover:
+		return planner.plan(name, identity, entityRoute{Upstream: upstream, Kind: routeCover,
+			Cover: coverSupport(entity.SupportsStop)})
+	case nativeapi.EntityLock:
+		return planner.plan(name, identity, entityRoute{Upstream: upstream, Kind: routeLock,
+			Lock: lockSupport(!entity.RequiresCode)})
 	case nativeapi.EntityOther:
 		return nil
 	default:
@@ -234,8 +243,11 @@ func (planner *entityPlanner) skipReason(entity nativeapi.EntityInfo, ref Entity
 		return skipSubDevice
 	case entity.Type == nativeapi.EntityOther:
 		return skipTypeUnsupported
-	case entity.Type == nativeapi.EntitySwitch && entity.AssumedState:
+	case (entity.Type == nativeapi.EntitySwitch || entity.Type == nativeapi.EntityCover ||
+		entity.Type == nativeapi.EntityLock) && entity.AssumedState:
 		return skipAssumedState
+	case entity.Type == nativeapi.EntityCover && !entity.SupportsPosition:
+		return skipCapabilityUnsupported
 	}
 	if _, excluded := planner.exposure.Exclude[ref]; excluded {
 		return skipExcluded
@@ -269,6 +281,11 @@ func (planner *entityPlanner) plan(name, identity string, route entityRoute) err
 }
 
 func (planner *entityPlanner) deviceKind() string {
+	for _, route := range planner.routes {
+		if route.Kind == routeCover {
+			return "cover"
+		}
+	}
 	hasBrightness := false
 	for _, route := range planner.routes {
 		switch route.Kind {
@@ -276,7 +293,7 @@ func (planner *entityPlanner) deviceKind() string {
 			return deviceKindSensor
 		case routeLightBrightness:
 			hasBrightness = true
-		case routeSwitchPower, routeLightPower, routeLightColor, routeLightEffect:
+		case routeSwitchPower, routeLightPower, routeLightColor, routeLightEffect, routeCover, routeLock:
 			// These controls do not distinguish the device kind.
 		}
 	}
@@ -308,6 +325,10 @@ func newDescriptor(metadata adapter.EntityMetadata, route entityRoute) (adapter.
 		return sdkenumsettingv1.NewEntityDescriptor(metadata, route.Effect)
 	case routeText:
 		return sdktextsensorv1.NewEntityDescriptor(metadata, sdktextsensorv1.Support{})
+	case routeCover:
+		return sdkcoverv1.NewEntityDescriptor(metadata, route.Cover)
+	case routeLock:
+		return sdklockv1.NewEntityDescriptor(metadata, route.Lock)
 	default:
 		return adapter.EntityDescriptor{}, fmt.Errorf("route kind %d has no Entity type", route.Kind)
 	}

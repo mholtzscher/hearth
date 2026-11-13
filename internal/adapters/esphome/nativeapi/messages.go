@@ -30,12 +30,16 @@ const (
 	idListEntitiesDoneResponse uint16 = 19
 	idSubscribeStatesRequest   uint16 = 20
 	idBinarySensorState        uint16 = 21
+	idCoverState               uint16 = 22
 	idLightState               uint16 = 24
 	idSensorState              uint16 = 25
 	idSwitchState              uint16 = 26
 	idTextSensorState          uint16 = 27
+	idCoverCommandRequest      uint16 = 30
 	idLightCommandRequest      uint16 = 32
 	idSwitchCommandRequest     uint16 = 33
+	idLockState                uint16 = 59
+	idLockCommandRequest       uint16 = 60
 )
 
 // schema indexes every message in the vendored schema by its (id) option.
@@ -173,6 +177,15 @@ func decodeEntity(messageID uint16, data []byte) (EntityInfo, error) {
 	case *apipb.ListEntitiesSwitchResponse:
 		info.Type = EntitySwitch
 		info.AssumedState = typed.GetAssumedState()
+	case *apipb.ListEntitiesCoverResponse:
+		info.Type = EntityCover
+		info.AssumedState = typed.GetAssumedState()
+		info.SupportsPosition = typed.GetSupportsPosition()
+		info.SupportsStop = typed.GetSupportsStop()
+	case *apipb.ListEntitiesLockResponse:
+		info.Type = EntityLock
+		info.AssumedState = typed.GetAssumedState()
+		info.RequiresCode = typed.GetRequiresCode()
 	case *apipb.ListEntitiesLightResponse:
 		info.Type = EntityLight
 		for _, mode := range typed.GetSupportedColorModes() {
@@ -186,6 +199,10 @@ func decodeEntity(messageID uint16, data []byte) (EntityInfo, error) {
 // decodeState decodes a mapped platform's state push. ok is false for every other message.
 func decodeState(messageID uint16, data []byte) (StateUpdate, bool, error) {
 	switch messageID {
+	case idCoverState:
+		return decodeCoverState(data)
+	case idLockState:
+		return decodeLockState(data)
 	case idTextSensorState:
 		var message apipb.TextSensorStateResponse
 		if err := decodeInto(data, &message); err != nil {
@@ -248,6 +265,14 @@ func decodeState(messageID uint16, data []byte) (StateUpdate, bool, error) {
 // commandMessage converts a Command into its request message.
 func commandMessage(command Command) (proto.Message, error) {
 	switch typed := command.(type) {
+	case CoverCommand:
+		return coverCommandMessage(typed)
+	case LockCommand:
+		operation := apipb.LockCommand_LOCK_UNLOCK
+		if typed.Locked {
+			operation = apipb.LockCommand_LOCK_LOCK
+		}
+		return &apipb.LockCommandRequest{Key: typed.Key, DeviceId: typed.DeviceID, Command: operation}, nil
 	case SwitchCommand:
 		return &apipb.SwitchCommandRequest{Key: typed.Key, DeviceId: typed.DeviceID, State: typed.On}, nil
 	case LightCommand:

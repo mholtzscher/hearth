@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:cover:v1:state",
+  "title": "Hearth cover/v1 reported State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["position", "motion"],
+  "properties": {
+    "position": {
+      "description": "Reported integer percent open, not independently verified physical closure.",
+      "type": "integer", "minimum": 0, "maximum": 100,
+      "hearth": {"unit": "%", "range": {"minimum": 0, "maximum": 100}}
+    },
+    "motion": {"type": "string", "enum": ["idle", "opening", "closing"]}
+  }
+}

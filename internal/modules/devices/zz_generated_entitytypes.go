@@ -12,6 +12,7 @@ import (
 	contractcolorrgbv1 "github.com/mholtzscher/hearth/entitytypes/colorrgbv1"
 	contractcolortempv1 "github.com/mholtzscher/hearth/entitytypes/colortempv1"
 	contractcolorxyv1 "github.com/mholtzscher/hearth/entitytypes/colorxyv1"
+	contractcoverv1 "github.com/mholtzscher/hearth/entitytypes/coverv1"
 	contractdailyforecastv1 "github.com/mholtzscher/hearth/entitytypes/dailyforecastv1"
 	contractenumactionv1 "github.com/mholtzscher/hearth/entitytypes/enumactionv1"
 	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
@@ -36,6 +37,7 @@ const (
 	EntityTypeColorrgbV1         EntityTypeID = "hearth.colorrgb/v1"
 	EntityTypeColortempV1        EntityTypeID = "hearth.colortemp/v1"
 	EntityTypeColorxyV1          EntityTypeID = "hearth.colorxy/v1"
+	EntityTypeCoverV1            EntityTypeID = "hearth.cover/v1"
 	EntityTypeDailyforecastV1    EntityTypeID = "hearth.dailyforecast/v1"
 	EntityTypeEnumactionV1       EntityTypeID = "hearth.enumaction/v1"
 	EntityTypeEnumeventV1        EntityTypeID = "hearth.enumevent/v1"
@@ -53,7 +55,7 @@ const (
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 21)
+	definitions := make([]EntityTypeDefinition, 0, 22)
 	binarysensorV1, err := newBinarysensorV1TypeDefinition(EntityTypeBinarysensorV1)
 	if err != nil {
 		return nil, err
@@ -89,6 +91,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, colorxyV1)
+	coverV1, err := newCoverV1TypeDefinition(EntityTypeCoverV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, coverV1)
 	dailyforecastV1, err := newDailyforecastV1TypeDefinition(EntityTypeDailyforecastV1)
 	if err != nil {
 		return nil, err
@@ -295,6 +302,46 @@ func newColorxyV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 		contractcolorxyv1.SetSatisfied,
 	)
 	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcolorxyv1.ValidateSupport, contractcolorxyv1.ValidateState, contractcolorxyv1.EqualState, set)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newCoverV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractcoverv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.cover/v1 codecs: %w", err)
+	}
+	set := DefineOperation(
+		OperationName(contractcoverv1.OperationSet),
+		codecs.SetParameters,
+		func(support contractcoverv1.Support) (contractcoverv1.SetSupport, bool) {
+			if support.Operations.Set == nil {
+				return contractcoverv1.SetSupport{}, false
+			}
+			return *support.Operations.Set, true
+		},
+		contractcoverv1.ValidateSetParameters,
+		contractcoverv1.SetDeadline,
+		OutcomeObserved,
+		contractcoverv1.SetSatisfied,
+	)
+	stop := DefineOperation[contractcoverv1.State, contractcoverv1.Support, contractcoverv1.StopSupport, contractcoverv1.StopParameters](
+		OperationName(contractcoverv1.OperationStop),
+		codecs.StopParameters,
+		func(support contractcoverv1.Support) (contractcoverv1.StopSupport, bool) {
+			if support.Operations.Stop == nil {
+				return contractcoverv1.StopSupport{}, false
+			}
+			return *support.Operations.Stop, true
+		},
+		contractcoverv1.ValidateStopParameters,
+		contractcoverv1.StopDeadline,
+		OutcomeDispatched,
+		nil,
+	)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractcoverv1.ValidateSupport, contractcoverv1.ValidateState, contractcoverv1.EqualState, set, stop)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

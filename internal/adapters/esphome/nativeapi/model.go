@@ -32,6 +32,8 @@ const (
 	EntityBinarySensor EntityType = "binary_sensor"
 	EntitySwitch       EntityType = "switch"
 	EntityLight        EntityType = "light"
+	EntityCover        EntityType = "cover"
+	EntityLock         EntityType = "lock"
 	// EntityOther is listed for identity and skip logging only.
 	EntityOther EntityType = "other"
 )
@@ -70,6 +72,10 @@ type EntityInfo struct {
 	// ColorModes lists a light's supported color modes as capability bitmasks.
 	ColorModes []uint32
 	Effects    []string
+	// Cover and lock capabilities constrain the operations the Adapter may expose.
+	SupportsPosition bool
+	SupportsStop     bool
+	RequiresCode     bool
 }
 
 // StateUpdate is one state push. Fields that do not apply to Type are zero.
@@ -94,12 +100,15 @@ type StateUpdate struct {
 	// ColorBrightness is the RGB-only amplitude, independent of master Brightness and power.
 	ColorBrightness float64
 	Effect          string
+	Position        float64
+	CoverOperation  string
+	LockState       string
 }
 
 // RGB is an upstream color with each channel in the range 0..1, separate from master brightness.
 type RGB struct{ Red, Green, Blue float64 }
 
-// Command is one entity command: SwitchCommand or LightCommand.
+// Command is one supported entity command.
 type Command interface{ nativeCommand() }
 
 // SwitchCommand turns a switch on or off.
@@ -122,3 +131,21 @@ type LightCommand struct {
 
 func (SwitchCommand) nativeCommand() {}
 func (LightCommand) nativeCommand()  {}
+
+// CoverCommand sets a native 0..1 position or sends stop, never both.
+type CoverCommand struct {
+	Key      uint32
+	DeviceID uint32
+	Position *float64
+	Stop     bool
+}
+
+// LockCommand changes lock State without opening the lock or supplying a code.
+type LockCommand struct {
+	Key      uint32
+	DeviceID uint32
+	Locked   bool
+}
+
+func (CoverCommand) nativeCommand() {}
+func (LockCommand) nativeCommand()  {}

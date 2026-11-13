@@ -1,0 +1,55 @@
+{
+  "cases": [
+    {
+      "name": "reported-position-and-dispatched-stop",
+      "support": {"state": {}, "operations": {"set": {}, "stop": {}}},
+      "states": [
+        {"value": {"position": 0, "motion": "idle"}, "valid": true},
+        {"value": {"position": 100, "motion": "idle"}, "valid": true},
+        {"value": {"position": 50, "motion": "opening"}, "valid": true},
+        {"value": {"position": 25, "motion": "closing"}, "valid": true},
+        {"value": {"position": -1, "motion": "idle"}, "valid": false},
+        {"value": {"position": 101, "motion": "idle"}, "valid": false},
+        {"value": {"position": 1.5, "motion": "idle"}, "valid": false},
+        {"value": {"position": 0, "motion": "stopped"}, "valid": false},
+        {"value": {"position": 0}, "valid": false},
+        {"value": {"motion": "idle"}, "valid": false},
+        {"value": {"position": 0, "motion": "idle", "closed": true}, "valid": false}
+      ],
+      "operations": {
+        "set": {
+          "parameters": [
+            {"value": {"position": 0}, "valid": true},
+            {"value": {"position": 50}, "valid": true},
+            {"value": {"position": 100}, "valid": true},
+            {"value": {"position": -1}, "valid": false},
+            {"value": {"position": 101}, "valid": false},
+            {"value": {"position": 50.5}, "valid": false},
+            {"value": {"position": "50"}, "valid": false},
+            {"value": {}, "valid": false},
+            {"value": {"position": 50, "stop": true}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"position": 0}, "state": {"position": 0, "motion": "idle"}, "satisfied": true},
+            {"parameters": {"position": 100}, "state": {"position": 100, "motion": "idle"}, "satisfied": true},
+            {"parameters": {"position": 50}, "state": {"position": 49, "motion": "closing"}, "satisfied": true},
+            {"parameters": {"position": 50}, "state": {"position": 51, "motion": "opening"}, "satisfied": true},
+            {"parameters": {"position": 50}, "state": {"position": 48, "motion": "idle"}, "satisfied": false},
+            {"parameters": {"position": 50}, "state": {"position": 52, "motion": "idle"}, "satisfied": false},
+            {"parameters": {"position": 0}, "state": {"position": 1, "motion": "closing"}, "satisfied": true},
+            {"parameters": {"position": 100}, "state": {"position": 99, "motion": "opening"}, "satisfied": true}
+          ]
+        },
+        "stop": {
+          "parameters": [
+            {"value": {}, "valid": true},
+            {"value": {"position": 0}, "valid": false},
+            {"value": {"stop": true}, "valid": false}
+          ],
+          "outcomes": []
+        }
+      }
+    },
+    {"name": "monitoring", "support": {"state": {}, "operations": {}}, "states": [{"value": {"position": 50, "motion": "idle"}, "valid": true}, {"value": {"position": 101, "motion": "idle"}, "valid": false}], "operations": {}}
+  ]
+}

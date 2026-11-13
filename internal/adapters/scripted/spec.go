@@ -178,9 +178,9 @@ func (spec DeviceSpec) Validate() error {
 		return err
 	}
 	switch spec.Kind {
-	case "light", "relay", "sensor", "air-purifier", "lock":
+	case "light", "relay", "sensor", "air-purifier", "lock", "cover":
 	default:
-		return fmt.Errorf("kind must be light, relay, sensor, air-purifier, or lock")
+		return fmt.Errorf("kind must be light, relay, sensor, air-purifier, lock, or cover")
 	}
 	healthy, _, err := spec.HealthStatus()
 	if err != nil {

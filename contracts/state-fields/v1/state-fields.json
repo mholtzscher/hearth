@@ -131,6 +131,28 @@
         }
       }
     },
+    "hearth.cover/v1": {
+      "/motion": {
+        "value_type": "string",
+        "presence": "always",
+        "enum": [
+          "idle",
+          "opening",
+          "closing"
+        ]
+      },
+      "/position": {
+        "value_type": "integer",
+        "presence": "always",
+        "quantity": {
+          "unit": "%",
+          "range": {
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    },
     "hearth.enumsetting/v1": {
       "": {
         "value_type": "string",

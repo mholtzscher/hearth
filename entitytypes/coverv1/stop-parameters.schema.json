@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:cover:v1:stop-parameters",
+  "title": "Hearth cover/v1 stop parameters",
+  "description": "Dispatch a stop request. Dispatch does not confirm that travel stopped.",
+  "type": "object",
+  "additionalProperties": false,
+  "maxProperties": 0
+}

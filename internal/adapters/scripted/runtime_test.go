@@ -248,13 +248,15 @@ func powerDevice() scripted.DeviceSpec {
 
 func TestDeviceSpecCanonicalKinds(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []string{"light", "relay", "sensor", "air-purifier", "lock", "", "Lock", "switch"} {
+	for _, kind := range []string{"light", "relay", "sensor", "air-purifier", "lock", "cover", "", "Lock", "switch"} {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			device := powerDevice()
 			device.Kind = kind
 			err := device.Validate()
-			valid := kind == "light" || kind == "relay" || kind == "sensor" || kind == "air-purifier" || kind == "lock"
+			valid := kind == "light" || kind == "relay" || kind == "sensor" || kind == "air-purifier" ||
+				kind == "lock" ||
+				kind == "cover"
 			if (err == nil) != valid {
 				t.Fatalf("Validate kind %q = %v; valid = %t", kind, err, valid)
 			}

@@ -67,6 +67,23 @@ callers, see [service input contracts](service-input-contracts.md).
 - `internal/platform/nats.RequestReplyServer` owns plain Core NATS callback admission, bounded subscription activation, schema-backed envelope decode/reply construction, trace propagation, and safe transport diagnostics shared by Devices endpoints and notification registration. Modules select schemas and retain route validation, domain calls, and outcome mapping. `Drain` remains nonblocking; `Close(ctx)` closes admission, unsubscribes, and joins admitted callbacks even after unexpected connection closure, bounding only the caller's wait. Failed activation joins callbacks before returning an error; Core cleanup joins transports before withdrawing NATS or SQLite. This primitive does not own SDK Command serving or JetStream policy.
 - `platform/lifecycle.WorkerHandle` owns cancellation and joining for the Core health supervisor, Device Fact relay, and history pruning worker. It does not own scheduling, retries, readiness, or fault policy. Unlike admission draining, stopping a worker requests cancellation; a wait timeout never proves that the worker has exited.
 - Devices group independently addressable entities; state reads and commands target entities.
+- ESPHome position-capable covers use Device kind `cover` and the generated
+  `hearth.cover/v1` contract: integer-percent reported position and idle/opening/
+  closing motion. Position `set` has a 60-second observed deadline and a
+  one-point tolerance; optional `stop` has a 10-second dispatched deadline and
+  produces no synthetic State. Cover writes remain serialized but do not wait
+  for earlier targets. Up to sixteen pending target matchers link one report to
+  at most one matching Command, oldest-first. Stop bypasses that limit, clears
+  prior matchers, and never replays work. Earlier accepted Commands may time
+  out. Existing light/switch FIFO behavior and Core Command lifecycles do not
+  change. Telemetry publication remains synchronous on the device worker;
+  stalled broker acknowledgements can delay Stop until its deadline without a
+  native write. No fault-isolated or emergency-stop guarantee is provided.
+  Non-assumed ESPHome locks reuse `hearth.lock/v1`; code-requiring locks
+  are read-only. Ratgdo remote lockout is not a physical bolt. The cover's
+  position may be estimated or uninitialized, and firmware may report requested
+  lockout optimistically. No Adapter observation strengthens those upstream reports
+  into independently verified closure, remote enforcement, or security.
 - Numeric State fields declare bounded quantity kinds through schema annotations or generic Entity support. Generic fields may acquire a missing kind once; established kinds cannot change or disappear through ordinary registration, including omission by an older Adapter. Kind/unit compatibility is validated at registration and immutable-interpretation failures leave the whole batch unchanged. Unit immutability is unchanged.
 - Canonical State and rollups remain internal service data. Devices-owned pure presentation applies the configured household unit system only at HTTP/MCP read delivery. Ordinary Entity and aggregate-history responses contain one set of readings plus pointer-keyed `quantities` or single-field `quantity` metadata; `units=canonical` bypasses conversion. Forecast snapshots use identical unit-neutral measurement properties and concrete period-index metadata in both read modes. They remain outside the scalar field/history catalog. Entity PATCH responses follow GET while all write inputs stay canonical. Raw audit history and Device Facts are canonical. See [quantity metadata and read units](units.md) for the representation, forecast data migration, and coordinated deployment contract.
 - Hearth assigns immutable canonical IDs to devices and entities; adapter-specific external IDs are mappings and ownership can change without changing canonical identity. Canonical and message IDs are UUIDv7 values with type prefixes such as `dev_`, `ent_`, `obs_`, and `cmd_`.

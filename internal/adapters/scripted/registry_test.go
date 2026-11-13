@@ -14,8 +14,8 @@ import (
 func TestRegistryKnowsBuiltinCatalog(t *testing.T) {
 	t.Parallel()
 	types := scripted.KnownTypes()
-	if len(types) != 18 {
-		t.Fatalf("KnownTypes() has %d entries, want 18", len(types))
+	if len(types) != 19 {
+		t.Fatalf("KnownTypes() has %d entries, want 19", len(types))
 	}
 	for _, id := range []string{"hearth.power/v1", "hearth.temperature/v1", "hearth.enumevent/v1"} {
 		if _, err := scripted.Lookup(id); err != nil {

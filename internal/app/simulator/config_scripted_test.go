@@ -353,6 +353,7 @@ func TestScriptedExampleDevicesStayHealthy(t *testing.T) {
 		t.Fatalf("expected five isolated Adapters starting with sim-healthy: %+v", value.Adapters)
 	}
 	healthyKeys := map[string]bool{
+		"simulated-garage-door":  true,
 		"simulated-air-purifier": true,
 		"simulated-light":        true, "simulated-button": true, "simulated-forecast": true,
 		"simulated-climate": true, "simulated-plug": true,
@@ -476,6 +477,10 @@ func checkHealthySimulatorEntity(t *testing.T, bindingKey string, entity scripte
 		t.Errorf("scripted entity %s/%s is unavailable", bindingKey, entity.Key)
 	}
 	for operation, command := range entity.Commands {
+		if entity.Type == "hearth.cover/v1" && operation == "stop" &&
+			command.Behavior == scripted.CommandBehaviorAcceptSilent {
+			continue
+		}
 		if command.Behavior != "" && command.Behavior != "accept-and-publish" {
 			t.Errorf("scripted command %s/%s/%s does not publish an outcome",
 				bindingKey, entity.Key, operation)
