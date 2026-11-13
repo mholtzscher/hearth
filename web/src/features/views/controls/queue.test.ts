@@ -19,6 +19,17 @@ function fixture() {
 }
 
 describe("CommandQueue", () => {
+  it("preserves structured color parameters, including a newer queued color", async () => {
+    const { queue, commands, execute, settle } = fixture();
+    const color: ControlTarget = { entityId: "ent_color", operation: "set" };
+    queue.request(color, { red: 128, green: 32, blue: 16 });
+    queue.request(color, { red: 0, green: 0, blue: 0 });
+    expect(execute).toHaveBeenNthCalledWith(1, "ent_color", { operation: "set", parameters: { red: 128, green: 32, blue: 16 } });
+    commands[0].resolve(satisfied({ red: 128, green: 32, blue: 16 }));
+    await settle();
+    expect(execute).toHaveBeenNthCalledWith(2, "ent_color", { operation: "set", parameters: { red: 0, green: 0, blue: 0 } });
+    expect(queue.snapshot(color)).toEqual({ phase: "pending", requested: { red: 0, green: 0, blue: 0 } });
+  });
   it("shows the request as pending, then confirming until the State read lands, then idle", async () => {
     const { queue, commands, refreshes, execute, settle } = fixture();
     const listener = vi.fn();
@@ -109,9 +120,13 @@ describe("CommandQueue", () => {
   it("keeps targets independent", () => {
     const { queue, execute } = fixture();
     const brightness: ControlTarget = { entityId: "ent_brightness", operation: "set" };
+    const mode: ControlTarget = { entityId: "ent_mode", operation: "set" };
     queue.request(power, true);
     queue.request(brightness, 40);
-    expect(execute).toHaveBeenCalledTimes(2);
+    queue.request(mode, "auto");
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledWith("ent_mode", { operation: "set", parameters: { value: "auto" } });
+    expect(queue.snapshot(mode)).toEqual({ phase: "pending", requested: "auto" });
     expect(queue.snapshot(brightness)).toEqual({ phase: "pending", requested: 40 });
   });
 

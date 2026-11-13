@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { FieldEntity } from "../bindings/entity";
 import { useControl } from "../data/provider";
 import { ControlStatus } from "./ControlStatus";
@@ -15,7 +15,7 @@ const clamp = (value: number) => Math.min(MAX, Math.max(MIN, value));
  * shows the requested level; otherwise it shows observed State, so an observed
  * 0 % reads 0 % with the thumb at the minimum.
  */
-export function BrightnessSlider({ entity, label }: { entity: FieldEntity; label: string }) {
+export function BrightnessSlider({ entity, label, feedback }: { entity: FieldEntity; label: string; feedback?: ReactNode }) {
   const [state, request] = useControl({ entityId: entity.id, operation: "set" });
   const [draft, setDraft] = useState<number>();
   const dragging = useRef(false);
@@ -63,6 +63,6 @@ export function BrightnessSlider({ entity, label }: { entity: FieldEntity; label
         timer.current = setTimeout(() => commit(value), KEYBOARD_SETTLE_MS);
       }}
       onBlur={() => { if (timer.current !== undefined) commit(draft); }} />
-    <ControlStatus entityId={entity.id} pending={requested => `Setting brightness to ${String(requested)} %…`} />
+    {feedback ?? <ControlStatus entityId={entity.id} pending={requested => `Setting brightness to ${String(requested)} %…`} />}
   </div>;
 }

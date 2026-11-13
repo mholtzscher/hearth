@@ -3,6 +3,8 @@ import type { CommandResult } from "../../../api/types";
 
 /** One controllable Operation on one Entity. */
 export type ControlTarget = { entityId: string; operation: "set" };
+/** Scalar setters use { value }; structured color setters use their named fields. */
+export type ControlValue = string | boolean | number | Record<string, unknown>;
 
 /**
  * requested: the value the user most recently asked for.
@@ -12,7 +14,7 @@ export type ControlTarget = { entityId: string; operation: "set" };
  */
 export type ControlState =
   | { phase: "idle" }
-  | { phase: "pending"; requested: unknown; queued?: { value: unknown } }
+  | { phase: "pending"; requested: unknown; queued?: { value: ControlValue } }
   | { phase: "confirming"; requested: unknown }
   | { phase: "failed"; requested: unknown; failure: CommandFailure };
 
@@ -51,7 +53,7 @@ export class CommandQueue {
     };
   }
 
-  request(target: ControlTarget, value: unknown): void {
+  request(target: ControlTarget, value: ControlValue): void {
     const entry = this.entry(target);
     if (entry.inFlight) {
       this.update(entry, { phase: "pending", requested: value, queued: { value } });
@@ -97,13 +99,13 @@ export class CommandQueue {
     entry.listeners.forEach(listener => listener());
   }
 
-  private async send(target: ControlTarget, entry: Entry, value: unknown): Promise<void> {
+  private async send(target: ControlTarget, entry: Entry, value: ControlValue): Promise<void> {
     const generation = this.generation;
     entry.inFlight = true;
     this.update(entry, { phase: "pending", requested: value });
     let failure: CommandFailure | undefined;
     try {
-      await this.deps.execute(target.entityId, { operation: target.operation, parameters: { value } });
+      await this.deps.execute(target.entityId, { operation: target.operation, parameters: typeof value === "object" ? value : { value } });
     } catch (error) {
       failure = error instanceof CommandError ? error.failure : { kind: "internal" };
     }

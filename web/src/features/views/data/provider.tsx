@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { getBaseUrl, useBaseUrlVersion } from "../../../api/client";
 import { executeCommand } from "../../../api/commands";
-import { CommandQueue, type ControlState, type ControlTarget } from "../controls/queue";
+import { CommandQueue, type ControlState, type ControlTarget, type ControlValue } from "../controls/queue";
 import { emptySnapshot, ReadCache, type ReadRequest } from "./cache";
 
 const CacheContext = createContext<ReadCache | null>(null);
@@ -16,18 +16,18 @@ export function ViewDataProvider({ children }: { children: ReactNode }) {
 }
 
 /** The shared control state for one Entity Operation and a function that requests a value. */
-export function useControl(target: ControlTarget): [ControlState, (value: unknown) => void] {
+export function useControl(target: ControlTarget): [ControlState, (value: ControlValue) => void] {
   const queue = useContext(QueueContext);
   if (!queue) throw new Error("ViewDataProvider is required");
   const { entityId, operation } = target;
   const subscribe = useCallback((listener: () => void) => queue.subscribe({ entityId, operation }, listener), [queue, entityId, operation]);
   const state = useSyncExternalStore(subscribe, () => queue.snapshot({ entityId, operation }));
-  const request = useCallback((value: unknown) => queue.request({ entityId, operation }, value), [queue, entityId, operation]);
+  const request = useCallback((value: ControlValue) => queue.request({ entityId, operation }, value), [queue, entityId, operation]);
   return [state, request];
 }
 
 /** Observe a list's per-Entity queue entries without introducing a group Command lifecycle. */
-export function useControls(targets: ControlTarget[]): [ControlState[], (target: ControlTarget, value: unknown) => void] {
+export function useControls(targets: ControlTarget[]): [ControlState[], (target: ControlTarget, value: ControlValue) => void] {
   const queue = useContext(QueueContext);
   if (!queue) throw new Error("ViewDataProvider is required");
   const identity = JSON.stringify(targets);
@@ -46,7 +46,7 @@ export function useControls(targets: ControlTarget[]): [ControlState[], (target:
     };
   }, [queue, identity]);
   const states = useSyncExternalStore(binding.subscribe, binding.snapshot);
-  const request = useCallback((target: ControlTarget, value: unknown) => queue.request(target, value), [queue]);
+  const request = useCallback((target: ControlTarget, value: ControlValue) => queue.request(target, value), [queue]);
   return [states, request];
 }
 export function useRead(request: ReadRequest | null) {
