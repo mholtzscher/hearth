@@ -9,7 +9,7 @@ import (
 // historyChangeFieldsWithoutHistory lists the exact "type field" keys present
 // when a new Entity type is introduced. Later fields of that type still need
 // a backfill, so exempting a whole type would hide missing history.
-func historyChangeFieldsWithoutHistory() []string { return nil }
+func historyChangeFieldsWithoutHistory() []string { return []string{"hearth.lock/v1 "} }
 
 func TestStateChangeBackfillsCoverYesNoAndTextFields(t *testing.T) {
 	t.Parallel()

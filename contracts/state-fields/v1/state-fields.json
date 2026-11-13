@@ -110,6 +110,20 @@
         "presence": "always"
       }
     },
+    "hearth.lock/v1": {
+      "": {
+        "value_type": "string",
+        "presence": "always",
+        "enum": [
+          "locked",
+          "unlocked",
+          "locking",
+          "unlocking",
+          "jammed",
+          "unknown"
+        ]
+      }
+    },
     "hearth.numericsensor/v1": {
       "": {
         "value_type": "number",

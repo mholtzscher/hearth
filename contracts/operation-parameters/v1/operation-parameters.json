@@ -167,6 +167,31 @@
     "hearth.hourlyforecast/v1": {
       "operations": {}
     },
+    "hearth.lock/v1": {
+      "operations": {
+        "set": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:lock:v1:set-parameters",
+            "title": "Hearth lock/v1 set parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "string",
+                "enum": [
+                  "locked",
+                  "unlocked"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "hearth.numericsensor/v1": {
       "operations": {}
     },

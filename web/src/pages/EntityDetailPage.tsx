@@ -38,6 +38,11 @@ function presetsFor(type: string | undefined, support?: Record<string, unknown>)
         { label: "power on", params: '{"value":true}' },
         { label: "power off", params: '{"value":false}' },
       ];
+    case "hearth.lock/v1":
+      return [
+        { label: "lock", params: '{"value":"locked"}' },
+        { label: "unlock", params: '{"value":"unlocked"}' },
+      ];
     case "hearth.brightness/v1":
       return brightnessPresets();
     case "hearth.colortemp/v1":
@@ -121,6 +126,9 @@ function defaultOperation(type: string | undefined): string {
 }
 
 function exampleParams(type: string | undefined, support?: Record<string, unknown>): string {
+  if (type === "hearth.lock/v1") {
+    return '{"value":"locked"}';
+  }
   if (type === "hearth.brightness/v1") {
     return '{"value":50}';
   }

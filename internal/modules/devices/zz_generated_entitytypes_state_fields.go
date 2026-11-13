@@ -34,6 +34,9 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 		{Path: "", Presence: "always", Value: StringField{Enum: []string(nil)}},
 	},
 	EntityTypeHourlyforecastV1: {},
+	EntityTypeLockV1: {
+		{Path: "", Presence: "always", Value: StringField{Enum: []string{"locked", "unlocked", "locking", "unlocking", "jammed", "unknown"}}},
+	},
 	EntityTypeNumericsensorV1: {
 		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: false}, Kind: SupportKind{Reference: SupportReference{Path: "/state/quantity_kind"}, Optional: true}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
 	},

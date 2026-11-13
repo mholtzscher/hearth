@@ -20,6 +20,13 @@ through a US VeSync account. The separate `hearth-adapter-levoit` companion
 exposes power, mode, manual fan level, display, child lock, PM2.5, and filter life.
 Credentials stay in a private file; see `configs/levoit.example.yaml`.
 
+The [August Adapter](docs/august.md) monitors explicitly configured US August
+Wi-Fi locks without a Home Assistant runtime. The `hearth-adapter-august`
+companion reports bolt State, DoorSense, and estimated battery percentage.
+Lock control is blocked pending separately authorized live evidence checks.
+Native Go transport compatibility also remains unverified; see the guide before
+deployment and `configs/august.example.yaml` for monitoring configuration.
+
 ## Development
 
 Install tools with `mise install`. Use `mise run simulator-start` for local NATS/JetStream and simulated Devices; it needs no Mosquitto broker. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, tests including runtime OpenAPI and recovery, and vetting. Tests are race-enabled in CI, not by default locally. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
@@ -65,7 +72,7 @@ HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
 
 The three adapters and simulator use the same flag > environment > YAML precedence. Their environment prefixes are `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only. The simulator validates its resolved configuration on every startup before connecting to NATS; it has no validation-only CLI mode.
 
-The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers all eighteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device, Entity, notification destination, and Adapter Function is declared under its Adapter in YAML; the `sim-healthy` Functions exercise success, failure, not-executed, unknown, and one held invocation released over the loopback control channel. For a minimal first-light example, see `configs/simulator.example.yaml`. See `specs/simulator-harness.md` for scripted output, Command, and control behavior and `specs/simulator-functions.md` for the Function contract. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
+The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers eighteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device, Entity, notification destination, and Adapter Function is declared under its Adapter in YAML; the `sim-healthy` Functions exercise success, failure, not-executed, unknown, and one held invocation released over the loopback control channel. For a minimal first-light example, see `configs/simulator.example.yaml`. See `specs/simulator-harness.md` for scripted output, Command, and control behavior and `specs/simulator-functions.md` for the Function contract. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
 For automated simulator validation, run `mise run simulator-start`.
 Mise/Pitchfork supervises an isolated local NATS/JetStream, Core, scripted
