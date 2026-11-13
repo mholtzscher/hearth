@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -89,13 +90,14 @@ func TestOverflowEndsGenerationAndResynchronizesBeforeNextSubscription(t *testin
 		), nil
 	})
 	a := newTestAdapter(t, newRecordingSession(), transport)
+	a.devices["front"].gate <- struct{}{}
 	generation := a.startPush(t.Context(), []pushTarget{{DeviceID: testLockID, Channel: "alpha"}})
 	if err := generation.worker.Wait(
 		t.Context(),
-	); !errors.Is(err, errPushOverflow) ||
-		len(generation.ingress) != pushIngressCapacity {
+	); !errors.Is(err, errPushOverflow) {
 		t.Fatal("overflow did not terminate its bounded generation")
 	}
+	<-a.devices["front"].gate
 	loop := monitorLoop{
 		a:          a,
 		generation: generation,
@@ -104,8 +106,13 @@ func TestOverflowEndsGenerationAndResynchronizesBeforeNextSubscription(t *testin
 		backoff:    time.Second,
 	}
 	defer func() { loop.generation.stop(t.Context()); loop.poll.Stop(); loop.retry.Stop() }()
-	loop.subscriptionEnded(t.Context())
-	if err := loop.reconnect(t.Context()); err != nil {
+	if err := loop.subscriptionEnded(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	loop.retryC = nil
+	loop.startAcquisition(t.Context(), true)
+	<-loop.acquisition.Closed()
+	if err := loop.finishAcquisition(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	<-restarted
@@ -162,6 +169,7 @@ func TestPushRecoveryIsCoalescedAndCannotAssertReachability(t *testing.T) {
 		return response(200, syntheticDetail("Front", `{"operative":true}`)), nil
 	}))
 	a.devices["front"].entry = &inventoryEntry{ID: testLockID, Name: "Front", UserType: roleSuperuser}
+	a.needsAssessment.Store(0) // This isolated push starts after the account assessment.
 	r, err := decodeStatus([]byte(`{"status":"locked"}`), time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -173,5 +181,191 @@ func TestPushRecoveryIsCoalescedAndCannotAssertReachability(t *testing.T) {
 	}
 	if reads != 1 || a.devices["front"].online {
 		t.Fatal("push bypassed online detail gate or created a recovery-read storm")
+	}
+}
+
+type blockingPushSession struct {
+	*recordingSession
+
+	blocked  chan struct{}
+	release  chan struct{}
+	deck     chan struct{}
+	canceled chan struct{}
+}
+
+func (s *blockingPushSession) PublishObservation(
+	ctx context.Context,
+	observation adapter.Observation,
+) (adapter.ObservationID, error) {
+	if string(observation.Value) == `"unlocked"` {
+		s.mu.Lock()
+		front := s.bindings["front"].Entities[0].EntityID
+		deck := s.bindings["deck"].Entities[0].EntityID
+		s.mu.Unlock()
+		switch observation.EntityID {
+		case front:
+			close(s.blocked)
+			select {
+			case <-s.release:
+			case <-ctx.Done():
+				if s.canceled != nil {
+					close(s.canceled)
+					<-s.release
+				}
+				return "", ctx.Err()
+			}
+		case deck:
+			id, err := s.recordingSession.PublishObservation(ctx, observation)
+			if err == nil {
+				close(s.deck)
+			}
+			return id, err
+		}
+	}
+	return s.recordingSession.PublishObservation(ctx, observation)
+}
+
+func TestPushPublicationOnOneLockDoesNotBlockAnother(t *testing.T) {
+	t.Parallel()
+	session := &blockingPushSession{recordingSession: newRecordingSession(), blocked: make(chan struct{}),
+		release: make(chan struct{}), deck: make(chan struct{}), canceled: make(chan struct{})}
+	transport := syntheticTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "ps.pndsn.com" {
+			if r.URL.Query().Get("tt") == "0" {
+				return response(
+					200,
+					`{"t":{"t":"1","r":1},"m":[{"c":"alpha","d":{"status":"unlocked","dateTime":"2020-01-02T00:00:00Z"}},{"c":"beta","d":{"status":"unlocked","dateTime":"2020-01-02T00:00:00Z"}}]}`,
+				), nil
+			}
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		}
+		if r.URL.Path == inventoryPath {
+			return response(200, strings.ReplaceAll(syntheticInventory("Front"), `"user"`, `"superuser"`)), nil
+		}
+		if strings.HasSuffix(r.URL.Path, "/status") {
+			return response(200, `{"status":"locked","doorState":"closed","dateTime":"2020-01-01T00:00:00Z"}`), nil
+		}
+		body := syntheticDetail("Front", onlineBridge)
+		channel := "alpha"
+		if strings.Contains(r.URL.Path, string(testOtherID)) {
+			body = strings.ReplaceAll(body, string(testLockID), string(testOtherID))
+			channel = "beta"
+		}
+		return response(200, strings.TrimSuffix(body, "}")+`,"pubsubChannel":"`+channel+`"}`), nil
+	})
+	config := testConfig()
+	config.Bindings = append(config.Bindings, BindingConfig{BindingKey: "deck", LockID: string(testOtherID)})
+	a, err := New(session, config, testCredentials(), transport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.client.session = authenticatedClient(t, nil).session
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+	var releaseOnce sync.Once
+	finished := false
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(session.release) })
+		cancel()
+		if !finished {
+			<-done
+		}
+	})
+	select {
+	case <-session.blocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first lock's push publication did not start")
+	}
+	select {
+	case <-session.deck:
+	case <-time.After(time.Second):
+		t.Fatal("second lock's push publication blocked behind first lock")
+	}
+	cancel()
+	<-session.canceled
+	select {
+	case <-done:
+		finished = true
+		t.Fatal("Run returned before its push application joined")
+	default:
+	}
+	releaseOnce.Do(func() { close(session.release) })
+	err = <-done
+	if !errors.Is(err, context.Canceled) {
+		finished = true
+		t.Fatalf("Run returned %v after cancellation", err)
+	}
+	finished = true
+}
+
+//nolint:gocognit // Synthetic peer includes both barriers and cancellation.
+func TestScheduledReadOnOneLockDoesNotBlockAnotherLocksPush(
+	t *testing.T,
+) {
+	t.Parallel()
+	session := &blockingPushSession{recordingSession: newRecordingSession(), blocked: make(chan struct{}),
+		release: make(chan struct{}), deck: make(chan struct{})}
+	statusBlocked := make(chan struct{})
+	var frontReads atomic.Int32
+	transport := syntheticTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "ps.pndsn.com" {
+			if r.URL.Query().Get("tt") == "0" {
+				select {
+				case <-statusBlocked:
+				case <-r.Context().Done():
+					return nil, r.Context().Err()
+				}
+				return response(
+					200,
+					`{"t":{"t":"1","r":1},"m":[{"c":"beta","d":{"status":"unlocked","dateTime":"2020-01-02T00:00:00Z"}}]}`,
+				), nil
+			}
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		}
+		if r.URL.Path == inventoryPath {
+			return response(200, strings.ReplaceAll(syntheticInventory("Front"), `"user"`, `"superuser"`)), nil
+		}
+		if strings.HasSuffix(r.URL.Path, "/status") {
+			if strings.Contains(r.URL.Path, string(testLockID)) && frontReads.Add(1) == 2 {
+				close(statusBlocked)
+				select {
+				case <-session.release:
+				case <-r.Context().Done():
+					return nil, r.Context().Err()
+				}
+			}
+			return response(200, `{"status":"locked","doorState":"closed","dateTime":"2020-01-01T00:00:00Z"}`), nil
+		}
+		body, channel := syntheticDetail("Front", onlineBridge), "alpha"
+		if strings.Contains(r.URL.Path, string(testOtherID)) {
+			body = strings.ReplaceAll(body, string(testLockID), string(testOtherID))
+			channel = "beta"
+		}
+		return response(200, strings.TrimSuffix(body, "}")+`,"pubsubChannel":"`+channel+`"}`), nil
+	})
+	config := testConfig()
+	config.Bindings = append(config.Bindings, BindingConfig{BindingKey: "deck", LockID: string(testOtherID)})
+	a, err := New(session, config, testCredentials(), transport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.config.PollInterval = 20 * time.Millisecond
+	a.client.session = authenticatedClient(t, nil).session
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+	t.Cleanup(func() { close(session.release); cancel(); <-done })
+	select {
+	case <-statusBlocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduled status request did not start")
+	}
+	select {
+	case <-session.deck:
+	case <-time.After(time.Second):
+		t.Fatal("second lock's push blocked behind first lock's status request")
 	}
 }
