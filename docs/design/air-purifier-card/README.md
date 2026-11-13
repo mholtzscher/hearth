@@ -28,6 +28,7 @@ hash, for example `prototype.html#preset=offline&style=menu&width=phone`.
 
 - **Status line:** each card reserves one shared line, and the message names its control. DESIGN.md will allow this for cards with several controls.
 - **VeSync rollback note:** deferred. Cards follow State. Explaining a poll that reverts an accepted change needs cards to read the stored Command result, which is out of scope for now.
+- **Mode background:** matches the card's `--gray-1`; keep the thin border and violet selected segment. Approved after screenshot review.
 
 The prototype now opens with these defaults.
 

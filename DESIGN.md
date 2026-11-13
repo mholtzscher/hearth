@@ -217,7 +217,7 @@ for sensitive groups take `--warn`; Unhealthy and worse take `--error`. Good's
 words stay `--gray-9`; warn and error words take their tone. The category is a
 reading, never a Status entry, and dims with an unavailable or disabled PM2.5.
 Filter life at or below 10 % adds **Replace the filter soon** in `--warn`.
-Mode is a segmented control: a 1px `--gray-4` frame on `--gray-0` with 2px
+Mode is a segmented control: a 1px `--gray-4` frame on the card's `--gray-1` with 2px
 padding and 38px segments, the shown choice in `--violet-soft` with a 1px violet
 inset and `--violet-text`. Fan level is a stepper: 44px outline minus and plus
 buttons around the 20px level and one 14 × 6px pip per level, violet up to the
