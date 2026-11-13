@@ -228,8 +228,8 @@ The tile layout is a ToggleTile with the mode word after On at the 20px
 compact scale and a line naming PM2.5 and its category.
 
 Grids containing only ToggleTiles and tile-layout AirPurifiers, or only Metric
-and State cards, use a 160px minimum, including on phones. Requested columns remain a ceiling. Other grids
-keep their 248px minimum and single-column phone layout.
+and State cards, use a 160px minimum, including on phones. Requested columns
+remain a ceiling. Other grids keep their 248px minimum and single-column phone layout.
 Metering variants span the full grid row on phones, so the history range and
 additional reading stay readable instead of wrapping into tall, narrow tiles.
 Their 16px padding and 8px frame gaps keep the card compact; a 21px status line

@@ -336,8 +336,9 @@ Command never reads as a Command result.
 
 Grid accepts 1–4 columns as a ceiling. Grids containing only ToggleTiles and
 tile-layout AirPurifiers use a 160px minimum and can retain two columns on
-phones; other grids keep the 248px minimum and single-column phone layout. Metering ToggleTiles span the full
-row on phones, with tighter spacing and the measurement opposite the power State.
+phones; other grids keep the 248px minimum and single-column phone layout.
+Metering ToggleTiles span the full row on phones, with tighter spacing and the
+measurement opposite the power State.
 Each metering card uses its content height rather than stretching to a neighbor
 with an additional reading. Narrow ordinary ToggleTiles use the compact
 reading scale and omit only the visual observation-label prefix; their time's
@@ -379,7 +380,8 @@ control's pending words, or its failure prefixed by the control's name, such as
 **Fan level: Change rejected. Try again.** A
 failure returns the control to observed State and names the reason under it
 until the next request. After a timeout or a lost connection, the message says
-the change may still apply. A changed reading glows, whatever caused the change.
+the change may still apply. A changed reading glows, whatever caused the change,
+except AirPurifier's power and settings readings, as described above.
 
 Moving the brightness slider while a light is off sends only `brightness.set`.
 Zigbee2MQTT and Z-Wave lights normally turn on as a result; a device that

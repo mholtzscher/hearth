@@ -35,8 +35,9 @@ The prototype now opens with these defaults.
 
 These captures show the production React dashboard and Core on November 13,
 2026, from `feat/views-air-purifier-card`. The initial desktop capture is from
-`05bd3df`; the other captures and video are from `c042469`. The later editor
-typing and comment cleanup does not change the demonstrated behavior.
+pre-rebase `05bd3df` (now `8feef17`); the other captures and video are from
+pre-rebase `c042469` (now `00a3e41`). Rebase preserved the purifier behavior;
+the later editor typing and comment cleanup does not change the demonstration.
 The worktree-local simulator's
 `simulated-air-purifier` Device supplied all seven Entities. A dashboard created
 over `POST /v1/dashboards` held an AirPurifier card beside a PM2.5 TimeSeries,
@@ -55,8 +56,7 @@ The initial run produced four `satisfied` Commands (`sleep`, `"3"`, `false`,
 then `true` from the card's switch). The recorded run produced five more,
 one per press, and Core's State matched every requested value afterward. Its
 browser network capture contains exactly five Command submissions, all satisfied.
-Binding
-filter life as PM2.5 was rejected with `400`. The page had no horizontal
+Binding filter life as PM2.5 was rejected with `400`. The page had no horizontal
 overflow at either width and no console errors. The browser was driven through
 the browse tool rather than agent-browser, which isn't installed here. The video
 was played through successfully and its frames inspected. No before capture is
