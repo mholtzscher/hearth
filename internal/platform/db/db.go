@@ -67,6 +67,11 @@ func NewMigrationProvider(database *sql.DB) (*goose.Provider, error) {
 		),
 		goose.WithGoMigrations(
 			goose.NewGoMigration(
+				particulateMatterUnitMigrationVersion,
+				&goose.GoFunc{RunTx: migrateParticulateMatterUnit},
+				&goose.GoFunc{RunTx: refuseParticulateMatterUnitDown},
+			),
+			goose.NewGoMigration(
 				forecastNeutralMigrationVersion,
 				&goose.GoFunc{RunTx: migrateForecastNeutral},
 				&goose.GoFunc{RunTx: refuseForecastNeutralDown},

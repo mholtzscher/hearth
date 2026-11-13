@@ -353,7 +353,8 @@ func TestScriptedExampleDevicesStayHealthy(t *testing.T) {
 		t.Fatalf("expected five isolated Adapters starting with sim-healthy: %+v", value.Adapters)
 	}
 	healthyKeys := map[string]bool{
-		"simulated-light": true, "simulated-button": true, "simulated-forecast": true,
+		"simulated-air-purifier": true,
+		"simulated-light":        true, "simulated-button": true, "simulated-forecast": true,
 		"simulated-climate": true, "simulated-plug": true,
 		"living-room-sensor": true, "kitchen-sensor": true, "office-sensor": true,
 		"bedroom-sensor": true, "nursery-sensor": true, "garage-sensor": true,
@@ -382,6 +383,90 @@ func TestScriptedExampleDevicesStayHealthy(t *testing.T) {
 	}
 	for key := range healthyKeys {
 		t.Errorf("scripted example missing healthy Device %s", key)
+	}
+}
+
+//nolint:gocognit // Verify every role, support shape, and command policy in one fixture.
+func TestScriptedAirPurifierMatchesLevoitRoles(t *testing.T) {
+	t.Parallel()
+	config := loadValidationSimulatorExample(t)
+	var purifier *scripted.DeviceSpec
+	for _, device := range config.Adapters[0].Devices {
+		if device.BindingKey == "simulated-air-purifier" {
+			purifier = &device
+			break
+		}
+	}
+	if purifier == nil || purifier.Kind != "air-purifier" || len(purifier.Entities) != 7 {
+		t.Fatalf("air purifier = %+v, want air-purifier with seven Entities", purifier)
+	}
+	wants := map[string]struct {
+		name, typeID string
+		state        map[string]any
+		initial      any
+		writable     bool
+	}{
+		"power":      {"Power", "hearth.power/v1", map[string]any{}, true, true},
+		"display":    {"Display", "hearth.power/v1", map[string]any{}, true, true},
+		"child-lock": {"Child lock", "hearth.power/v1", map[string]any{}, false, true},
+		"mode": {
+			"Mode",
+			"hearth.enumsetting/v1",
+			map[string]any{"choices": []any{"manual", "auto", "sleep"}},
+			"auto",
+			true,
+		},
+		"fan-level": {
+			"Manual fan level",
+			"hearth.enumsetting/v1",
+			map[string]any{"choices": []any{"1", "2", "3", "4"}},
+			"2",
+			true,
+		},
+		"pm25": {
+			"PM2.5",
+			"hearth.numericsensor/v1",
+			map[string]any{"minimum": 0, "maximum": 1000, "unit": "µg/m³", "quantity_kind": "particulate_matter"},
+			6,
+			false,
+		},
+		"filter-life": {
+			"Filter life",
+			"hearth.numericsensor/v1",
+			map[string]any{"minimum": 0, "maximum": 100, "unit": "%"},
+			82,
+			false,
+		},
+	}
+	for _, entity := range purifier.Entities {
+		want, ok := wants[entity.Key]
+		if !ok {
+			t.Errorf("unexpected or duplicate Entity %s", entity.Key)
+			continue
+		}
+		operations := map[string]any{}
+		if want.writable {
+			operations["set"] = map[string]any{}
+			command, found := entity.Commands["set"]
+			if !found || command.Behavior != scripted.CommandBehaviorAcceptPublish || command.ApplyParameters == nil ||
+				!*command.ApplyParameters {
+				t.Errorf("%s set behavior = %+v", entity.Key, command)
+			}
+		} else if len(entity.Commands) != 0 {
+			t.Errorf("%s has unexpected Commands: %+v", entity.Key, entity.Commands)
+		}
+		if entity.Name != want.name || entity.Type != want.typeID || !reflect.DeepEqual(entity.Initial, want.initial) ||
+			!reflect.DeepEqual(entity.Support, map[string]any{"state": want.state, "operations": operations}) {
+			t.Errorf("%s Entity = %+v, want %+v", entity.Key, entity, want)
+		}
+		if entity.Key == "pm25" && (entity.Outputs == nil || time.Duration(entity.Outputs.Interval) != 20*time.Second ||
+			!reflect.DeepEqual(entity.Outputs.Values, []any{6, 7, 12, 38, 9})) {
+			t.Errorf("PM2.5 outputs = %+v", entity.Outputs)
+		}
+		delete(wants, entity.Key)
+	}
+	if len(wants) != 0 {
+		t.Errorf("missing purifier Entities: %v", wants)
 	}
 }
 

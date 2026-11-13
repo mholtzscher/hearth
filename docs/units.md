@@ -152,6 +152,17 @@ against a separate `units=canonical` read of the same Entity. The frontend does
 not convert units, and the cards show no feels-like or dew-point temperatures.
 See [weather cards](dashboards.md).
 
+## PM2.5 unit migration
+
+Migration 33 rewrites numeric sensors registered under the `pm25` Entity key
+with unit `ug/m3` and no quantity kind to `µg/m³` and `particulate_matter`.
+This allows re-registration despite unit immutability; other keys, including
+`voc`, are untouched. Stored Observation and rollup values do not change: only
+the displayed unit label changes. Down refuses because it cannot distinguish
+migrated rows from sensors originally registered with the canonical unit. Back
+up before upgrading and upgrade Core before the Levoit Adapter. Custom scripted
+`pm25` descriptors using the old spelling must also be updated after migration.
+
 ## Deployment and rollback
 
 This is a breaking default-read contract change. Canonical and household reads

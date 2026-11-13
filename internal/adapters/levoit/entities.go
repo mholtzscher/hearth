@@ -69,18 +69,19 @@ func (a *Adapter) entities(d device) ([]entityPlan, error) {
 	}
 	plans = append(plans, mode, level)
 	for _, definition := range []struct {
-		key, name, unit string
-		maximum         float64
-		read            func(status) *float64
+		key, name, unit, quantityKind string
+		maximum                       float64
+		read                          func(status) *float64
 	}{
-		{"pm25", "PM2.5", "ug/m3", maximumPM25, func(s status) *float64 { return s.PM25 }},
-		{"filter-life", "Filter life", "%", maximumPercent, func(s status) *float64 { return s.FilterLife }},
+		{"pm25", "PM2.5", "µg/m³", "particulate_matter", maximumPM25, func(s status) *float64 { return s.PM25 }},
+		{"filter-life", "Filter life", "%", "", maximumPercent, func(s status) *float64 { return s.FilterLife }},
 	} {
 		plan, planErr := sensorEntity(
 			d,
 			definition.key,
 			definition.name,
 			definition.unit,
+			definition.quantityKind,
 			definition.maximum,
 			definition.read,
 		)
@@ -187,9 +188,12 @@ func predictLevel(value string) (status, error) {
 	return status{ManualLevel: &level, Mode: &mode, Power: &on}, nil
 }
 
-func sensorEntity(d device, key, name, unit string, maximum float64,
+func sensorEntity(d device, key, name, unit, quantityKind string, maximum float64,
 	read func(status) *float64) (entityPlan, error) {
 	support := numericsensorv1.Support{State: numericsensorv1.StateSupport{Minimum: 0, Maximum: maximum, Unit: unit}}
+	if quantityKind != "" {
+		support.State.QuantityKind = &quantityKind
+	}
 	descriptor, err := numericsensorv1.NewEntityDescriptor(metadata(d, key, name), support)
 	if err != nil {
 		return entityPlan{}, err
