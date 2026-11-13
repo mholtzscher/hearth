@@ -35,11 +35,8 @@ The prototype now opens with these defaults.
 ## Verification
 
 These captures show the production React dashboard and Core on November 13,
-2026, from `feat/views-air-purifier-card`. The initial desktop capture is from
-pre-rebase `05bd3df` (now `8feef17`); the other captures and video are from
-pre-rebase `c042469` (now `00a3e41`). Rebase preserved the purifier behavior;
-the later editor typing and comment cleanup does not change the demonstration.
-The worktree-local simulator's
+2026, from `feat/views-air-purifier-card` at `01e042a`, including the approved
+card-matched Mode background. The worktree-local simulator's
 `simulated-air-purifier` Device supplied all seven Entities. A dashboard created
 over `POST /v1/dashboards` held an AirPurifier card beside a PM2.5 TimeSeries,
 and a Grid with an AirPurifier tile and the simulated light's ToggleTile. No
@@ -51,12 +48,12 @@ Levoit account, household Devices, or model turns were used.
 | [After controls](desktop-after-controls.png) | 1440×1000; Off, Sleep selected, **Level 3 kept for Manual**, Display off, and Child lock on |
 | [Phone card](phone-card.png) | 390×844; the card in one column |
 | [Phone tiles](phone-tiles.png) | 390×844; the tile and ToggleTile keep two compact columns |
-| [Control sequence](controls.mp4) | 17 seconds at 1440×1000; Display off, Child lock on, Sleep, fan +, and tile power off |
+| [Control sequence](controls.mp4) | 19 seconds at 1440×1000; Sleep, fan +, Display off, Child lock on, and tile power off |
 
-The initial run produced four `satisfied` Commands (`sleep`, `"3"`, `false`,
-then `true` from the card's switch). The recorded run produced five more,
-one per press, and Core's State matched every requested value afterward. Its
-browser network capture contains exactly five Command submissions, all satisfied.
+The recorded run produced five `satisfied` Commands, one per press, and Core's
+State matched every requested value afterward. Earlier verification also covered
+the card's power switch and captured exactly five Command submissions in the
+browser network log.
 Binding filter life as PM2.5 was rejected with `400`. The page had no horizontal
 overflow at either width and no console errors. The browser was driven through
 the browse tool rather than agent-browser, which isn't installed here. The video
