@@ -58,6 +58,33 @@
         ]
       }
     },
+    "hearth.colorrgb/v1": {
+      "/active": {
+        "value_type": "boolean",
+        "presence": "always"
+      },
+      "/blue": {
+        "value_type": "integer",
+        "presence": "always",
+        "quantity": {
+          "unit": "1"
+        }
+      },
+      "/green": {
+        "value_type": "integer",
+        "presence": "always",
+        "quantity": {
+          "unit": "1"
+        }
+      },
+      "/red": {
+        "value_type": "integer",
+        "presence": "always",
+        "quantity": {
+          "unit": "1"
+        }
+      }
+    },
     "hearth.colortemp/v1": {
       "/active": {
         "value_type": "boolean",
@@ -239,6 +266,12 @@
           "unit": "mCel",
           "quantity_kind": "temperature"
         }
+      }
+    },
+    "hearth.textsensor/v1": {
+      "": {
+        "value_type": "string",
+        "presence": "always"
       }
     }
   }

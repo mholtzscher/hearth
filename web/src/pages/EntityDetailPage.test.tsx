@@ -106,3 +106,56 @@ it("summarizes a forecast snapshot instead of printing its State inline", async 
   expect(screen.getByText("Forecast snapshots are listed below; no chart.")).toBeTruthy();
   expect(screen.queryByText(/"periods"/)).toBeNull();
 });
+
+it("offers RGB presets and an example without sending a command", async () => {
+  const entity = {
+    id: "ent_rgb", type: "hearth.colorrgb/v1", name: "Lamp color",
+    device_id: "dev_lamp", adapter_id: "esphome", enabled: true,
+    support: { state: {}, operations: { set: {} } },
+    availability: { status: "available", source: "adapter", since: "2026-11-04T12:00:00Z" },
+    state: { value: { active: true, red: 12, green: 128, blue: 255 }, observation_id: "obs_rgb", observed_at: "2026-11-04T12:00:00Z" },
+  };
+  const fetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const path = new URL(String(input), "http://localhost").pathname;
+    return new Response(JSON.stringify(path === "/v1/entities/ent_rgb" ? entity : { items: [], next_cursor: null }));
+  });
+  vi.stubGlobal("fetch", fetch);
+  render(<MemoryRouter initialEntries={["/entities/ent_rgb"]}>
+    <Routes><Route path="/entities/:entityId" element={<EntityDetailPage />} /></Routes>
+  </MemoryRouter>);
+  await screen.findByText("RGB 12, 128, 255, active");
+  const parameters = screen.getByLabelText<HTMLTextAreaElement>("parameters (JSON)");
+  await waitFor(() => expect(parameters.value).toBe('{"red":255,"green":0,"blue":0}'));
+  for (const [label, value] of [
+    ["red", '{"red":255,"green":0,"blue":0}'],
+    ["green", '{"red":0,"green":255,"blue":0}'],
+    ["blue", '{"red":0,"green":0,"blue":255}'],
+    ["white", '{"red":255,"green":255,"blue":255}'],
+  ]) {
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(parameters.value).toBe(value);
+  }
+  expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+});
+
+it.each(["Good", ""])('shows read-only text State %j without JSON quotes', async (value) => {
+  const entity = {
+    id: "ent_voc", type: "hearth.textsensor/v1", name: "VOC Quality",
+    device_id: "dev_sensor", adapter_id: "esphome", enabled: true,
+    support: { state: {}, operations: {} },
+    availability: { status: "available", source: "adapter", since: "2026-11-04T12:00:00Z" },
+    state: { value, observation_id: "obs_voc", observed_at: "2026-11-04T12:00:00Z" },
+  };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = new URL(String(input), "http://localhost").pathname;
+    return new Response(JSON.stringify(path === "/v1/entities/ent_voc" ? entity : { items: [], next_cursor: null }));
+  }));
+  render(<MemoryRouter initialEntries={["/entities/ent_voc"]}>
+    <Routes><Route path="/entities/:entityId" element={<EntityDetailPage />} /></Routes>
+  </MemoryRouter>);
+  await screen.findByRole("heading", { name: "VOC Quality" });
+  const stateRow = screen.getByRole("cell", { name: "State" }).closest("tr")!;
+  expect(stateRow.querySelectorAll("td")[1].textContent).toBe(`${value} obs=obs_voc at 2026-11-04T12:00:00Z`);
+  expect(screen.getByText("Read-only entity")).toBeTruthy();
+  expect(screen.queryByLabelText("parameters (JSON)")).toBeNull();
+});

@@ -18,11 +18,13 @@ func TestBuiltinStateFieldInventory(t *testing.T) {
 		devices.EntityTypePressureV1: {"": "hPa"}, devices.EntityTypeSpeedV1: {"": "m/s"},
 		devices.EntityTypeNumericsensorV1: {"": "support"}, devices.EntityTypeBrightnessV1: {"": "%"},
 		devices.EntityTypeColorhsV1:        {"/active": "boolean", "/hue": "deg", "/saturation": "%"},
+		devices.EntityTypeColorrgbV1:       {"/active": "boolean", "/red": "1", "/green": "1", "/blue": "1"},
 		devices.EntityTypeColortempV1:      {"/active": "boolean", "/value": "/MK"},
 		devices.EntityTypeColorxyV1:        {"/active": "boolean", "/x": "10*-4", "/y": "10*-4"},
 		devices.EntityTypeNumericsettingV1: {"/mode": "string", "/choice": "string", "/value": "support"},
 		devices.EntityTypePowerV1:          {"": "boolean"}, devices.EntityTypeBinarysensorV1: {"": "boolean"},
 		devices.EntityTypeColormodeV1: {"": "string"}, devices.EntityTypeEnumsettingV1: {"": "string"},
+		devices.EntityTypeTextsensorV1: {"": "string"},
 	}
 	for id, expected := range inventory {
 		fields := devices.BuiltinStateFields(id)
@@ -46,6 +48,7 @@ func TestBuiltinStateFieldInventory(t *testing.T) {
 				expectedType := devices.NumericNumber
 				if id == devices.EntityTypeTemperatureV1 || id == devices.EntityTypeBrightnessV1 ||
 					id == devices.EntityTypeColorhsV1 ||
+					id == devices.EntityTypeColorrgbV1 ||
 					id == devices.EntityTypeColortempV1 ||
 					id == devices.EntityTypeColorxyV1 {
 					expectedType = devices.NumericInteger

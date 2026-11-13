@@ -63,11 +63,17 @@ func ParseEntityRef(text string) (EntityRef, error) {
 	platform, name, found := strings.Cut(text, "/")
 	ref := EntityRef{Type: nativeapi.EntityType(platform), Name: name}
 	switch ref.Type {
-	case nativeapi.EntitySensor, nativeapi.EntityBinarySensor, nativeapi.EntitySwitch, nativeapi.EntityLight:
+	case nativeapi.EntitySensor,
+		nativeapi.EntityTextSensor,
+		nativeapi.EntityBinarySensor,
+		nativeapi.EntitySwitch,
+		nativeapi.EntityLight:
 	case nativeapi.EntityOther:
 		fallthrough
 	default:
-		return EntityRef{}, errors.New("entity reference type must be sensor, binary_sensor, switch, or light")
+		return EntityRef{}, errors.New(
+			"entity reference type must be sensor, text_sensor, binary_sensor, switch, or light",
+		)
 	}
 	if !found || name == "" || utf8.RuneCountInString(name) > maximumNameRunes {
 		return EntityRef{}, errors.New("entity reference must be <type>/<name> with a name of 1 to 128 characters")

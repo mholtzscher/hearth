@@ -1,0 +1,20 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.colorrgb/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "operations": {
+    "set": {
+      "parameters_schema": "set-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "satisfied_when": [
+        {"op": "is_true", "left": {"root": "state", "path": "/active"}},
+        {"op": "near", "left": {"root": "parameters", "path": "/red"}, "right": {"root": "state", "path": "/red"}, "tolerance": 1},
+        {"op": "near", "left": {"root": "parameters", "path": "/green"}, "right": {"root": "state", "path": "/green"}, "tolerance": 1},
+        {"op": "near", "left": {"root": "parameters", "path": "/blue"}, "right": {"root": "state", "path": "/blue"}, "tolerance": 1}
+      ]
+    }
+  },
+  "examples": "examples.json"
+}

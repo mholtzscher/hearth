@@ -33,6 +33,7 @@ const (
 	idLightState               uint16 = 24
 	idSensorState              uint16 = 25
 	idSwitchState              uint16 = 26
+	idTextSensorState          uint16 = 27
 	idLightCommandRequest      uint16 = 32
 	idSwitchCommandRequest     uint16 = 33
 )
@@ -165,6 +166,8 @@ func decodeEntity(messageID uint16, data []byte) (EntityInfo, error) {
 		info.Type = EntitySensor
 		info.Unit = typed.GetUnitOfMeasurement()
 		info.AccuracyDecimals = typed.GetAccuracyDecimals()
+	case *apipb.ListEntitiesTextSensorResponse:
+		info.Type = EntityTextSensor
 	case *apipb.ListEntitiesBinarySensorResponse:
 		info.Type = EntityBinarySensor
 	case *apipb.ListEntitiesSwitchResponse:
@@ -175,6 +178,7 @@ func decodeEntity(messageID uint16, data []byte) (EntityInfo, error) {
 		for _, mode := range typed.GetSupportedColorModes() {
 			info.ColorModes = append(info.ColorModes, uint32(mode)) //nolint:gosec // Color modes are small positives.
 		}
+		info.Effects = typed.GetEffects()
 	}
 	return info, nil
 }
@@ -182,6 +186,15 @@ func decodeEntity(messageID uint16, data []byte) (EntityInfo, error) {
 // decodeState decodes a mapped platform's state push. ok is false for every other message.
 func decodeState(messageID uint16, data []byte) (StateUpdate, bool, error) {
 	switch messageID {
+	case idTextSensorState:
+		var message apipb.TextSensorStateResponse
+		if err := decodeInto(data, &message); err != nil {
+			return StateUpdate{}, false, err
+		}
+		return StateUpdate{
+			Type: EntityTextSensor, Key: message.GetKey(), DeviceID: message.GetDeviceId(),
+			Missing: message.GetMissingState(), Text: message.GetState(),
+		}, true, nil
 	case idSensorState:
 		var message apipb.SensorStateResponse
 		if err := decodeInto(data, &message); err != nil {
@@ -214,9 +227,18 @@ func decodeState(messageID uint16, data []byte) (StateUpdate, bool, error) {
 		if err := decodeInto(data, &message); err != nil {
 			return StateUpdate{}, false, err
 		}
+		colorMode := int32(message.GetColorMode())
+		if colorMode < 0 {
+			return StateUpdate{}, false, errors.New("light color mode must be nonnegative")
+		}
 		return StateUpdate{
 			Type: EntityLight, Key: message.GetKey(), DeviceID: message.GetDeviceId(),
 			Bool: message.GetState(), Brightness: shortestFloat(message.GetBrightness()),
+			ColorMode: uint32(colorMode),
+			RGB: RGB{Red: shortestFloat(message.GetRed()), Green: shortestFloat(message.GetGreen()),
+				Blue: shortestFloat(message.GetBlue())},
+			ColorBrightness: shortestFloat(message.GetColorBrightness()),
+			Effect:          message.GetEffect(),
 		}, true, nil
 	default:
 		return StateUpdate{}, false, nil
@@ -229,10 +251,30 @@ func commandMessage(command Command) (proto.Message, error) {
 	case SwitchCommand:
 		return &apipb.SwitchCommandRequest{Key: typed.Key, DeviceId: typed.DeviceID, State: typed.On}, nil
 	case LightCommand:
-		request := &apipb.LightCommandRequest{Key: typed.Key, DeviceId: typed.DeviceID, HasState: true, State: typed.On}
+		request := &apipb.LightCommandRequest{Key: typed.Key, DeviceId: typed.DeviceID}
+		if typed.On != nil {
+			request.HasState = true
+			request.State = *typed.On
+		}
 		if typed.Brightness != nil {
 			request.HasBrightness = true
 			request.Brightness = float32(*typed.Brightness)
+		}
+		if typed.RGB != nil {
+			request.HasRgb = true
+			request.Red = float32(typed.RGB.Red)
+			request.Green = float32(typed.RGB.Green)
+			request.Blue = float32(typed.RGB.Blue)
+			request.HasColorMode = true
+			request.ColorMode = apipb.ColorMode_COLOR_MODE_RGB
+		}
+		if typed.Effect != nil {
+			request.HasEffect = true
+			request.Effect = *typed.Effect
+		}
+		if typed.ColorBrightness != nil {
+			request.HasColorBrightness = true
+			request.ColorBrightness = float32(*typed.ColorBrightness)
 		}
 		return request, nil
 	default:

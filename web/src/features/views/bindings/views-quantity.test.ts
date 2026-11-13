@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { quantityAdapter as readingAdapter } from "./quantity-adapter";
-import { isQuantityField, parseStateFields, stateFields, quantityTypes } from "./state-fields";
+import { isQuantityField, parseStateFields, stateFields, quantityTypes, textTypes } from "./state-fields";
 import { ReadCache } from "../data/cache";
 import { entityStateRequest } from "./entity";
-import { deviceRequest, lightReading, parseDevice } from "./device";
+import { deviceRequest, lightReading, parseDevice, swatchColor } from "./device";
 import { historySeriesRequest } from "./history";
 
 // Quantity conversion is independent of the loader's chosen resolution.
@@ -38,18 +38,20 @@ describe("State field catalog", () => {
   });
   it("derives numeric eligibility without enabling nonnumeric cards", () => {
     expect(quantityTypes).toEqual([
-      "hearth.brightness/v1", "hearth.colorhs/v1", "hearth.colortemp/v1", "hearth.colorxy/v1",
+      "hearth.brightness/v1", "hearth.colorhs/v1", "hearth.colorrgb/v1", "hearth.colortemp/v1", "hearth.colorxy/v1",
       "hearth.numericsensor/v1", "hearth.numericsetting/v1", "hearth.pressure/v1",
       "hearth.relativehumidity/v1", "hearth.speed/v1", "hearth.temperature/v1",
     ]);
+    expect(textTypes).toContain("hearth.textsensor/v1");
+    expect(textTypes).toContain("hearth.colorrgb/v1");
   });
   it("declares units for fixed numeric fields", () => {
     const fields = Object.values(stateFields).flatMap(fields => Object.values(fields));
-    expect(fields).toHaveLength(22);
+    expect(fields).toHaveLength(27);
     expect(stateFields["hearth.lock/v1"][""]).toMatchObject({
       value_type: "string", enum: ["locked", "unlocked", "locking", "unlocking", "jammed", "unknown"],
     });
-    expect(fields.filter(isQuantityField)).toHaveLength(12);
+    expect(fields.filter(isQuantityField)).toHaveLength(15);
     for (const field of fields) {
       if (!isQuantityField(field) || typeof field.quantity.unit !== "string") continue;
       expect(field.quantity.unit.length).toBeGreaterThan(0);
@@ -126,6 +128,12 @@ describe("reading adapter", () => {
     const light = lightReading(parseDevice({ id: "dev", name: "Light", entities: [power, brightness, color] }, "dev").entities)!;
     expect(light.swatch).toBe("rgb(255 0 0)");
     expect(light.colorPreviewUnavailable).toBe(false);
+  });
+  it("converts RGB channels directly to swatch colors", () => {
+    const color = entityOf("hearth.colorrgb/v1", { active: true, red: 12, green: 128, blue: 255 });
+    expect(swatchColor(color)).toBe("rgb(12 128 255)");
+    expect(swatchColor({ ...color, state: { ...color.state, value: { active: true, red: 0, green: 0, blue: 0 } } })).toBe("rgb(0 0 0)");
+    expect(swatchColor({ ...color, state: { ...color.state, value: { active: true, red: 12, green: 128 } } })).toBeUndefined();
   });
   it("rejects a malformed sibling field before replacing the shared cached response", async () => {
     vi.useFakeTimers();

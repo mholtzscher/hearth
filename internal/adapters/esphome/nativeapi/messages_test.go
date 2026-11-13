@@ -30,6 +30,7 @@ func TestMessageIDsMatchSchema(t *testing.T) {
 		idLightState:               &apipb.LightStateResponse{},
 		idSensorState:              &apipb.SensorStateResponse{},
 		idSwitchState:              &apipb.SwitchStateResponse{},
+		idTextSensorState:          &apipb.TextSensorStateResponse{},
 		idLightCommandRequest:      &apipb.LightCommandRequest{},
 		idSwitchCommandRequest:     &apipb.SwitchCommandRequest{},
 	}
@@ -83,12 +84,18 @@ func TestDecodeEntityReadsMappedPlatformFields(t *testing.T) {
 			want:    EntityInfo{Type: EntitySwitch, UpstreamType: "switch", Key: 2, Name: "Relay", AssumedState: true},
 		},
 		{
+			message: &apipb.ListEntitiesTextSensorResponse{Key: 5, Name: "VOC Quality"},
+			want:    EntityInfo{Type: EntityTextSensor, UpstreamType: "text_sensor", Key: 5, Name: "VOC Quality"},
+		},
+		{
 			message: &apipb.ListEntitiesLightResponse{
 				Key: 3, Name: "RGB Light",
 				SupportedColorModes: []apipb.ColorMode{apipb.ColorMode_COLOR_MODE_RGB},
+				Effects:             []string{"None", "Slow Pulse", "Fast Pulse"},
 			},
 			want: EntityInfo{
 				Type: EntityLight, UpstreamType: "light", Key: 3, Name: "RGB Light", ColorModes: []uint32{35},
+				Effects: []string{"None", "Slow Pulse", "Fast Pulse"},
 			},
 		},
 		{

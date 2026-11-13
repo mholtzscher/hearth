@@ -31,8 +31,8 @@ func TestPlanIdenticalDevicesScopeExternalIDsWithoutChangingEntityKeys(t *testin
 		*first.Registration.Device.ExternalID == *second.Registration.Device.ExternalID {
 		t.Fatal("identical Devices share a Binding or Device external ID")
 	}
-	if len(first.Registration.Entities) != 18 || len(second.Registration.Entities) != 18 {
-		t.Fatal("both Apollo plans must contain eighteen Entities")
+	if len(first.Registration.Entities) != 21 || len(second.Registration.Entities) != 21 {
+		t.Fatal("both Apollo plans must contain twenty-one Entities")
 	}
 	for index, entity := range first.Registration.Entities {
 		other := second.Registration.Entities[index]
@@ -83,16 +83,31 @@ func TestPlanDeviceMapsOnlyPrimaryEntitiesByDefault(t *testing.T) {
 	cases := map[string][]string{
 		"apollo-temp1.json": {
 			"0/sensor/Temperature Probe", "0/sensor/Board Temperature", "0/sensor/Board Humidity",
-			"0/sensor/Food Probe", "0/light/RGB Light#power", "0/light/RGB Light#brightness",
+			"0/sensor/Food Probe", "0/light/RGB Light#power", "0/light/RGB Light#brightness", "0/light/RGB Light#color",
 			"0/switch/Accessory Power#power", "0/switch/Alarm Outside Temp Range#power",
 		},
 		"apollo-air1.json": {
-			"0/sensor/CO2", "0/sensor/DPS310 Pressure", "0/sensor/PM <1µm Weight concentration",
-			"0/sensor/PM <2.5µm Weight concentration", "0/sensor/PM <4µm Weight concentration",
-			"0/sensor/PM <10µm Weight concentration", "0/sensor/SEN55 Temperature", "0/sensor/SEN55 Humidity",
-			"0/sensor/SEN55 VOC", "0/sensor/SEN55 NOX", "0/sensor/Nitrogen Dioxide", "0/sensor/Carbon Monoxide",
-			"0/sensor/Hydrogen", "0/sensor/Ethanol", "0/sensor/Methane", "0/sensor/Ammonia",
-			"0/light/RGB Light#power", "0/light/RGB Light#brightness",
+			"0/sensor/CO2",
+			"0/sensor/DPS310 Pressure",
+			"0/sensor/PM <1µm Weight concentration",
+			"0/sensor/PM <2.5µm Weight concentration",
+			"0/sensor/PM <4µm Weight concentration",
+			"0/sensor/PM <10µm Weight concentration",
+			"0/sensor/SEN55 Temperature",
+			"0/sensor/SEN55 Humidity",
+			"0/sensor/SEN55 VOC",
+			"0/sensor/SEN55 NOX",
+			"0/sensor/Nitrogen Dioxide",
+			"0/sensor/Carbon Monoxide",
+			"0/sensor/Hydrogen",
+			"0/sensor/Ethanol",
+			"0/sensor/Methane",
+			"0/sensor/Ammonia",
+			"0/light/RGB Light#power",
+			"0/light/RGB Light#brightness",
+			"0/light/RGB Light#color",
+			"0/light/RGB Light#effect",
+			"0/text_sensor/VOC Quality",
 		},
 	}
 	for name, want := range cases {
@@ -123,7 +138,7 @@ func TestPlanDeviceMapsOnlyPrimaryEntitiesByDefault(t *testing.T) {
 					t.Errorf("skip without reason: %+v", skipped)
 				}
 			}
-			if len(plan.Skipped)+len(plan.Routes)-countLights(fixture) != len(fixture.Entities) {
+			if len(plan.Skipped)+len(plan.Routes)-extraLightRoles(fixture) != len(fixture.Entities) {
 				t.Errorf("skipped %d + routes %d do not account for %d entities",
 					len(plan.Skipped), len(plan.Routes), len(fixture.Entities))
 			}
@@ -131,11 +146,19 @@ func TestPlanDeviceMapsOnlyPrimaryEntitiesByDefault(t *testing.T) {
 	}
 }
 
-func countLights(fixture deviceFixture) int {
+func extraLightRoles(fixture deviceFixture) int {
 	count := 0
 	for _, entity := range fixture.Entities {
 		if entity.Type == nativeapi.EntityLight {
-			count++
+			if supportsBrightness(entity.ColorModes) {
+				count++
+			}
+			if supportsRGB(entity.ColorModes) {
+				count++
+			}
+			if len(entity.Effects) > 0 {
+				count++
+			}
 		}
 	}
 	return count
@@ -153,7 +176,6 @@ func TestPlanDeviceSkipReasons(t *testing.T) {
 		"sensor/PM 0.3 To 1 µm":          skipExposureDefault,
 		"switch/Prevent Sleep":           skipExposureDefault,
 		"other/Clean SEN55":              skipTypeUnsupported,
-		"other/VOC Quality":              skipTypeUnsupported,
 		"binary_sensor/Online":           skipExposureDefault,
 		"other/SEN55 Temperature Offset": skipTypeUnsupported,
 	}
@@ -168,21 +190,23 @@ func TestPlanDeviceAppliesOverrides(t *testing.T) {
 	t.Parallel()
 	fixture := loadFixture(t, "apollo-air1.json")
 	plan := mustPlan(t, fixture, Exposure{
-		Include: refs(t, "sensor/Uptime", "sensor/Not On This Device"),
+		Include: refs(t, "sensor/Uptime", "text_sensor/IP Address", "sensor/Not On This Device"),
 		Exclude: refs(t, "light/RGB Light"),
 	})
 	ids := externalIDs(plan)
 	if !slices.Contains(ids, fixtureMAC(t, fixture).String()+"/0/sensor/Uptime") {
 		t.Error("include did not add the diagnostic uptime sensor")
 	}
+	if !slices.Contains(ids, fixtureMAC(t, fixture).String()+"/0/text_sensor/IP Address") {
+		t.Error("include did not add the diagnostic text sensor")
+	}
 	for _, id := range ids {
-		if id == fixtureMAC(t, fixture).String()+"/0/light/RGB Light#power" ||
-			id == fixtureMAC(t, fixture).String()+"/0/light/RGB Light#brightness" {
+		if strings.HasPrefix(id, fixtureMAC(t, fixture).String()+"/0/light/RGB Light#") {
 			t.Errorf("exclude left %s", id)
 		}
 	}
 	defaults := externalIDs(mustPlan(t, fixture, Exposure{}))
-	if len(ids) != len(defaults)-2+1 {
+	if len(ids) != len(defaults)-4+2 {
 		t.Errorf("override plan has %d Entities; default has %d", len(ids), len(defaults))
 	}
 	if len(plan.UnmatchedOverrides) != 1 || plan.UnmatchedOverrides[0].Name != "Not On This Device" {

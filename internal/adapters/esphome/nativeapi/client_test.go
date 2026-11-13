@@ -180,10 +180,10 @@ func TestConnDiscoversEntitiesStreamsStatesAndSendsCommands(t *testing.T) {
 	}{
 		{nativeapi.SwitchCommand{Key: 11, On: true}, &apipb.SwitchCommandRequest{Key: 11, State: true}},
 		{
-			nativeapi.LightCommand{Key: 12, On: true, Brightness: &brightness},
+			nativeapi.LightCommand{Key: 12, On: new(true), Brightness: &brightness},
 			&apipb.LightCommandRequest{Key: 12, HasState: true, State: true, HasBrightness: true, Brightness: 0.5},
 		},
-		{nativeapi.LightCommand{Key: 12, On: false}, &apipb.LightCommandRequest{Key: 12, HasState: true}},
+		{nativeapi.LightCommand{Key: 12, On: new(false)}, &apipb.LightCommandRequest{Key: 12, HasState: true}},
 	}
 	for _, test := range commands {
 		if sendErr := conn.Send(ctx, test.command); sendErr != nil {

@@ -219,7 +219,8 @@
    "Name": "RGB Light",
    "ColorModes": [
     35
-   ]
+   ],
+   "Effects": ["None", "Slow Pulse", "Fast Pulse"]
   },
   {
    "Type": "other",
@@ -249,13 +250,13 @@
    "Name": "Clean SEN55"
   },
   {
-   "Type": "other",
+   "Type": "text_sensor",
    "UpstreamType": "text_sensor",
    "Key": 70,
    "Name": "VOC Quality"
   },
   {
-   "Type": "other",
+   "Type": "text_sensor",
    "UpstreamType": "text_sensor",
    "Key": 71,
    "Name": "IP Address",
@@ -321,7 +322,16 @@
    "Type": "light",
    "Key": 50,
    "Bool": true,
-   "Brightness": 0.5
+   "Brightness": 0.5,
+   "ColorMode": 35,
+   "ColorBrightness": 1,
+   "RGB": {"Red": 1, "Green": 0.5, "Blue": 0},
+   "Effect": "None"
+  },
+  {
+   "Type": "text_sensor",
+   "Key": 70,
+   "Text": "Improved"
   }
  ]
 }

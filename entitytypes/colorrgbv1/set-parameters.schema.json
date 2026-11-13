@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:colorrgb:v1:set-parameters",
+  "title": "Hearth colorrgb/v1 set parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["red", "green", "blue"],
+  "properties": {
+    "red": {"type": "integer", "minimum": 0, "maximum": 255},
+    "green": {"type": "integer", "minimum": 0, "maximum": 255},
+    "blue": {"type": "integer", "minimum": 0, "maximum": 255}
+  }
+}

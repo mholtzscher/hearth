@@ -8,6 +8,7 @@ import (
 
 	contractbinarysensorv1 "github.com/mholtzscher/hearth/entitytypes/binarysensorv1"
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
+	contractcolorrgbv1 "github.com/mholtzscher/hearth/entitytypes/colorrgbv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	contractpressurev1 "github.com/mholtzscher/hearth/entitytypes/pressurev1"
 	contractrelativehumidityv1 "github.com/mholtzscher/hearth/entitytypes/relativehumidityv1"
@@ -16,11 +17,14 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkbinarysensorv1 "github.com/mholtzscher/hearth/sdk/adapter/binarysensorv1"
 	sdkbrightnessv1 "github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
+	sdkcolorrgbv1 "github.com/mholtzscher/hearth/sdk/adapter/colorrgbv1"
+	sdkenumsettingv1 "github.com/mholtzscher/hearth/sdk/adapter/enumsettingv1"
 	sdknumericsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsensorv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	sdkpressurev1 "github.com/mholtzscher/hearth/sdk/adapter/pressurev1"
 	sdkrelativehumidityv1 "github.com/mholtzscher/hearth/sdk/adapter/relativehumidityv1"
 	sdktemperaturev1 "github.com/mholtzscher/hearth/sdk/adapter/temperaturev1"
+	sdktextsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/textsensorv1"
 )
 
 // errUnprojectable reports a state the route's Entity type cannot carry, such as an out-of-range value.
@@ -34,6 +38,8 @@ type entityRoute struct {
 	Conversion unitConversion
 	// Numeric is the support of a routeNumeric Entity.
 	Numeric sdknumericsensorv1.Support
+	// Effect constrains State and Commands to effects advertised by this light.
+	Effect sdkenumsettingv1.Support
 }
 
 // project converts one push into the Entity's canonical Observation. ok is false when the push carries no value;
@@ -67,6 +73,11 @@ func buildObservation(
 	receivedAt time.Time,
 ) (adapter.Observation, error) {
 	switch route.Kind {
+	case routeText:
+		return sdktextsensorv1.NewObservation(sdktextsensorv1.ObservationInput{
+			EntityID: entityID, Support: sdktextsensorv1.Support{}, State: sdktextsensorv1.State(update.Text),
+			AdapterReceivedAt: receivedAt,
+		})
 	case routeTemperature:
 		milli := route.Conversion.convert(update.Number)
 		if milli < math.MinInt64 || milli > math.MaxInt64 {
@@ -110,6 +121,25 @@ func buildObservation(
 			EntityID: entityID, Support: brightnessSupport(),
 			State: contractbrightnessv1.State(lightBrightness(update)), AdapterReceivedAt: receivedAt,
 		})
+	case routeLightColor:
+		state, err := rgbState(update.RGB, update.ColorBrightness, update.ColorMode&nativeapi.ColorModeRGB != 0)
+		if err != nil {
+			return adapter.Observation{}, err
+		}
+		return sdkcolorrgbv1.NewObservation(sdkcolorrgbv1.ObservationInput{
+			EntityID: entityID, Support: colorSupport(), State: state, AdapterReceivedAt: receivedAt,
+		})
+	case routeLightEffect:
+		effect := update.Effect
+		if effect == "" {
+			effect = "None"
+		}
+		return sdkenumsettingv1.NewObservation(sdkenumsettingv1.ObservationInput{
+			EntityID:          entityID,
+			Support:           route.Effect,
+			State:             sdkenumsettingv1.State(effect),
+			AdapterReceivedAt: receivedAt,
+		})
 	default:
 		return adapter.Observation{}, errors.New("esphome: route has no Entity kind")
 	}
@@ -124,9 +154,18 @@ func lightBrightness(update nativeapi.StateUpdate) int64 {
 	return max(percent, 1)
 }
 
-// stateMatches reports whether an Observation's value equals a Command's target. Brightness uses Core's
-// one-percentage-point tolerance.
+// stateMatches uses Core's RGB satisfaction rule and one-percentage-point brightness tolerance.
+// Other routes require exact value equality.
 func stateMatches(kind routeKind, value json.RawMessage, target json.RawMessage) bool {
+	if kind == routeLightColor {
+		var observed, wanted contractcolorrgbv1.State
+		if json.Unmarshal(value, &observed) != nil || json.Unmarshal(target, &wanted) != nil {
+			return false
+		}
+		return contractcolorrgbv1.SetSatisfied(contractcolorrgbv1.SetParameters{
+			Red: wanted.Red, Green: wanted.Green, Blue: wanted.Blue,
+		}, observed)
+	}
 	if kind != routeLightBrightness {
 		return string(value) == string(target)
 	}
