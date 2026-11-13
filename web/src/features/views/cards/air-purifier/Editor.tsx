@@ -33,7 +33,7 @@ export function AirPurifierEditor({ value, choices, onChange }: { value: AirPuri
         if (!selected) { if (role !== "power" && role !== "pm25") onChange({ ...value, [role]: undefined }); return; }
         const source = { kind: "entity-state", entity_id: selected.id, entity_type: selected.type };
         if (role === "power") {
-          const next = { ...value, power: source } as AirPurifierProps;
+          const next: AirPurifierProps = { ...value, power: { kind: "entity-state", entity_id: selected.id, entity_type: "hearth.power/v1" } };
           if (deviceId !== undefined && selected.device_id !== deviceId) {
             for (const other of roles.filter(item => item !== "power")) {
               const old = value[other];

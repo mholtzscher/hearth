@@ -34,7 +34,10 @@ The prototype now opens with these defaults.
 ## Verification
 
 These captures show the production React dashboard and Core on November 13,
-2026, from `feat/views-air-purifier-card`. The worktree-local simulator's
+2026, from `feat/views-air-purifier-card`. The initial desktop capture is from
+`05bd3df`; the other captures and video are from `c042469`. The later editor
+typing and comment cleanup does not change the demonstrated behavior.
+The worktree-local simulator's
 `simulated-air-purifier` Device supplied all seven Entities. A dashboard created
 over `POST /v1/dashboards` held an AirPurifier card beside a PM2.5 TimeSeries,
 and a Grid with an AirPurifier tile and the simulated light's ToggleTile. No
@@ -43,12 +46,18 @@ Levoit account, household Devices, or model turns were used.
 | Capture | What it shows |
 | --- | --- |
 | [Desktop](desktop.png) | 1440×1000; the card in Auto with the stored fan level, and the tile beside a ToggleTile |
-| [After controls](desktop-after-controls.png) | After pressing Sleep, fan +, and the tile's power: Off, Sleep selected, **Level 3 kept for Manual** |
+| [After controls](desktop-after-controls.png) | 1440×1000; Off, Sleep selected, **Level 3 kept for Manual**, Display off, and Child lock on |
 | [Phone card](phone-card.png) | 390×844; the card in one column |
 | [Phone tiles](phone-tiles.png) | 390×844; the tile and ToggleTile keep two compact columns |
+| [Control sequence](controls.mp4) | 17 seconds at 1440×1000; Display off, Child lock on, Sleep, fan +, and tile power off |
 
-Each press produced one `satisfied` Command (`sleep`, `"3"`, `false`, then
-`true` from the card's switch), and Core's State matched afterward. Binding
+The initial run produced four `satisfied` Commands (`sleep`, `"3"`, `false`,
+then `true` from the card's switch). The recorded run produced five more,
+one per press, and Core's State matched every requested value afterward. Its
+browser network capture contains exactly five Command submissions, all satisfied.
+Binding
 filter life as PM2.5 was rejected with `400`. The page had no horizontal
 overflow at either width and no console errors. The browser was driven through
-the browse tool rather than agent-browser, which isn't installed here.
+the browse tool rather than agent-browser, which isn't installed here. The video
+was played through successfully and its frames inspected. No before capture is
+included because AirPurifier is a new component; the generic Device card is unchanged.

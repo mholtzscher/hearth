@@ -23,10 +23,11 @@ export const airPurifierSchema = z.strictObject({
 });
 export type AirPurifierProps = z.infer<typeof airPurifierSchema>;
 
-/** Every role and its binding, in display order. A role that isn't bound is absent. */
+/** Role names in display order, including optional roles. */
 export const airPurifierRoles = ["power", "pm25", "filter_life", "mode", "fan_level", "display", "child_lock"] as const;
 export type AirPurifierRole = (typeof airPurifierRoles)[number];
 
+/** Role bindings in display order, omitting roles that aren't bound. */
 export function boundRoles(props: AirPurifierProps): Array<[AirPurifierRole, { entity_id: string; entity_type: string }]> {
   return airPurifierRoles.flatMap(role => {
     const source = props[role];
