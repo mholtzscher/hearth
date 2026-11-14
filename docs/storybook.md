@@ -100,7 +100,37 @@ details, light and power controls, and reusable UI components. Direct editor
 stories cover Metric, ToggleTile, AirPurifier, and TimeSeries. Each holds a local
 draft so you can make several edits in the canvas. Changing the initial value in
 Controls resets that draft; canvas edits do not update Controls. Other card
-editors remain covered through ViewEditor.
+editors have no direct stories. ViewEditor mounts Device and OutsideNow editors
+inside collapsed sections, but its stories do not interact with those sections.
+
+The `application/Workspace` group runs the real application shell, conversation,
+and full dashboard canvas together. It includes desktop, tablet, and phone
+navigation, readiness states, conversation history and tool activity, synthetic
+streamed replies, send failure/retry, and dashboard editing, save conflicts,
+discard confirmation, expansion, and phone panel switching. This group does not
+add Automations, dashboard-library, or other Development-page coverage.
+
+Application stories set `parameters: { application: true }` to bypass the shared
+component router and theme wrapper. The application supplies its own production
+shell and providers. Each story owns an isolated memory router over `appRoutes`
+and creates fresh HTTP/SSE handlers from `.storybook/application-fixtures.ts`.
+Mutable history and saved revisions reset between stories. The pending-reply
+story deliberately leaves its stream open; the conversation provider cancels
+the request when the story unmounts.
+
+Use `appPath` to select the initial route and `applicationScenario` for the named
+server, turn, history-failure, and save-conflict fixtures. Application stories
+are fullscreen and omit inline Autodocs, so multiple live applications do not
+share a Docs page's mocked endpoints. Sending and saving affect synthetic data
+only. These scenarios do not establish model behavior, backend persistence, or
+Device effects.
+
+The generated App snippets show the shared render function, not each story's
+`appPath`, `applicationScenario`, or play function. They are not standalone
+examples. To reproduce one of these composition scenarios, use its exported
+story and the shared setup in `src/App.stories.tsx`, together with
+`.storybook/application-fixtures.ts`. The manifest check verifies snippet
+presence and extraction errors; it cannot verify those omitted scenario inputs.
 
 The `pages` group runs EntitiesPage, DevicesPage, and EntityDetailPage against the
 same synthetic household. Use its loaded, empty, and failed-read stories to
@@ -161,7 +191,7 @@ build locally; it is not a hosted preview and has no MCP server. No paid visual
 regression service is configured.
 
 The Storybook build also checks the generated agent manifest for missing props,
-docgen errors, and incomplete snippets. A rendered story can pass while its agent
+docgen errors, empty snippets, and extraction errors. A rendered story can pass while its agent
 documentation is broken, so both checks are required.
 
 If Chromium cannot launch on Linux, inspect the reported missing libraries.

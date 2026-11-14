@@ -15,7 +15,7 @@ const unhandledCoreRequests: string[] = [];
 const preview: Preview = {
   tags: ["autodocs"],
   decorators: [
-    (Story, context) => (
+    (Story, context) => context.parameters.application ? <Story /> : (
       <MemoryRouter key={context.id} initialEntries={[context.parameters.route?.entry ?? "/"]}>
         <ViewDataProvider key={context.id}>
           <main className="hearth-app hearth-story">
@@ -73,6 +73,7 @@ const preview: Preview = {
     viewport: {
       options: {
         phone: { name: "Phone", styles: { width: "390px", height: "844px" } },
+        tablet: { name: "Tablet", styles: { width: "900px", height: "900px" } },
         desktop: { name: "Desktop", styles: { width: "1440px", height: "1000px" } },
       },
     },

@@ -138,7 +138,7 @@ export default function AgentPage() {
   return <div className={`conversation-workspace${mobileCanvas ? " show-canvas" : ""}`}>
     <h1 className="sr-only">Home workspace</h1>
     {phoneBar ? createPortal(panels, phoneBar) : panels}
-    <div className={`workspace-body${draft ? " has-canvas" : ""}`}><AssistantRuntimeProvider runtime={runtime}><ThreadPrimitive.Root className="conversation" role="region" aria-label="Conversation with Hearth"><ThreadPrimitive.ViewportProvider>
+    <div className={`workspace-body${draft ? " has-canvas" : ""}`}><AssistantRuntimeProvider runtime={runtime}><ThreadPrimitive.Root className="conversation" role="region" aria-label="Conversation with Hearth"><h2 className="sr-only">Conversation with Hearth</h2><ThreadPrimitive.ViewportProvider>
       <div className="message-area"><ThreadPrimitive.Viewport className="messages" role="log" aria-live="polite" scrollToBottomOnInitialize scrollToBottomOnThreadSwitch>
         {loading && <p role="status">Loading conversation…</p>}
         {!loading && allItems.length === 0 && <div className="empty-chat"><h2>What would make home feel better?</h2>
