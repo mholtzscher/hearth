@@ -28,5 +28,5 @@ export const Lanes: Story = {
 };
 export const Feed: Story = {
   args: { style: "feed" },
-  play: async ({ canvas }) => { await expect(await canvas.findByRole("heading", { name: "Overnight" })).toBeVisible(); },
+  play: async ({ canvas }) => { await expect(await canvas.findByText("heat → auto")).toBeVisible(); },
 };
