@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { ViewDataProvider } from "../data/provider";
 import { ViewRenderer } from "./ViewRenderer";
+import { pairedEntityResponse } from "../../../../.storybook/paired-fixtures";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -17,11 +18,13 @@ const view = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title:
 } };
 
 function respond(availability: string) {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+  const entity = {
     id, type: "hearth.temperature/v1", name: "Temperature", enabled: true, availability: { status: availability }, support: {},
     quantities: { "": { unit: "Cel", label: "°C", fraction_digits: 1 } },
     state: { value: 20, observed_at: new Date().toISOString() },
-  })));
+  };
+  const canonical = { ...entity, quantities: { "": { unit: "mCel", label: "mCel", fraction_digits: 0 } }, state: { ...entity.state, value: 20000 } };
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(pairedEntityResponse(entity, canonical))));
 }
 
 it("takes heading levels from the host: view headings, then card titles one level below", async () => {
@@ -56,11 +59,13 @@ it("dims an unavailable reading, leads with its status, and links Source to the 
 });
 
 it("separates combined statuses into distinct list items", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+  const entity = {
     id, type: "hearth.temperature/v1", name: "Temperature", enabled: false, availability: { status: "unavailable" }, support: {},
     quantities: { "": { unit: "Cel", label: "°C", fraction_digits: 1 } },
     state: { value: 20, observed_at: new Date().toISOString() },
-  })));
+  };
+  const canonical = { ...entity, quantities: { "": { unit: "mCel", label: "mCel", fraction_digits: 0 } }, state: { ...entity.state, value: 20000 } };
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(pairedEntityResponse(entity, canonical))));
   await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={view} /></ViewDataProvider>, { wrapper: MemoryRouter }));
   const card = await screen.findByRole("article", { name: "Garage temperature" });
   await within(card).findByText("Disabled");

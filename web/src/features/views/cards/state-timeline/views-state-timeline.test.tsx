@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { pairedEntityResponse } from "../../../../../.storybook/paired-fixtures";
 import type { Resolved, TextData, TimelineData } from "../../bindings/types";
 import { ViewDataProvider } from "../../data/provider";
 import { StateTimeline, BoundStateTimeline } from "./StateTimeline";
@@ -92,9 +93,10 @@ it("does not replay a history change seen while an Entity was disabled", () => {
 });
 
 it("surfaces a query-limit refusal from the real binding", async () => {
+  const entity = { id, name: "Door", type: "hearth.power/v1", enabled: true, availability: { status: "available" }, state: { value: false, observed_at: new Date(end).toISOString() } };
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => String(url).includes("/state/changes")
     ? new Response(JSON.stringify({ title: "Limit", detail: "limit", code: "query_limit" }), { status: 422 })
-    : new Response(JSON.stringify({ id, name: "Door", type: "hearth.power/v1", enabled: true, availability: { status: "available" }, state: { value: false, observed_at: new Date(end).toISOString() } })));
+    : new Response(JSON.stringify(pairedEntityResponse(entity, entity))));
   render(<ViewDataProvider><BoundStateTimeline title="Doors" style="lanes" window="7d" rows={[{ source: { kind: "entity-state", entity_id: id, entity_type: "hearth.power/v1" } }]} /></ViewDataProvider>, { wrapper: MemoryRouter });
   const card = screen.getByRole("article", { name: "Doors" });
   expect(await within(card).findByText("Too many readings for this window. Choose a shorter one.")).toBeTruthy();

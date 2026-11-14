@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import EntityDetailPage from "./EntityDetailPage";
+import { pairedEntityResponse } from "../../.storybook/paired-fixtures";
 
 afterEach(() => {
   cleanup();
@@ -13,6 +14,7 @@ it("offers canonical brightness percentages without support maximum or step", as
     id: "ent_brightness", type: "hearth.brightness/v1", name: "Lamp brightness",
     device_id: "dev_lamp", adapter_id: "zwavejs", enabled: true,
     support: { state: {}, operations: { set: {} } },
+    quantities: { "": { unit: "%", label: "%", fraction_digits: 0 } },
     availability: { status: "available", source: "adapter", since: "2026-11-04T12:00:00Z" },
     state: { value: 51, observation_id: "obs_level", observed_at: "2026-11-04T12:00:00Z" },
   };
@@ -22,7 +24,7 @@ it("offers canonical brightness percentages without support maximum or step", as
       observation_id: "obs_level", value: 51, disposition: "applied",
       observed_at: "2026-11-04T12:00:00Z", adapter_received_at: "2026-11-04T12:00:00Z",
     }] }));
-    return new Response(JSON.stringify(path === "/v1/entities/ent_brightness" ? entity : { items: [], next_cursor: null }));
+    return new Response(JSON.stringify(path === "/v1/entities/ent_brightness" ? pairedEntityResponse(entity, entity) : { items: [], next_cursor: null }));
   });
   vi.stubGlobal("fetch", fetch);
   render(<MemoryRouter initialEntries={["/entities/ent_brightness"]}>
@@ -55,7 +57,7 @@ it.each([
   };
   const fetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const path = new URL(String(input), "http://localhost").pathname;
-    return new Response(JSON.stringify(path === "/v1/entities/ent_lock" ? entity : { items: [], next_cursor: null }));
+    return new Response(JSON.stringify(path === "/v1/entities/ent_lock" ? pairedEntityResponse(entity, entity) : { items: [], next_cursor: null }));
   });
   vi.stubGlobal("fetch", fetch);
   render(<MemoryRouter initialEntries={["/entities/ent_lock"]}>
@@ -87,6 +89,7 @@ it("summarizes a forecast snapshot instead of printing its State inline", async 
     device_id: "dev_weather", adapter_id: "pirateweather", enabled: true,
     support: { state: {}, operations: {} },
     availability: { status: "available", source: "adapter", since: "2026-11-09T12:00:00Z" },
+    quantities: Object.fromEntries(value.periods.flatMap((_, index) => ["temperature_min", "temperature_max"].map(field => [`/periods/${index}/${field}`, { unit: "Cel", label: "°C", fraction_digits: 1 }]))),
     state: { value, observation_id: "obs_daily", observed_at: "2026-11-09T12:00:00Z" },
   };
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -95,7 +98,8 @@ it("summarizes a forecast snapshot instead of printing its State inline", async 
       observation_id: "obs_daily", value, disposition: "applied",
       observed_at: "2026-11-09T12:00:00Z", adapter_received_at: "2026-11-09T12:00:00Z",
     }] }));
-    return new Response(JSON.stringify(path === "/v1/entities/ent_daily" ? entity : { items: [], next_cursor: null }));
+    const canonical = { ...entity, quantities: Object.fromEntries(Object.keys(entity.quantities).map(path => [path, { unit: "Cel", label: "Cel", fraction_digits: 1 }])) };
+    return new Response(JSON.stringify(path === "/v1/entities/ent_daily" ? pairedEntityResponse(entity, canonical) : { items: [], next_cursor: null }));
   }));
   render(<MemoryRouter initialEntries={["/entities/ent_daily"]}>
     <Routes><Route path="/entities/:entityId" element={<EntityDetailPage />} /></Routes>
@@ -112,12 +116,13 @@ it("offers RGB presets and an example without sending a command", async () => {
     id: "ent_rgb", type: "hearth.colorrgb/v1", name: "Lamp color",
     device_id: "dev_lamp", adapter_id: "esphome", enabled: true,
     support: { state: {}, operations: { set: {} } },
+    quantities: Object.fromEntries(["red", "green", "blue"].map(field => [`/${field}`, { unit: "1", label: "", fraction_digits: 0 }])),
     availability: { status: "available", source: "adapter", since: "2026-11-04T12:00:00Z" },
     state: { value: { active: true, red: 12, green: 128, blue: 255 }, observation_id: "obs_rgb", observed_at: "2026-11-04T12:00:00Z" },
   };
   const fetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const path = new URL(String(input), "http://localhost").pathname;
-    return new Response(JSON.stringify(path === "/v1/entities/ent_rgb" ? entity : { items: [], next_cursor: null }));
+    return new Response(JSON.stringify(path === "/v1/entities/ent_rgb" ? pairedEntityResponse(entity, entity) : { items: [], next_cursor: null }));
   });
   vi.stubGlobal("fetch", fetch);
   render(<MemoryRouter initialEntries={["/entities/ent_rgb"]}>
@@ -148,7 +153,7 @@ it.each(["Good", ""])('shows read-only text State %j without JSON quotes', async
   };
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const path = new URL(String(input), "http://localhost").pathname;
-    return new Response(JSON.stringify(path === "/v1/entities/ent_voc" ? entity : { items: [], next_cursor: null }));
+    return new Response(JSON.stringify(path === "/v1/entities/ent_voc" ? pairedEntityResponse(entity, entity) : { items: [], next_cursor: null }));
   }));
   render(<MemoryRouter initialEntries={["/entities/ent_voc"]}>
     <Routes><Route path="/entities/:entityId" element={<EntityDetailPage />} /></Routes>

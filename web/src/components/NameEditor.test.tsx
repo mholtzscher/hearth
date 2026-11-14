@@ -5,6 +5,7 @@ import { setBaseUrl } from "../api/client.ts";
 import NameEditor from "./NameEditor.tsx";
 import DevicesPage from "../pages/DevicesPage.tsx";
 import EntityDetailPage from "../pages/EntityDetailPage.tsx";
+import { pairedEntityResponse } from "../../.storybook/paired-fixtures";
 
 const naming = { name: "Adapter lamp", adapter_name: "Adapter lamp", name_override: null };
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
@@ -122,7 +123,7 @@ it("Entity detail updates its heading from PATCH while disabled/offline and refr
     if (url === "/v1/entities/ent_a") {
       reads++;
       if (reads > 2) return new Promise<Response>(() => {});
-      return Promise.resolve(response(entity));
+      return Promise.resolve(response(pairedEntityResponse(entity, entity)));
     }
     return Promise.resolve(response({ items: [] }));
   });
@@ -146,7 +147,7 @@ it("Entity enablement uses merge patch without adding a content type to reads", 
   const enabledEntity = { ...entity, enabled: true };
   const fetch = vi.fn((url: string, init?: RequestInit) => {
     if (init?.method === "PATCH") return Promise.resolve(response({ ...enabledEntity, enabled: false }));
-    if (url === "/v1/entities/ent_a") return Promise.resolve(response(enabledEntity));
+    if (url === "/v1/entities/ent_a") return Promise.resolve(response(pairedEntityResponse(enabledEntity, enabledEntity)));
     return Promise.resolve(response({ items: [] }));
   });
   vi.stubGlobal("fetch", fetch);

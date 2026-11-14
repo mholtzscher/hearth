@@ -22,6 +22,15 @@ function canonical(entity: Entity): Entity {
     copy.state.value = Number(copy.state.value) * 1000;
     copy.quantities = { "": { unit: "mCel", label: "mCel", fraction_digits: 0 } };
   }
+  if (copy.state && (copy.type === "hearth.hourlyforecast/v1" || copy.type === "hearth.dailyforecast/v1")) {
+    const value = copy.state.value as { periods: Record<string, unknown>[] };
+    value.periods.forEach((period, index) => Object.entries(period).forEach(([field, reading]) => {
+      if ((field.startsWith("temperature") || field === "apparent_temperature") && typeof reading === "number") {
+        period[field] = reading;
+        copy.quantities![`/periods/${index}/${field}`] = { unit: "Cel", label: "Cel", fraction_digits: 1 };
+      }
+    }));
+  }
   return copy;
 }
 
@@ -40,12 +49,10 @@ export function createCoreHandlers(overrides: Entity[] = []) {
       return HttpResponse.json({ items, next_cursor: null });
     }),
     http.get("/v1/devices", () => HttpResponse.json({ items: devices, next_cursor: null })),
-    http.get("/v1/entities/:id", ({ params, request }) => {
+    http.get("/v1/entities/:id", ({ params }) => {
       const entity = entities.get(String(params.id));
       if (!entity) return HttpResponse.json({ detail: "Entity not found" }, { status: 404 });
-      const query = new URL(request.url).searchParams;
-      return HttpResponse.json(query.get("include") === "canonical" ? pairedEntityResponse(entity, canonical(entity))
-        : query.get("units") === "canonical" ? canonical(entity) : entity);
+      return HttpResponse.json(pairedEntityResponse(entity, canonical(entity)));
     }),
     http.get("/v1/devices/:id", ({ params, request }) => {
       const device = devices.find(device => device.id === params.id);
@@ -81,7 +88,7 @@ export function createCoreHandlers(overrides: Entity[] = []) {
       const query = historyQuery.parse(await request.json());
       const entity = entities.get(String(params.id));
       if (!entity) return HttpResponse.json({ detail: "Entity not found" }, { status: 404 });
-      const selected = new URL(request.url).searchParams.get("units") === "canonical" ? canonical(entity) : entity;
+      const selected = entity;
       const quantity = selected.quantities?.[query.select_field];
       if (!quantity) return HttpResponse.json({ detail: "No such numeric field" }, { status: 422 });
       const from = Date.parse(query.range.from), to = Date.parse(query.range.to);
@@ -103,11 +110,9 @@ export function createCoreHandlers(overrides: Entity[] = []) {
         quantity, bucket: query.result.bucket, buckets };
       const working = canonical(entity);
       const factor = entity.type === "hearth.temperature/v1" ? 1000 : 1;
-      return HttpResponse.json(new URL(request.url).searchParams.get("include") === "canonical"
-        ? pairedHistoryResponse(summary, { quantity: working.quantities![query.select_field], buckets: buckets.map(bucket => ({
+      return HttpResponse.json(pairedHistoryResponse(summary, { quantity: working.quantities![query.select_field], buckets: buckets.map(bucket => ({
           range: bucket.range, metrics: Object.fromEntries(Object.entries(bucket.metrics).map(([name, value]) => [name, value === null ? null : value * factor])),
-        })) })
-        : summary);
+        })) }));
     }),
     http.post("/v1/entities/:id/state/changes", async ({ params, request }) => {
       const query = changesQuery.parse(await request.json());
@@ -148,7 +153,7 @@ export function createCoreHandlers(overrides: Entity[] = []) {
 
 /** Override one real endpoint to explore a named lifecycle state. */
 export function entityScenario(number: number, state: "loading" | "unobserved" | "unavailable" | "disabled" | "error" | "missing" | "read-only") {
-  return http.get(`/v1/entities/${entityId(number)}`, async ({ request }) => {
+  return http.get(`/v1/entities/${entityId(number)}`, async () => {
     if (state === "loading") { await delay("infinite"); return new HttpResponse(null); }
     if (state === "error" || state === "missing") return HttpResponse.json({ detail: state === "missing" ? "Entity not found" : "Story API unavailable" }, { status: state === "missing" ? 404 : 503 });
     const entity = createEntities().find(entity => entity.id === entityId(number))!;
@@ -156,6 +161,6 @@ export function entityScenario(number: number, state: "loading" | "unobserved" |
     if (state === "unavailable") entity.availability.status = "unavailable";
     if (state === "disabled") entity.enabled = false;
     if (state === "read-only") entity.support.operations = {};
-    return HttpResponse.json(new URL(request.url).searchParams.get("include") === "canonical" ? pairedEntityResponse(entity, canonical(entity)) : entity);
+    return HttpResponse.json(pairedEntityResponse(entity, canonical(entity)));
   });
 }

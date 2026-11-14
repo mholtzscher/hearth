@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { pairedEntityResponse } from "../../../../../.storybook/paired-fixtures";
 import type { Resolved, TextData, WeekPatternData } from "../../bindings/types";
 import { WeekPattern } from "./WeekPattern";
 import { WeekPatternEditor } from "./Editor";
@@ -85,7 +86,10 @@ it("renders both registered nodes through shared State and real change-response 
     week: { type: "WeekPattern", props: { source, label: "Week" } },
   } } };
   const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-    if (!String(url).includes("/state/changes")) return new Response(JSON.stringify({ id, type: source.entity_type, name: "Door", enabled: true, availability: { status: "available" }, state: { value: false, observed_at: new Date().toISOString() } }));
+    if (!String(url).includes("/state/changes")) {
+      const entity = { id, type: source.entity_type, name: "Door", enabled: true, availability: { status: "available" }, state: { value: false, observed_at: new Date().toISOString() } };
+      return new Response(JSON.stringify(pairedEntityResponse(entity, entity)));
+    }
     const body = JSON.parse(init!.body as string);
     const base = { entity_id: id, select_field: "", range: body.range, time_axis: "observed_at", coverage: { basis: "retained_changes", seeded: true } };
     if (body.result.kind === "timeline") return new Response(JSON.stringify({ ...base, kind: "timeline", intervals: [{ kind: "value", ...body.range, value: false }] }));

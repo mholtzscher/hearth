@@ -5,6 +5,7 @@ import { ReadCache } from "../data/cache";
 import { entityStateRequest } from "./entity";
 import { deviceRequest, lightReading, parseDevice, swatchColor } from "./device";
 import { historySeriesRequest } from "./history";
+import { pairedEntityResponse } from "../../../../.storybook/paired-fixtures";
 
 // Quantity conversion is independent of the loader's chosen resolution.
 const seriesBuckets = 360;
@@ -95,33 +96,32 @@ describe("reading adapter", () => {
     expect(stateFields[type]["/mode"]).toMatchObject({ value_type: "string", presence: "always" });
     expect(stateFields[type]["/activity"]).toMatchObject({ value_type: "string", presence: "sometimes" });
   });
-  it("keeps canonical and household cache keys and requests separate", async () => {
+  it("uses paired Entity and history requests while keeping Device projections separate", async () => {
     const selected = source("hearth.temperature/v1");
-    const normal = entityStateRequest(selected), canonical = entityStateRequest(selected, "canonical");
-    expect(normal.key).not.toBe(canonical.key);
+    const normal = entityStateRequest(selected);
+    expect(normal.key).toBe(`entity-state:${id}:paired`);
     expect(deviceRequest("dev_a").key).not.toBe(deviceRequest("dev_a", "canonical").key);
-    expect(historySeriesRequest(selected, "1h").key).not.toBe(historySeriesRequest(selected, "1h", "canonical").key);
-    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(entityOf(selected.entity_type, 21500))));
-    await canonical.load(new AbortController().signal, new Date());
-    expect(fetch.mock.calls[0][0]).toBe(`/v1/entities/${id}?units=canonical`);
+    expect(historySeriesRequest(selected, "1h").key).toBe(`entity-series:${id}::1h:reject:paired`);
+    const display = entityOf(selected.entity_type, 21.5);
+    const canonical = { ...display, quantities: { "": { unit: "mCel", label: "mCel", fraction_digits: 0 } }, state: { ...display.state, value: 21500 } };
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(pairedEntityResponse(display, canonical))));
+    await normal.load(new AbortController().signal, new Date());
+    expect(fetch.mock.calls[0][0]).toBe(`/v1/entities/${id}`);
     fetch.mockRestore();
   });
-  it("caches simultaneous household and canonical reads independently", async () => {
+  it("shares simultaneous reads and caches both projections", async () => {
     vi.useFakeTimers();
     const type = "hearth.temperature/v1", selected = source(type), cache = new ReadCache();
-    const household = entityStateRequest(selected), canonical = entityStateRequest(selected, "canonical");
-    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
-      const isCanonical = String(input).includes("units=canonical");
-      return new Response(JSON.stringify({ ...entityOf(type, isCanonical ? 21500 : 70.7), quantities: { "": isCanonical
-        ? { unit: "mCel", label: "mCel", fraction_digits: 0 }
-        : { unit: "[degF]", label: "°F", fraction_digits: 1 } } }));
-    });
+    const household = entityStateRequest(selected), canonical = entityStateRequest(selected);
+    const display = { ...entityOf(type, 70.7), quantities: { "": { unit: "[degF]", label: "°F", fraction_digits: 1 } } };
+    const working = { ...entityOf(type, 21500), quantities: { "": { unit: "mCel", label: "mCel", fraction_digits: 0 } } };
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(pairedEntityResponse(display, working))));
     try {
       cache.subscribe(household, vi.fn()); cache.subscribe(canonical, vi.fn());
       await vi.advanceTimersByTimeAsync(0);
       expect((cache.snapshot(household.key).data as { state: { value: number } }).state.value).toBe(70.7);
-      expect((cache.snapshot(canonical.key).data as { state: { value: number } }).state.value).toBe(21500);
-      expect(fetch).toHaveBeenCalledTimes(2);
+      expect((cache.snapshot(canonical.key).data as { canonical: { state: { value: number } } }).canonical.state.value).toBe(21500);
+      expect(fetch).toHaveBeenCalledTimes(1);
     } finally { cache.dispose(); fetch.mockRestore(); vi.useRealTimers(); }
   });
   it("keeps canonical override on every Device membership page", async () => {
@@ -176,17 +176,20 @@ describe("reading adapter", () => {
     try {
       const type = "hearth.colorhs/v1";
       const good = entityOf(type, { active: true, hue: 210, saturation: 64 });
-      const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(good)));
+      const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(pairedEntityResponse(good, good))));
       const hue = readingAdapter.stateRequest(source(type, "/hue"));
       cache.subscribe(hue, vi.fn());
       cache.subscribe(readingAdapter.stateRequest(source(type, "/saturation")), vi.fn());
       await vi.advanceTimersByTimeAsync(0);
-      expect(cache.snapshot(hue.key).data).toEqual(good);
+      expect(cache.snapshot(hue.key).data).toMatchObject({ ...good, canonical: { state: good.state,
+        quantities: { "/hue": { unit: "deg" }, "/saturation": { unit: "%" } } } });
       expect(fetch).toHaveBeenCalledTimes(1);
-      fetch.mockResolvedValueOnce(new Response(JSON.stringify(entityOf(type, { active: true, hue: 220, saturation: "bad" }))));
+      const bad = entityOf(type, { active: true, hue: 220, saturation: "bad" });
+      fetch.mockResolvedValueOnce(new Response(JSON.stringify(pairedEntityResponse(bad, bad))));
       await vi.advanceTimersByTimeAsync(10000);
       expect(fetch).toHaveBeenCalledTimes(2);
-      expect(cache.snapshot(hue.key).data).toEqual(good);
+      expect(cache.snapshot(hue.key).data).toMatchObject({ ...good, canonical: { state: good.state,
+        quantities: { "/hue": { unit: "deg" }, "/saturation": { unit: "%" } } } });
       expect(cache.snapshot(hue.key).error).toBeInstanceOf(Error);
     } finally {
       cache.dispose();
@@ -226,7 +229,7 @@ describe("reading adapter", () => {
     const entity = { ...entityOf(type, 1000), enabled: false, availability: { status: "unavailable" } };
     expect(readingAdapter.metadata(entity, source(type))).toMatchObject({ enabled: false, availability: "unavailable" });
     expect(readingAdapter.metric({ ...entity, state: null }, source(type))).toBeNull();
-    expect(() => readingAdapter.metric({ ...entity, state: null, quantities: {} }, source(type))).toThrow("Missing quantity metadata");
+    expect(readingAdapter.metric({ ...entity, state: null, quantities: {} }, source(type))).toBeNull();
   });
   it("presents structured and percentage fields using returned metadata", () => {
     const examples = [
