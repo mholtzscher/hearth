@@ -334,8 +334,41 @@ Only PM2.5 and filter-life changes light AirPurifier's afterglow. Power and
 settings changes don't, so an optimistic Observation published after a
 Command never reads as a Command result.
 
-Grid accepts 1–4 columns as a ceiling. Grids containing only ToggleTiles and
-tile-layout AirPurifiers use a 160px minimum and can retain two columns on
+Cover binds one `hearth.cover/v1` Entity's root. Its State is a reported
+integer `position` (0 closed, 100 open) and a `motion` of idle, opening, or
+closing. Core checks the Entity's type on presentation and save.
+
+- `layout:"card"` draws the cover at its reported position beside the State in
+  words: Closed at 0 %, Open at 100 %, Partly open between them, or Opening and
+  Closing while it moves, with the percentage beneath. Open (`set` position 100)
+  and Close follow when the Entity supports `set`; Stop appears independently
+  when it supports `stop`. While a position Command is pending, the drawing marks the
+  requested position with a dashed line.
+- `layout:"tile"` is a whole-card press: it opens a closed cover, closes an open
+  or partly open one, and stops one that is moving or has a pending position
+  Command. A partly open cover reads **Open** with **40 % open** on its own row.
+  Every tile row is one fixed line, so the tile never changes height while in
+  use; its status line uses short words such as **Rejected.** and keeps the full
+  sentence in the tooltip and for screen readers.
+- `confirm_open`, true when omitted, makes Open wait for a second press within
+  4 seconds, even at a reported 100 %: Open becomes **Confirm**, and the
+  tile says **Press again.** Closing and Stop are always one press. Hearth can't
+  tell a garage door from a shade, so the guard defaults on for every cover; set
+  it false for shades.
+- Open and Close are never disabled at the ends, because a reported position can
+  be estimated or uninitialized.
+- Stop completes once it is dispatched. The card says **Sending Stop…**, then
+  **Stop sent.**, never that the cover stopped; the reading changes when the
+  cover reports. If the cover still reports motion 3 seconds after Stop was sent,
+  the line says so as a warning. Stop also hides the earlier position Command,
+  whose later timeout would otherwise read as a failure.
+- While a cover moves or has a Command pending, its State is re-read every
+  second instead of every 10 seconds, so the drawing and percentage follow the
+  travel. A changed displayed position or motion lights the afterglow; identical
+  reports stay dark.
+
+Grid accepts 1–4 columns as a ceiling. Grids made only of ToggleTiles,
+tile-layout AirPurifiers, and tile-layout Covers use a 160px minimum and can retain two columns on
 phones; other grids keep the 248px minimum and single-column phone layout.
 Metering ToggleTiles span the full row on phones, with tighter spacing and the
 measurement opposite the power State.
@@ -388,7 +421,9 @@ refreshing and saving never send one. Controls use the existing
 One `CommandQueue` per Core connection, beside the read cache, holds each
 Entity's control state, so every card showing that Entity agrees. Each Entity
 Operation has at most one Command in flight and one queued value; a newer value
-replaces the queued one. While a Command is pending, the control shows the
+replaces the queued one. Cover positions and Stop are the exception: their
+Adapter writes each Command without waiting for an earlier target, so a newer
+request is sent at once and only its outcome is shown. While a Command is pending, the control shows the
 requested value with **Turning on…** or **Setting brightness to 40 %…**, and
 the reading keeps showing observed State. A satisfied Command re-reads every
 State entry at once; a read already in flight is followed by one more, because

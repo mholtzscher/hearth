@@ -16,6 +16,22 @@ describe("shared view reads", () => {
     a(); await vi.advanceTimersByTimeAsync(10_000); expect(load).toHaveBeenCalledTimes(3);
     b(); await vi.advanceTimersByTimeAsync(20_000); expect(load).toHaveBeenCalledTimes(3);
   });
+  it("re-reads a boosted State entry every second until every holder releases it", async () => {
+    const boosted = vi.fn().mockResolvedValue(1), other = vi.fn().mockResolvedValue(2);
+    cache.subscribe({ key: "state:cover", kind: "state", load: boosted }, vi.fn());
+    cache.subscribe({ key: "state:other", kind: "state", load: other }, vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    const first = cache.boost("state:cover"), second = cache.boost("state:cover");
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(boosted).toHaveBeenCalledTimes(4);
+    expect(other).toHaveBeenCalledTimes(1);
+    first(); first();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(boosted).toHaveBeenCalledTimes(5);
+    second();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(boosted).toHaveBeenCalledTimes(5);
+  });
   it("uses one minute boundary for all series and retains successful data after failure", async () => {
     const one = vi.fn().mockResolvedValue("retained"); const two = vi.fn().mockResolvedValue("other");
     cache.subscribe({ key: "series:one", kind: "series", load: one }, vi.fn());

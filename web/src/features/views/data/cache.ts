@@ -20,6 +20,9 @@ export const emptySnapshot: ReadSnapshot = { loading: true };
 export class ReadCache {
   private entries = new Map<string, Entry>();
   private stateTimer?: ReturnType<typeof setInterval>;
+  private fastTimer?: ReturnType<typeof setInterval>;
+  /** Boosted State keys and how many holders ask for each; see boost. */
+  private boosted = new Map<string, number>();
   private seriesTimer?: ReturnType<typeof setTimeout>;
   private listening = false;
   private seriesRefreshQueued = false;
@@ -49,7 +52,27 @@ export class ReadCache {
     };
   }
 
+  /**
+   * Re-reads a subscribed State entry every second, while the page is visible,
+   * until the returned release is called. Holders are counted, so several cards
+   * can boost one Entity. A key with no subscribed entry reads nothing.
+   */
+  boost(key: string): () => void {
+    this.boosted.set(key, (this.boosted.get(key) ?? 0) + 1);
+    this.scheduleFast();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const count = (this.boosted.get(key) ?? 1) - 1;
+      if (count > 0) this.boosted.set(key, count);
+      else this.boosted.delete(key);
+      this.scheduleFast();
+    };
+  }
+
   dispose(): void {
+    this.boosted.clear();
     this.stop();
     for (const entry of this.entries.values()) { entry.controller?.abort(); settle(entry); }
     this.entries.clear();
@@ -114,8 +137,21 @@ export class ReadCache {
       this.seriesTimer = setTimeout(series, 60_000 - Date.now() % 60_000);
     };
     this.seriesTimer = setTimeout(series, 60_000 - Date.now() % 60_000);
+    this.scheduleFast();
   }
-  private clearTimers(): void { clearInterval(this.stateTimer); clearTimeout(this.seriesTimer); }
+  private scheduleFast(): void {
+    clearInterval(this.fastTimer);
+    this.fastTimer = undefined;
+    if (this.boosted.size === 0 || !this.listening || !this.visible()) return;
+    this.fastTimer = setInterval(() => {
+      const to = this.now();
+      for (const key of this.boosted.keys()) {
+        const entry = this.entries.get(key);
+        if (entry?.request.kind === "state") void this.read(entry, to);
+      }
+    }, 1_000);
+  }
+  private clearTimers(): void { clearInterval(this.stateTimer); clearTimeout(this.seriesTimer); clearInterval(this.fastTimer); this.fastTimer = undefined; }
   private stop(): void {
     this.clearTimers();
     window.removeEventListener("focus", this.refresh);

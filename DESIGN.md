@@ -227,8 +227,29 @@ two-column row of switches. Only PM2.5 and Filter life light the afterglow.
 The tile layout is a ToggleTile with the mode word after On at the 20px
 compact scale and a line naming PM2.5 and its category.
 
-Grids containing only ToggleTiles and tile-layout AirPurifiers, or only Metric
-and State cards, use a 160px minimum, including on phones. Requested columns
+Cover cards lead with a drawing of the cover beside the State in words. The
+88px drawing (64px below a 250px card) is a slatted panel in its opening on
+the neutral ramp: `--gray-4` face, `--gray-6` slats and frame, a `--gray-8`
+bottom seal, and a `--gray-5` roller. The panel rolls up to the reported
+position; while a position Command is pending, a dashed 1.5px violet line
+marks the requested position. Unavailable and disabled covers draw a dashed
+frame and a `--gray-3` face. The reading is Closed, Partly open, Open, Opening,
+or Closing at the 40px scale, with **N % open** beneath in 14px `--gray-9`.
+Open, Stop, and Close are equal 44px outline buttons with 16px icons; a
+pending target's button takes the violet selected treatment. When opening
+asks for a second press, Open becomes an orange **Confirm**, the primary action
+for those 4 seconds. A reserved status line follows. Stop's line says
+**Sending Stop…**, then **Stop sent.**, and turns warn when the cover still
+reports motion after 3 seconds.
+The Cover tile is a ToggleTile whose press opens, closes, or stops. It
+reads **Open** for a partly open cover and has three fixed 21px rows: the
+position, what a press does (**Press to stop**), and the status line. Status
+words are short (**Rejected.**, **Press again.**) and keep the full sentence in
+a tooltip and for screen readers, so the tile never changes height while in
+use. An open cover takes the On surface.
+
+Grids made only of ToggleTiles, tile-layout AirPurifiers, and tile-layout Covers,
+or made only of Metric and State cards, use a 160px minimum, including on phones. Requested columns
 remain a ceiling. Other grids keep their 248px minimum and single-column phone layout.
 Metering variants span the full grid row on phones, so the history range and
 additional reading stay readable instead of wrapping into tall, narrow tiles.
@@ -241,6 +262,7 @@ Below a 200px content width, ToggleTile, Metric, and State use a 32px reading an
 Observed/Oldest prefix while retaining the full accessible time label. Grid
 column counts remain a ceiling, now 1–4. ToggleTiles reserve one 21px status line
 at every width; longer pending or failure messages grow the tile while shown.
+Cover tiles are the exception: their rows never grow (see Cover cards).
 
 State timeline cards show when yes/no and text fields changed over one window,
 in one of three styles. **Lanes** put every row on one time axis: an 18px track

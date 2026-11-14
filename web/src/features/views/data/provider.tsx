@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { getBaseUrl, useBaseUrlVersion } from "../../../api/client";
 import { executeCommand } from "../../../api/commands";
-import { CommandQueue, type ControlState, type ControlTarget, type ControlValue } from "../controls/queue";
+import { CommandQueue, type ControlState, type ControlTarget, type ControlValue, type RequestPolicy } from "../controls/queue";
 import { emptySnapshot, ReadCache, type ReadRequest } from "./cache";
 
 const CacheContext = createContext<ReadCache | null>(null);
@@ -16,14 +16,32 @@ export function ViewDataProvider({ children }: { children: ReactNode }) {
 }
 
 /** The shared control state for one Entity Operation and a function that requests a value. */
-export function useControl(target: ControlTarget): [ControlState, (value: ControlValue) => void] {
+export function useControl(target: ControlTarget, policy: RequestPolicy = "queue"): [ControlState, (value: ControlValue) => void] {
   const queue = useContext(QueueContext);
   if (!queue) throw new Error("ViewDataProvider is required");
   const { entityId, operation } = target;
   const subscribe = useCallback((listener: () => void) => queue.subscribe({ entityId, operation }, listener), [queue, entityId, operation]);
   const state = useSyncExternalStore(subscribe, () => queue.snapshot({ entityId, operation }));
-  const request = useCallback((value: ControlValue) => queue.request({ entityId, operation }, value), [queue, entityId, operation]);
+  const request = useCallback((value: ControlValue) => queue.request({ entityId, operation }, value, policy), [queue, entityId, operation, policy]);
   return [state, request];
+}
+
+/** Stops showing an Operation's Command without affecting the Command itself. */
+export function useForgetControl(): (target: ControlTarget) => void {
+  const queue = useContext(QueueContext);
+  if (!queue) throw new Error("ViewDataProvider is required");
+  return useCallback((target: ControlTarget) => queue.forget(target), [queue]);
+}
+
+/**
+ * Re-reads one State request every second while active and the page is
+ * visible, for a reading that is changing quickly, such as a moving cover.
+ */
+export function useFastRefresh(request: ReadRequest | null, active: boolean): void {
+  const cache = useContext(CacheContext);
+  if (!cache) throw new Error("ViewDataProvider is required");
+  const key = request ? `${getBaseUrl()}|${request.key}` : undefined;
+  useEffect(() => (active && key ? cache.boost(key) : undefined), [cache, key, active]);
 }
 
 /** Observe a list's per-Entity queue entries without introducing a group Command lifecycle. */

@@ -130,6 +130,50 @@ describe("CommandQueue", () => {
     expect(queue.snapshot(brightness)).toEqual({ phase: "pending", requested: 40 });
   });
 
+  it("replace sends a newer value at once and shows only the latest Command's outcome", async () => {
+    const { queue, commands, refreshes, execute, settle } = fixture();
+    const cover: ControlTarget = { entityId: "ent_cover", operation: "set" };
+    queue.subscribe(cover, vi.fn());
+    queue.request(cover, { position: 100 }, "replace");
+    queue.request(cover, { position: 0 }, "replace");
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(queue.snapshot(cover)).toEqual({ phase: "pending", requested: { position: 0 } });
+    commands[0].reject(new CommandError({ kind: "unconfirmed" }));
+    await settle();
+    expect(queue.snapshot(cover)).toEqual({ phase: "pending", requested: { position: 0 } });
+    commands[1].resolve(satisfied({ position: 0 }));
+    await settle();
+    refreshes[0]();
+    await settle();
+    expect(queue.snapshot(cover)).toEqual({ phase: "idle" });
+  });
+
+  it("forget returns to idle and ignores the outcome of the Command in flight", async () => {
+    const { queue, commands, settle } = fixture();
+    const cover: ControlTarget = { entityId: "ent_cover", operation: "set" };
+    const listener = vi.fn();
+    queue.subscribe(cover, listener);
+    queue.request(cover, { position: 100 }, "replace");
+    queue.forget(cover);
+    expect(queue.snapshot(cover)).toEqual({ phase: "idle" });
+    listener.mockClear();
+    commands[0].reject(new CommandError({ kind: "unconfirmed" }));
+    await settle();
+    expect(queue.snapshot(cover)).toEqual({ phase: "idle" });
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("reports dispatched Stop without waiting for a State refresh", async () => {
+    const { queue, commands, refreshState, settle } = fixture();
+    const stop: ControlTarget = { entityId: "ent_cover", operation: "stop" };
+    queue.subscribe(stop, vi.fn());
+    queue.request(stop, {}, "replace");
+    commands[0].resolve({ command_id: "cmd", status: "dispatched" });
+    await settle();
+    expect(refreshState).toHaveBeenCalledTimes(1);
+    expect(queue.snapshot(stop)).toMatchObject({ phase: "dispatched", requested: {} });
+  });
+
   // React StrictMode disposes the provider's queue on mount and keeps using the
   // same instance, so disposal must not end the queue.
   it("ignores outcomes from before disposal and stays usable afterward", async () => {

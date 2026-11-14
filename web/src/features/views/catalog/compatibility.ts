@@ -71,7 +71,7 @@ function validReferences(elements: ViewElement[]): boolean {
       element.props.rows.forEach(row => ids.add(row.source.entity_id));
     }
     if (element.type === "Device") ids.add(element.props.device.device_id);
-    if (element.type === "Forecast") ids.add(element.props.source.entity_id);
+    if (element.type === "Forecast" || element.type === "Cover") ids.add(element.props.source.entity_id);
     if (element.type === "AirPurifier") {
       // Each role names a different Entity; Core checks types, units, choices, and the shared Device.
       const roleIDs = boundRoles(element.props).map(([, source]) => source.entity_id);
