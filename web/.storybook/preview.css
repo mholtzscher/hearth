@@ -2,16 +2,34 @@
 .hearth-app.hearth-story {
   display: block;
   height: auto;
-  min-height: 100vh;
+  min-width: 0;
+  max-width: 100%;
   translate: none;
+}
+
+.hearth-story[data-layout="centered"] {
+  width: fit-content;
+}
+
+/* Storybook supplies the gutters; most cards and forms need one column, not a page. */
+.hearth-story[data-layout="padded"] {
+  width: 400px;
+  margin-inline: auto;
+}
+
+.hearth-story[data-layout="padded"][data-width="wide"] {
+  width: 800px;
+}
+
+.hearth-story[data-layout="fullscreen"] {
   padding: 24px;
 }
 
-.hearth-story > * {
+.hearth-story[data-layout="fullscreen"] > * {
   max-width: 1080px;
   margin-inline: auto;
 }
 
 @media (max-width: 720px) {
-  .hearth-app.hearth-story { padding: 12px; }
+  .hearth-story[data-layout="fullscreen"] { padding: 12px; }
 }

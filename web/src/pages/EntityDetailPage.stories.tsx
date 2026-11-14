@@ -9,6 +9,7 @@ const meta = {
   component: EntityDetailPage,
   tags: ["ai-generated"],
   parameters: {
+    layout: "fullscreen",
     route: { path: "/entities/:entityId", entry: `/entities/${entityId(4)}` },
     docs: { description: { component: "One Entity's debug page, including retained history and the Command form. It takes no props: the route supplies entityId. Historical fixtures and mock Commands are not device-effect evidence. Rename and enablement writes are not mocked in these page-read scenarios." } },
   },

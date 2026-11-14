@@ -8,7 +8,10 @@ const meta = {
   component: ViewEditor,
   tags: ["ai-generated"],
   args: { definition: dashboardDefinition, onChange: fn(), onValidityChange: fn() },
-  parameters: { docs: { description: { component: "Edits a local validated definition. Draft changes are not persisted until the owning workspace saves." } } },
+  parameters: {
+    layout: "fullscreen",
+    docs: { description: { component: "Edits a local validated definition. Draft changes are not persisted until the owning workspace saves." } },
+  },
 } satisfies Meta<typeof ViewEditor>;
 export default meta;
 type Story = StoryObj<typeof meta>;

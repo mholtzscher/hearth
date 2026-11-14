@@ -4,6 +4,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 const meta = {
   component: Table,
   tags: ["ai-generated"],
+  parameters: { previewWidth: "wide" },
   args: {
     children: <>
       <TableCaption>Observed household readings</TableCaption>

@@ -7,6 +7,7 @@ const meta = {
   title: "features/views/cards/StateTimeline",
   component: BoundStateTimeline,
   tags: ["ai-generated"],
+  parameters: { previewWidth: "wide" },
   args: {
     title: "Around the house", style: "ledger", window: "24h",
     rows: [

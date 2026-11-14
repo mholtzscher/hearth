@@ -25,7 +25,10 @@ const meta = {
     useEffect(() => setValue(args.value), [args.value]);
     return <TimeSeriesEditor {...args} value={value} onChange={next => { args.onChange(next); setValue(next); }} />;
   },
-  parameters: { docs: { description: { component: "The TimeSeries card's fields in the dashboard editor. Every series shares one window, and only sensors with the chart's unit can be added." } } },
+  parameters: {
+    previewWidth: "wide",
+    docs: { description: { component: "The TimeSeries card's fields in the dashboard editor. Every series shares one window, and only sensors with the chart's unit can be added." } },
+  },
 } satisfies Meta<typeof TimeSeriesEditor>;
 export default meta;
 type Story = StoryObj<typeof meta>;

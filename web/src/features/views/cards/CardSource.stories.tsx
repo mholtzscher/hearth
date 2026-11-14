@@ -11,7 +11,10 @@ const meta = {
     title: "Living room", observedAt, observedLabel: "Observed", now: Date.parse(fixtureNow),
     sources: [{ entityId: entityId(15), label: "Living room", availability: "available", enabled: true }],
   },
-  parameters: { docs: { description: { component: "A card's Source details: an anchored popover at a desk and a focus-contained sheet on a phone. Each source links to its Entity." } } },
+  parameters: {
+    layout: "centered",
+    docs: { description: { component: "A card's Source details: an anchored popover at a desk and a focus-contained sheet on a phone. Each source links to its Entity." } },
+  },
 } satisfies Meta<typeof CardSource>;
 export default meta;
 type Story = StoryObj<typeof meta>;

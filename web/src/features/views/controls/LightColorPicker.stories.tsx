@@ -26,7 +26,10 @@ const meta = {
       observed={value ? colorHex(value) : undefined} open={open}
       onOpenChange={next => { args.onOpenChange(next); setOpen(next); }} />;
   },
-  parameters: { docs: { description: { component: "A capability-derived color control: a popover at a desk and a sheet on a phone. It renders nothing for a light without a settable color or white Entity. These interactive stories own open state locally; use the trigger and close button rather than Controls." } } },
+  parameters: {
+    layout: "centered",
+    docs: { description: { component: "A capability-derived color control: a popover at a desk and a sheet on a phone. It renders nothing for a light without a settable color or white Entity. These interactive stories own open state locally; use the trigger and close button rather than Controls." } },
+  },
 } satisfies Meta<typeof LightColorPicker>;
 export default meta;
 type Story = StoryObj<typeof meta>;

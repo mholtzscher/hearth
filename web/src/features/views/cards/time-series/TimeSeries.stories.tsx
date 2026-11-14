@@ -15,7 +15,10 @@ const meta = {
       { label: "Bedroom", source: { entity_id: entityId(114), entity_type: "hearth.temperature/v1", window: "24h" } },
     ],
   },
-  parameters: { docs: { description: { component: "Compare compatible quantities over the same window. Missing history stays a gap rather than becoming zero." } } },
+  parameters: {
+    previewWidth: "wide",
+    docs: { description: { component: "Compare compatible quantities over the same window. Missing history stays a gap rather than becoming zero." } },
+  },
 } satisfies Meta<typeof BoundTimeSeries>;
 export default meta;
 type Story = StoryObj<typeof meta>;

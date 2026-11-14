@@ -7,6 +7,7 @@ const meta = {
   tags: ["ai-generated"],
   args: { children: "Save dashboard", onClick: fn() },
   parameters: {
+    layout: "centered",
     docs: { description: { component: "Use the primary variant for the main action; outline for secondary actions. Hearth is dark-only." } },
   },
 } satisfies Meta<typeof Button>;
@@ -29,5 +30,10 @@ export const CssCheck: Story = {
     const button = canvas.getByRole("button", { name: "Save dashboard" });
     await expect(getComputedStyle(button).backgroundColor).toBe("rgb(255, 138, 61)");
     await expect(getComputedStyle(button).fontFamily).toContain("Figtree Variable");
+    // A small control's preview should fit the control, not force a page-sized wrapper.
+    const preview = canvas.getByRole("main").getBoundingClientRect();
+    const control = button.getBoundingClientRect();
+    await expect(preview.width).toBeCloseTo(control.width, 0);
+    await expect(preview.height).toBeCloseTo(control.height, 0);
   },
 };

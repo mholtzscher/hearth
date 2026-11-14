@@ -7,6 +7,7 @@ const meta = {
   component: DevicesPage,
   tags: ["ai-generated"],
   parameters: {
+    layout: "fullscreen",
     route: { path: "/devices", entry: "/devices" },
     docs: { description: { component: "The debug dashboard's Device list and inline detail. It takes no props. Select a Device to read its Entities. Rename writes are not mocked in these page-read scenarios." } },
   },

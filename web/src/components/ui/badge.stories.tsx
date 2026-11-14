@@ -4,6 +4,7 @@ import { Badge } from "./badge";
 const meta = {
   component: Badge,
   tags: ["ai-generated"],
+  parameters: { layout: "centered" },
   args: { children: "Available" },
 } satisfies Meta<typeof Badge>;
 export default meta;

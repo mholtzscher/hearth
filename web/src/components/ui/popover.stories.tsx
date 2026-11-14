@@ -5,6 +5,7 @@ import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigg
 const meta = {
   component: Popover,
   tags: ["ai-generated"],
+  parameters: { layout: "centered" },
   args: {
     children: <>
       <PopoverTrigger>Reading details</PopoverTrigger>

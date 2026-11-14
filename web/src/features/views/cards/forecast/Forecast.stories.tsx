@@ -7,6 +7,7 @@ import { BoundForecast } from "./Forecast";
 const meta = {
   component: BoundForecast,
   tags: ["ai-generated"],
+  parameters: { previewWidth: "wide" },
   args: {
     label: "Next 12 hours", periods: 12,
     source: { kind: "entity-state", entity_id: entityId(201), entity_type: "hearth.hourlyforecast/v1" },

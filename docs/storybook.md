@@ -95,6 +95,21 @@ from args needs no play assertion. A phone story also calls
 
 ## Choose a component, editor, or page story
 
+Match the preview layout to the component instead of giving every story a page:
+
+- Cards, fields, and forms default to `layout: "padded"` in a responsive 400px
+  column. Use `parameters: { previewWidth: "wide" }` for charts, tables, and
+  wider editors (800px maximum).
+- Small intrinsic-size controls such as Button, Badge, and Switch use
+  `parameters: { layout: "centered" }`. The theme wrapper adds no forced height,
+  width, or extra gutters, so Storybook can center the control naturally.
+- Pages and full dashboard/editor compositions use
+  `parameters: { layout: "fullscreen" }`, with responsive workspace gutters and
+  the existing 1080px content limit.
+
+The wrapper reads each story's layout parameters, including inline Docs previews.
+Do not add viewport-height wrappers around small components.
+
 The sidebar includes the catalog's bound cards, their shared frame and Source
 details, light and power controls, and reusable UI components. Direct editor
 stories cover Metric, ToggleTile, AirPurifier, and TimeSeries. Each holds a local

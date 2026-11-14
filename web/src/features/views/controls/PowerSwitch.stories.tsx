@@ -13,7 +13,10 @@ const meta = {
     const entity = useObservedEntity(args.entity)!;
     return <PowerSwitch {...args} entity={entity} />;
   },
-  parameters: { docs: { description: { component: "A power Entity's switch. It shows the requested position while a Command is pending and observed State otherwise. The owning card supplies the refreshed Entity." } } },
+  parameters: {
+    layout: "centered",
+    docs: { description: { component: "A power Entity's switch. It shows the requested position while a Command is pending and observed State otherwise. The owning card supplies the refreshed Entity." } },
+  },
 } satisfies Meta<typeof PowerSwitch>;
 export default meta;
 type Story = StoryObj<typeof meta>;

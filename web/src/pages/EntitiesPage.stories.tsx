@@ -8,6 +8,7 @@ const meta = {
   component: EntitiesPage,
   tags: ["ai-generated"],
   parameters: {
+    layout: "fullscreen",
     route: { path: "/entities", entry: "/entities" },
     docs: { description: { component: "The debug dashboard's Entity list. It takes no props; routing and synthetic Core HTTP responses supply its context." } },
   },
@@ -27,8 +28,10 @@ export const FilterByDevice: Story = {
     await canvas.findByRole("link", { name: "Front door" });
     await userEvent.type(canvas.getByRole("textbox", { name: "device_id filter" }), deviceId(2));
     await userEvent.click(canvas.getByRole("button", { name: "Apply" }));
-    await waitFor(() => expect(canvas.queryByRole("link", { name: "Front door" })).not.toBeInTheDocument());
-    await expect(canvas.getByRole("link", { name: "Lamp brightness" })).toBeVisible();
+    await waitFor(() => {
+      expect(canvas.getByRole("link", { name: "Lamp brightness" })).toBeVisible();
+      expect(canvas.queryByRole("link", { name: "Front door" })).not.toBeInTheDocument();
+    });
   },
 };
 export const Empty: Story = {

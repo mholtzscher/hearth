@@ -15,7 +15,10 @@ const meta = {
   tags: ["ai-generated"],
   args: { definition: dashboardDefinition, headingLevel: 3 },
   argTypes: { definition: { options: Object.keys(examples), mapping: examples, control: { type: "select" } } },
-  parameters: { docs: { description: { component: "Render a validated hearth.dashboard/v1 graph. Layout and text nodes are catalog elements, not independent React components. Unsupported content remains recoverable." } } },
+  parameters: {
+    layout: "fullscreen",
+    docs: { description: { component: "Render a validated hearth.dashboard/v1 graph. Layout and text nodes are catalog elements, not independent React components. Unsupported content remains recoverable." } },
+  },
 } satisfies Meta<typeof ViewRenderer>;
 export default meta;
 type Story = StoryObj<typeof meta>;

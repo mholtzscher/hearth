@@ -9,6 +9,7 @@ const meta = {
   title: "features/views/cards/WeekPattern",
   component: BoundWeekPattern,
   tags: ["ai-generated"],
+  parameters: { previewWidth: "wide" },
   args: {
     label: "Front door", source: { kind: "entity-state", entity_id: entityId(1), entity_type: "hearth.binarysensor/v1" },
     words: { true: "Open", false: "Closed" },

@@ -18,7 +18,9 @@ const preview: Preview = {
     (Story, context) => (
       <MemoryRouter key={context.id} initialEntries={[context.parameters.route?.entry ?? "/"]}>
         <ViewDataProvider key={context.id}>
-          <main className="hearth-app hearth-story">
+          <main className="hearth-app hearth-story"
+            data-layout={context.parameters.layout}
+            data-width={context.parameters.previewWidth}>
             {context.parameters.route
               ? <Routes><Route path={context.parameters.route.path} element={<Story />} /></Routes>
               : <Story />}
@@ -62,7 +64,7 @@ const preview: Preview = {
     if (unhandledCoreRequests.length > 0) throw new Error(`Unhandled Core requests: ${unhandledCoreRequests.join(", ")}`);
   },
   parameters: {
-    layout: "fullscreen",
+    layout: "padded",
     controls: {
       matchers: {
         color: /(background|color)$/i,
