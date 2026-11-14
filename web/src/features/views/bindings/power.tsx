@@ -18,7 +18,7 @@ export type PowerReading = {
 
 /** Current power/support stays usable when the independent change-history read fails. */
 export function usePowerReadings(sources: PowerSource[]): PowerReading[] {
-  const snapshots = useReads(sources.flatMap(source => [entityStateRequest(source, "canonical"), timelineRequest(source, "24h")]));
+  const snapshots = useReads(sources.flatMap(source => [entityStateRequest(source), timelineRequest(source, "24h")]));
   return sources.map((source, index) => resolvePower(source, snapshots[index * 2], snapshots[index * 2 + 1]));
 }
 
@@ -27,7 +27,7 @@ function resolvePower(source: PowerSource, state: ReadSnapshot, history: ReadSna
   const result: PowerReading = { source, resource: { status: missing ? "missing" : state.error ? "error" : "loading", error: readErrorMessage(state.error) } };
   if (state.data === undefined) return result;
   try {
-    const entity = readEntity(state.data, source);
+    const entity = readEntity(state.data, source, "canonical");
     const data = entity.state ? { on: entity.state.value === true, observed_at: entity.state.observed_at } : undefined;
     result.entity = missing ? undefined : entity;
     result.resource = { status: missing ? "missing" : data ? "ready" : "unobserved", data, metadata: entityMetadata(entity, source), error: readErrorMessage(state.error), refreshFailed: !!state.error };

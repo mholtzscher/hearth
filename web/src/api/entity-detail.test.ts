@@ -4,7 +4,9 @@ import { decodeEntityDetail } from "./entity-detail";
 const evidence = { observed_at: "2026-11-09T10:00:00Z", observation_id: "obs_one", adapter_received_at: "2026-11-09T10:00:01Z" };
 const body = (canonical: unknown, display: unknown) => ({
   id: "ent_test", type: "hearth.temperature/v1", name: "Reading", enabled: true,
-  availability: { status: "available" }, state: { ...evidence, canonical, display },
+  device_id: "dev_test", adapter_id: "test", adapter_name: "Reading", name_override: null, support: {},
+  availability: { status: "available", source: "entity_report", since: evidence.observed_at, evidence_at: evidence.observed_at },
+  state: { ...evidence, canonical, display },
 });
 const shown = (value: number, unit: string, label: string) => ({ value, unit, label, fraction_digits: 1 });
 

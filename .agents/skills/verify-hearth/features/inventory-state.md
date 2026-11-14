@@ -59,7 +59,7 @@ Preconditions: baseline and shared shell setup from [the index](README.md).
     > "$EVIDENCE/temperature-published.json"
   OBS=$(jq -er .observation_id "$EVIDENCE/temperature-published.json")
   wait_core "/v1/entities/$TEMPERATURE" "$EVIDENCE/temperature-core.json" \
-    '.state.observation_id == $id and .state.value == 25000' --arg id "$OBS"
+    '.state.observation_id == $id and .state.canonical.value == 25000 and .state.canonical.unit == "mCel"' --arg id "$OBS"
   wait_core "/v1/entities/$TEMPERATURE/state/history?limit=50" "$EVIDENCE/temperature-history.json" \
     'any(.items[]; .observation_id == $id and .value == 25000 and
       (.disposition == "applied" or .disposition == "unchanged"))' --arg id "$OBS"

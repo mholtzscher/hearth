@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { entityStateRequest, type FieldEntity } from "../../bindings/entity";
+import { entityStateRequest, readEntity, type FieldEntity } from "../../bindings/entity";
 import { useReadings } from "../../bindings/registry";
 import { useReads } from "../../data/provider";
 import { statusEntry } from "../status";
@@ -22,7 +22,10 @@ export function usePurifier(props: AirPurifierProps) {
   const snapshots = useReads(sources.map(source => entityStateRequest(source)));
   const rows: ReadingRow[] = roles.map(([role], index) => ({ key: role, name: names[role], resource: readings[index] }));
   const states = rowStates(rows);
-  const entities = Object.fromEntries(roles.map(([role], index) => [role, snapshots[index].data as FieldEntity | undefined])) as Partial<Record<AirPurifierRole, FieldEntity>>;
+  const entities = Object.fromEntries(roles.map(([role, source], index) => {
+    const raw = snapshots[index].data;
+    return [role, raw === undefined ? undefined : readEntity(raw, source, "canonical")];
+  })) as Partial<Record<AirPurifierRole, FieldEntity>>;
   const sourcesList = rowSources(rows);
   roles.forEach(([role, source]) => { if (!sourcesList.some(item => item.entityId === source.entity_id)) sourcesList.push({ entityId: source.entity_id, label: names[role] }); });
   const allUnavailable = states.length > 0 && states.every(row => row.resource.metadata?.availability === "unavailable");

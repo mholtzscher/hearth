@@ -28,10 +28,11 @@ use [State changes](state-changes.md).
 `select_field` is required: `""` selects a numeric root, and a path such as
 `"/value"` selects a numeric field in the Entity type's generated field catalog.
 Boolean, string, unknown, and stateless sources are not numeric sources.
-Core aggregates in canonical units, then returns household-unit metrics by
-default. Add `?units=canonical` to retain canonical metrics. Each response has a
-single `quantity` object describing the returned unit, label, precision, and
-declared range when available. Clients format without reconversion; see
+Core aggregates once in canonical units, then returns `canonical` and `display`
+metric groups together. Each group contains `unit` and `metrics`; display also
+contains `label`, `fraction_digits`, and declared `range` when available.
+There is no `include` or `units` selector on this HTTP operation.
+Clients format without reconversion; see
 [quantity metadata and read units](units.md).
 
 Ranges use UTC RFC3339 instants, with `from < to` and `to` no later than query
@@ -62,11 +63,13 @@ accumulator; SQLite stores the sum as text and performs no numeric aggregation.
 Household projection happens after these reductions. It uses positive-affine
 float64 conversion without rounding to display precision. Gaps remain gaps.
 
-Omit `bucket` for overall `metrics`. With `bucket`, its `duration` is a positive
+Omit `bucket` for overall `canonical.metrics` and `display.metrics`.
+With `bucket`, its `duration` is a positive
 Go duration and a whole number of minutes, and `alignment` is `range_start`.
 All buckets are emitted, including empty buckets. Durations are normalized in
 the response (`5m` becomes `5m0s`); the response contains `bucket` and `buckets`
-instead of overall `metrics`.
+instead of overall metric groups. Each bucket shares one `range` and carries
+its own `canonical` and `display` groups, including null metrics for gaps.
 
 Every response includes Entity ID, range, `time_axis: "observed_at"`, and
 `coverage: {"basis":"retained_observations","completeness":"unverified"}`.
@@ -132,7 +135,8 @@ may omit a code. Error details never echo State or request contents.
 
 `query_entity_state_history` exposes the same canonical aggregation, range,
 metric, bucket, and null semantics to agents. Supply `entity_id` alongside the
-HTTP request's `range`, `select_field`, and `result` fields. Omit `units` for
+HTTP request's `range`, `select_field`, and `result` fields. Unlike the paired HTTP
+response, MCP retains a single representation. Omit `units` for
 household units or pass `"units":"canonical"`. The tool returns the same
 summary/bucket structure and single `quantity` object, not raw audit observations.
 

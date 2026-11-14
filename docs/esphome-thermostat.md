@@ -27,9 +27,9 @@ required mode and optional readings:
 }
 ```
 
-This example uses canonical units. Ordinary HTTP/MCP reads project temperatures
-into household Celsius or Fahrenheit and provide pointer-keyed `quantities`.
-Use `?units=canonical` for HTTP reads, or `units:"canonical"` in MCP, when
+This example uses canonical units. HTTP detail reads return paired
+`state.canonical` and `state.display` trees with inline quantity metadata.
+Use `state.canonical`, or `units:"canonical"` in MCP, when
 preparing a Command or Automation operand. Writes always use integer
 milli-Celsius: 20 °C is `20000`; convert Fahrenheit with
 `round((fahrenheit - 32) * 1000 / 1.8)`.

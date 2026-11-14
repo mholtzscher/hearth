@@ -19,7 +19,7 @@ export type WeatherReads<K extends string> = {
 export function useWeatherReads<K extends string>(slots: Array<[K, WeatherRead | undefined]>): WeatherReads<K> {
   const bound = slots.filter((slot): slot is [K, WeatherRead] => slot[1] !== undefined);
   const results = useNumericReads(bound.flatMap(([, read]) => {
-    const binding = { source: read.source, units: read.units, canonicalUnit: read.canonicalUnit, paired: true };
+    const binding = { source: read.source, units: read.units, canonicalUnit: read.canonicalUnit };
     return read.window ? [binding, { ...binding, window: read.window }] : [binding];
   }));
   const current = new Map<K, Resolved<MetricData>>(), history = new Map<K, Resolved<SeriesData>>();

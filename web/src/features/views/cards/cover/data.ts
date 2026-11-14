@@ -38,7 +38,7 @@ function resolveCover(props: CoverProps, snapshot: ReturnType<typeof useRead>): 
   const empty: Resolved<CoverData> = { status: missing ? "missing" : snapshot.error ? "error" : "loading", error: readErrorMessage(snapshot.error) };
   if (snapshot.data === undefined || missing) return { resource: empty };
   try {
-    const entity = readEntity(snapshot.data, positionSource(props));
+    const entity = readEntity(snapshot.data, positionSource(props), "canonical");
     const value = entity.state?.value as { position: number; motion: CoverMotion } | undefined;
     const data = entity.state && value ? { position: Math.round(value.position), motion: value.motion, observed_at: entity.state.observed_at } : undefined;
     const metadata = entityMetadata(entity, props.source);
@@ -55,7 +55,7 @@ function resolveCover(props: CoverProps, snapshot: ReturnType<typeof useRead>): 
  */
 export function useCover(props: CoverProps) {
   // The read validates one field; the whole State, position and motion, comes back with it.
-  const request = entityStateRequest(positionSource(props), "canonical");
+  const request = entityStateRequest(positionSource(props));
   const { entity, resource } = resolveCover(props, useRead(request));
   const status: CardStatus = cardStatus(resource);
   const data = status.value === "empty" ? undefined : resource.data;

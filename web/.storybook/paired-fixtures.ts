@@ -15,8 +15,12 @@ function quantityTree(value: unknown, quantities: Record<string, Quantity>, cano
 
 export function pairedEntityResponse(display: FieldEntity, canonical: FieldEntity) {
   const { quantities, state, ...metadata } = display;
-  return { ...metadata, state: state && canonical.state ? {
-    ...state, value: undefined,
+  return {
+    device_id: "dev_fixture", adapter_id: "fixture", adapter_name: display.name,
+    name_override: null, support: {}, ...metadata,
+    availability: { source: "entity_report", since: "2026-11-09T10:00:00Z", evidence_at: "2026-11-09T10:00:00Z", ...metadata.availability },
+    state: state && canonical.state ? {
+    observation_id: "obs_fixture", adapter_received_at: state.observed_at, ...state, value: undefined,
     canonical: quantityTree(canonical.state.value, canonical.quantities ?? {}, true),
     display: quantityTree(state.value, quantities ?? {}, false),
   } : null };

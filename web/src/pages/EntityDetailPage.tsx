@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, apiFetch, useBaseUrlVersion } from "../api/client.ts";
+import { decodeEntityDetail, entityDetailSchema } from "../api/entity-detail";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, CommandRecord, CommandResult, Entity, HealthTransition } from "../api/types.ts";
 import {
@@ -418,9 +419,13 @@ export default function EntityDetailPage() {
   const baseVersion = useBaseUrlVersion();
   const baseVersionRef = useRef(baseVersion);
   baseVersionRef.current = baseVersion;
-  const { data, error, loading, refresh, setData } = useApi(`entity-${entityId}`, () =>
-    apiFetch<Entity>(`/v1/entities/${entityId}`),
+  const { data: response, error, loading, refresh, setData } = useApi(`entity-${entityId}`, () =>
+    apiFetch(`/v1/entities/${entityId}`, {}, text => {
+      const raw = entityDetailSchema.parse(JSON.parse(text));
+      return { raw, entity: decodeEntityDetail(raw) };
+    }),
   );
+  const data = response?.entity;
   const [operation, setOperation] = useState("set");
   const [paramsText, setParamsText] = useState('{"value":true}');
   const [paramsTouched, setParamsTouched] = useState(false);
@@ -524,7 +529,10 @@ export default function EntityDetailPage() {
       {data && (
         <>
           <NameEditor objectId={entityId} kind="entity" metadata={data} onUpdated={(metadata) => {
-            setData((current) => current ? { ...current, ...metadata } : current);
+            setData((current) => current ? {
+              raw: { ...current.raw, ...metadata },
+              entity: { ...current.entity, ...metadata },
+            } : current);
             void refresh();
           }} />
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -705,7 +713,7 @@ export default function EntityDetailPage() {
             <RawJson value={data.support} title="support JSON" />
           </Section>
 
-          <RawJson value={data} title="Raw entity JSON" />
+          <RawJson value={response?.raw} title="Raw entity JSON" />
         </>
       )}
     </div>
