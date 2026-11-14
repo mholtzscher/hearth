@@ -1,6 +1,6 @@
 import type { Preview } from "@storybook/react-vite";
 import MockDate from "mockdate";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { mswLoader } from "msw-storybook-addon/csf3";
 import { setupWorker } from "msw/browser";
 import { setBaseUrl } from "../src/api/client";
@@ -16,10 +16,12 @@ const preview: Preview = {
   tags: ["autodocs"],
   decorators: [
     (Story, context) => (
-      <MemoryRouter>
+      <MemoryRouter key={context.id} initialEntries={[context.parameters.route?.entry ?? "/"]}>
         <ViewDataProvider key={context.id}>
           <main className="hearth-app hearth-story">
-            <Story />
+            {context.parameters.route
+              ? <Routes><Route path={context.parameters.route.path} element={<Story />} /></Routes>
+              : <Story />}
           </main>
         </ViewDataProvider>
       </MemoryRouter>

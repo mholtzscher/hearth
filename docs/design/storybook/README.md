@@ -25,6 +25,23 @@ cuts, overlays, or redactions. Screenshots were inspected at their native size.
 The phone story test separately verifies that closing the dialog restores focus
 to **Adjust color**.
 
+## Direct-component and page coverage
+
+The `coverage-*` captures come from the follow-up's uncommitted snapshot based on
+`277795c`. The demonstrated source is unchanged in the delivered revision.
+These are new stories, so there is no Storybook baseline for them.
+
+| File | Capture conditions and observed result |
+| --- | --- |
+| `coverage-entity-detail.png` | EntityDetailPage Loaded, 1280×900 viewport, full-page capture. The route supplies Office plug's Entity ID. Command, availability, and State histories render separate synthetic records. |
+| `coverage-metric-editor.png` | MetricEditor RemoveTrend, 1280×900. After the play function removes the trend, a manual change to 7d persists in the local draft. The story uses the production `view-editor` wrapper. |
+| `coverage-color-phone.png` | LightColorPicker Closed story, manually opened at 390×844. After submitting `#ff0000`, the dialog is scrolled to show the refreshed synthetic observation `#FF0000`. Document client and scroll widths both measure 390px. |
+| `coverage-color.mp4` | 13-second recording of the same phone story: submit red, scroll to the observed value, and close the dialog. The first six seconds of blank recording startup were trimmed; there are no internal cuts or speed changes. The clip was played to its end and sampled frames were inspected. |
+
+The recording and screenshots establish browser rendering and story-local State
+refresh only, not a device effect. The page-read stories deliberately do not mock
+Rename or enablement PATCH requests.
+
 Run `mise run storybook`, then open:
 
 - `http://localhost:6006/?path=/story/features-views-renderer-viewrenderer--morning-dashboard`

@@ -133,11 +133,13 @@ export function MonoId({ value, className = "" }: { value: string; className?: s
   );
 }
 
-export function RawJson({ value, title = "Raw JSON", code }: { value: unknown; title?: string; code?: string }) {
+export function RawJson({ value, title = "Raw JSON", code, headingLevel = 3 }: {
+  value: unknown; title?: string; code?: string; headingLevel?: 2 | 3 | 4 | 5 | 6;
+}) {
   return (
     <Accordion type="single" collapsible className="mt-4 rounded-lg border px-3">
       <AccordionItem value="raw-json">
-        <AccordionTrigger className="text-sm font-medium">{title}</AccordionTrigger>
+        <AccordionTrigger headingLevel={headingLevel} className="text-sm font-medium">{title}</AccordionTrigger>
         <AccordionContent>
           <JsonCode code={code ?? JSON.stringify(value, null, 2) ?? String(value)} />
         </AccordionContent>

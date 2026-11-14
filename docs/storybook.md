@@ -93,6 +93,45 @@ from args needs no play assertion. A phone story also calls
 `expectNoHorizontalOverflow` from `.storybook/play.ts`. Keep the single
 `CssCheck` story as the production CSS loading check.
 
+## Choose a component, editor, or page story
+
+The sidebar includes the catalog's bound cards, their shared frame and Source
+details, light and power controls, and reusable UI components. Direct editor
+stories cover Metric, ToggleTile, AirPurifier, and TimeSeries. Each holds a local
+draft so you can make several edits in the canvas. Changing the initial value in
+Controls resets that draft; canvas edits do not update Controls. Other card
+editors remain covered through ViewEditor.
+
+The `pages` group runs EntitiesPage, DevicesPage, and EntityDetailPage against the
+same synthetic household. Use its loaded, empty, and failed-read stories to
+inspect the page without Core. The Entity detail's `NeverObserved` story also
+empties retained history. Device selection and Entity filtering have interaction
+tests; this is not full application navigation or a backend E2E test.
+These page-read scenarios do not mock Rename or enablement PATCH requests. Using
+those controls produces an unhandled-request error rather than changing Core.
+Direct control stories do refresh their synthetic observed State after Commands.
+
+For a page that reads route params, set a `route` parameter on its meta:
+
+```tsx
+parameters: {
+  route: {
+    path: "/entities/:entityId",
+    entry: `/entities/${entityId(4)}`,
+  },
+}
+```
+
+The preview mounts a fresh MemoryRouter at `entry` and matches `path` with a
+Route. Without `route`, stories keep the bare router. Do not add a second router
+inside a story.
+
+These three pages take no props, so docgen emits no API metadata for them. The
+manifest check allows that specific diagnostic for their three IDs while still
+checking snippets. Every reusable component must publish nonempty prop docs.
+Native and Radix prop filtering in `.storybook/main.ts` must retain the props a
+new story demonstrates.
+
 The generated snippets currently use a `hearth-dashboard` package import, but this
 application does not publish component exports. Use the source-module import from
 the colocated story instead. Storybook's **Start here** page records this caveat

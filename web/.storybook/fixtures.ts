@@ -106,6 +106,13 @@ export function createEntities(): Entity[] {
   ];
 }
 
+/** One synthetic Entity, for a component that takes a resolved Entity rather than a source. */
+export function fixtureEntity(number: number, overrides: Partial<Entity> = {}): Entity {
+  const found = createEntities().find(candidate => candidate.id === entityId(number));
+  if (!found) throw new Error(`No fixture Entity ${number}`);
+  return { ...found, ...overrides };
+}
+
 /** Every current catalog element has a typed, reusable example. */
 export const catalogExamples = {
   Stack: { type: "Stack", props: { gap: "medium" }, children: ["heading", "note"] },
