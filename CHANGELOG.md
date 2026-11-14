@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.0](https://github.com/mholtzscher/hearth/compare/v0.24.2...v0.25.0) (2026-11-14)
+
+
+### Features
+
+* **esphome:** support ratgdo garage door controls ([#353](https://github.com/mholtzscher/hearth/issues/353)) ([a6cb875](https://github.com/mholtzscher/hearth/commit/a6cb875f910b4f4b78887b278b6fa64eaf531a7e))
+* **esphome:** support thermostat entities and settings ([#354](https://github.com/mholtzscher/hearth/issues/354)) ([3672034](https://github.com/mholtzscher/hearth/commit/3672034e47c6efddf596549c2e7ae185fa5d8224))
+* **esphome:** support VOC text, RGB color, and effects ([#349](https://github.com/mholtzscher/hearth/issues/349)) ([e4c9bf1](https://github.com/mholtzscher/hearth/commit/e4c9bf1d919869358f558943182b9975cca969c8))
+* **views:** add air purifier cards and quick tiles ([#351](https://github.com/mholtzscher/hearth/issues/351)) ([0e98b7a](https://github.com/mholtzscher/hearth/commit/0e98b7a9eb1a8bbdcdaee95bc117efea33e3b9eb))
+* **views:** add compact light color picker ([#352](https://github.com/mholtzscher/hearth/issues/352)) ([38501cf](https://github.com/mholtzscher/hearth/commit/38501cf7333a87821a5d03ccc15a895dced87450))
+* **views:** add cover controls and fixed-height quick tiles ([#355](https://github.com/mholtzscher/hearth/issues/355)) ([878b815](https://github.com/mholtzscher/hearth/commit/878b815f0bb97da001fb798a0f6093e81660024e))
+
 ## [0.24.2](https://github.com/mholtzscher/hearth/compare/v0.24.1...v0.24.2) (2026-11-13)
 
 
