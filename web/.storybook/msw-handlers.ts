@@ -1,7 +1,7 @@
 import { delay, http, HttpResponse } from "msw";
 import { z } from "zod";
-import type { Device, Entity } from "../src/api/types";
-import { createEntities, deviceId, entityId, fixtureNow } from "./fixtures";
+import type { CommandRecord, Device, Entity, EntityStateHistoryEntry, HealthTransition } from "../src/api/types";
+import { createEntities, deviceId, entityId, fixtureNow, observedAt } from "./fixtures";
 
 export { fixtureNow } from "./fixtures";
 const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
@@ -24,15 +24,20 @@ function canonical(entity: Entity): Entity {
   return copy;
 }
 
-export function createCoreHandlers() {
-  const entities = new Map(createEntities().map(entity => [entity.id, entity]));
+export function createCoreHandlers(overrides: Entity[] = []) {
+  const entities = new Map([...createEntities(), ...overrides].map(entity => [entity.id, entity]));
+  const retainedStates = new Map([...entities].map(([id, entity]) => [id, canonical(entity).state]));
   const devices: Device[] = ["Living room purifier", "Hallway lamp", "Weather station", "Office plug"].map((name, index) => ({
     id: deviceId(index + 1), name, kind: index === 1 ? "light" : "device",
     adapter_name: name, name_override: null,
   }));
   let commandNumber = 0;
   return [
-    http.get("/v1/entities", () => HttpResponse.json({ items: [...entities.values()], next_cursor: null })),
+    http.get("/v1/entities", ({ request }) => {
+      const device = new URL(request.url).searchParams.get("device_id");
+      const items = [...entities.values()].filter(entity => !device || entity.device_id === device);
+      return HttpResponse.json({ items, next_cursor: null });
+    }),
     http.get("/v1/devices", () => HttpResponse.json({ items: devices, next_cursor: null })),
     http.get("/v1/entities/:id", ({ params, request }) => {
       const entity = entities.get(String(params.id));
@@ -44,6 +49,30 @@ export function createCoreHandlers() {
       if (!device) return HttpResponse.json({ detail: "Device not found" }, { status: 404 });
       const children = [...entities.values()].filter(entity => entity.device_id === device.id);
       return HttpResponse.json({ ...device, entities: new URL(request.url).searchParams.get("units") === "canonical" ? children.map(canonical) : children, next_entity_cursor: null });
+    }),
+    // Detail pages display retained records separately from the cards' aggregate queries.
+    http.get("/v1/entities/:id/commands", ({ params }) => {
+      const entity = entities.get(String(params.id));
+      const state = retainedStates.get(String(params.id));
+      const items: CommandRecord[] = entity?.type === "hearth.power/v1" && state ? [{
+        id: "cmd_story_previous", entity_id: entity.id, operation: "set",
+        parameters: { value: state.value }, status: "satisfied",
+        requested_at: "2026-11-09T09:59:59Z", deadline_at: "2026-11-09T10:00:04Z",
+        completed_at: observedAt, outcome_observation_id: state.observation_id,
+      }] : [];
+      return HttpResponse.json({ items, next_cursor: null });
+    }),
+    http.get("/v1/entities/:id/availability/history", () => HttpResponse.json({
+      items: [{ status: "available", source: "adapter", observed_at: observedAt }] satisfies HealthTransition[],
+      next_cursor: null,
+    })),
+    http.get("/v1/entities/:id/state/history", ({ params }) => {
+      const state = retainedStates.get(String(params.id));
+      const items: EntityStateHistoryEntry[] = state ? [{
+        observation_id: state.observation_id, value: state.value, disposition: "applied",
+        adapter_received_at: state.adapter_received_at, observed_at: state.observed_at,
+      }] : [];
+      return HttpResponse.json({ items, next_cursor: null });
     }),
     http.post("/v1/entities/:id/state/history", async ({ params, request }) => {
       const query = historyQuery.parse(await request.json());

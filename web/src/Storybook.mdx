@@ -17,6 +17,13 @@ The renderer's Morning Dashboard and Phone Dashboard show the same definition
 at desktop and phone widths. Device stories exercise the actual light color
 popover and phone dialog.
 
+Shared control and frame stories document the pieces used inside those cards.
+Metric, ToggleTile, AirPurifier, and TimeSeries have direct editor stories with
+local drafts. The `pages` group adds the debug Entity list, Device list
+with inline detail, and Entity detail with retained history. Each page has
+loaded, empty or unobserved, and failed-read scenarios using the synthetic
+household.
+
 Use Controls to explore props, the test widget to run interactions and
 accessibility checks, and the viewport toolbar to inspect responsive behavior.
 Stories marked `ai-generated` still need human review.

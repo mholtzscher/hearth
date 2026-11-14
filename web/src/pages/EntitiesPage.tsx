@@ -108,7 +108,7 @@ export default function EntitiesPage() {
               Next page
             </Button>
           )}
-          <RawJson value={data} title="Raw list JSON" />
+          <RawJson value={data} title="Raw list JSON" headingLevel={2} />
         </>
       )}
     </div>

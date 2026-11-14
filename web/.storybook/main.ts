@@ -36,11 +36,19 @@ const config: StorybookConfig = {
         "disabled", "type", "value", "defaultValue",
         "placeholder", "onChange", "onClick", "children", "checked", "defaultChecked",
         "onCheckedChange",
+        "open", "defaultOpen", "onOpenChange", "modal", "htmlFor",
+        "collapsible", "onValueChange", "orientation", "dir",
       ].includes(prop.name),
     },
   },
   core: { disableTelemetry: true, disableWhatsNewNotifications: true },
   viteFinal(config) {
+    // Page stories add this CJS dependency after the card-only runner has warmed.
+    // Prebundle it up front so a late optimization cannot reload an active test.
+    config.optimizeDeps = {
+      ...config.optimizeDeps,
+      include: [...(config.optimizeDeps?.include ?? []), "prism-react-renderer"],
+    };
     config.publicDir = path.resolve(import.meta.dirname, "public");
     config.plugins = [...(config.plugins ?? []), tailwindcss()];
     config.resolve = {

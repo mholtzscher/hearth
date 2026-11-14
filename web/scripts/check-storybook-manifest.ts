@@ -3,7 +3,7 @@ import { z } from "zod";
 
 const manifest = z.object({
   components: z.record(z.string(), z.object({
-    error: z.object({ message: z.string() }).optional(),
+    error: z.object({ name: z.string().optional(), message: z.string() }).optional(),
     reactDocgenTypescript: z.object({ props: z.record(z.string(), z.unknown()) }).optional(),
     stories: z.array(z.object({
       id: z.string(), snippet: z.string().trim().min(1),
@@ -13,10 +13,16 @@ const manifest = z.object({
 }).parse(JSON.parse(await readFile(process.argv[2] ?? new URL("../storybook-static/manifests/components.json", import.meta.url), "utf8")));
 
 const components = Object.entries(manifest.components);
+// These routed pages take no props, so docgen emits no prop metadata. Keep the
+// exception explicit: every reusable component must still publish its API.
+const parameterlessPages = new Set(["pages-entitiespage", "pages-devicespage", "pages-entitydetailpage"]);
 if (components.length === 0) throw new Error("Storybook published no component documentation");
 for (const [id, component] of components) {
-  if (component.error) throw new Error(`${id}: ${component.error.message}`);
-  if (!component.reactDocgenTypescript || Object.keys(component.reactDocgenTypescript.props).length === 0) {
+  const noPropsPage = parameterlessPages.has(id);
+  if (component.error && !(noPropsPage && component.error.name === "react-docgen-typescript found no component docs")) {
+    throw new Error(`${id}: ${component.error.message}`);
+  }
+  if (!noPropsPage && (!component.reactDocgenTypescript || Object.keys(component.reactDocgenTypescript.props).length === 0)) {
     throw new Error(`${id}: component props are missing from the agent manifest`);
   }
   for (const story of component.stories) {
@@ -24,4 +30,5 @@ for (const [id, component] of components) {
     if (story.warning) throw new Error(`${story.id}: ${story.warning}`);
   }
 }
-console.log(`Verified ${components.length} component APIs and ${components.reduce((count, [, component]) => count + component.stories.length, 0)} story snippets.`);
+const pageCount = components.filter(([id]) => parameterlessPages.has(id)).length;
+console.log(`Verified ${components.length - pageCount} component APIs, ${pageCount} parameterless pages, and ${components.reduce((count, [, component]) => count + component.stories.length, 0)} story snippets.`);
