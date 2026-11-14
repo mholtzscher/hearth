@@ -5,8 +5,8 @@ import { StatusList } from "../CardFrame";
 import { cardStatus, type CardStatus } from "../status";
 import type { ReadingRow } from "../reading-list/ReadingRows";
 
-/** A slot's read. Canonical reads feed formulas; cards show household reads. */
-export type WeatherRead = { source: NumericSource; window?: SeriesWindow; units?: ReadUnits };
+/** A slot selects one representation of a shared, paired read. */
+export type WeatherRead = { source: NumericSource; window?: SeriesWindow; units?: ReadUnits; canonicalUnit?: string };
 export type WeatherReads<K extends string> = {
   current: (slot: K) => Resolved<MetricData> | undefined;
   history: (slot: K) => Resolved<SeriesData> | undefined;
@@ -18,7 +18,10 @@ export type WeatherReads<K extends string> = {
  */
 export function useWeatherReads<K extends string>(slots: Array<[K, WeatherRead | undefined]>): WeatherReads<K> {
   const bound = slots.filter((slot): slot is [K, WeatherRead] => slot[1] !== undefined);
-  const results = useNumericReads(bound.flatMap(([, read]) => read.window ? [{ source: read.source, units: read.units }, { source: read.source, window: read.window, units: read.units }] : [{ source: read.source, units: read.units }]));
+  const results = useNumericReads(bound.flatMap(([, read]) => {
+    const binding = { source: read.source, units: read.units, canonicalUnit: read.canonicalUnit, paired: true };
+    return read.window ? [binding, { ...binding, window: read.window }] : [binding];
+  }));
   const current = new Map<K, Resolved<MetricData>>(), history = new Map<K, Resolved<SeriesData>>();
   let index = 0;
   for (const [slot, read] of bound) {

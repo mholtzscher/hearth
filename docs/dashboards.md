@@ -264,16 +264,15 @@ view is presented or saved: `mm/h` for rain rates, `mm` for rain totals, and
   fail. A failed refresh shows a warning independently of the optional trend;
   expired history shows no tendency while the live pressure reading remains.
 
-Conditions, Beaufort forces, and pressure tendencies use fixed thresholds, so
-the cards apply them to an additional `units=canonical` read of wind speed, rain
-rate, and pressure history. The cards show the household reading. Condition
-words and Beaufort forces appear only when the canonical read describes the
-same observation as the shown reading. If that read fails or describes another
-observation, the card shows the reading without the words; OutsideNow then
-lists the rain rate and wind direction as rows. Pressure words its tendency
-from the canonical history and states the change from the household history,
-only while both use the same buckets. Rain totals share one unit label only
-when every total has that unit. The cards do not show feels-like or dew point.
+Conditions, Beaufort forces, and pressure tendencies use fixed thresholds.
+Weather cards request `include=canonical`, receiving household values and their
+canonical formula inputs together from one Observation or history aggregation.
+Both representations share a cache entry. A pending refresh keeps the previous
+complete reading, so conditions do not disappear or insert fallback rows between
+responses. A failed refresh retains that complete reading with its warning.
+Pressure words its tendency from the canonical metrics and states the change
+from the household metrics of the same buckets. Rain totals share one unit label
+only when every total has that unit. The cards do not show feels-like or dew point.
 
 Each reading keeps its own statuses; the footer states the oldest displayed
 reading. Weather cards count toward the 16-reference budget like other cards.

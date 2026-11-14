@@ -19,6 +19,8 @@ export type HistorySeries = {
   from: string; to: string;
   quantity: Quantity;
   buckets: Array<{ start: string; end: string; min: number | null; max: number | null; mean: number | null }>;
+  /** The same aggregation in stored units, when requested with the display series. */
+  canonical?: HistorySeries;
 };
 const timestamp = z.string().datetime({ offset: true });
 const bucketRange = z.object({ from: timestamp, to: timestamp });
@@ -30,6 +32,15 @@ const summary = z.object({
     metrics: z.object({
       min: z.number().nullable(), max: z.number().nullable(), mean: z.number().nullable(),
     }),
+  })),
+});
+const metrics = z.object({ min: z.number().nullable(), max: z.number().nullable(), mean: z.number().nullable() });
+const pairedSummary = z.object({
+  range: bucketRange,
+  buckets: z.array(z.object({
+    range: bucketRange,
+    canonical: z.object({ unit: z.string(), metrics }),
+    display: quantitySchema.extend({ metrics }),
   })),
 });
 
@@ -59,13 +70,40 @@ function readSummary(raw: unknown, window: SeriesWindow): HistorySeries {
   };
 }
 
-export function historySeriesRequest(source: NumericSource, window: SeriesWindow, units: "household" | "canonical" = "household"): ReadRequest {
+function readPairedSummary(raw: unknown, window: SeriesWindow, canonicalUnit: string): HistorySeries {
+  const data = pairedSummary.parse(raw);
+  if (data.buckets.length !== windows[window].count) throw new Error("Invalid series resolution");
+  const first = data.buckets[0];
+  if (first.canonical.unit !== canonicalUnit) throw new Error("Canonical history unit mismatch");
+  for (const bucket of data.buckets) {
+    if (bucket.canonical.unit !== first.canonical.unit || bucket.display.unit !== first.display.unit ||
+      bucket.display.label !== first.display.label || bucket.display.fraction_digits !== first.display.fraction_digits) {
+      throw new Error("History bucket units differ");
+    }
+    for (const name of ["min", "max", "mean"] as const) {
+      if ((bucket.canonical.metrics[name] === null) !== (bucket.display.metrics[name] === null)) {
+        throw new Error("Paired history gaps differ");
+      }
+    }
+  }
+  const interval = { from: data.range.from, to: data.range.to };
+  return {
+    ...interval, quantity: first.display,
+    buckets: data.buckets.map(bucket => ({ start: bucket.range.from, end: bucket.range.to, ...bucket.display.metrics })),
+    canonical: {
+      ...interval, quantity: { unit: first.canonical.unit, label: first.canonical.unit, fraction_digits: 1 },
+      buckets: data.buckets.map(bucket => ({ start: bucket.range.from, end: bucket.range.to, ...bucket.canonical.metrics })),
+    },
+  };
+}
+
+export function historySeriesRequest(source: NumericSource, window: SeriesWindow, units: "household" | "canonical" = "household", paired = false, canonicalUnit?: string): ReadRequest {
   const field = quantityField(source);
   if (!field) throw new Error("Unsupported quantity field");
   const path = source.field ?? "";
   const nulls = field.presence === "sometimes" ? "gap" : "reject";
   return {
-    key: `entity-series:${source.entity_id}:${path}:${window}:${nulls}:${units}`, kind: "series",
+    key: `entity-series:${source.entity_id}:${path}:${window}:${nulls}:${paired ? "paired" : units}`, kind: "series",
     load: (signal: AbortSignal, to: Date) => {
       const range = windowRange(window, to);
       const body = JSON.stringify({
@@ -73,8 +111,12 @@ export function historySeriesRequest(source: NumericSource, window: SeriesWindow
         select_field: path,
         result: { kind: "summary", ...(nulls === "gap" ? { nulls } : {}), metrics: { min: { operation: "min" }, max: { operation: "max" }, mean: { operation: "sample_mean" } }, bucket: { duration: windows[window].bucket, alignment: "range_start" } },
       });
-      return apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}/state/history${units === "canonical" ? "?units=canonical" : ""}`, { method: "POST", body, signal },
-        text => readSummary(JSON.parse(text), window));
+      return apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}/state/history${paired ? "?include=canonical" : units === "canonical" ? "?units=canonical" : ""}`, { method: "POST", body, signal },
+        text => {
+          if (!paired) return readSummary(JSON.parse(text), window);
+          if (!canonicalUnit) throw new Error("Missing canonical history unit");
+          return readPairedSummary(JSON.parse(text), window, canonicalUnit);
+        });
     },
   };
 }

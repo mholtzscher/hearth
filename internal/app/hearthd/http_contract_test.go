@@ -63,27 +63,29 @@ func TestHTTPTransportContractSnapshot(t *testing.T) {
 		t.Fatal("Entity schema must publish quantities")
 	}
 	paths := document["paths"].(map[string]any)
-	for _, operation := range []struct{ path, method string }{
-		{"/v1/entities", "get"}, {"/v1/entities/{entity_id}", "get"},
-		{"/v1/entities/{entity_id}", "patch"}, {"/v1/devices/{device_id}", "get"},
-		{"/v1/entities/{entity_id}/state/history", "post"},
+	for _, operation := range []struct{ path, method, parameter string }{
+		{"/v1/entities", "get", "units"}, {"/v1/entities/{entity_id}", "get", "units"},
+		{"/v1/entities/{entity_id}", "patch", "units"}, {"/v1/devices/{device_id}", "get", "units"},
+		{"/v1/entities/{entity_id}/state/history", "post", "units"},
+		{"/v1/entities/{entity_id}", "get", "include"},
+		{"/v1/entities/{entity_id}/state/history", "post", "include"},
 	} {
 		published := paths[operation.path].(map[string]any)[operation.method].(map[string]any)
 		found := false
 		for _, parameter := range published["parameters"].([]any) {
 			p := parameter.(map[string]any)
-			if p["name"] == "units" && p["in"] == "query" {
+			if p["name"] == operation.parameter && p["in"] == "query" {
 				found = true
 			}
 		}
 		if !found {
-			t.Fatalf("%s %s does not publish units", operation.method, operation.path)
+			t.Fatalf("%s %s does not publish %s", operation.method, operation.path, operation.parameter)
 		}
 	}
 	// Includes paths, wire schemas, component names, references and publication
 	// metadata. Intentional API extensions update this digest alongside contract tests.
 	got := fmt.Sprintf("%x", sha256.Sum256(response.Body.Bytes()))
-	const want = "9abd0b106b2acf6a4f60f3319787b8b1f61031ca65d4e3ebef3173d0d8d89011"
+	const want = "5047db6ef0385d4b1144f4b5c96382e6ed38c7a298fd7b5925916b97dcb5fce8"
 	if got != want {
 		t.Fatalf("HTTP/OpenAPI contract changed: SHA-256 = %s, want %s", got, want)
 	}

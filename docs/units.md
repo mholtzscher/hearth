@@ -57,6 +57,53 @@ the fixed temperature schema has validation limits but no declared range.
 History selects one field and returns one `quantity` metadata object beside its
 metrics or buckets. Null metrics remain gaps, never zero.
 
+### Paired canonical and display reads
+
+`GET /v1/entities/{entity_id}?include=canonical` returns both representations
+from one retained Observation. It replaces the ordinary `state.value` and
+top-level `quantities` with two trees inside the same State evidence envelope:
+
+```json
+{
+  "state": {
+    "observed_at": "2026-11-14T21:02:40Z",
+    "canonical": {"value": 4.4704, "unit": "m/s"},
+    "display": {"value": 10, "unit": "[mi_i]/h", "label": "mi/h", "fraction_digits": 1}
+  }
+}
+```
+
+This synthetic fragment omits Entity metadata and the State's shared
+`observation_id`, `adapter_received_at`, and optional `source_updated_at`.
+Those fields remain on State, not on either representation. A never-observed
+or stateless Entity still returns `state: null`.
+
+Composite Entities have matching field trees under `canonical` and `display`.
+Each numeric field becomes a reading object with `value` and `unit`; display
+readings also carry `label`, `fraction_digits`, and a declared `range` when
+available. Non-numeric values remain plain strings and booleans. Optional fields
+stay absent in both trees. Forecasts preserve their period arrays and wrap each
+available numeric measurement in the same way.
+
+`POST /v1/entities/{entity_id}/state/history?include=canonical` aggregates once
+and returns both forms of those statistics. Each bucket retains one `range`
+and contains `canonical: {unit, metrics}` and
+`display: {unit, label, fraction_digits, metrics}`. An unbucketed summary has
+those same groups on its shared result envelope. Metric names, null gaps,
+coverage, and bucket boundaries are shared; the ordinary top-level `quantity`
+and bucket `metrics` are not returned. The encoded-size limit includes both
+representations.
+
+Neither representation is rounded for display. Clients use `fraction_digits`
+only when formatting. Keep the complete response as one cache entry so a
+refresh cannot pair a new displayed reading with an older formula input.
+
+This opt-in is available on these two HTTP operations only. Existing default
+reads, `units=canonical`, and MCP reads are unchanged. An empty, unknown, or
+repeated `include` is invalid, as is combining `include=canonical` with
+`units=canonical`. The dashboard's weather cards require a Core version that
+supports the opt-in; deploy Core first or deploy Core and web together.
+
 ### Forecast snapshots
 
 Hourly and daily forecast Entities also use backend household projection.
@@ -146,10 +193,10 @@ counter summaries do not become precipitation totals over a window by summing
 cumulative readings. Forecast Function outputs have separate canonical-unit schemas
 and are not projected by this Entity-read feature.
 
-Weather cards display household readings. Their condition words, Beaufort
-forces, and pressure tendencies use fixed thresholds, so the cards evaluate them
-against a separate `units=canonical` read of the same Entity. The frontend does
-not convert units, and the cards show no feels-like or dew-point temperatures.
+Weather cards use paired reads. They display household values and evaluate
+condition words, Beaufort forces, and pressure tendencies against the canonical
+values from the same response. The frontend does not convert units, and the
+cards show no feels-like or dew-point temperatures.
 See [weather cards](dashboards.md).
 
 ## PM2.5 unit migration

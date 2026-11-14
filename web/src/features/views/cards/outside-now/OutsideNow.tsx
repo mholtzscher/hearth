@@ -18,9 +18,9 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
   const reads = useWeatherReads<Slot>([
     ["temperature", { source: temperature, window: "24h" }], ["humidity", humidity && { source: humidity }],
     ["wind", wind && { source: wind }], ["windCanonical", wind && { source: wind, units: "canonical" }],
-    ["direction", wind_direction && { source: wind_direction }],
-    ["rate", rain_rate && { source: rain_rate }], ["rateCanonical", rain_rate && { source: rain_rate, units: "canonical" }],
-    ["today", rain_today && { source: rain_today }],
+    ["direction", wind_direction && { source: wind_direction, canonicalUnit: "deg" }],
+    ["rate", rain_rate && { source: rain_rate, canonicalUnit: "mm/h" }], ["rateCanonical", rain_rate && { source: rain_rate, units: "canonical", canonicalUnit: "mm/h" }],
+    ["today", rain_today && { source: rain_today, canonicalUnit: "mm" }],
   ]);
   const reading = reads.current("temperature")!;
   const status = cardStatus(reading);

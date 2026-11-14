@@ -32,7 +32,7 @@ function Compass({ bearing, calm, dimmed }: { bearing?: number; calm: boolean; d
 export function BoundWind({ label, speed, gust, direction, max_gust, trend }: Props) {
   const reads = useWeatherReads<Slot>([
     ["speed", { source: speed, window: trend }], ["speedCanonical", { source: speed, units: "canonical" }], ["gust", gust && { source: gust }],
-    ["direction", direction && { source: direction }], ["max", max_gust && { source: max_gust }],
+    ["direction", direction && { source: direction, canonicalUnit: "deg" }], ["max", max_gust && { source: max_gust }],
   ]);
   const reading = reads.current("speed")!, status = cardStatus(reading);
   const metres = canonicalValue(reading, reads.current("speedCanonical"));
