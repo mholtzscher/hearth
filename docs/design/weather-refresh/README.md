@@ -23,11 +23,18 @@ or display projection locally. This applies to numeric and text cards, controls,
 forecasts, and Entity detail. The detail page's raw inspector retains the paired
 wire shape rather than displaying the normalized internal model.
 
-The revision passed `mise run validate`: 773 frontend tests, 147 Chromium
+The revision passed `mise run validate` again after integrating main's new
+application stories: 774 frontend tests, 171 Chromium
 stories, both web builds, generation, formatting, module tidying, lint, vet,
 and Go unit/integration/E2E tests. Local Go tests were non-race, with normal
 test caching for unchanged packages. Independent frontend and backend source
 reviews found no remaining actionable defects.
+
+The first run after that integration discovered six new Vite dependencies and
+reloaded running browser suites, causing initialization failures. The log
+explicitly reported dependency optimization and an unexpected test reload.
+The focused application suite then passed 24 tests on the completed optimizer
+cache, followed by the full passing gate. No tests or timeouts were weakened.
 
 A fresh isolated runtime used backend revision `3e78d25` plus the submitted
 frontend changes, with the default metric configuration and no daemon override.
