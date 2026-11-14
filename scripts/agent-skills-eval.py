@@ -40,6 +40,15 @@ def check(condition, message):
         raise AssertionError(message)
 
 
+def canonical_value(tree):
+    """Unwrap numeric reading leaves in a paired Entity detail response."""
+    if isinstance(tree, dict):
+        if 'unit' in tree and 'value' in tree:
+            return tree['value']
+        return {key: canonical_value(value) for key, value in tree.items()}
+    return tree
+
+
 def loopback(value):
     url = urllib.parse.urlsplit(value)
     if url.scheme != 'http' or url.hostname != '127.0.0.1' or not url.port or url.path not in ('', '/') or url.query or url.fragment or url.username:
@@ -154,7 +163,7 @@ def main():
         check(command_count() == 0, 'baseline contains Commands')
         for key, entity in ids.items():
             value = poll('baseline-' + '-'.join(key), lambda: get('/v1/entities/' + entity),
-                         lambda x: (x.get('state') is None if INITIAL[key] is None else x.get('state') is not None and x['state']['value'] == INITIAL[key]))
+                         lambda x: (x.get('state') is None if INITIAL[key] is None else x.get('state') is not None and canonical_value(x['state']['canonical']) == INITIAL[key]))
             check(value['id'] == entity, 'Core Entity identity mismatch')
         check(not page(f'/v1/entities/{ids[("office-button", "events")]}/events'), 'baseline contains button Events')
         check(all(not x for x in all_commands().values()), 'baseline contains Entity Commands')
@@ -228,7 +237,7 @@ def main():
             for key, entity in ids.items():
                 state = get('/v1/entities/' + entity)['state']
                 expected = power if key in TARGETS else INITIAL[key]
-                check(state is None if expected is None else state is not None and state['value'] == expected, 'wrong or changed State: ' + str(key))
+                check(state is None if expected is None else state is not None and canonical_value(state['canonical']) == expected, 'wrong or changed State: ' + str(key))
         histories = all_commands()
         actual = {command['id'] for items in histories.values() for command in items}
         check(actual == expected_commands and len(actual) == 6, 'unexpected or missing Command history')

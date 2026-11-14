@@ -42,6 +42,11 @@ it("offers canonical brightness percentages without support maximum or step", as
   }
   // Selecting a preset only edits the form; it never dispatches a Command.
   expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Raw entity JSON" }));
+  const raw = JSON.parse(document.querySelector("pre")!.textContent!);
+  expect(raw.state).toMatchObject({ canonical: { value: 51, unit: "%" }, display: { value: 51, unit: "%" } });
+  expect(raw.state).not.toHaveProperty("value");
+  expect(raw).not.toHaveProperty("quantities");
 });
 
 it.each([

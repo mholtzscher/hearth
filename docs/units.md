@@ -1,8 +1,9 @@
 # Quantity metadata and read units
 
 Hearth stores State, history, Commands, and Automation operands in canonical
-units. Ordinary Entity and numeric aggregate-history reads return household units
-using Core's configured `household_unit_system` (`metric` or `us`). This changes
+units. Entity-detail and numeric aggregate-history reads return canonical and
+display representations together. Display uses Core's configured
+`household_unit_system` (`metric` or `us`). This changes
 presentation, not stored data. Clients format the returned numbers without
 converting them again.
 
@@ -10,9 +11,8 @@ converting them again.
 
 These operations return household-unit readings by default:
 
-- `GET /v1/entities/{entity_id}` and `GET /v1/entities`.
+- `GET /v1/entities`.
 - `GET /v1/devices/{device_id}`, for each embedded Entity.
-- `POST /v1/entities/{entity_id}/state/history`, after canonical aggregation.
 - `PATCH /v1/entities/{entity_id}`, for the returned Entity.
 
 Add `?units=canonical` to select the original canonical numbers instead. MCP
@@ -54,13 +54,14 @@ Declared `range` bounds use the same unit as their reading. `fraction_digits`
 is formatting advice, not measurement accuracy or numeric rounding in the API.
 State validation limits alone do not declare a presentation range. For example,
 the fixed temperature schema has validation limits but no declared range.
-History selects one field and returns one `quantity` metadata object beside its
-metrics or buckets. Null metrics remain gaps, never zero.
+These pointer-keyed quantities apply to collection, embedded Device, and PATCH
+responses. Entity-detail and aggregate-history responses use the inline paired
+shape below. Null metrics remain gaps, never zero.
 
 ### Paired canonical and display reads
 
-`GET /v1/entities/{entity_id}?include=canonical` returns both representations
-from one retained Observation. It replaces the ordinary `state.value` and
+`GET /v1/entities/{entity_id}` always returns both representations
+from one retained Observation. It replaces `state.value` and
 top-level `quantities` with two trees inside the same State evidence envelope:
 
 ```json
@@ -85,7 +86,7 @@ available. Non-numeric values remain plain strings and booleans. Optional fields
 stay absent in both trees. Forecasts preserve their period arrays and wrap each
 available numeric measurement in the same way.
 
-`POST /v1/entities/{entity_id}/state/history?include=canonical` aggregates once
+`POST /v1/entities/{entity_id}/state/history` aggregates once
 and returns both forms of those statistics. Each bucket retains one `range`
 and contains `canonical: {unit, metrics}` and
 `display: {unit, label, fraction_digits, metrics}`. An unbucketed summary has
@@ -98,11 +99,13 @@ Neither representation is rounded for display. Clients use `fraction_digits`
 only when formatting. Keep the complete response as one cache entry so a
 refresh cannot pair a new displayed reading with an older formula input.
 
-This opt-in is available on these two HTTP operations only. Existing default
-reads, `units=canonical`, and MCP reads are unchanged. An empty, unknown, or
-repeated `include` is invalid, as is combining `include=canonical` with
-`units=canonical`. The dashboard's weather cards require a Core version that
-supports the opt-in; deploy Core first or deploy Core and web together.
+These two operations have one response shape and no `include` or `units`
+selector. Clients select `canonical` for calculations and `display` for
+presentation. Entity collections, embedded Device Entities, PATCH responses,
+and MCP retain their existing representation-selection behavior.
+This is a breaking detail/history contract change: deploy matching Core and web
+together, and migrate external consumers before upgrading. Removed query flags
+do not restore the previous response shape.
 
 ### Forecast snapshots
 
@@ -120,16 +123,18 @@ reads. Canonical units are declared by the contracts, not encoded in the names:
 | `wind_direction` | `deg` |
 | `uv_index` | `index` |
 
-Metadata uses concrete period pointers, such as
+Collection, embedded Device, and PATCH metadata uses concrete period pointers, such as
 `quantities["/periods/0/temperature"]`. Each entry describes that returned field;
 there are no wildcard pointers or duplicate readings. Omitted measurements stay
 absent. Timestamps, dates, conditions, source summaries, period order, and
 Observation evidence are unchanged. A null forecast State has an empty quantities
 map because there are no period indices yet.
 
-For example, a US household read returns `temperature: 36.5` with Fahrenheit
-metadata; `units=canonical` returns `temperature: 2.5` with Celsius metadata at
-the same pointer. Canonical reads preserve stored numeric tokens. SDK ingestion
+For example, a US detail read returns `display.periods[0].temperature` as
+`{value: 36.5, unit: "[degF]", label: "°F", fraction_digits: 0}` alongside
+`canonical.periods[0].temperature` as `{value: 2.5, unit: "Cel"}` inside State.
+Collection and embedded Device reads retain pointer-keyed quantities and the
+`units=canonical` selector. Canonical reads preserve stored numeric tokens. SDK ingestion
 and retained State use these same neutral names and canonical units. Forecast
 Function results also use neutral names, but remain canonical and are not projected.
 
@@ -142,10 +147,11 @@ become selectable scalar fields or aggregate-history sources.
 ## Writes are always canonical
 
 The `units` option controls responses only. Command parameters and Automation
-operands must satisfy their canonical contracts. Request `units=canonical` before
+operands must satisfy their canonical contracts. Use the detail response's
+`state.canonical`, or request `units=canonical` on collection/Device reads, before
 using a State value as a write input; never copy a household-unit reading into a
-canonical write. Metadata PATCH does not write State and returns the same
-representation an equivalent GET would return. Receipts without Entity readings
+canonical write. Metadata PATCH does not write State and retains its existing
+single-representation response. Receipts without Entity readings
 do not gain projection behavior.
 
 Unit-aware threshold authoring is a separate feature. This change does not
@@ -215,7 +221,8 @@ up before upgrading and upgrade Core before the Levoit Adapter. Custom scripted
 This is a breaking default-read contract change. Canonical and household reads
 use identical field paths, including forecasts. Deploy matching Core, Adapters,
 SDK consumers, and web together, and update
-external numeric consumers to use returned metadata or `units=canonical`.
+external numeric consumers to use the paired detail/history trees, or returned
+metadata and `units=canonical` on collection/Device reads.
 Older clients that still perform household conversion can convert twice.
 
 Forecast contracts correct the initial unit-suffixed names in place. Stop old

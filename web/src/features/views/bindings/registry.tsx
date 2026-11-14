@@ -20,9 +20,12 @@ export const NumericAdapters = createContext(numericAdapters);
 export function useNumericRead(source: NumericSource, window?: SeriesWindow): Resolved<MetricData | SeriesData> {
   return useNumericReads([{ source, window }])[0];
 }
-export function useNumericReads(bindings: Array<{ source: NumericSource; window?: SeriesWindow; units?: ReadUnits; paired?: boolean; canonicalUnit?: string }>): Resolved<MetricData | SeriesData>[] {
+export function useNumericReads(bindings: Array<{ source: NumericSource; window?: SeriesWindow; units?: ReadUnits; canonicalUnit?: string }>): Resolved<MetricData | SeriesData>[] {
   const adapters = useContext(NumericAdapters);
-  const selected = bindings.map(({ source, units, paired, canonicalUnit }) => adapters[source.entity_type] && (paired ? pairedQuantityAdapter(units ?? "household", canonicalUnit) : adapters[source.entity_type]));
+  const selected = bindings.map(({ source, units, canonicalUnit }) => {
+    const adapter = adapters[source.entity_type];
+    return adapter === quantityAdapter ? pairedQuantityAdapter(units ?? "household", canonicalUnit) : adapter;
+  });
   const requests = bindings.flatMap(({ source, window, units }, index) => {
     const adapter = selected[index];
     return adapter ? [adapter.stateRequest(source, units), ...(window ? [adapter.seriesRequest(source, window, units)] : [])] : [];

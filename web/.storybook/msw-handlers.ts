@@ -26,7 +26,6 @@ function canonical(entity: Entity): Entity {
     const value = copy.state.value as { periods: Record<string, unknown>[] };
     value.periods.forEach((period, index) => Object.entries(period).forEach(([field, reading]) => {
       if ((field.startsWith("temperature") || field === "apparent_temperature") && typeof reading === "number") {
-        period[field] = reading;
         copy.quantities![`/periods/${index}/${field}`] = { unit: "Cel", label: "Cel", fraction_digits: 1 };
       }
     }));
