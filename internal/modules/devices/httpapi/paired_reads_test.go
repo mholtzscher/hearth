@@ -38,7 +38,7 @@ func TestPairedEntityReadUsesOneObservation(t *testing.T) {
 			return view, nil
 		},
 	})
-	rec := performRequest(router, "/v1/entities/"+string(apiEntityID)+"?include=canonical")
+	rec := performRequest(router, "/v1/entities/"+string(apiEntityID))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, 1, calls)
 	require.Contains(t, rec.Body.String(), `"canonical":{"value":21000,"unit":"mCel"}`)
@@ -88,7 +88,7 @@ func TestPairedEntitySchemaRejectsMixedAndMalformedRepresentations(t *testing.T)
 			return view, nil
 		}},
 	)
-	rec := performRequest(router, "/v1/entities/"+string(apiEntityID)+"?include=canonical")
+	rec := performRequest(router, "/v1/entities/"+string(apiEntityID))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	schema := responseSchema(
 		t,
@@ -129,9 +129,11 @@ func TestPairedEntityShapesAndPublishedSchema(t *testing.T) {
 		{"US speed", `4.4704`, `{}`, devices.EntityTypeSpeedV1, household.UnitSystemUS,
 			[]string{`"canonical":{"value":4.4704,"unit":"m/s"}`, `"display":{"value":10,"unit":"[mi_i]/h","label":"mi/h","fraction_digits":1}`}, nil},
 		{"thermostat", `{"mode":"heat","current_temperature":21000}`, `{}`, devices.EntityTypeThermostatV1, household.UnitSystemUS,
-			[]string{`"mode":"heat"`, `"value":21000,"unit":"mCel"`, `"value":69.8,"unit":"[degF]"`}, []string{`"target_temperature"`}},
+			[]string{`"canonical":{"current_temperature":{"value":21000,"unit":"mCel"},"mode":"heat"}`,
+				`"display":{"current_temperature":{"value":69.8,"unit":"[degF]","label":"°F","fraction_digits":1},"mode":"heat"}`}, []string{`"target_temperature"`}},
 		{"forecast", `{"periods":[{"starts_at":"2026-11-10T12:00:00Z","condition":"clear-day","temperature":2.5},{"starts_at":"2026-11-10T13:00:00Z"}]}`, `{}`, devices.EntityTypeHourlyforecastV1, household.UnitSystemUS,
-			[]string{`"condition":"clear-day"`, `"value":2.5,"unit":"Cel"`, `"value":36.5,"unit":"[degF]"`, `"starts_at":"2026-11-10T13:00:00Z"`}, []string{`"wind_speed"`}},
+			[]string{`"canonical":{"periods":[{"condition":"clear-day","starts_at":"2026-11-10T12:00:00Z","temperature":{"value":2.5,"unit":"Cel"}},{"starts_at":"2026-11-10T13:00:00Z"}]}`,
+				`"display":{"periods":[{"condition":"clear-day","starts_at":"2026-11-10T12:00:00Z","temperature":{"value":36.5,"unit":"[degF]","label":"°F","fraction_digits":0}},{"starts_at":"2026-11-10T13:00:00Z"}]}`}, []string{`"wind_speed"`}},
 		{"boolean", `true`, `{}`, devices.EntityTypePowerV1, household.UnitSystemMetric,
 			[]string{`"canonical":true`, `"display":true`}, nil},
 		{"null", "", `{}`, devices.EntityTypeTemperatureV1, household.UnitSystemMetric,
@@ -156,7 +158,7 @@ func TestPairedEntityShapesAndPublishedSchema(t *testing.T) {
 				}},
 				tc.system,
 			)
-			for _, query := range []string{"?include=canonical", "", "?units=canonical"} {
+			for _, query := range []string{"", "?include=canonical", "?units=canonical"} {
 				rec := performRequest(router, "/v1/entities/"+string(apiEntityID)+query)
 				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 				validateResponseSchema(
@@ -165,11 +167,6 @@ func TestPairedEntityShapesAndPublishedSchema(t *testing.T) {
 					"#/paths/~1v1~1entities~1{entity_id}/get/responses/200/content/application~1json/schema",
 					rec.Body.String(),
 				)
-				if query != "?include=canonical" {
-					require.Contains(t, rec.Body.String(), `"quantities"`)
-					require.Contains(t, rec.Body.String(), `"$schema":"https://example.com/schemas/EntityBody.json"`)
-					continue
-				}
 				for _, want := range tc.want {
 					require.Contains(t, rec.Body.String(), want)
 				}
@@ -208,7 +205,7 @@ func TestPairedHistorySizeLimitCountsBothMetricGroups(t *testing.T) {
 			})
 			req := httptest.NewRequest(
 				http.MethodPost,
-				"/v1/entities/"+string(apiEntityID)+"/state/history?include=canonical",
+				"/v1/entities/"+string(apiEntityID)+"/state/history",
 				strings.NewReader(historyRequestBody),
 			)
 			req.Header.Set("Content-Type", "application/json")
@@ -251,7 +248,7 @@ func TestPairedHistoryBucketsAndPublishedSchema(t *testing.T) {
 	}, household.UnitSystemUS)
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/v1/entities/"+string(apiEntityID)+"/state/history?include=canonical",
+		"/v1/entities/"+string(apiEntityID)+"/state/history",
 		strings.NewReader(historyRequestBody),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -274,11 +271,15 @@ func TestPairedHistoryBucketsAndPublishedSchema(t *testing.T) {
 	)
 }
 
-func TestPairedHistoryAndIncludeValidation(t *testing.T) {
+func TestPairedHistoryAndRemovedSelectors(t *testing.T) {
 	t.Parallel()
 	calls := 0
 	router, api := testAPI(t, &stubDevices{
-		getEntity: historyTemperatureEntity,
+		getEntity: func(ctx context.Context, id devices.EntityID) (devices.EntityWithState, error) {
+			view, err := historyTemperatureEntity(ctx, id)
+			view.State = &devices.State{Value: []byte(`21000`)}
+			return view, err
+		},
 		queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
 			calls++
 			return devices.HistoryQueryResult{
@@ -301,7 +302,7 @@ func TestPairedHistoryAndIncludeValidation(t *testing.T) {
 		router.ServeHTTP(rec, req)
 		return rec
 	}
-	rec := post("?include=canonical")
+	rec := post("")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, 1, calls)
 	require.Contains(t, rec.Body.String(), `"canonical":{"unit":"mCel","metrics":{"gap":null,"min":21000}}`)
@@ -320,9 +321,13 @@ func TestPairedHistoryAndIncludeValidation(t *testing.T) {
 	for _, query := range []string{
 		"?include=bad", "?include=canonical&units=canonical", "?include=", "?include=canonical&include=bad",
 	} {
-		invalid := post(query)
-		require.Equal(t, http.StatusBadRequest, invalid.Code)
-		require.Contains(t, invalid.Body.String(), `"code":"invalid_query"`)
-		require.Equal(t, http.StatusBadRequest, performRequest(router, "/v1/entities/"+string(apiEntityID)+query).Code)
+		response := post(query)
+		require.Equal(t, http.StatusOK, response.Code)
+		require.JSONEq(t, rec.Body.String(), response.Body.String())
+		entity := performRequest(router, "/v1/entities/"+string(apiEntityID)+query)
+		require.Equal(t, http.StatusOK, entity.Code)
+		require.Contains(t, entity.Body.String(), `"canonical":{"value":21000,"unit":"mCel"}`)
+		require.Contains(t, entity.Body.String(), `"display":{"value":21,"unit":"Cel"`)
+		require.NotContains(t, entity.Body.String(), `"quantities"`)
 	}
 }

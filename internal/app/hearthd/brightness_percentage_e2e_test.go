@@ -157,10 +157,11 @@ func TestBrightnessPercentageCommandThroughCore(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &record))
 	require.Equal(t, "satisfied", record.Status)
 	require.Equal(t, &lastObservationID, record.OutcomeObservationID)
-	var entity httpapi.EntityBody
+	var entity httpapi.PairedEntityBody
 	raw = successfulFunctionCoreRequest(t, client, core, http.MethodGet, "/v1/entities/"+entityID, "")
 	require.NoError(t, json.Unmarshal(raw, &entity))
 	require.NotNil(t, entity.State)
-	require.InDelta(t, 51, entity.State.Value, 0)
+	require.InDelta(t, 51, entity.State.Canonical.(map[string]any)["value"], 0)
+	require.Equal(t, "%", entity.State.Canonical.(map[string]any)["unit"])
 	require.Equal(t, lastObservationID, entity.State.ObservationID)
 }

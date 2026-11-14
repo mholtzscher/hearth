@@ -12,53 +12,27 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-//nolint:goconst // This operation advertises the standard JSON media type.
 func registerGetEntity(api huma.API, handler *handler) {
 	registry := api.OpenAPI().Components.Schemas
 	registerPairedStateSchemas(registry)
-	legacy := registry.Schema(reflect.TypeFor[EntityBody](), false, "")
-	legacy.AdditionalProperties = false
-	legacyState := registry.Schema(reflect.TypeFor[StateBody](), true, "")
+	registry.Schema(reflect.TypeFor[StateBody](), true, "")
 	registry.Schema(reflect.TypeFor[StateBody](), false, "").AdditionalProperties = false
-	legacy.Properties["state"] = legacyState
 	huma.Register(api, huma.Operation{
 		OperationID: "get-entity", Method: http.MethodGet, Path: "/entities/{entity_id}",
 		Summary: "Get an Entity and its current State", Tags: []string{entitiesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
-		Responses: map[string]*huma.Response{"200": {
-			Description: "Entity and current State",
-			Content: map[string]*huma.MediaType{"application/json": {Schema: &huma.Schema{OneOf: []*huma.Schema{
-				legacy,
-				registry.Schema(reflect.TypeFor[pairedEntityBody](), true, ""),
-			}}}},
-		}},
 	}, handler.getEntity)
 }
 
 type GetEntityInput struct {
-	EntityID       string `path:"entity_id" doc:"Canonical Hearth Entity ID"`
-	Units          string `                 doc:"Omit for household units; canonical returns canonical values" query:"units"`
-	Include        string `                 doc:"canonical includes canonical and household readings together" query:"include"`
-	invalidInclude bool
-}
-
-func (input *GetEntityInput) Resolve(ctx huma.Context) []error {
-	input.invalidInclude = invalidIncludeSelection(ctx)
-	return nil
+	EntityID string `path:"entity_id" doc:"Canonical Hearth Entity ID"`
 }
 
 type GetEntityOutput struct {
-	Body any
+	Body PairedEntityBody
 }
 
 func (handler *handler) getEntity(ctx context.Context, input *GetEntityInput) (*GetEntityOutput, error) {
-	if input.invalidInclude || !validPairedInclude(input.Include, input.Units) {
-		return nil, huma.NewError(http.StatusBadRequest, "invalid include")
-	}
-	units, err := devices.ParseReadUnits(input.Units)
-	if err != nil {
-		return nil, huma.NewError(http.StatusBadRequest, "invalid units")
-	}
 	entityID, err := devices.ParseEntityID(input.EntityID)
 	if err != nil {
 		return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
@@ -70,22 +44,15 @@ func (handler *handler) getEntity(ctx context.Context, input *GetEntityInput) (*
 	if err != nil {
 		return nil, handler.internalAPIError(ctx, "get-entity", "service", err)
 	}
-	if input.Include == string(devices.UnitsCanonical) {
-		body, mapErr := handler.pairedEntityBody(view)
-		if mapErr != nil {
-			return nil, handler.internalAPIError(ctx, "get-entity", "mapping", mapErr)
-		}
-		return &GetEntityOutput{Body: body}, nil
-	}
-	body, err := handler.entityBody(view, units)
+	body, err := handler.pairedEntityBody(view)
 	if err != nil {
 		return nil, handler.internalAPIError(ctx, "get-entity", "mapping", err)
 	}
 	return &GetEntityOutput{Body: body}, nil
 }
 
-// Paired reads intentionally have neither legacy quantities nor state.value.
-type pairedEntityBody struct {
+// PairedEntityBody contains both readings without legacy quantities or state.value.
+type PairedEntityBody struct {
 	AdapterName  string           `json:"adapter_name"`
 	NameOverride *string          `json:"name_override" nullable:"true"`
 	ID           string           `json:"id"`
@@ -96,10 +63,10 @@ type pairedEntityBody struct {
 	Support      map[string]any   `json:"support"`
 	Enabled      bool             `json:"enabled"`
 	Availability AvailabilityBody `json:"availability"`
-	State        *pairedStateBody `json:"state"`
+	State        *PairedStateBody `json:"state"`
 }
 
-type pairedStateBody struct {
+type PairedStateBody struct {
 	_                 struct{} `json:"-"                           nullable:"true"`
 	ObservationID     string   `json:"observation_id"`
 	AdapterReceivedAt string   `json:"adapter_received_at"`
@@ -156,29 +123,29 @@ func registerPairedStateSchemas(r huma.Registry) {
 	}
 }
 
-func (pairedStateBody) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+func (PairedStateBody) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	s.Properties["canonical"] = &huma.Schema{Ref: "#/components/schemas/CanonicalStateTree"}
 	s.Properties["display"] = &huma.Schema{Ref: "#/components/schemas/DisplayStateTree"}
 	s.AdditionalProperties = false
 	return s
 }
 
-func (pairedEntityBody) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+func (PairedEntityBody) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	s.AdditionalProperties = false
 	return s
 }
 
-func (handler *handler) pairedEntityBody(view devices.EntityWithState) (pairedEntityBody, error) {
+func (handler *handler) pairedEntityBody(view devices.EntityWithState) (PairedEntityBody, error) {
 	// Both projections use the exact same service result and never mutate it.
 	canonical, canonicalMeta, err := handler.presenter.Entity(view, devices.UnitsCanonical)
 	if err != nil {
-		return pairedEntityBody{}, err
+		return PairedEntityBody{}, err
 	}
 	base, err := handler.entityBody(view, "")
 	if err != nil {
-		return pairedEntityBody{}, err
+		return PairedEntityBody{}, err
 	}
-	body := pairedEntityBody{
+	body := PairedEntityBody{
 		AdapterName: base.AdapterName, NameOverride: base.NameOverride, ID: base.ID, DeviceID: base.DeviceID,
 		AdapterID: base.AdapterID, Name: base.Name, Type: base.Type, Support: base.Support,
 		Enabled: base.Enabled, Availability: base.Availability,
@@ -188,11 +155,11 @@ func (handler *handler) pairedEntityBody(view devices.EntityWithState) (pairedEn
 	}
 	var c any
 	if err = decodeJSON(canonical.State.Value, &c); err != nil {
-		return pairedEntityBody{}, err
+		return PairedEntityBody{}, err
 	}
 	c = wrapStateQuantities(c, "", canonicalMeta, false)
 	d := wrapStateQuantities(base.State.Value, "", base.Quantities, true)
-	body.State = &pairedStateBody{
+	body.State = &PairedStateBody{
 		ObservationID: base.State.ObservationID, AdapterReceivedAt: base.State.AdapterReceivedAt,
 		SourceUpdatedAt: base.State.SourceUpdatedAt, ObservedAt: base.State.ObservedAt,
 		Canonical: c, Display: d,

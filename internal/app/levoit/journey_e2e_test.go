@@ -170,7 +170,7 @@ func TestLevoitCompanionCoreJourney(t *testing.T) {
 	mutations := cloud.mutations
 	cloud.mu.Unlock()
 	stopAgain, joinAgain := startCompanion(t, config, cloud)
-	var after devicesapi.EntityBody
+	var after devicesapi.PairedEntityBody
 	waitCondition(t, func() bool {
 		coreJSON(t, base, http.MethodGet, "/v1/entities/"+original.ID, "", &after)
 		var page struct {
@@ -193,9 +193,9 @@ func TestLevoitCompanionCoreJourney(t *testing.T) {
 	// The next acquisition rolls optimistic power back, without changing its
 	// already-retained satisfied Command outcome or replaying any mutation.
 	waitCondition(t, func() bool {
-		var power devicesapi.EntityBody
+		var power devicesapi.PairedEntityBody
 		coreJSON(t, base, http.MethodGet, "/v1/entities/"+powerID, "", &power)
-		return power.State != nil && power.State.Value == false
+		return power.State != nil && power.State.Canonical == false
 	})
 	var retained struct {
 		Status string `json:"status"`
@@ -259,9 +259,9 @@ func assertControls(t *testing.T, base string, entities []devicesapi.EntityBody)
 		if retained.Status != "satisfied" || retained.ObservationID != *result.ObservationID {
 			t.Fatal("Command evidence was not retained")
 		}
-		var after devicesapi.EntityBody
+		var after devicesapi.PairedEntityBody
 		coreJSON(t, base, http.MethodGet, "/v1/entities/"+entity.ID, "", &after)
-		if after.State == nil || after.State.Value != value || after.State.ObservationID != *result.ObservationID {
+		if after.State == nil || after.State.Canonical != value || after.State.ObservationID != *result.ObservationID {
 			t.Fatal("canonical optimistic State disagrees with Command evidence")
 		}
 		if entity.Name == "Power" {
@@ -277,7 +277,7 @@ func assertSensorStateUntouched(t *testing.T, base string, entities []devicesapi
 		if entity.Name != "PM2.5" && entity.Name != "Filter life" {
 			continue
 		}
-		var after devicesapi.EntityBody
+		var after devicesapi.PairedEntityBody
 		coreJSON(t, base, http.MethodGet, "/v1/entities/"+entity.ID, "", &after)
 		if after.State == nil || after.State.ObservationID != entity.State.ObservationID ||
 			after.Availability.Status != "available" {

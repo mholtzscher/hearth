@@ -105,11 +105,11 @@ func TestESPHomeThermostatThroughProductionCore(t *testing.T) {
 			"/v1/devices/"+thermostat.DeviceID, ""), &device))
 		require.Equal(t, "thermostat", device.Kind)
 
-		canonical := thermostatJourneyRead(t, client, core, thermostat.ID, "?units=canonical")
-		require.Equal(t, "mCel", canonical.Quantities["/current_temperature"].Unit)
-		require.JSONEq(t, `{"mode":"heat_cool","activity":"idle","current_temperature":20000,
-			"target_temperature_low":17000,"target_temperature_high":24000,"fan_mode":"Automatic",
-			"current_humidity":45,"target_humidity":50}`, thermostatJourneyJSON(t, canonical.State.Value))
+		canonical := thermostatJourneyRead(t, client, core, thermostat.ID)
+		require.JSONEq(t, `{"mode":"heat_cool","activity":"idle","current_temperature":{"value":20000,"unit":"mCel"},
+			"target_temperature_low":{"value":17000,"unit":"mCel"},"target_temperature_high":{"value":24000,"unit":"mCel"},"fan_mode":"Automatic",
+			"current_humidity":{"value":45,"unit":"%"},"target_humidity":{"value":50,"unit":"%"}}`,
+			thermostatJourneyJSON(t, canonical.State.Canonical))
 		require.Equal(t, "[degF]", thermostat.Quantities["/current_temperature"].Unit)
 		projected := thermostat.State.Value.(map[string]any)
 		require.InDelta(t, 68, projected["current_temperature"], 1e-9)
@@ -148,7 +148,9 @@ func TestESPHomeThermostatThroughProductionCore(t *testing.T) {
 		require.Equal(t, thermostat.Type, mcpEntity.Type)
 		require.NotNil(t, mcpEntity.State)
 		require.Equal(t, canonical.State.ObservationID, mcpEntity.State.ObservationID)
-		require.JSONEq(t, thermostatJourneyJSON(t, canonical.State.Value), string(mcpEntity.State.Value))
+		require.JSONEq(t, `{"mode":"heat_cool","activity":"idle","current_temperature":20000,
+			"target_temperature_low":17000,"target_temperature_high":24000,"fan_mode":"Automatic",
+			"current_humidity":45,"target_humidity":50}`, string(mcpEntity.State.Value))
 		runtime := thermostatJourneyRuntime(ctx, t, core.address)
 		thermostatJourneySubscription(t, broker, runtime, thermostat.ID, "set_range")
 		thermostatJourneySubscription(t, broker, runtime, thermostat.ID, "set_fan_mode")
@@ -167,9 +169,12 @@ func TestESPHomeThermostatThroughProductionCore(t *testing.T) {
 		require.NoError(t, peer.Push(intermediate))
 		var intermediateID string
 		thermostatJourneyWait(t, 5*time.Second, func() (bool, error) {
-			entity := thermostatJourneyRead(t, client, core, thermostat.ID, "?units=canonical")
-			value := entity.State.Value.(map[string]any)
-			if value["target_temperature_low"] != float64(18000) || value["target_temperature_high"] != float64(24000) {
+			entity := thermostatJourneyRead(t, client, core, thermostat.ID)
+			value := entity.State.Canonical.(map[string]any)
+			low := value["target_temperature_low"].(map[string]any)
+			high := value["target_temperature_high"].(map[string]any)
+			if low["value"] != float64(18000) || low["unit"] != "mCel" ||
+				high["value"] != float64(24000) || high["unit"] != "mCel" {
 				return false, nil
 			}
 			intermediateID = entity.State.ObservationID
@@ -406,12 +411,12 @@ func thermostatJourneyRead(
 	t *testing.T,
 	client *http.Client,
 	core *functionCoreRun,
-	id, query string,
-) httpapi.EntityBody {
+	id string,
+) httpapi.PairedEntityBody {
 	t.Helper()
-	var entity httpapi.EntityBody
+	var entity httpapi.PairedEntityBody
 	require.NoError(t, json.Unmarshal(successfulFunctionCoreRequest(t, client, core, http.MethodGet,
-		"/v1/entities/"+id+query, ""), &entity))
+		"/v1/entities/"+id, ""), &entity))
 	require.NotNil(t, entity.State)
 	return entity
 }

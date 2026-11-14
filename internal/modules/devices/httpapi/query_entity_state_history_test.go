@@ -29,7 +29,7 @@ const (
 func historyPost(router http.Handler, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/v1/entities/"+string(apiEntityID)+"/state/history?units=canonical",
+		"/v1/entities/"+string(apiEntityID)+"/state/history",
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -276,7 +276,7 @@ func TestHistoryQuerySummaryWireVariants(t *testing.T) {
 	window := devices.HistoryRange{From: start, To: start.Add(time.Hour)}
 	const envelope = `"kind":"summary","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
 		`"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at",` +
-		`"coverage":{"basis":"retained_observations","completeness":"unverified"},"quantity":{"unit":"mCel","label":"mCel","fraction_digits":0}`
+		`"coverage":{"basis":"retained_observations","completeness":"unverified"}`
 	for _, tc := range []struct {
 		name string
 		data devices.HistoryResult
@@ -287,7 +287,8 @@ func TestHistoryQuerySummaryWireVariants(t *testing.T) {
 			data: devices.HistorySummaryResult{Metrics: devices.HistoryMetricValues{
 				"min": json.RawMessage(`9007199254740993`), "mean": json.RawMessage(`null`),
 			}},
-			want: `{` + envelope + `,"metrics":{"min":9007199254740993,"mean":null}}`,
+			want: `{` + envelope + `,"canonical":{"unit":"mCel","metrics":{"min":9007199254740993,"mean":null}},` +
+				`"display":{"unit":"Cel","label":"°C","fraction_digits":1,"metrics":{"min":9007199254740.992,"mean":null}}}`,
 		},
 		{
 			name: "buckets",
@@ -298,7 +299,9 @@ func TestHistoryQuerySummaryWireVariants(t *testing.T) {
 				}},
 			},
 			want: `{` + envelope + `,"bucket":{"duration":"1h0m0s","alignment":"range_start"},` +
-				`"buckets":[{"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"metrics":{"min":null}}]}`,
+				`"buckets":[{"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},` +
+				`"canonical":{"unit":"mCel","metrics":{"min":null}},` +
+				`"display":{"unit":"Cel","label":"°C","fraction_digits":1,"metrics":{"min":null}}}]}`,
 		},
 		{
 			name: "empty buckets",
@@ -383,7 +386,9 @@ func TestHistoryQueryProjectsAfterAggregation(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"canonical":{"unit":"10*-4"`)
+	require.Contains(t, rec.Body.String(), `"display":{"unit":"1"`)
 	require.NotContains(t, rec.Body.String(), "private_sentinel")
 }
 
@@ -394,6 +399,8 @@ func TestHistoryQueryPublishedSchemaRejectsContradictoryResults(t *testing.T) {
 	const envelope = `"kind":"summary","entity_id":"x",` +
 		`"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at"`
 	for _, body := range []string{
+		`{` + envelope + `,"coverage":{"basis":"retained_observations","completeness":"unverified"},` +
+			`"quantity":{"unit":"mCel","label":"mCel","fraction_digits":0},"metrics":{"min":1}}`,
 		`{` + envelope + `,"coverage":{"basis":"retained_observations","completeness":"unverified"},` +
 			`"metrics":{},"bucket":{"duration":"1h","alignment":"range_start"},"buckets":[]}`,
 		`{"kind":"timeline",` + envelope[len(`"kind":"summary",`):] +
@@ -475,11 +482,18 @@ func TestHistoryQueryExactEncodedResultLimit(t *testing.T) {
 	// the production mapper. JSON member ordering does not affect its byte size.
 	const emptyResponse = `{"kind":"summary","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
 		`"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at",` +
-		`"coverage":{"basis":"retained_observations","completeness":"unverified"},"quantity":{"unit":"mCel","label":"mCel","fraction_digits":0},"metrics":{"":1}}`
+		`"coverage":{"basis":"retained_observations","completeness":"unverified"},` +
+		`"canonical":{"unit":"mCel","metrics":{"":1}},"display":{"unit":"Cel","label":"°C","fraction_digits":1,"metrics":{"":0.001}}}`
 	for _, delta := range []int{-1, 0, 1} {
 		t.Run(strconv.Itoa(delta), func(t *testing.T) {
 			t.Parallel()
-			name := strings.Repeat("x", devices.HistoryMaxResultBytes-len(emptyResponse)+delta)
+			name := strings.Repeat("x", (devices.HistoryMaxResultBytes-len(emptyResponse)+delta)/2)
+			// 10000 projects to 10, adding one byte across the two metric
+			// groups and allowing both odd and even exact response sizes.
+			number := "1"
+			if delta == 0 {
+				number = "10000"
+			}
 			router, _ := testAPI(t, &stubDevices{
 				getEntity: historyTemperatureEntity,
 				queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
@@ -487,13 +501,13 @@ func TestHistoryQueryExactEncodedResultLimit(t *testing.T) {
 						EntityID: q.EntityID,
 						Range:    q.Range,
 						Data: devices.HistorySummaryResult{
-							Metrics: devices.HistoryMetricValues{name: json.RawMessage("1")},
+							Metrics: devices.HistoryMetricValues{name: json.RawMessage(number)},
 						},
 					}, nil
 				},
 			})
 			rec := historyPost(router, historyRequestBody)
-			if delta > 0 {
+			if delta == 1 {
 				require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
 				require.Contains(t, rec.Body.String(), `"code":"query_limit"`)
 				require.NotContains(t, rec.Body.String(), `"metrics"`)

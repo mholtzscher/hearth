@@ -52,30 +52,6 @@ type HistoryQueryBasicCoverage struct {
 	Basis        string `json:"basis"        enum:"retained_observations"`
 	Completeness string `json:"completeness" enum:"unverified"`
 }
-type HistoryQueryEnvelope struct {
-	Kind     string                    `json:"kind"`
-	EntityID string                    `json:"entity_id"`
-	Range    historyRangeBody          `json:"range"`
-	TimeAxis string                    `json:"time_axis" enum:"observed_at"`
-	Coverage HistoryQueryBasicCoverage `json:"coverage"`
-	Quantity devices.QuantityMetadata  `json:"quantity"`
-}
-type historySummaryBody struct {
-	HistoryQueryEnvelope
-
-	Metrics map[string]json.RawMessage `json:"metrics"`
-}
-type historySummaryBucketBody struct {
-	Range   historyRangeBody           `json:"range"`
-	Metrics map[string]json.RawMessage `json:"metrics"`
-}
-type historyBucketedBody struct {
-	HistoryQueryEnvelope
-
-	Bucket  historyBucketBody          `json:"bucket"`
-	Buckets []historySummaryBucketBody `json:"buckets"`
-}
-
 type PairedHistoryEnvelope struct {
 	Kind     string                    `json:"kind"`
 	EntityID string                    `json:"entity_id"`
@@ -211,20 +187,6 @@ type queryHistoryInput struct {
 	ContentType string `                 header:"Content-Type"`
 	RawBody     []byte
 }
-type queryNumericHistoryInput struct {
-	EntityID       string `path:"entity_id"`
-	ContentType    string `                 header:"Content-Type"`
-	RawBody        []byte
-	Units          string `                                       query:"units"   doc:"Omit for household units; canonical returns canonical values"`
-	Include        string `                                       query:"include" doc:"canonical includes canonical and household readings together"`
-	invalidInclude bool
-}
-
-func (input *queryNumericHistoryInput) Resolve(ctx huma.Context) []error {
-	input.invalidInclude = invalidIncludeSelection(ctx)
-	return nil
-}
-
 type queryHistoryOutput struct {
 	ContentType string `header:"Content-Type"`
 	Body        []byte
@@ -267,28 +229,8 @@ func historyEnvelopeSchema(r huma.Registry, s *huma.Schema) {
 	s.Properties["coverage"] = historySchema[HistoryQueryBasicCoverage](r)
 }
 
-func (historySummaryBody) TransformSchema(r huma.Registry, s *huma.Schema) *huma.Schema {
-	historyEnvelopeSchema(r, s)
-	s.Properties["metrics"] = historyMetricValuesSchema()
-	return s
-}
-
-func (historySummaryBucketBody) TransformSchema(r huma.Registry, s *huma.Schema) *huma.Schema {
-	s.Properties["range"] = historySchema[historyRangeBody](r)
-	s.Properties["metrics"] = historyMetricValuesSchema()
-	return s
-}
-
-func (historyBucketedBody) TransformSchema(r huma.Registry, s *huma.Schema) *huma.Schema {
-	historyEnvelopeSchema(r, s)
-	s.Properties["bucket"] = historySchema[historyBucketBody](r)
-	s.Properties["buckets"] = &huma.Schema{Type: huma.TypeArray, Items: historySchema[historySummaryBucketBody](r)}
-	return s
-}
-
 func historyQuerySchemas(r huma.Registry) (*huma.Schema, *huma.Schema) {
 	return historySchema[historyRequest](r), &huma.Schema{OneOf: []*huma.Schema{
-		historySchema[historySummaryBody](r), historySchema[historyBucketedBody](r),
 		historySchema[pairedHistorySummary](r), historySchema[pairedHistoryBucketed](r),
 	}}
 }
@@ -312,7 +254,7 @@ func registerQueryEntityStateHistory(api huma.API, h *handler) {
 			Content:  map[string]*huma.MediaType{"application/json": {Schema: request}},
 		},
 	}
-	huma.Register(api, op, func(ctx context.Context, in *queryNumericHistoryInput) (*queryHistoryOutput, error) {
+	huma.Register(api, op, func(ctx context.Context, in *queryHistoryInput) (*queryHistoryOutput, error) {
 		return h.queryEntityStateHistory(ctx, in, api.OpenAPI().Components.Schemas, request)
 	})
 	op.RequestBody.Content = map[string]*huma.MediaType{"application/json": {Schema: request}}
@@ -404,22 +346,11 @@ func decodeHistoryQuery(
 
 func (h *handler) queryEntityStateHistory(
 	ctx context.Context,
-	in *queryNumericHistoryInput,
+	in *queryHistoryInput,
 	registry huma.Registry,
 	schema *huma.Schema,
 ) (*queryHistoryOutput, error) {
-	if in.invalidInclude || !validPairedInclude(in.Include, in.Units) {
-		return nil, historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid include.", "")
-	}
-	units, err := devices.ParseReadUnits(in.Units)
-	if err != nil {
-		return nil, historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid units.", "")
-	}
-	query, err := decodeHistoryQuery(
-		&queryHistoryInput{EntityID: in.EntityID, ContentType: in.ContentType, RawBody: in.RawBody},
-		registry,
-		schema,
-	)
+	query, err := decodeHistoryQuery(in, registry, schema)
 	if err != nil {
 		return nil, err
 	}
@@ -431,36 +362,15 @@ func (h *handler) queryEntityStateHistory(
 	if err != nil {
 		return nil, h.historyQueryFailure(ctx, err)
 	}
-	if in.Include == string(devices.UnitsCanonical) {
-		canonical, canonicalQuantity, projectErr := h.presenter.History(
-			view,
-			query.Field,
-			answer,
-			devices.UnitsCanonical,
-		)
-		if projectErr != nil {
-			return nil, h.historyQueryFailure(ctx, projectErr)
-		}
-		display, displayQuantity, projectErr := h.presenter.History(view, query.Field, answer, "")
-		if projectErr != nil {
-			return nil, h.historyQueryFailure(ctx, projectErr)
-		}
-		mapped, mapErr := pairedHistoryResponse(canonical, display, canonicalQuantity, displayQuantity)
-		return h.encodeHistoryAnswer(ctx, "query-entity-state-history", mapped, mapErr)
-	}
-	answer, quantity, err := h.presenter.History(view, query.Field, answer, units)
+	canonical, canonicalQuantity, err := h.presenter.History(view, query.Field, answer, devices.UnitsCanonical)
 	if err != nil {
 		return nil, h.historyQueryFailure(ctx, err)
 	}
-	mapped, err := historyQueryResponse(answer)
-	switch body := mapped.(type) {
-	case historySummaryBody:
-		body.Quantity = quantity
-		mapped = body
-	case historyBucketedBody:
-		body.Quantity = quantity
-		mapped = body
+	display, displayQuantity, err := h.presenter.History(view, query.Field, answer, "")
+	if err != nil {
+		return nil, h.historyQueryFailure(ctx, err)
 	}
+	mapped, err := pairedHistoryResponse(canonical, display, canonicalQuantity, displayQuantity)
 	return h.encodeHistoryAnswer(ctx, "query-entity-state-history", mapped, err)
 }
 
@@ -479,38 +389,6 @@ func (h *handler) historyQueryFailure(ctx context.Context, err error) error {
 	}
 	h.logInternalFailure(ctx, "query-entity-state-history", "service", err)
 	return historyQueryProblem(http.StatusInternalServerError, "internal_error", "Internal error.", "")
-}
-
-func historyQueryResponse(result devices.HistoryQueryResult) (any, error) {
-	rangeBody := func(r devices.HistoryRange) historyRangeBody {
-		return historyRangeBody{From: formatTime(r.From), To: formatTime(r.To)}
-	}
-	envelope := HistoryQueryEnvelope{
-		Kind:     historySummaryKind,
-		EntityID: string(result.EntityID),
-		Range:    rangeBody(result.Range),
-		TimeAxis: historyTimeAxis,
-		Coverage: HistoryQueryBasicCoverage{Basis: "retained_observations", Completeness: historyCompleteness},
-	}
-	switch data := result.Data.(type) {
-	case devices.HistorySummaryResult:
-		return historySummaryBody{HistoryQueryEnvelope: envelope, Metrics: data.Metrics}, nil
-	case devices.HistoryBucketedSummaryResult:
-		buckets := make([]historySummaryBucketBody, 0, len(data.Buckets))
-		for _, b := range data.Buckets {
-			buckets = append(buckets, historySummaryBucketBody{Range: rangeBody(b.Range), Metrics: b.Metrics})
-		}
-		return historyBucketedBody{
-			HistoryQueryEnvelope: envelope,
-			Bucket: historyBucketBody{
-				Duration:  data.Bucket.Duration.String(),
-				Alignment: data.Bucket.Alignment,
-			},
-			Buckets: buckets,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unknown result %T", result.Data)
-	}
 }
 
 // Huma intentionally accepts null optional properties and case-insensitive keys;
