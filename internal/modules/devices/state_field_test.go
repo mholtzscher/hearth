@@ -25,6 +25,12 @@ func TestBuiltinStateFieldInventory(t *testing.T) {
 		devices.EntityTypePowerV1:          {"": "boolean"}, devices.EntityTypeBinarysensorV1: {"": "boolean"},
 		devices.EntityTypeColormodeV1: {"": "string"}, devices.EntityTypeEnumsettingV1: {"": "string"},
 		devices.EntityTypeTextsensorV1: {"": "string"},
+		devices.EntityTypeThermostatV1: {
+			"/mode": "string", "/activity": "string", "/fan_mode": "string",
+			"/current_temperature": "mCel", "/target_temperature": "mCel",
+			"/target_temperature_low": "mCel", "/target_temperature_high": "mCel",
+			"/current_humidity": "%", "/target_humidity": "%",
+		},
 	}
 	for id, expected := range inventory {
 		fields := devices.BuiltinStateFields(id)
@@ -37,7 +43,7 @@ func TestBuiltinStateFieldInventory(t *testing.T) {
 				t.Fatalf("%s %s absent", id, path)
 			}
 			presence := devices.FieldAlways
-			if id == devices.EntityTypeNumericsettingV1 && path != "/mode" {
+			if (id == devices.EntityTypeNumericsettingV1 || id == devices.EntityTypeThermostatV1) && path != "/mode" {
 				presence = devices.FieldSometimes
 			}
 			if field.Path != path || field.Presence != presence {
@@ -45,14 +51,7 @@ func TestBuiltinStateFieldInventory(t *testing.T) {
 			}
 			switch value := field.Value.(type) {
 			case devices.NumericField:
-				expectedType := devices.NumericNumber
-				if id == devices.EntityTypeTemperatureV1 || id == devices.EntityTypeBrightnessV1 ||
-					id == devices.EntityTypeColorhsV1 ||
-					id == devices.EntityTypeColorrgbV1 ||
-					id == devices.EntityTypeColortempV1 ||
-					id == devices.EntityTypeColorxyV1 {
-					expectedType = devices.NumericInteger
-				}
+				expectedType := numericInventoryType(id, kind)
 				if value.ValueType != expectedType {
 					t.Fatalf("%s %s value type = %s", id, path, value.ValueType)
 				}
@@ -82,6 +81,21 @@ func TestBuiltinStateFieldInventory(t *testing.T) {
 			}
 		}
 	}
+}
+
+func numericInventoryType(id devices.EntityTypeID, unit string) devices.NumericValueType {
+	//nolint:exhaustive // Other types' numeric fields are numbers rather than integers.
+	switch id {
+	case devices.EntityTypeTemperatureV1, devices.EntityTypeBrightnessV1,
+		devices.EntityTypeColorhsV1, devices.EntityTypeColorrgbV1,
+		devices.EntityTypeColortempV1, devices.EntityTypeColorxyV1:
+		return devices.NumericInteger
+	case devices.EntityTypeThermostatV1:
+		if unit == "mCel" {
+			return devices.NumericInteger
+		}
+	}
+	return devices.NumericNumber
 }
 
 func TestStateFieldLookupRejectsStatelessTypesAndUnknownPaths(t *testing.T) {

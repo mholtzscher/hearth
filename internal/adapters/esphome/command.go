@@ -91,11 +91,11 @@ func (w *worker) handleCommand(ctx context.Context, gen *generation, request *co
 	if route.Kind == routeCover {
 		return w.handleCoverCommand(ctx, gen, route, request)
 	}
-	if request.command.OperationName != operationSet {
+	if route.Kind != routeThermostat && request.command.OperationName != operationSet {
 		request.finish(request.responder.Reject("unsupported operation"))
 		return nil
 	}
-	target, native, err := prepareSet(route, request.command.Parameters)
+	target, native, err := prepareEntityCommand(route, request.command.OperationName, request.command.Parameters)
 	if err != nil {
 		request.finish(request.responder.Reject("invalid set parameters"))
 		return nil //nolint:nilerr // The rejection is the outcome; the Command is not a worker failure.
@@ -151,7 +151,7 @@ func (w *worker) startNext(ctx context.Context, gen *generation, queue *commandQ
 		}
 		attempt.evidence = evidence
 		if cached, known := gen.cache[attempt.route.EntityID]; known &&
-			stateMatches(attempt.route.Kind, cached.Value, attempt.target) {
+			attempt.matches(cached.Value) {
 			if publishEvidenceErr := w.publishEvidence(ctx, attempt, cached); publishEvidenceErr != nil {
 				return publishEvidenceErr
 			}
@@ -201,7 +201,7 @@ func (w *worker) publishLinked(
 		}
 		return &sessionError{operation: "publish linked observation", err: err}
 	}
-	if !stateMatches(attempt.route.Kind, observation.Value, attempt.target) {
+	if !attempt.matches(observation.Value) {
 		return nil
 	}
 	attempt.stopTimer()
@@ -209,8 +209,8 @@ func (w *worker) publishLinked(
 	return nil
 }
 
-// publishEvidence links the cached State of a live subscription. The firmware sends no push for an unchanged value,
-// so the cache is the device's current State.
+// publishEvidence links the cached State of a live subscription. Firmware may send no push for an unchanged value,
+// so the cache retains the last report from the current subscription, not a new physical measurement.
 func (w *worker) publishEvidence(ctx context.Context, attempt *commandAttempt, observation adapter.Observation) error {
 	if _, err := attempt.evidence.PublishObservation(ctx, observation); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil &&
@@ -244,6 +244,22 @@ func earlierDeadline(first, second time.Time) time.Time {
 		return first
 	}
 	return second
+}
+
+func (attempt *commandAttempt) matches(value json.RawMessage) bool {
+	if attempt.route.Kind == routeThermostat {
+		return thermostatSatisfied(attempt.request.command.OperationName, attempt.target, value)
+	}
+	return stateMatches(attempt.route.Kind, value, attempt.target)
+}
+
+func prepareEntityCommand(
+	route boundRoute, operation string, parameters json.RawMessage,
+) (json.RawMessage, nativeapi.Command, error) {
+	if route.Kind == routeThermostat {
+		return prepareThermostatCommand(route, operation, parameters)
+	}
+	return prepareSet(route, parameters)
 }
 
 // handleExpiry drops an awaiting attempt whose deadline passed and starts the next one.
@@ -280,6 +296,8 @@ func (w *worker) expireAt(deadline time.Time, token uint64) *time.Timer {
 func prepareSet(route boundRoute, parameters json.RawMessage) (json.RawMessage, nativeapi.Command, error) {
 	key, deviceID := route.Upstream.Key, route.Upstream.DeviceID
 	switch route.Kind {
+	case routeNumber, routeSelect:
+		return prepareSettingSet(route, parameters)
 	case routeLock:
 		return prepareLockSet(route, parameters)
 	case routeSwitchPower, routeLightPower:
@@ -327,7 +345,14 @@ func prepareSet(route boundRoute, parameters json.RawMessage) (json.RawMessage, 
 		}
 		target, _ := json.Marshal(decoded.Value)
 		return target, nativeapi.LightCommand{Key: key, DeviceID: deviceID, Effect: &decoded.Value}, nil
-	case routeTemperature, routeHumidity, routePressure, routeNumeric, routeBinary, routeText, routeCover:
+	case routeTemperature,
+		routeHumidity,
+		routePressure,
+		routeNumeric,
+		routeBinary,
+		routeText,
+		routeCover,
+		routeThermostat:
 		fallthrough
 	default:
 		return nil, nil, errors.New("esphome: Entity has no set operation")

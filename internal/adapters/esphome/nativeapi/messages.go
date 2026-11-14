@@ -38,6 +38,12 @@ const (
 	idCoverCommandRequest      uint16 = 30
 	idLightCommandRequest      uint16 = 32
 	idSwitchCommandRequest     uint16 = 33
+	idClimateState             uint16 = 47
+	idClimateCommandRequest    uint16 = 48
+	idNumberState              uint16 = 50
+	idNumberCommandRequest     uint16 = 51
+	idSelectState              uint16 = 53
+	idSelectCommandRequest     uint16 = 54
 	idLockState                uint16 = 59
 	idLockCommandRequest       uint16 = 60
 )
@@ -166,6 +172,19 @@ func decodeEntity(messageID uint16, data []byte) (EntityInfo, error) {
 		info.Category = EntityCategory(reflected.Get(field).Enum()) //nolint:gosec // Category values are 0 to 2.
 	}
 	switch typed := message.(type) {
+	case *apipb.ListEntitiesClimateResponse:
+		info.Type = EntityClimate
+		info.Climate = decodeClimateInfo(typed)
+	case *apipb.ListEntitiesNumberResponse:
+		info.Type = EntityNumber
+		info.Unit = typed.GetUnitOfMeasurement()
+		info.Number = &NumberInfo{
+			Minimum: shortestFloat(typed.GetMinValue()), Maximum: shortestFloat(typed.GetMaxValue()),
+			Step: shortestFloat(typed.GetStep()),
+		}
+	case *apipb.ListEntitiesSelectResponse:
+		info.Type = EntitySelect
+		info.Options = typed.GetOptions()
 	case *apipb.ListEntitiesSensorResponse:
 		info.Type = EntitySensor
 		info.Unit = typed.GetUnitOfMeasurement()
@@ -199,6 +218,10 @@ func decodeEntity(messageID uint16, data []byte) (EntityInfo, error) {
 // decodeState decodes a mapped platform's state push. ok is false for every other message.
 func decodeState(messageID uint16, data []byte) (StateUpdate, bool, error) {
 	switch messageID {
+	case idClimateState:
+		return decodeClimateState(data)
+	case idNumberState, idSelectState:
+		return decodeSettingState(messageID, data)
 	case idCoverState:
 		return decodeCoverState(data)
 	case idLockState:
@@ -265,6 +288,19 @@ func decodeState(messageID uint16, data []byte) (StateUpdate, bool, error) {
 // commandMessage converts a Command into its request message.
 func commandMessage(command Command) (proto.Message, error) {
 	switch typed := command.(type) {
+	case ClimateCommand:
+		return climateCommandMessage(typed)
+	case NumberCommand:
+		if !finite(typed.Value) {
+			return nil, errors.New("esphome: number command must be finite")
+		}
+		return &apipb.NumberCommandRequest{
+			Key: typed.Key, DeviceId: typed.DeviceID, State: float32(typed.Value),
+		}, nil
+	case SelectCommand:
+		return &apipb.SelectCommandRequest{
+			Key: typed.Key, DeviceId: typed.DeviceID, State: typed.Value,
+		}, nil
 	case CoverCommand:
 		return coverCommandMessage(typed)
 	case LockCommand:

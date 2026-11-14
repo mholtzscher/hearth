@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-fan-mode-parameters",
+  "title": "Hearth thermostat/v1 set_fan_mode parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fan_mode"],
+  "properties": {
+    "fan_mode": {"type": "string", "minLength": 1, "maxLength": 128}
+  }
+}

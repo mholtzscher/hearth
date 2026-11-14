@@ -14,7 +14,10 @@ import (
 // a backfill, so exempting a whole type would hide missing history.
 func historyRollupFieldsWithoutHistory() []string {
 	return []string{"hearth.colorrgb/v1 /red", "hearth.colorrgb/v1 /green", "hearth.colorrgb/v1 /blue",
-		"hearth.cover/v1 /position"}
+		"hearth.cover/v1 /position",
+		"hearth.thermostat/v1 /current_temperature", "hearth.thermostat/v1 /target_temperature",
+		"hearth.thermostat/v1 /target_temperature_low", "hearth.thermostat/v1 /target_temperature_high",
+		"hearth.thermostat/v1 /current_humidity", "hearth.thermostat/v1 /target_humidity"}
 }
 
 var historyRollupFieldRow = regexp.MustCompile(`\('([^']+)', '([^']*)'\)`)

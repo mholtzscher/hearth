@@ -295,6 +295,87 @@
         "value_type": "string",
         "presence": "always"
       }
+    },
+    "hearth.thermostat/v1": {
+      "/activity": {
+        "value_type": "string",
+        "presence": "sometimes",
+        "enum": [
+          "off",
+          "idle",
+          "heating",
+          "cooling",
+          "drying",
+          "fan",
+          "preheating",
+          "defrosting"
+        ]
+      },
+      "/current_humidity": {
+        "value_type": "number",
+        "presence": "sometimes",
+        "quantity": {
+          "unit": "%",
+          "quantity_kind": "relative_humidity"
+        }
+      },
+      "/current_temperature": {
+        "value_type": "integer",
+        "presence": "sometimes",
+        "quantity": {
+          "unit": "mCel",
+          "quantity_kind": "temperature"
+        }
+      },
+      "/fan_mode": {
+        "value_type": "string",
+        "presence": "sometimes"
+      },
+      "/mode": {
+        "value_type": "string",
+        "presence": "always",
+        "enum": [
+          "off",
+          "heat",
+          "cool",
+          "heat_cool",
+          "auto",
+          "dry",
+          "fan_only"
+        ]
+      },
+      "/target_humidity": {
+        "value_type": "number",
+        "presence": "sometimes",
+        "quantity": {
+          "unit": "%",
+          "quantity_kind": "relative_humidity"
+        }
+      },
+      "/target_temperature": {
+        "value_type": "integer",
+        "presence": "sometimes",
+        "quantity": {
+          "unit": "mCel",
+          "quantity_kind": "temperature"
+        }
+      },
+      "/target_temperature_high": {
+        "value_type": "integer",
+        "presence": "sometimes",
+        "quantity": {
+          "unit": "mCel",
+          "quantity_kind": "temperature"
+        }
+      },
+      "/target_temperature_low": {
+        "value_type": "integer",
+        "presence": "sometimes",
+        "quantity": {
+          "unit": "mCel",
+          "quantity_kind": "temperature"
+        }
+      }
     }
   }
 }

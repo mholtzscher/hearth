@@ -34,6 +34,9 @@ const (
 	EntityLight        EntityType = "light"
 	EntityCover        EntityType = "cover"
 	EntityLock         EntityType = "lock"
+	EntityClimate      EntityType = "climate"
+	EntityNumber       EntityType = "number"
+	EntitySelect       EntityType = "select"
 	// EntityOther is listed for identity and skip logging only.
 	EntityOther EntityType = "other"
 )
@@ -64,7 +67,7 @@ type EntityInfo struct {
 	Category          EntityCategory
 	DisabledByDefault bool
 	DeviceClass       string
-	// Unit and AccuracyDecimals describe sensors.
+	// Unit describes sensors and numbers; AccuracyDecimals describes sensors.
 	Unit             string
 	AccuracyDecimals int32
 	// AssumedState describes switches that cannot report their real state.
@@ -76,6 +79,27 @@ type EntityInfo struct {
 	SupportsPosition bool
 	SupportsStop     bool
 	RequiresCode     bool
+	Climate          *ClimateInfo
+	Number           *NumberInfo
+	Options          []string
+}
+
+// ClimateInfo describes native climate capabilities and their native-unit visual bounds.
+type ClimateInfo struct {
+	Modes                                                []string
+	StandardFanModes                                     []string
+	CustomFanModes                                       []string
+	TemperatureUnit                                      string
+	CurrentTemperature, TwoPointTarget, RequiresTwoPoint bool
+	CurrentHumidity, TargetHumidity, Activity            bool
+	MinimumTemperature, MaximumTemperature               float64
+	TargetTemperatureStep                                float64
+	MinimumHumidity, MaximumHumidity                     float64
+}
+
+// NumberInfo describes a number's advertised native bounds and increment.
+type NumberInfo struct {
+	Minimum, Maximum, Step float64
 }
 
 // StateUpdate is one state push. Fields that do not apply to Type are zero.
@@ -87,7 +111,7 @@ type StateUpdate struct {
 	DeviceID   uint32
 	// Missing reports that the device has no value yet.
 	Missing bool
-	// Number is a sensor value, converted from the wire float32 to its shortest decimal form.
+	// Number is a sensor or number value, converted from wire float32 to its shortest decimal form.
 	Number float64
 	// Bool is a binary sensor or switch state, or a light's on/off state.
 	Bool bool
@@ -103,6 +127,17 @@ type StateUpdate struct {
 	Position        float64
 	CoverOperation  string
 	LockState       string
+	Climate         *ClimateState
+}
+
+// ClimateState is one native snapshot, with non-finite readings represented as absent.
+type ClimateState struct {
+	Mode                                        string
+	Activity                                    *string
+	CurrentTemperature, TargetTemperature       *float64
+	TargetTemperatureLow, TargetTemperatureHigh *float64
+	CurrentHumidity, TargetHumidity             *float64
+	StandardFanMode, CustomFanMode              *string
 }
 
 // RGB is an upstream color with each channel in the range 0..1, separate from master brightness.
@@ -149,3 +184,29 @@ type LockCommand struct {
 
 func (CoverCommand) nativeCommand() {}
 func (LockCommand) nativeCommand()  {}
+
+// ClimateCommand changes one control family without implying a mode or schedule change.
+type ClimateCommand struct {
+	Key, DeviceID                               uint32
+	Mode                                        *string
+	TargetTemperature                           *float64
+	TargetTemperatureLow, TargetTemperatureHigh *float64
+	StandardFanMode, CustomFanMode              *string
+	TargetHumidity                              *float64
+}
+
+// NumberCommand sets one number in its advertised native unit.
+type NumberCommand struct {
+	Key, DeviceID uint32
+	Value         float64
+}
+
+// SelectCommand selects an exact advertised option.
+type SelectCommand struct {
+	Key, DeviceID uint32
+	Value         string
+}
+
+func (ClimateCommand) nativeCommand() {}
+func (NumberCommand) nativeCommand()  {}
+func (SelectCommand) nativeCommand()  {}

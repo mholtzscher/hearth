@@ -33,6 +33,12 @@ func TestMessageIDsMatchSchema(t *testing.T) {
 		idTextSensorState:          &apipb.TextSensorStateResponse{},
 		idLightCommandRequest:      &apipb.LightCommandRequest{},
 		idSwitchCommandRequest:     &apipb.SwitchCommandRequest{},
+		idClimateState:             &apipb.ClimateStateResponse{},
+		idClimateCommandRequest:    &apipb.ClimateCommandRequest{},
+		idNumberState:              &apipb.NumberStateResponse{},
+		idNumberCommandRequest:     &apipb.NumberCommandRequest{},
+		idSelectState:              &apipb.SelectStateResponse{},
+		idSelectCommandRequest:     &apipb.SelectCommandRequest{},
 	}
 	for want, message := range cases {
 		got, _, err := encode(message)

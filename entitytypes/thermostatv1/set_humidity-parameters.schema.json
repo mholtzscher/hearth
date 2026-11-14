@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-humidity-parameters",
+  "title": "Hearth thermostat/v1 set_humidity parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["humidity"],
+  "properties": {
+    "humidity": {"type": "number", "minimum": 0, "maximum": 100}
+  }
+}

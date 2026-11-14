@@ -27,6 +27,7 @@ import (
 	contractspeedv1 "github.com/mholtzscher/hearth/entitytypes/speedv1"
 	contracttemperaturev1 "github.com/mholtzscher/hearth/entitytypes/temperaturev1"
 	contracttextsensorv1 "github.com/mholtzscher/hearth/entitytypes/textsensorv1"
+	contractthermostatv1 "github.com/mholtzscher/hearth/entitytypes/thermostatv1"
 )
 
 const (
@@ -52,10 +53,11 @@ const (
 	EntityTypeSpeedV1            EntityTypeID = "hearth.speed/v1"
 	EntityTypeTemperatureV1      EntityTypeID = "hearth.temperature/v1"
 	EntityTypeTextsensorV1       EntityTypeID = "hearth.textsensor/v1"
+	EntityTypeThermostatV1       EntityTypeID = "hearth.thermostat/v1"
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 22)
+	definitions := make([]EntityTypeDefinition, 0, 23)
 	binarysensorV1, err := newBinarysensorV1TypeDefinition(EntityTypeBinarysensorV1)
 	if err != nil {
 		return nil, err
@@ -166,6 +168,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, textsensorV1)
+	thermostatV1, err := newThermostatV1TypeDefinition(EntityTypeThermostatV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, thermostatV1)
 	return NewTypeCatalog(definitions)
 }
 
@@ -577,6 +584,88 @@ func newTextsensorV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error
 		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.textsensor/v1 codecs: %w", err)
 	}
 	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contracttextsensorv1.ValidateSupport, contracttextsensorv1.ValidateState, contracttextsensorv1.EqualState)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newThermostatV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractthermostatv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.thermostat/v1 codecs: %w", err)
+	}
+	setFanMode := DefineOperation(
+		OperationName(contractthermostatv1.OperationSetFanMode),
+		codecs.SetFanModeParameters,
+		func(support contractthermostatv1.Support) (contractthermostatv1.SetFanModeSupport, bool) {
+			if support.Operations.SetFanMode == nil {
+				return contractthermostatv1.SetFanModeSupport{}, false
+			}
+			return *support.Operations.SetFanMode, true
+		},
+		contractthermostatv1.ValidateSetFanModeParameters,
+		contractthermostatv1.SetFanModeDeadline,
+		OutcomeObserved,
+		contractthermostatv1.SetFanModeSatisfied,
+	)
+	setHumidity := DefineOperation(
+		OperationName(contractthermostatv1.OperationSetHumidity),
+		codecs.SetHumidityParameters,
+		func(support contractthermostatv1.Support) (contractthermostatv1.SetHumiditySupport, bool) {
+			if support.Operations.SetHumidity == nil {
+				return contractthermostatv1.SetHumiditySupport{}, false
+			}
+			return *support.Operations.SetHumidity, true
+		},
+		contractthermostatv1.ValidateSetHumidityParameters,
+		contractthermostatv1.SetHumidityDeadline,
+		OutcomeObserved,
+		contractthermostatv1.SetHumiditySatisfied,
+	)
+	setMode := DefineOperation(
+		OperationName(contractthermostatv1.OperationSetMode),
+		codecs.SetModeParameters,
+		func(support contractthermostatv1.Support) (contractthermostatv1.SetModeSupport, bool) {
+			if support.Operations.SetMode == nil {
+				return contractthermostatv1.SetModeSupport{}, false
+			}
+			return *support.Operations.SetMode, true
+		},
+		contractthermostatv1.ValidateSetModeParameters,
+		contractthermostatv1.SetModeDeadline,
+		OutcomeObserved,
+		contractthermostatv1.SetModeSatisfied,
+	)
+	setRange := DefineOperation(
+		OperationName(contractthermostatv1.OperationSetRange),
+		codecs.SetRangeParameters,
+		func(support contractthermostatv1.Support) (contractthermostatv1.SetRangeSupport, bool) {
+			if support.Operations.SetRange == nil {
+				return contractthermostatv1.SetRangeSupport{}, false
+			}
+			return *support.Operations.SetRange, true
+		},
+		contractthermostatv1.ValidateSetRangeParameters,
+		contractthermostatv1.SetRangeDeadline,
+		OutcomeObserved,
+		contractthermostatv1.SetRangeSatisfied,
+	)
+	setTarget := DefineOperation(
+		OperationName(contractthermostatv1.OperationSetTarget),
+		codecs.SetTargetParameters,
+		func(support contractthermostatv1.Support) (contractthermostatv1.SetTargetSupport, bool) {
+			if support.Operations.SetTarget == nil {
+				return contractthermostatv1.SetTargetSupport{}, false
+			}
+			return *support.Operations.SetTarget, true
+		},
+		contractthermostatv1.ValidateSetTargetParameters,
+		contractthermostatv1.SetTargetDeadline,
+		OutcomeObserved,
+		contractthermostatv1.SetTargetSatisfied,
+	)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractthermostatv1.ValidateSupport, contractthermostatv1.ValidateState, contractthermostatv1.EqualState, setFanMode, setHumidity, setMode, setRange, setTarget)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

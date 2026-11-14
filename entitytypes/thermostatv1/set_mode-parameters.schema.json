@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-mode-parameters",
+  "title": "Hearth thermostat/v1 set_mode parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode"],
+  "properties": {
+    "mode": {"type": "string", "enum": ["off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"]}
+  }
+}

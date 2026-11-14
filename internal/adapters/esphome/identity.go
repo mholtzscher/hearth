@@ -69,12 +69,15 @@ func ParseEntityRef(text string) (EntityRef, error) {
 		nativeapi.EntitySwitch,
 		nativeapi.EntityLight,
 		nativeapi.EntityCover,
-		nativeapi.EntityLock:
+		nativeapi.EntityLock,
+		nativeapi.EntityClimate,
+		nativeapi.EntityNumber,
+		nativeapi.EntitySelect:
 	case nativeapi.EntityOther:
 		fallthrough
 	default:
 		return EntityRef{}, errors.New(
-			"entity reference type must be sensor, text_sensor, binary_sensor, switch, light, cover, or lock",
+			"entity reference type must be sensor, text_sensor, binary_sensor, switch, light, cover, lock, climate, number, or select",
 		)
 	}
 	if !found || name == "" || utf8.RuneCountInString(name) > maximumNameRunes {

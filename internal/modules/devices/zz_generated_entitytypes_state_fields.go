@@ -73,6 +73,17 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 	EntityTypeTextsensorV1: {
 		{Path: "", Presence: "always", Value: StringField{Enum: []string(nil)}},
 	},
+	EntityTypeThermostatV1: {
+		{Path: "/activity", Presence: "sometimes", Value: StringField{Enum: []string{"off", "idle", "heating", "cooling", "drying", "fan", "preheating", "defrosting"}}},
+		{Path: "/current_humidity", Presence: "sometimes", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "%"}, Kind: FixedKind{Code: "relative_humidity"}}},
+		{Path: "/current_temperature", Presence: "sometimes", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "mCel"}, Kind: FixedKind{Code: "temperature"}}},
+		{Path: "/fan_mode", Presence: "sometimes", Value: StringField{Enum: []string(nil)}},
+		{Path: "/mode", Presence: "always", Value: StringField{Enum: []string{"off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"}}},
+		{Path: "/target_humidity", Presence: "sometimes", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "%"}, Kind: FixedKind{Code: "relative_humidity"}}},
+		{Path: "/target_temperature", Presence: "sometimes", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "mCel"}, Kind: FixedKind{Code: "temperature"}}},
+		{Path: "/target_temperature_high", Presence: "sometimes", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "mCel"}, Kind: FixedKind{Code: "temperature"}}},
+		{Path: "/target_temperature_low", Presence: "sometimes", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "mCel"}, Kind: FixedKind{Code: "temperature"}}},
+	},
 }
 
 //nolint:gochecknoglobals // Generated immutable interpretation references.

@@ -1,0 +1,95 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.thermostat/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "state_validation": [
+    {
+      "op": "in",
+      "left": {"root": "state", "path": "/mode"},
+      "right": {"root": "support", "path": "/state/modes"}
+    },
+    {
+      "op": "in_if_present",
+      "left": {"root": "state", "path": "/fan_mode"},
+      "right": {"root": "support", "path": "/state/fan_modes"}
+    }
+  ],
+  "support_validation": [
+    {
+      "op": "gte",
+      "left": {"root": "support", "path": "/state/temperature_maximum"},
+      "right": {"root": "support", "path": "/state/temperature_minimum"}
+    },
+    {
+      "op": "gte",
+      "left": {"root": "support", "path": "/state/humidity_maximum"},
+      "right": {"root": "support", "path": "/state/humidity_minimum"}
+    }
+  ],
+  "operations": {
+    "set_mode": {
+      "parameters_schema": "set_mode-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "parameter_validation": [
+        {"op": "in", "left": {"root": "parameters", "path": "/mode"}, "right": {"root": "support", "path": "/state/modes"}}
+      ],
+      "satisfied_when": [
+        {"op": "eq", "left": {"root": "parameters", "path": "/mode"}, "right": {"root": "state", "path": "/mode"}}
+      ]
+    },
+    "set_target": {
+      "parameters_schema": "set_target-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "parameter_validation": [
+        {"op": "gte", "left": {"root": "parameters", "path": "/temperature"}, "right": {"root": "support", "path": "/state/temperature_minimum"}},
+        {"op": "lte", "left": {"root": "parameters", "path": "/temperature"}, "right": {"root": "support", "path": "/state/temperature_maximum"}}
+      ],
+      "satisfied_when": [
+        {"op": "eq_optional", "left": {"root": "parameters", "path": "/temperature"}, "right": {"root": "state", "path": "/target_temperature"}}
+      ]
+    },
+    "set_range": {
+      "parameters_schema": "set_range-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "parameter_validation": [
+        {"op": "gte", "left": {"root": "parameters", "path": "/low"}, "right": {"root": "support", "path": "/state/temperature_minimum"}},
+        {"op": "lte", "left": {"root": "parameters", "path": "/low"}, "right": {"root": "support", "path": "/state/temperature_maximum"}},
+        {"op": "gte", "left": {"root": "parameters", "path": "/high"}, "right": {"root": "support", "path": "/state/temperature_minimum"}},
+        {"op": "lte", "left": {"root": "parameters", "path": "/high"}, "right": {"root": "support", "path": "/state/temperature_maximum"}},
+        {"op": "lte", "left": {"root": "parameters", "path": "/low"}, "right": {"root": "parameters", "path": "/high"}}
+      ],
+      "satisfied_when": [
+        {"op": "eq_optional", "left": {"root": "parameters", "path": "/low"}, "right": {"root": "state", "path": "/target_temperature_low"}},
+        {"op": "eq_optional", "left": {"root": "parameters", "path": "/high"}, "right": {"root": "state", "path": "/target_temperature_high"}}
+      ]
+    },
+    "set_fan_mode": {
+      "parameters_schema": "set_fan_mode-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "parameter_validation": [
+        {"op": "in", "left": {"root": "parameters", "path": "/fan_mode"}, "right": {"root": "support", "path": "/state/fan_modes"}}
+      ],
+      "satisfied_when": [
+        {"op": "eq_optional", "left": {"root": "parameters", "path": "/fan_mode"}, "right": {"root": "state", "path": "/fan_mode"}}
+      ]
+    },
+    "set_humidity": {
+      "parameters_schema": "set_humidity-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "parameter_validation": [
+        {"op": "gte", "left": {"root": "parameters", "path": "/humidity"}, "right": {"root": "support", "path": "/state/humidity_minimum"}},
+        {"op": "lte", "left": {"root": "parameters", "path": "/humidity"}, "right": {"root": "support", "path": "/state/humidity_maximum"}}
+      ],
+      "satisfied_when": [
+        {"op": "eq_optional", "left": {"root": "parameters", "path": "/humidity"}, "right": {"root": "state", "path": "/target_humidity"}}
+      ]
+    }
+  },
+  "examples": "examples.json"
+}

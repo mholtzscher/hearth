@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:thermostat:v1:state",
+  "title": "Hearth thermostat/v1 Entity state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode"],
+  "properties": {
+    "mode": {"type": "string", "enum": ["off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"]},
+    "activity": {"type": "string", "enum": ["off", "idle", "heating", "cooling", "drying", "fan", "preheating", "defrosting"]},
+    "current_temperature": {"type": "integer", "minimum": -273150, "maximum": 1000000, "hearth": {"unit": "mCel", "quantity_kind": "temperature"}},
+    "target_temperature": {"type": "integer", "minimum": -273150, "maximum": 1000000, "hearth": {"unit": "mCel", "quantity_kind": "temperature"}},
+    "target_temperature_low": {"type": "integer", "minimum": -273150, "maximum": 1000000, "hearth": {"unit": "mCel", "quantity_kind": "temperature"}},
+    "target_temperature_high": {"type": "integer", "minimum": -273150, "maximum": 1000000, "hearth": {"unit": "mCel", "quantity_kind": "temperature"}},
+    "fan_mode": {"type": "string", "minLength": 1, "maxLength": 128},
+    "current_humidity": {"type": "number", "minimum": 0, "maximum": 100, "hearth": {"unit": "%", "quantity_kind": "relative_humidity"}},
+    "target_humidity": {"type": "number", "minimum": 0, "maximum": 100, "hearth": {"unit": "%", "quantity_kind": "relative_humidity"}}
+  }
+}

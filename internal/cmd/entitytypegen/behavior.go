@@ -218,7 +218,7 @@ func compileInRule(
 			left.Kind,
 		)
 	}
-	if _, schemaErr := stringArraySchema(rule.Op, rule.Right, roots, 1); schemaErr != nil {
+	if _, schemaErr := stringArraySchema(rule.Op, rule.Right, roots, 0); schemaErr != nil {
 		return ruleModel{}, schemaErr
 	}
 	return ruleModel{Op: rule.Op, Left: left, Right: right, HasRight: true}, nil

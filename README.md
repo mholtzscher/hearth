@@ -599,16 +599,28 @@ Command means firmware reported the requested State, not that wireless remotes
 were independently proven disabled. No live garage-door or lockout command was
 used to validate this implementation.
 
-Numbers, selects, buttons, events, climate, voice, and Bluetooth
+Climate entities expose `hearth.thermostat/v1`: separate mode and reported
+activity, single or paired temperature targets, exact fan choices, and optional
+humidity readings/control. Numbers and selects expose the existing numeric-setting
+and enum-setting types. See [ESPHome thermostats](docs/esphome-thermostat.md)
+for canonical operation parameters, Rheem humidity settings, and the Home
+Assistant feature comparison.
+
+Buttons, events, voice, and Bluetooth
 proxy functions are not mapped. Configuration, diagnostic, and
 disabled-by-default entities are hidden unless included by exact `<type>/<name>`
 reference, such as `include: ["sensor/Uptime"]`. `exclude: ["light/RGB Light"]`
 omits every Entity derived from that light. Overrides never grant an unsupported
 entity type.
 Include/exclude overrides also accept `cover/Door` and `lock/Lock remotes`.
+They accept `climate/HVAC`, `number/Relative Humidity Offset`, and
+`select/Fan Duty Cycle` as well.
 Cover Devices retain their light, sensor, and lock siblings under kind `cover`.
+Thermostats retain eligible siblings under kind `thermostat`, unless a cover
+on the same Device takes kind precedence.
 Upgrade Core before the ESPHome Adapter when enabling covers; older Core builds
 cannot register the new cover Entity type and Device kind.
+The same upgrade order applies to the thermostat type and Device kind.
 Sub-devices, assumed-state switches/covers/locks, covers without position support,
 and devices reporting `has_deep_sleep` are
 unsupported. The last restriction also applies when a firmware switch currently
@@ -616,8 +628,10 @@ prevents sleep; that switch does not change the reported capability.
 
 Temperature, humidity, pressure, CO₂, particulate mass, and air-quality indices
 use typed canonical units. Unknown sensor measurements retain their upstream
-unit as generic numeric readings. Missing or invalid readings preserve the last
-State. Device outages affect only that device's Entity availability; Adapter
+unit as generic numeric readings. Missing or invalid scalar reports preserve the
+last State. Within a climate snapshot, absent optional readings replace their
+previous values with absence; no older readings are merged into the snapshot.
+Device outages affect only that device's Entity availability; Adapter
 health remains healthy while its runtime works. The client reconnects and
 re-registers without replaying Commands. Entity identities depend on the MAC,
 platform, and upstream name. Renaming an entity in firmware creates a new Entity

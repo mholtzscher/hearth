@@ -10,6 +10,7 @@ import (
 	contractbrightnessv1 "github.com/mholtzscher/hearth/entitytypes/brightnessv1"
 	contractcolorrgbv1 "github.com/mholtzscher/hearth/entitytypes/colorrgbv1"
 	contractcoverv1 "github.com/mholtzscher/hearth/entitytypes/coverv1"
+	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	contractpressurev1 "github.com/mholtzscher/hearth/entitytypes/pressurev1"
 	contractrelativehumidityv1 "github.com/mholtzscher/hearth/entitytypes/relativehumidityv1"
@@ -23,11 +24,13 @@ import (
 	sdkenumsettingv1 "github.com/mholtzscher/hearth/sdk/adapter/enumsettingv1"
 	sdklockv1 "github.com/mholtzscher/hearth/sdk/adapter/lockv1"
 	sdknumericsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsensorv1"
+	sdknumericsettingv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsettingv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	sdkpressurev1 "github.com/mholtzscher/hearth/sdk/adapter/pressurev1"
 	sdkrelativehumidityv1 "github.com/mholtzscher/hearth/sdk/adapter/relativehumidityv1"
 	sdktemperaturev1 "github.com/mholtzscher/hearth/sdk/adapter/temperaturev1"
 	sdktextsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/textsensorv1"
+	sdkthermostatv1 "github.com/mholtzscher/hearth/sdk/adapter/thermostatv1"
 )
 
 // errUnprojectable reports a state the route's Entity type cannot carry, such as an out-of-range value.
@@ -42,9 +45,13 @@ type entityRoute struct {
 	// Numeric is the support of a routeNumeric Entity.
 	Numeric sdknumericsensorv1.Support
 	// Effect constrains State and Commands to effects advertised by this light.
-	Effect sdkenumsettingv1.Support
-	Cover  sdkcoverv1.Support
-	Lock   sdklockv1.Support
+	Effect     sdkenumsettingv1.Support
+	Cover      sdkcoverv1.Support
+	Lock       sdklockv1.Support
+	Number     sdknumericsettingv1.Support
+	Select     sdkenumsettingv1.Support
+	Thermostat sdkthermostatv1.Support
+	Climate    *nativeapi.ClimateInfo
 }
 
 // project converts one push into the Entity's canonical Observation. ok is false when the push carries no value;
@@ -58,7 +65,8 @@ func project(
 	if update.Missing {
 		return adapter.Observation{}, false, nil
 	}
-	if update.Type == nativeapi.EntitySensor && (math.IsNaN(update.Number) || math.IsInf(update.Number, 0)) {
+	if (update.Type == nativeapi.EntitySensor || update.Type == nativeapi.EntityNumber) &&
+		(math.IsNaN(update.Number) || math.IsInf(update.Number, 0)) {
 		return adapter.Observation{}, false, nil
 	}
 	observation, err := buildObservation(route, entityID, update, receivedAt)
@@ -78,6 +86,10 @@ func buildObservation(
 	receivedAt time.Time,
 ) (adapter.Observation, error) {
 	switch route.Kind {
+	case routeThermostat:
+		return thermostatObservation(route, entityID, update, receivedAt)
+	case routeNumber, routeSelect:
+		return settingObservation(route, entityID, update, receivedAt)
 	case routeCover:
 		state, err := coverState(update)
 		if err != nil {
@@ -177,6 +189,14 @@ func lightBrightness(update nativeapi.StateUpdate) int64 {
 // stateMatches uses Core's generated RGB and cover matchers and one-point brightness tolerance.
 // Remaining routes require exact value equality.
 func stateMatches(kind routeKind, value json.RawMessage, target json.RawMessage) bool {
+	if kind == routeNumber {
+		var observed contractnumericsettingv1.State
+		var parameters contractnumericsettingv1.SetParameters
+		if json.Unmarshal(value, &observed) != nil || json.Unmarshal(target, &parameters) != nil {
+			return false
+		}
+		return contractnumericsettingv1.SetSatisfied(parameters, observed)
+	}
 	if kind == routeCover {
 		var observed contractcoverv1.State
 		var parameters contractcoverv1.SetParameters

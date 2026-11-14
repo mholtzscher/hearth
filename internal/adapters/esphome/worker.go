@@ -448,6 +448,13 @@ func (w *worker) endGeneration(gen *generation) {
 }
 
 func (w *worker) logPlan(ctx context.Context, plan devicePlan, deviceID string) {
+	for _, skipped := range plan.Skipped {
+		w.logger.DebugContext(ctx, "ESPHome entity or control omitted",
+			slog.String("event", "device.capability_omitted"),
+			slog.String("entity_platform", string(skipped.Ref.Type)),
+			slog.String("reason_code", skipped.Reason),
+		)
+	}
 	w.logger.InfoContext(ctx, "device planned",
 		slog.String("event", "device.planned"),
 		slog.String("device_id", deviceID),

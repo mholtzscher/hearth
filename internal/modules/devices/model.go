@@ -33,6 +33,7 @@ const (
 	DeviceKindAirPurifier DeviceKind = "air-purifier"
 	DeviceKindLock        DeviceKind = "lock"
 	DeviceKindCover       DeviceKind = "cover"
+	DeviceKindThermostat  DeviceKind = "thermostat"
 )
 
 type EntityTypeID string

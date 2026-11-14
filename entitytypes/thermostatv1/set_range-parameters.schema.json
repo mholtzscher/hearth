@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-range-parameters",
+  "title": "Hearth thermostat/v1 set_range parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["low", "high"],
+  "properties": {
+    "low": {"type": "integer", "minimum": -273150, "maximum": 1000000},
+    "high": {"type": "integer", "minimum": -273150, "maximum": 1000000}
+  }
+}

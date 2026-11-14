@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:thermostat:v1:support",
+  "title": "Hearth thermostat/v1 Entity support",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state", "operations"],
+  "properties": {
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modes", "fan_modes", "temperature_minimum", "temperature_maximum", "humidity_minimum", "humidity_maximum"],
+      "properties": {
+        "modes": {
+          "type": "array",
+          "items": {"type": "string", "enum": ["off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"]},
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true
+        },
+        "fan_modes": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 128},
+          "minItems": 0,
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "temperature_minimum": {"type": "integer", "minimum": -273150, "maximum": 1000000},
+        "temperature_maximum": {"type": "integer", "minimum": -273150, "maximum": 1000000},
+        "humidity_minimum": {"type": "number", "minimum": 0, "maximum": 100},
+        "humidity_maximum": {"type": "number", "minimum": 0, "maximum": 100}
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "set_mode": {"type": "object", "additionalProperties": false, "maxProperties": 0},
+        "set_target": {"type": "object", "additionalProperties": false, "maxProperties": 0},
+        "set_range": {"type": "object", "additionalProperties": false, "maxProperties": 0},
+        "set_fan_mode": {"type": "object", "additionalProperties": false, "maxProperties": 0},
+        "set_humidity": {"type": "object", "additionalProperties": false, "maxProperties": 0}
+      }
+    }
+  }
+}

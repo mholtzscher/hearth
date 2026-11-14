@@ -366,6 +366,118 @@
     },
     "hearth.textsensor/v1": {
       "operations": {}
+    },
+    "hearth.thermostat/v1": {
+      "operations": {
+        "set_fan_mode": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-fan-mode-parameters",
+            "title": "Hearth thermostat/v1 set_fan_mode parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "fan_mode"
+            ],
+            "properties": {
+              "fan_mode": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          }
+        },
+        "set_humidity": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-humidity-parameters",
+            "title": "Hearth thermostat/v1 set_humidity parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "humidity"
+            ],
+            "properties": {
+              "humidity": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        },
+        "set_mode": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-mode-parameters",
+            "title": "Hearth thermostat/v1 set_mode parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "off",
+                  "heat",
+                  "cool",
+                  "heat_cool",
+                  "auto",
+                  "dry",
+                  "fan_only"
+                ]
+              }
+            }
+          }
+        },
+        "set_range": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-range-parameters",
+            "title": "Hearth thermostat/v1 set_range parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "low",
+              "high"
+            ],
+            "properties": {
+              "low": {
+                "type": "integer",
+                "minimum": -273150,
+                "maximum": 1000000
+              },
+              "high": {
+                "type": "integer",
+                "minimum": -273150,
+                "maximum": 1000000
+              }
+            }
+          }
+        },
+        "set_target": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-target-parameters",
+            "title": "Hearth thermostat/v1 set_target parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "temperature"
+            ],
+            "properties": {
+              "temperature": {
+                "type": "integer",
+                "minimum": -273150,
+                "maximum": 1000000
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
