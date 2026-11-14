@@ -1,0 +1,17 @@
+/* Use the household tokens and descendant rules without the two-column app shell. */
+.hearth-app.hearth-story {
+  display: block;
+  height: auto;
+  min-height: 100vh;
+  translate: none;
+  padding: 24px;
+}
+
+.hearth-story > * {
+  max-width: 1080px;
+  margin-inline: auto;
+}
+
+@media (max-width: 720px) {
+  .hearth-app.hearth-story { padding: 12px; }
+}

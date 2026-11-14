@@ -111,6 +111,18 @@ jobs:
           cache: true
       - name: Run dashboard tests
         run: mise run web-test
+      - name: Install Storybook browser
+        run: mise run --skip-deps storybook-browser-install -- --with-deps
+      - name: Run story interaction and accessibility checks
+        run: mise run --skip-deps storybook-test
+      - name: Build Storybook
+        run: mise run --skip-deps storybook-build
+      - name: Upload Storybook
+        uses: actions/upload-artifact@v6
+        with:
+          name: storybook
+          path: web/storybook-static/
+          retention-days: 14
       - name: Build dashboard image
         run: docker build -f web/Dockerfile . --tag hearth-web:ci
       - name: Verify clean working tree

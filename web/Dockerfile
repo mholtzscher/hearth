@@ -4,7 +4,7 @@ FROM node:26-alpine AS build
 # no longer ships with Node.
 RUN npm install -g pnpm@12
 WORKDIR /app/web
-COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml web/.pnpmfile.cjs ./
 RUN pnpm install --frozen-lockfile
 COPY web/ .
 COPY contracts/ /app/contracts/
