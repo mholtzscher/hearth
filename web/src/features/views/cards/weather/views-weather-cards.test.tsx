@@ -10,13 +10,13 @@ import { BoundRain } from "../rain/Rain";
 import { BoundWind } from "../wind/Wind";
 import { BoundPressure } from "../pressure/Pressure";
 import { BoundOutsideNow } from "../outside-now/OutsideNow";
+import { pairedEntityResponse, pairedHistoryResponse } from "../../../../../.storybook/paired-fixtures";
 
 const at = "2026-11-09T10:00:00Z";
 const id = (number: number) => `ent_01900000-0000-7000-8000-${String(number).padStart(12, "0")}`;
 const weather = examples.find(example => example.name === "weather-cards")!.definition;
 type History = (minutesAgo: number) => number | null;
 type UnitSystem = "metric" | "us";
-type State = NonNullable<FieldEntity["state"]>;
 
 const fixedUnits: Record<string, string> = { "hearth.temperature/v1": "mCel", "hearth.relativehumidity/v1": "%", "hearth.speed/v1": "m/s", "hearth.pressure/v1": "hPa" };
 type Projection = { unit: string; label: string; fraction_digits: number; convert: (value: number) => number };
@@ -63,8 +63,8 @@ function station(overrides: Record<number, Partial<FieldEntity>> = {}): FieldEnt
  */
 function core(entities: FieldEntity[], histories: Record<number, History> = {}, system: UnitSystem = "metric") {
   const byId = new Map(entities.map(item => [item.id, item]));
-  const historyFailures = new Set<string>(), householdHistoryFailures = new Set<string>();
-  const canonicalFailures = new Set<string>(), canonicalStates = new Map<string, State>();
+  const historyFailures = new Set<string>(), stateFailures = new Set<string>();
+  const heldReads = new Map<string, Promise<void>>();
   const posts: string[] = [], requests: string[] = [];
   const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
   const present = (item: FieldEntity, canonical: boolean) => {
@@ -77,29 +77,34 @@ function core(entities: FieldEntity[], histories: Record<number, History> = {}, 
     };
   };
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const url = String(input), [path, query] = url.split("?"), canonical = query === "units=canonical";
+    const url = String(input), [path, query] = url.split("?"), canonical = query === "units=canonical", paired = query === "include=canonical";
     const entityId = path.split("/")[3], found = byId.get(entityId);
     requests.push(url);
+    if (canonical || query === "include=canonical") await heldReads.get(entityId);
     if (path.endsWith("/commands")) { posts.push(entityId); return response({}, 500); }
-    if (canonical && canonicalFailures.has(entityId)) return response({ detail: "Canonical read unavailable" }, 503);
+    if (!path.endsWith("/state/history") && stateFailures.has(entityId)) return response({ detail: "Reading unavailable" }, 503);
     if (path.endsWith("/state/history")) {
-      if (historyFailures.has(entityId) || (!canonical && householdHistoryFailures.has(entityId))) return response({ detail: "History unavailable" }, 503);
+      if (historyFailures.has(entityId)) return response({ detail: "History unavailable" }, 503);
       if (!found) return response({}, 404);
       const body = JSON.parse(String(init?.body)), shown = present(found, canonical);
       const step = ({ "1m0s": 60000, "5m0s": 300000, "30m0s": 1800000 } as Record<string, number>)[body.result.bucket.duration];
       const from = Date.parse(body.range.from), to = Date.parse(body.range.to), count = Math.ceil((to - from) / step);
       const history = histories[Number(entityId.slice(-3))] ?? (() => Number(found.state?.value ?? 0));
-      const buckets = Array.from({ length: count }, (_, index) => {
-        const start = from + index * step, value = shown.value(history(Math.round((to - start) / 60000)));
+      const buckets = (working: boolean) => Array.from({ length: count }, (_, index) => {
+        const start = from + index * step, value = present(found, working).value(history(Math.round((to - start) / 60000)));
         return { range: { from: new Date(start).toISOString(), to: new Date(Math.min(to, start + step)).toISOString() }, metrics: { min: value, max: value, mean: value } };
       });
-      return response({ range: body.range, quantity: shown.quantity, buckets });
+      const summary = { range: body.range, quantity: shown.quantity, buckets: buckets(canonical) };
+      return response(paired ? pairedHistoryResponse(summary, { quantity: present(found, true).quantity, buckets: buckets(true) }) : summary);
     }
     if (!found) return response({}, 404);
-    const shown = present(found, canonical), state = (canonical && canonicalStates.get(entityId)) || found.state;
-    return response({ ...found, quantities: { "": shown.quantity }, state: state && { ...state, value: shown.value(state.value as number) } });
+    const representation = (working: boolean) => {
+      const shown = present(found, working), state = found.state;
+      return { ...found, quantities: { "": shown.quantity }, state: state && { ...state, value: shown.value(state.value as number) } };
+    };
+    return response(paired ? pairedEntityResponse(representation(false), representation(true)) : representation(canonical));
   });
-  return { posts, requests, historyFailures, householdHistoryFailures, canonicalFailures, canonicalStates, entities: byId };
+  return { posts, requests, historyFailures, stateFailures, heldReads, entities: byId };
 }
 
 const flush = () => act(() => vi.advanceTimersByTimeAsync(0));
@@ -129,30 +134,50 @@ it.each(["metric", "us"] as const)("words the shared weather example from canoni
   expect(within(card("Rain")).getByText(us ? "This storm · Rain now, 0.27 in/h" : "This storm · Rain now, 6.8 mm/h")).toBeTruthy();
   expect(card("Rain").querySelector(".view-metric-value")!.textContent).toBe(us ? "0.73in" : "18.6mm");
   expect(document.body.textContent).not.toMatch(/Feels like|Dew point/);
-  // Only formula inputs are read canonically: wind speed, rain rate, and pressure history.
-  const canonical = new Set(api.requests.filter(url => url.endsWith("?units=canonical")).map(url => url.split("?")[0].split("/")[3].slice(-3) + (url.includes("/state/history") ? " history" : "")));
-  expect([...canonical].sort()).toEqual(["103", "105", "113", "113 history"]);
+  expect(api.requests.every(url => url.endsWith("?include=canonical"))).toBe(true);
+  const speedReads = api.requests.filter(url => url === `/v1/entities/${id(103)}?include=canonical`);
+  // Outside and Wind share one read, including their formula inputs.
+  expect(speedReads).toHaveLength(1);
   await act(() => vi.advanceTimersByTimeAsync(35000));
   expect(api.posts).toHaveLength(0);
 });
 
-it("shows readings without words when canonical reads fail or describe another observation", async () => {
+it("keeps the complete weather reading visible until a refresh arrives", async () => {
   const api = core(station(), {}, "us");
-  api.canonicalFailures.add(id(105));
-  api.canonicalStates.set(id(103), { value: 0.2, observed_at: "2026-11-09T09:55:00Z" });
   await mount(<ViewRenderer headingLevel={3} definition={weather} />);
-  expect(card("Wind").querySelector(".view-metric-value")!.textContent).toBe("14.1mi/h");
-  expect(within(card("Wind")).queryByText(/Calm|Moderate breeze/)).toBeNull();
-  expect(card("Wind").querySelector(".view-weather-compass-arrow")).toBeTruthy();
-  expect(card("Outside").querySelector(".view-weather-conditions")).toBeNull();
-  // Without their words, the rate and direction keep their own rows.
-  expect(within(card("Outside")).getByText("Wind")).toBeTruthy();
-  expect(within(card("Outside")).getByText("Wind direction")).toBeTruthy();
-  expect(within(card("Outside")).getByText("Rain rate")).toBeTruthy();
-  expect(card("Outside").querySelector(".view-weather-rows")!.textContent).toContain("0.27in/h");
-  expect(within(card("Rain")).getByText("This storm · Rate 0.27 in/h")).toBeTruthy();
+  let release!: () => void;
+  api.heldReads.set(id(103), new Promise<void>(resolve => { release = resolve; }));
+  api.entities.get(id(103))!.state = { value: 9.4, observed_at: "2026-11-09T10:00:40Z" };
 
-  api.canonicalFailures.clear(); api.canonicalStates.clear();
+  await act(() => vi.advanceTimersByTimeAsync(10_000));
+  expect(card("Wind").querySelector(".view-metric-value")!.textContent).toBe("14.1mi/h");
+  expect(within(card("Wind")).getByText("Moderate breeze")).toBeTruthy();
+  expect(within(card("Outside")).getByText("Rain · Breezy")).toBeTruthy();
+  expect(within(card("Outside")).queryByText("Wind direction")).toBeNull();
+
+  await act(async () => { release(); });
+  await flush();
+  expect(card("Wind").querySelector(".view-metric-value")!.textContent).toBe("21.0mi/h");
+  expect(within(card("Wind")).getByText("Fresh breeze")).toBeTruthy();
+  expect(within(card("Outside")).getByText("Rain · Windy")).toBeTruthy();
+  expect(api.posts).toHaveLength(0);
+});
+
+it("retains both representations and their weather words when a refresh fails", async () => {
+  const api = core(station(), {}, "us");
+  await mount(<ViewRenderer headingLevel={3} definition={weather} />);
+  api.stateFailures.add(id(105)); api.stateFailures.add(id(103));
+  await act(() => vi.advanceTimersByTimeAsync(10_000));
+  expect(card("Wind").querySelector(".view-metric-value")!.textContent).toBe("14.1mi/h");
+  expect(within(card("Wind")).getByText("Moderate breeze")).toBeTruthy();
+  expect(card("Wind").querySelector(".view-weather-compass-arrow")).toBeTruthy();
+  expect(within(card("Outside")).getByText("Rain · Breezy")).toBeTruthy();
+  expect(within(card("Outside")).queryByText("Wind direction")).toBeNull();
+  expect(card("Outside").querySelector(".view-weather-rows")!.textContent).not.toContain("Rain rate");
+  expect(within(card("Rain")).getByText("This storm · Rain now, 0.27 in/h")).toBeTruthy();
+  expect(within(card("Wind")).getByText("Couldn't refresh")).toBeTruthy();
+
+  api.stateFailures.clear();
   await act(() => vi.advanceTimersByTimeAsync(10_000));
   expect(within(card("Wind")).getByText("Moderate breeze")).toBeTruthy();
   expect(within(card("Outside")).getByText("Rain · Breezy")).toBeTruthy();
@@ -267,7 +292,7 @@ it.each(["metric", "us"] as const)("shows household Wind speed history with gaps
   expect(wind.querySelector(".view-weather-aside .view-trend")).toBeTruthy();
   const histories = api.requests.filter(url => url.includes("/state/history"));
   expect(histories.length).toBeGreaterThan(0);
-  expect(histories.every(url => url === `/v1/entities/${id(103)}/state/history`)).toBe(true);
+  expect(histories.every(url => url === `/v1/entities/${id(103)}/state/history?include=canonical`)).toBe(true);
   fireEvent.click(within(wind).getByRole("button", { name: "Source" }));
   expect(screen.getByText("The trend shows sustained wind speed, not gusts or direction.")).toBeTruthy();
   expect(screen.getByText(/5-minute interval; the shaded band/)).toBeTruthy();
@@ -431,22 +456,20 @@ it("dims conditions only with the readings that produced words", async () => {
   expect(within(card("Outside")).getByText("Breezy").getAttribute("data-value")).toBe("live");
 });
 
-it("withholds the tendency while the two pressure histories use different buckets", async () => {
+it("retains the complete pressure interval when its paired history refresh fails", async () => {
   const pressure = source(113, "hearth.pressure/v1");
   const api = core(station(), { 113: minutes => 1003.2 + Math.min(minutes, 180) / 180 * 3.1 });
   await mount(<BoundPressure source={pressure} />);
   expect(within(card("Pressure")).getByText("Falling")).toBeTruthy();
 
-  // Only the household history fails. One minute later both still share their
-  // buckets; after two, the canonical history has moved to later buckets.
-  api.householdHistoryFailures.add(pressure.entity_id);
+  api.historyFailures.add(pressure.entity_id);
   await act(() => vi.advanceTimersByTimeAsync(60_000));
   expect(within(card("Pressure")).getByText("Falling")).toBeTruthy();
   await act(() => vi.advanceTimersByTimeAsync(60_000));
   expect(within(card("Pressure")).getByText("Couldn't refresh pressure history")).toBeTruthy();
-  expect(within(card("Pressure")).getByText("Tendency unavailable · no recent or 3 h reading")).toBeTruthy();
+  expect(within(card("Pressure")).getByText("Falling")).toBeTruthy();
 
-  api.householdHistoryFailures.clear();
+  api.historyFailures.clear();
   await act(() => vi.advanceTimersByTimeAsync(60_000));
   expect(within(card("Pressure")).getByText("Falling")).toBeTruthy();
   expect(within(card("Pressure")).getByText("−3.1 hPa in 3 h")).toBeTruthy();

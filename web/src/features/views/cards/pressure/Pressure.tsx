@@ -15,9 +15,8 @@ const icons = { rising: ArrowUpRightIcon, falling: ArrowDownRightIcon, steady: A
 
 /**
  * The three-hour tendency in words from canonical hPa, with the change in the
- * displayed unit. Never guessed without a reading from three hours ago. The two
- * histories refresh separately, so both must use the same buckets; otherwise
- * the words and the change could describe different intervals.
+ * displayed unit. Never guessed without a reading from three hours ago. Both
+ * representations come from one aggregation with shared bucket boundaries.
  */
 function TendencyLine({ data, history, canonical, status }: { data?: MetricData; history: Resolved<SeriesData>; canonical: Resolved<SeriesData>; status: CardStatus }) {
   const clock = useMinuteClock();

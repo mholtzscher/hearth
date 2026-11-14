@@ -178,3 +178,13 @@ export const dashboardDefinition: ViewDefinition = {
     history: catalogExamples.TimeSeries,
   } },
 };
+
+/** The weather composition used to exercise shared live refreshes. */
+export const weatherDefinition: ViewDefinition = {
+  schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Weather",
+  spec: { root: "root", elements: {
+    root: { type: "Grid", props: { columns: 2 }, children: ["outside", "wind", "rain", "pressure"] },
+    outside: catalogExamples.OutsideNow, wind: catalogExamples.Wind,
+    rain: catalogExamples.Rain, pressure: catalogExamples.Pressure,
+  } },
+};

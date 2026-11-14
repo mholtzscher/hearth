@@ -243,11 +243,15 @@ it.each(["missing", "wrong-index", "temperature-unit", "precipitation-unit", "in
   expect(screen.queryByRole("img")).toBeNull();
 });
 
-it("renders a forecast alongside current weather without a household request", async () => {
+it("renders a forecast alongside paired current weather without a household request", async () => {
   const pressureId = "ent_01900000-0000-7000-8000-000000000202";
   const pressure = { id: pressureId, name: "Pressure", type: "hearth.pressure/v1", enabled: true, availability: { status: "available" }, support: { state: {}, operations: {} }, quantities: { "": { unit: "[in_i'Hg]", label: "in Hg", fraction_digits: 2 } }, state: { value: 29.92, observed_at: at } };
   const forecast = entity("hourly", { periods: [{ starts_at: at, temperature: 60.8 }] }, "us");
-  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async input => new Response(JSON.stringify(String(input).includes(pressureId) ? pressure : forecast)));
+  const pairedPressure = { ...pressure, quantities: undefined, state: { observed_at: at,
+    canonical: { value: 1013.25, unit: "hPa" },
+    display: { value: 29.92, unit: "[in_i'Hg]", label: "in Hg", fraction_digits: 2 },
+  } };
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async input => new Response(JSON.stringify(String(input).includes(pressureId) ? pairedPressure : forecast)));
   await mount(<><BoundForecast source={source("hourly")} /><BoundPressure source={{ kind: "entity-state", entity_id: pressureId, entity_type: "hearth.pressure/v1" }} /></>);
   expect(screen.getByRole("img").getAttribute("aria-label")).toContain("61°F");
   expect(screen.getByText("29.92")).toBeTruthy();

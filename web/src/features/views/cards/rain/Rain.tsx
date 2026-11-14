@@ -29,8 +29,8 @@ function TotalsStatus({ totals }: { totals: Array<{ period: RainPeriod; resource
  */
 export function BoundRain({ label, rate, storm, totals, trend }: Props) {
   const reads = useWeatherReads<Slot>([
-    ["rate", { source: rate, window: trend }], ["rateCanonical", { source: rate, units: "canonical" }], ["storm", storm && { source: storm }],
-    ...rainPeriods.map((period): [Slot, WeatherRead | undefined] => [period, totals?.[period] && { source: totals[period] }]),
+    ["rate", { source: rate, window: trend, canonicalUnit: "mm/h" }], ["rateCanonical", { source: rate, units: "canonical", canonicalUnit: "mm/h" }], ["storm", storm && { source: storm, canonicalUnit: "mm" }],
+    ...rainPeriods.map((period): [Slot, WeatherRead | undefined] => [period, totals?.[period] && { source: totals[period], canonicalUnit: "mm" }]),
   ]);
   const rateReading = reads.current("rate")!, rateStatus = cardStatus(rateReading);
   const rateData = shownData(rateReading);

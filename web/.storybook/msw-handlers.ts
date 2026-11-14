@@ -2,6 +2,7 @@ import { delay, http, HttpResponse } from "msw";
 import { z } from "zod";
 import type { CommandRecord, Device, Entity, EntityStateHistoryEntry, HealthTransition } from "../src/api/types";
 import { createEntities, deviceId, entityId, fixtureNow, observedAt } from "./fixtures";
+import { pairedEntityResponse, pairedHistoryResponse } from "./paired-fixtures";
 
 export { fixtureNow } from "./fixtures";
 const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
@@ -42,7 +43,9 @@ export function createCoreHandlers(overrides: Entity[] = []) {
     http.get("/v1/entities/:id", ({ params, request }) => {
       const entity = entities.get(String(params.id));
       if (!entity) return HttpResponse.json({ detail: "Entity not found" }, { status: 404 });
-      return HttpResponse.json(new URL(request.url).searchParams.get("units") === "canonical" ? canonical(entity) : entity);
+      const query = new URL(request.url).searchParams;
+      return HttpResponse.json(query.get("include") === "canonical" ? pairedEntityResponse(entity, canonical(entity))
+        : query.get("units") === "canonical" ? canonical(entity) : entity);
     }),
     http.get("/v1/devices/:id", ({ params, request }) => {
       const device = devices.find(device => device.id === params.id);
@@ -95,9 +98,16 @@ export function createCoreHandlers(overrides: Entity[] = []) {
           metrics: { min: gap ? null : mean - .1, max: gap ? null : mean + .1, mean: gap ? null : mean },
         };
       });
-      return HttpResponse.json({ kind: "summary", entity_id: selected.id, range: query.range,
+      const summary = { kind: "summary", entity_id: selected.id, range: query.range,
         time_axis: "observed_at", coverage: { basis: "retained_observations", completeness: "unverified" },
-        quantity, bucket: query.result.bucket, buckets });
+        quantity, bucket: query.result.bucket, buckets };
+      const working = canonical(entity);
+      const factor = entity.type === "hearth.temperature/v1" ? 1000 : 1;
+      return HttpResponse.json(new URL(request.url).searchParams.get("include") === "canonical"
+        ? pairedHistoryResponse(summary, { quantity: working.quantities![query.select_field], buckets: buckets.map(bucket => ({
+          range: bucket.range, metrics: Object.fromEntries(Object.entries(bucket.metrics).map(([name, value]) => [name, value === null ? null : value * factor])),
+        })) })
+        : summary);
     }),
     http.post("/v1/entities/:id/state/changes", async ({ params, request }) => {
       const query = changesQuery.parse(await request.json());
@@ -138,7 +148,7 @@ export function createCoreHandlers(overrides: Entity[] = []) {
 
 /** Override one real endpoint to explore a named lifecycle state. */
 export function entityScenario(number: number, state: "loading" | "unobserved" | "unavailable" | "disabled" | "error" | "missing" | "read-only") {
-  return http.get(`/v1/entities/${entityId(number)}`, async () => {
+  return http.get(`/v1/entities/${entityId(number)}`, async ({ request }) => {
     if (state === "loading") { await delay("infinite"); return new HttpResponse(null); }
     if (state === "error" || state === "missing") return HttpResponse.json({ detail: state === "missing" ? "Entity not found" : "Story API unavailable" }, { status: state === "missing" ? 404 : 503 });
     const entity = createEntities().find(entity => entity.id === entityId(number))!;
@@ -146,6 +156,6 @@ export function entityScenario(number: number, state: "loading" | "unobserved" |
     if (state === "unavailable") entity.availability.status = "unavailable";
     if (state === "disabled") entity.enabled = false;
     if (state === "read-only") entity.support.operations = {};
-    return HttpResponse.json(entity);
+    return HttpResponse.json(new URL(request.url).searchParams.get("include") === "canonical" ? pairedEntityResponse(entity, canonical(entity)) : entity);
   });
 }

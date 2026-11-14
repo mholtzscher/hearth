@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
-import { catalogExamples, dashboardDefinition, definitionFor } from "../../../../.storybook/fixtures";
+import { expect, within } from "storybook/test";
+import { delay, http, HttpResponse } from "msw";
+import { catalogExamples, createEntities, dashboardDefinition, definitionFor, entityId, weatherDefinition } from "../../../../.storybook/fixtures";
 import { expectNoHorizontalOverflow } from "../../../../.storybook/play";
+import { pairedEntityResponse } from "../../../../.storybook/paired-fixtures";
 import { ViewRenderer } from "./ViewRenderer";
 
 // Controls choose a valid example instead of editing raw definition JSON.
@@ -32,6 +34,60 @@ export const PhoneDashboard: Story = {
     await canvas.findByText("9.4");
     await expectNoHorizontalOverflow(canvasElement);
   },
+};
+
+export const WeatherRefresh: Story = {
+  args: { definition: weatherDefinition },
+  play: async ({ canvas, canvasElement, msw }) => {
+    await expect(await canvas.findByText("Moderate breeze")).toBeVisible();
+    await expect(await canvas.findByText("Falling")).toBeVisible();
+    await expect(await canvas.findByText(/24 h high/)).toBeVisible();
+    const outside = canvas.getByRole("article", { name: "Outside" });
+    const rowCount = outside.querySelectorAll(".view-row").length;
+    const cards = [...canvasElement.querySelectorAll("article")];
+    const bounds = () => cards.map(card => {
+      const rect = card.getBoundingClientRect();
+      return { top: rect.top, height: rect.height };
+    });
+    const before = bounds(), samples: ReturnType<typeof bounds>[] = [];
+    let fallbackAppeared = false;
+    const observer = new MutationObserver(() => {
+      samples.push(bounds());
+      fallbackAppeared ||= outside.querySelectorAll(".view-row").length !== rowCount ||
+        !outside.querySelector(".view-weather-conditions") ||
+        !canvasElement.querySelector(".view-wind .view-weather-conditions");
+    });
+    observer.observe(canvasElement, { childList: true, subtree: true, characterData: true });
+    const speed = createEntities().find(entity => entity.id === entityId(103))!;
+    const newer = { ...speed, state: { ...speed.state!, value: 9.4, observed_at: "2026-11-09T10:00:31Z" } };
+    msw.use(http.get(`/v1/entities/${speed.id}`, async () => {
+      await delay(150);
+      return HttpResponse.json(pairedEntityResponse(newer, newer));
+    }));
+    try {
+      canvasElement.ownerDocument.defaultView!.dispatchEvent(new Event("focus"));
+      await expect(within(canvas.getByRole("article", { name: "Wind" })).getByText("6.3")).toBeVisible();
+      await expect(await canvas.findByText("Fresh breeze")).toBeVisible();
+      await expect(within(outside).getByText("Rain · Windy")).toBeVisible();
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      expect(fallbackAppeared).toBe(false);
+      expect(samples.length).toBeGreaterThan(0);
+      for (const sample of samples) {
+        sample.forEach((rect, index) => {
+          expect(rect.height).toBeCloseTo(before[index].height, 0);
+          expect(rect.top).toBeCloseTo(before[index].top, 0);
+        });
+      }
+      await expectNoHorizontalOverflow(canvasElement);
+    } finally {
+      observer.disconnect();
+    }
+  },
+};
+
+export const PhoneWeatherRefresh: Story = {
+  ...WeatherRefresh,
+  globals: { viewport: { value: "phone", isRotated: false } },
 };
 export const Stack: Story = { args: { definition: definitionFor(catalogExamples.Stack) } };
 export const Grid: Story = { args: { definition: definitionFor(catalogExamples.Grid) } };

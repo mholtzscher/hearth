@@ -3,6 +3,7 @@ import { ApiError } from "../../../api/client";
 import { useReads } from "../data/provider";
 import { emptySnapshot, type ReadSnapshot } from "../data/cache";
 import { quantityAdapter } from "./quantity-adapter";
+import { pairedQuantityAdapter } from "./paired";
 import { readErrorMessage, type HistorySeries } from "./history";
 import { entityMetadata, entityStateRequest, readEntity } from "./entity";
 import { quantityField, quantityTypes, textField } from "./state-fields";
@@ -19,16 +20,17 @@ export const NumericAdapters = createContext(numericAdapters);
 export function useNumericRead(source: NumericSource, window?: SeriesWindow): Resolved<MetricData | SeriesData> {
   return useNumericReads([{ source, window }])[0];
 }
-export function useNumericReads(bindings: Array<{ source: NumericSource; window?: SeriesWindow; units?: ReadUnits }>): Resolved<MetricData | SeriesData>[] {
+export function useNumericReads(bindings: Array<{ source: NumericSource; window?: SeriesWindow; units?: ReadUnits; paired?: boolean; canonicalUnit?: string }>): Resolved<MetricData | SeriesData>[] {
   const adapters = useContext(NumericAdapters);
-  const requests = bindings.flatMap(({ source, window, units }) => {
-    const adapter = adapters[source.entity_type];
+  const selected = bindings.map(({ source, units, paired, canonicalUnit }) => adapters[source.entity_type] && (paired ? pairedQuantityAdapter(units ?? "household", canonicalUnit) : adapters[source.entity_type]));
+  const requests = bindings.flatMap(({ source, window, units }, index) => {
+    const adapter = selected[index];
     return adapter ? [adapter.stateRequest(source, units), ...(window ? [adapter.seriesRequest(source, window, units)] : [])] : [];
   });
   const snapshots = useReads(requests);
   let index = 0;
-  return bindings.map(({ source, window }) => {
-    const adapter = adapters[source.entity_type];
+  return bindings.map(({ source, window }, bindingIndex) => {
+    const adapter = selected[bindingIndex];
     if (!adapter) return { status: "error", error: "Unsupported resource binding" };
     const state = snapshots[index++];
     const history = window ? snapshots[index++] : emptySnapshot;
