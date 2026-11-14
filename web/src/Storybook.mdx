@@ -24,6 +24,11 @@ with inline detail, and Entity detail with retained history. Each page has
 loaded, empty or unobserved, and failed-read scenarios using the synthetic
 household.
 
+The `application/Workspace` group shows the production shell, conversation, and
+dashboard canvas together, including tablet/phone navigation, synthetic replies,
+retry, editing, save conflicts, and unsaved-navigation dialogs. These stories own
+isolated routers and use synthetic HTTP/SSE responses, not a live model.
+
 Use Controls to explore props, the test widget to run interactions and
 accessibility checks, and the viewport toolbar to inspect responsive behavior.
 Stories marked `ai-generated` still need human review.
@@ -40,6 +45,12 @@ component exports. Import from the source module used by the colocated story
 instead, such as `@/features/views/cards/metric/Metric` or
 `@/components/ui/button`. Fixture helpers in snippets are Storybook-only; use
 real Entity IDs in application code.
+
+The App composition snippets have an additional limitation: they show the shared
+render function but omit each story's `appPath`, `applicationScenario`, and play
+function. They are not standalone examples. Read the selected export and shared
+setup in `src/App.stories.tsx` and `.storybook/application-fixtures.ts` to reproduce
+that scenario. Ordinary component snippets do not need this application harness.
 
 ## Keep evidence distinct
 

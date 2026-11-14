@@ -2,7 +2,7 @@ import { cn } from "cn";
 import { HistoryIcon, HouseIcon, LayoutDashboardIcon, MenuIcon, PlusIcon, SettingsIcon, WrenchIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import { createHashRouter, Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useMatch, useNavigate } from "react-router-dom";
+import { Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useMatch, useNavigate, type RouteObject, type RouterProviderProps } from "react-router-dom";
 import { api, ApiError, getBaseUrl, useBaseUrlVersion } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
 import { StatusChip } from "./components/common.tsx";
@@ -221,7 +221,7 @@ function HouseholdShell() {
         <NavLink to="/dashboards" aria-label="Dashboards"><LayoutDashboardIcon aria-hidden="true" /><span>Dashboards</span></NavLink>
         <NavLink to="/devices" aria-label="Development"><WrenchIcon aria-hidden="true" /><span>Development</span></NavLink>
       </nav>
-      <button ref={historyButton} className="history-toggle" aria-label="Conversation history" aria-expanded={nav === "rail" && drawerOpen} aria-controls="conversation-history" onClick={() => setDrawerOpen(open => !open)}><HistoryIcon aria-hidden="true" /><span>Recent</span></button>
+      <button ref={historyButton} className="history-toggle" aria-label="Recent conversation history" aria-expanded={nav === "rail" && drawerOpen} aria-controls="conversation-history" onClick={() => setDrawerOpen(open => !open)}><HistoryIcon aria-hidden="true" /><span>Recent</span></button>
       <ConversationHistory id="conversation-history" open={nav === "rail" && drawerOpen} onNavigate={() => setDrawerOpen(false)} onClose={nav === "rail" ? closeDrawer : undefined} />
       <ServerStatus onChange={setServer} />
     </aside>
@@ -263,13 +263,13 @@ function DevelopmentShell() {
           </div>
         </div>
       </header>
-      <main className="px-4 py-4">
+      <div className="px-4 py-4">
         <Outlet />
-      </main>
+      </div>
     </div>;
 }
 
-const router = createHashRouter([{ path: "/", element: <Shell />, children: [
+export const appRoutes: RouteObject[] = [{ path: "/", element: <Shell />, children: [
   { index: true, element: <AgentPage /> },
   { path: "agent", element: <Navigate to="/" replace /> },
   { path: "conversations/:id", element: <AgentPage /> },
@@ -289,7 +289,13 @@ const router = createHashRouter([{ path: "/", element: <Shell />, children: [
   { path: "notifications/:attemptId", element: <NotificationsPage /> },
   { path: "nats", element: <NatsPage /> },
   { path: "device-facts", element: <DeviceFactsPage /> },
-] }]);
-export default function App() {
+] }];
+
+type AppProps = {
+  /** The caller creates and disposes this router. The browser uses hash routing; embedded previews use memory routing. */
+  router: RouterProviderProps["router"];
+};
+
+export default function App({ router }: AppProps) {
   return <RouterProvider router={router} />;
 }
