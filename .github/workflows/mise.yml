@@ -118,7 +118,7 @@ jobs:
       - name: Build Storybook
         run: mise run --skip-deps storybook-build
       - name: Upload Storybook
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: storybook
           path: web/storybook-static/
