@@ -1,0 +1,13 @@
+{
+  "origin": "Browse CDP recording of the production Hearth Cover dashboard against worktree-local Core and scripted simulated Devices",
+  "captureDate": "2026-11-13",
+  "branch": "feat/views-cover-card",
+  "baseRevision": "a6cb875f910b4f4b78887b278b6fa64eaf531a7e",
+  "sourceState": "feature changes uncommitted",
+  "width": 1440,
+  "height": 1000,
+  "frameRate": 15,
+  "edit": "None; original CDP recording",
+  "durationSeconds": 44.866667,
+  "scenario": "Confirmed Open, reported position/motion, dispatched Stop, then reported idle. Synthetic cover reports are supplied through simulator HTTP controls."
+}

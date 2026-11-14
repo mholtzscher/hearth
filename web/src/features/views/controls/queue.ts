@@ -2,7 +2,14 @@ import { CommandError, type CommandFailure, type CommandRequest } from "../../..
 import type { CommandResult } from "../../../api/types";
 
 /** One controllable Operation on one Entity. */
-export type ControlTarget = { entityId: string; operation: "set" };
+export type ControlTarget = { entityId: string; operation: "set" | "stop" };
+/**
+ * queue: a newer value waits for the Command in flight, then only the latest is sent.
+ * replace: a newer value is sent at once and the earlier Command's outcome is ignored.
+ * Covers use replace because their Adapter writes each Command without waiting
+ * for an earlier position target.
+ */
+export type RequestPolicy = "queue" | "replace";
 /** Scalar setters use { value }; structured color setters use their named fields. */
 export type ControlValue = string | boolean | number | Record<string, unknown>;
 
@@ -10,15 +17,18 @@ export type ControlValue = string | boolean | number | Record<string, unknown>;
  * requested: the value the user most recently asked for.
  * pending: a Command is in flight; queued holds a newer value to send when it finishes.
  * confirming: the Command was satisfied, and the State refresh that follows it hasn't landed yet.
+ * dispatched: Stop was sent; this evidence does not wait for or claim a State change.
  * failed: the last Command failed; the control shows observed State and the reason until the next request.
  */
 export type ControlState =
   | { phase: "idle" }
   | { phase: "pending"; requested: unknown; queued?: { value: ControlValue } }
   | { phase: "confirming"; requested: unknown }
+  | { phase: "dispatched"; requested: unknown; at: number }
   | { phase: "failed"; requested: unknown; failure: CommandFailure };
 
-type Entry = { state: ControlState; listeners: Set<() => void>; inFlight: boolean };
+/** current identifies the latest send; an outcome from any other send is ignored. */
+type Entry = { state: ControlState; listeners: Set<() => void>; inFlight: boolean; current: number };
 
 export type CommandQueueDeps = {
   execute: (entityId: string, request: CommandRequest) => Promise<CommandResult>;
@@ -29,10 +39,12 @@ const idle: ControlState = { phase: "idle" };
 const key = (target: ControlTarget) => `${target.entityId}|${target.operation}`;
 
 /**
- * Sends the Commands a household member asks for through view controls. Each
- * Entity Operation has at most one Command in flight and one queued value, and
- * a newer value replaces the queued one. A connection owns one queue, so every
- * card showing the same Entity shares its state.
+ * Sends the Commands a household member asks for through view controls. Under
+ * the default queue policy, each Entity Operation has at most one Command in
+ * flight and one queued value, and a newer value replaces the queued one. Under
+ * the replace policy, a newer value is sent at once and only the latest
+ * Command's outcome is shown. A connection owns one queue, so every card
+ * showing the same Entity shares its state.
  */
 export class CommandQueue {
   private entries = new Map<string, Entry>();
@@ -53,13 +65,26 @@ export class CommandQueue {
     };
   }
 
-  request(target: ControlTarget, value: ControlValue): void {
+  request(target: ControlTarget, value: ControlValue, policy: RequestPolicy = "queue"): void {
     const entry = this.entry(target);
-    if (entry.inFlight) {
+    if (entry.inFlight && policy === "queue") {
       this.update(entry, { phase: "pending", requested: value, queued: { value } });
       return;
     }
     void this.send(target, entry, value);
+  }
+
+  /**
+   * Stops showing an Operation's Command: it returns to idle, and the outcome of
+   * any Command still in flight is ignored. The Command itself is not affected.
+   */
+  forget(target: ControlTarget): void {
+    const entry = this.entries.get(key(target));
+    if (!entry) return;
+    entry.current++;
+    entry.inFlight = false;
+    this.update(entry, idle);
+    this.release(target, entry);
   }
 
   /**
@@ -79,7 +104,7 @@ export class CommandQueue {
   private entry(target: ControlTarget): Entry {
     let entry = this.entries.get(key(target));
     if (!entry) {
-      entry = { state: idle, listeners: new Set(), inFlight: false };
+      entry = { state: idle, listeners: new Set(), inFlight: false, current: 0 };
       this.entries.set(key(target), entry);
     }
     return entry;
@@ -100,16 +125,17 @@ export class CommandQueue {
   }
 
   private async send(target: ControlTarget, entry: Entry, value: ControlValue): Promise<void> {
-    const generation = this.generation;
+    const generation = this.generation, send = ++entry.current;
     entry.inFlight = true;
     this.update(entry, { phase: "pending", requested: value });
     let failure: CommandFailure | undefined;
+    let result: CommandResult | undefined;
     try {
-      await this.deps.execute(target.entityId, { operation: target.operation, parameters: typeof value === "object" ? value : { value } });
+      result = await this.deps.execute(target.entityId, { operation: target.operation, parameters: typeof value === "object" ? value : { value } });
     } catch (error) {
       failure = error instanceof CommandError ? error.failure : { kind: "internal" };
     }
-    if (generation !== this.generation) return;
+    if (generation !== this.generation || send !== entry.current) return;
     entry.inFlight = false;
     // A newer request supersedes this outcome, including a failure.
     const queued = entry.state.phase === "pending" ? entry.state.queued : undefined;
@@ -123,10 +149,15 @@ export class CommandQueue {
       this.release(target, entry);
       return;
     }
+    if (result?.status === "dispatched" && target.operation === "stop") {
+      this.update(entry, { phase: "dispatched", requested: value, at: Date.now() });
+      void this.deps.refreshState();
+      return;
+    }
     const confirming: ControlState = { phase: "confirming", requested: value };
     this.update(entry, confirming);
     await this.deps.refreshState();
-    if (generation !== this.generation || entry.state !== confirming) return;
+    if (generation !== this.generation || send !== entry.current || entry.state !== confirming) return;
     this.update(entry, idle);
     this.release(target, entry);
   }

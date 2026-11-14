@@ -16,6 +16,7 @@ import { windSchema } from "../cards/wind/schema";
 import { pressureSchema } from "../cards/pressure/schema";
 import { forecastSchema } from "../cards/forecast/schema";
 import { airPurifierSchema } from "../cards/air-purifier/schema";
+import { coverSchema } from "../cards/cover/schema";
 import { childrenSchema, elementKey, plainText } from "./primitives";
 
 // The view catalog: the only components a definition may name. Each node shape
@@ -40,6 +41,7 @@ export const elementSchemas = {
   Pressure: z.strictObject({ type: z.literal("Pressure"), props: pressureSchema }),
   Forecast: z.strictObject({ type: z.literal("Forecast"), props: forecastSchema }),
   AirPurifier: z.strictObject({ type: z.literal("AirPurifier"), props: airPurifierSchema }),
+  Cover: z.strictObject({ type: z.literal("Cover"), props: coverSchema }),
 };
 export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.Stack, elementSchemas.Grid, elementSchemas.Heading,
@@ -48,7 +50,7 @@ export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.StateTimeline, elementSchemas.WeekPattern,
   elementSchemas.ToggleTile, elementSchemas.ToggleList,
   elementSchemas.OutsideNow, elementSchemas.Rain, elementSchemas.Wind, elementSchemas.Pressure,
-  elementSchemas.Forecast, elementSchemas.AirPurifier,
+  elementSchemas.Forecast, elementSchemas.AirPurifier, elementSchemas.Cover,
 ]);
 export const definitionSchema = z.strictObject({
   schema_version: z.literal(1), catalog_version: z.literal("hearth.dashboard/v1"), title: plainText(80),

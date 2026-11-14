@@ -1484,6 +1484,49 @@
                   "props"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Cover"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "tile"
+                        ],
+                        "description": "card: a drawing of the cover with Open, Stop, and Close. tile: a whole-card press that opens, closes, or stops, for grids of quick switches."
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "source": {
+                        "$ref": "#/$defs/CoverSource"
+                      },
+                      "confirm_open": {
+                        "type": "boolean",
+                        "description": "Ask for a second press before Open, even at a reported 100 %. Omitted means true; set false for covers such as shades."
+                      }
+                    },
+                    "required": [
+                      "layout",
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
               }
             ]
           }
@@ -1681,6 +1724,32 @@
         "entity_type": {
           "type": "string",
           "const": "hearth.enumsetting/v1"
+        },
+        "field": {
+          "type": "string",
+          "const": ""
+        }
+      },
+      "required": [
+        "kind",
+        "entity_id",
+        "entity_type"
+      ],
+      "additionalProperties": false
+    },
+    "CoverSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "entity-state"
+        },
+        "entity_id": {
+          "$ref": "#/$defs/EntityID"
+        },
+        "entity_type": {
+          "type": "string",
+          "const": "hearth.cover/v1"
         },
         "field": {
           "type": "string",
