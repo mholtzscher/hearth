@@ -100,6 +100,9 @@ export function createEntities(): Entity[] {
     entity(305, "enumsetting", "Fan level", "2", { device: 1, writable: true, support: { choices: ["1", "2", "3", "4"] } }),
     entity(306, "power", "Purifier display", true, { device: 1, writable: true }),
     entity(307, "power", "Child lock", false, { device: 1, writable: true }),
+    entity(401, "cover", "Garage door", { position: 0, motion: "idle" }, {
+      support: {}, quantities: { "/position": ranged("%", 100, "%", 0) },
+    }),
   ];
 }
 
@@ -121,6 +124,8 @@ export const catalogExamples = {
     { label: "Front door", source: door, words: { true: "Open", false: "Closed" } },
   ] } },
   Device: { type: "Device", props: { label: "Hallway lamp", device: { kind: "device", device_id: deviceId(2) } } },
+  Cover: { type: "Cover", props: { layout: "card", label: "Garage door",
+    source: source(401, "hearth.cover/v1") } },
   StateTimeline: { type: "StateTimeline", props: { title: "Around the house", style: "ledger", window: "24h", rows: [
     { label: "Front door", source: door, words: { true: "Open", false: "Closed" } },
     { label: "Porch light", source: power(2) },
