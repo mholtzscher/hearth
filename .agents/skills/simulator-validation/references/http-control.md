@@ -37,7 +37,7 @@ Read Core at `http://127.0.0.1:$SIM_CORE_PORT`:
 
 | GET path | JSON shape / evidence |
 | --- | --- |
-| `/v1/entities/{id}` | Object; `.state.value`, `.state.observation_id`; event `.state == null` |
+| `/v1/entities/{id}` | Object; paired `.state.canonical` and `.state.display`, shared `.state.observation_id`; numeric leaves have `.value`/`.unit`, boolean/string leaves remain plain; event `.state == null` |
 | `/v1/entities/{id}/state/history?limit=50` | Object with `.items[]`; `observation_id`, `value`, **`applied`** for a changed State, **`unchanged`** for an equal value |
 | `/v1/entities/{id}/events?limit=50` | Object with `.items[]`; `event_id`, `name`, successful disposition **`accepted`** |
 
@@ -77,7 +77,7 @@ applied=false
 for attempt in $(seq 1 30); do
   curl -fsS --max-time 2 "$core_url/v1/entities/$temperature_id" >"$run_dir/temperature-core.json"
   if jq -e --arg id "$observation_id" \
-    '.state.observation_id == $id and .state.value == 25000' \
+    '.state.observation_id == $id and .state.canonical.value == 25000 and .state.canonical.unit == "mCel"' \
     "$run_dir/temperature-core.json" >/dev/null; then applied=true; break; fi
   sleep 1
 done

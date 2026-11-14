@@ -80,15 +80,12 @@ func TestHistoryNullGapThroughCore(t *testing.T) {
 		"range":     rangeBody,
 		"time_axis": "observed_at",
 		"coverage":  basic,
-		"quantity": map[string]any{
-			"unit":            "%",
-			"label":           "%",
-			"fraction_digits": 1,
-			"range":           map[string]any{"minimum": 0, "maximum": 100},
-		},
-		"bucket": map[string]any{"duration": "1h0m0s", "alignment": "range_start"},
+		"bucket":    map[string]any{"duration": "1h0m0s", "alignment": "range_start"},
 		"buckets": []any{map[string]any{
-			"range": rangeBody, "metrics": map[string]any{"min": nil, "max": nil, "mean": nil},
+			"range":     rangeBody,
+			"canonical": map[string]any{"unit": "%", "metrics": map[string]any{"min": nil, "max": nil, "mean": nil}},
+			"display": map[string]any{"unit": "%", "label": "%", "fraction_digits": 1,
+				"metrics": map[string]any{"min": nil, "max": nil, "mean": nil}},
 		}},
 	}
 	historyJourneyQuery(ctx, t, client, address, entity, map[string]any{

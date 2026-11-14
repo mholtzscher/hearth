@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ViewDataProvider } from "../views/data/provider";
 import { Canvas } from "./Canvas";
 import { WorkspaceProvider } from "./Workspace";
+import { pairedEntityResponse } from "../../../.storybook/paired-fixtures";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -18,7 +19,7 @@ function mount() {
   vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
     const path = String(input);
     if (path === "/v1/dashboards/dash-1") return new Response(JSON.stringify({ id: "dash-1", revision: 1, definition, created_at: "", updated_at: "" }));
-    if (path === `/v1/entities/${id}`) return new Response(JSON.stringify(entity));
+    if (path === `/v1/entities/${id}`) return new Response(JSON.stringify(pairedEntityResponse(entity, { ...entity, quantities: { "": { unit: "mCel", label: "mCel", fraction_digits: 0 } }, state: { ...entity.state, value: 21500 } })));
     if (path.startsWith("/v1/entities?")) return new Response(JSON.stringify({ items: [entity] }));
     throw new Error(`Unexpected request ${path}`);
   });

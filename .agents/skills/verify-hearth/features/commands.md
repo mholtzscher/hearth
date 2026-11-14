@@ -34,7 +34,7 @@ only the `sim-healthy` power Entity. Other fault Adapters are separate scenarios
     > "$EVIDENCE/power-baseline-published.json"
   BASELINE=$(jq -er .observation_id "$EVIDENCE/power-baseline-published.json")
   wait_core "/v1/entities/$POWER" "$EVIDENCE/power-before.json" \
-    '.state.observation_id == $id and .state.value == false' --arg id "$BASELINE"
+    '.state.observation_id == $id and .state.canonical == false' --arg id "$BASELINE"
   ```
 
 - **Dashboard submission:**
@@ -70,7 +70,7 @@ only the `sim-healthy` power Entity. Other fault Adapters are separate scenarios
     (.outcome_observation_id | startswith("obs_"))' "$EVIDENCE/command-core.json"
   OUTCOME=$(jq -er .outcome_observation_id "$EVIDENCE/command-core.json")
   wait_core "/v1/entities/$POWER" "$EVIDENCE/power-after.json" \
-    '.state.value == true and .state.observation_id == $id' --arg id "$OUTCOME"
+    '.state.canonical == true and .state.observation_id == $id' --arg id "$OUTCOME"
   wait_core "/v1/entities/$POWER/commands?limit=50" "$EVIDENCE/power-commands.json" \
     'any(.items[]; .id == $id and .status == "satisfied")' --arg id "$COMMAND"
   wait_core "/v1/entities/$POWER/state/history?limit=50" "$EVIDENCE/power-observations.json" \

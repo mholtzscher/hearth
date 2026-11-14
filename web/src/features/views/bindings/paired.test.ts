@@ -28,7 +28,7 @@ it("reads both unrounded values and shared evidence from one scalar response", a
   const fetch = respond(pairedEntityResponse(display, canonical));
   const request = pairedQuantityAdapters.household.stateRequest(source);
   const raw = await request.load(signal(), new Date(observed_at));
-  expect(fetch).toHaveBeenCalledWith("/v1/entities/ent_test?include=canonical", expect.anything());
+  expect(fetch).toHaveBeenCalledWith("/v1/entities/ent_test", expect.anything());
   expect(pairedQuantityAdapters.canonical.stateRequest(source).key).toBe(request.key);
   expect(pairedQuantityAdapters.household.metric(raw, source)).toEqual({
     value: 10, observed_at, format: { unit_label: "mi/h", fraction_digits: 1 },
@@ -89,7 +89,7 @@ it("reads both history projections with the same buckets and gaps", async () => 
   const request = pairedQuantityAdapters.household.seriesRequest(source, "1h");
   const series = await request.load(signal(), new Date(observed_at));
   expect(series).toMatchObject({ quantity: { unit: "[mi_i]/h" }, canonical: { quantity: { unit: "m/s" } } });
-  expect(fetch).toHaveBeenCalledWith("/v1/entities/ent_test/state/history?include=canonical", expect.anything());
+  expect(fetch).toHaveBeenCalledWith("/v1/entities/ent_test/state/history", expect.anything());
   expect(pairedQuantityAdapters.canonical.seriesRequest(source, "1h").key).toBe(request.key);
   expect(series).toMatchObject({
     buckets: expect.arrayContaining([expect.objectContaining({ mean: null })]),

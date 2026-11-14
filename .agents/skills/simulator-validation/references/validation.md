@@ -177,10 +177,10 @@ curl -fsS --max-time 2 -X POST "$sim_url/v1/sim/entities/$power_id/publish" \
 baseline_id=$(jq -er '.observation_id' "$run_dir/power-baseline-publish.json")
 for attempt in $(seq 1 30); do
   if curl -fsS --max-time 2 "$core_url/v1/entities/$power_id" \
-      | jq -e --arg id "$baseline_id" '.state.observation_id == $id and .state.value == false' >/dev/null; then break; fi
+      | jq -e --arg id "$baseline_id" '.state.observation_id == $id and .state.canonical == false' >/dev/null; then break; fi
   sleep 1
 done
-curl -fsS --max-time 2 "$core_url/v1/entities/$power_id" | jq -e --arg id "$baseline_id" '.state.observation_id == $id and .state.value == false'
+curl -fsS --max-time 2 "$core_url/v1/entities/$power_id" | jq -e --arg id "$baseline_id" '.state.observation_id == $id and .state.canonical == false'
 ```
 
 If the final assertion fails, stop and diagnose rather than sending the Command.

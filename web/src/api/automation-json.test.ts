@@ -181,7 +181,7 @@ describe("Automation argument source preservation", () => {
     const automation = await automationFetch<Automation>("/v1/automations/aut_example");
     expect(serializeAutomationEnablement(automation, false)).toContain('"large":9007199254740993');
     vi.stubGlobal("fetch", async () => new Response('{"value":9007199254740993}'));
-    expect(await apiFetch("/v1/entities/example")).toEqual({ value: 9007199254740992 });
+    expect(await apiFetch("/v1/example")).toEqual({ value: 9007199254740992 });
     vi.stubGlobal("fetch", async () => new Response('{"title":"Conflict","code":"revision_conflict"}', { status: 409 }));
     await expect(automationFetch("/v1/automations/aut_example")).rejects.toMatchObject({ status: 409, detail: { code: "revision_conflict" } });
     await expect(automationFetch("/v1/automations/aut_example")).rejects.toBeInstanceOf(ApiError);

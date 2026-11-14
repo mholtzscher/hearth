@@ -80,11 +80,11 @@ use the schema's `hearth` unit annotation, or dimensionless `1` by default.
 Dynamic units reference support and cannot change on re-registration. Cards never
 store a display unit. Core projects readings according to the household's
 `household_unit_system` (`metric` or `us`) and supplies units, labels, precision,
-and declared bounds in `quantities`, or `quantity` for aggregate history. The
+and declared bounds beside inline numeric values in paired detail/history reads. The
 web displays those numbers without converting them again or waiting for a
 separate household-settings read. US precipitation is shown in inches or
-inches per hour. Canonical-only consumers request
-`units=canonical`; raw observation audit remains canonical. Current State and
+inches per hour. Formula and control consumers select the same response's
+`canonical` values; raw observation audit remains canonical. Current State and
 historical Observations are distinct. History uses one-minute rollups through
 the Entity history query: 1h has 60 one-minute buckets, 6h has 360 one-minute
 buckets, 24h has 288 five-minute buckets, and 7d has 336 thirty-minute buckets.
@@ -265,7 +265,7 @@ view is presented or saved: `mm/h` for rain rates, `mm` for rain totals, and
   expired history shows no tendency while the live pressure reading remains.
 
 Conditions, Beaufort forces, and pressure tendencies use fixed thresholds.
-Weather cards request `include=canonical`, receiving household values and their
+Entity-detail and aggregate-history reads return household values and their
 canonical formula inputs together from one Observation or history aggregation.
 Both representations share a cache entry. A pending refresh keeps the previous
 complete reading, so conditions do not disappear or insert fallback rows between
@@ -295,8 +295,8 @@ forecasts, not station readings:
 - Precipitation chance shows only at 10% or more. Core returns forecast values
   in household units with per-period quantity metadata. The card formats those
   values without conversion or a household-settings read; forecast temperature
-  metadata recommends whole degrees. `units=canonical` returns canonical values
-  under the same field names; see [forecast read representations](units.md#forecast-snapshots).
+  metadata recommends whole degrees. The same detail response includes canonical
+  values under matching field names; see [forecast read representations](units.md#forecast-snapshots).
 - Periods that have ended drop at each minute without a refetch: an hour once it
   is over, a day once the viewer's local date passes it. With none left, the card
   says the last forecast has passed.
@@ -465,10 +465,11 @@ and unchanged. See [agent skills](agent-skills.md) for provider migration.
 
 ## Persistence and deployment
 
-Household-default Entity and history reads change the numeric representation at
-existing JSON paths. Deploy Core and web together; older web clients would apply
-their own conversion to the projected numbers. Request `units=canonical` for
-canonical readers. This units change does not rewrite stored observations or
+Entity-detail and aggregate-history reads always return paired `canonical` and
+`display` trees, without representation flags. Deploy Core and web together;
+older clients expecting `state.value` or single-history metrics must migrate.
+Collections, embedded Device Entities, PATCH responses, and MCP remain unchanged.
+This units change does not rewrite stored observations or
 require a database reset. See [quantity metadata and read units](units.md) for
 the Core-first Adapter rollout and rollback constraints.
 

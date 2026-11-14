@@ -8,6 +8,7 @@ import { BoundForecast } from "./Forecast";
 import { ForecastEditor } from "./Editor";
 import { forecastTypes } from "./schema";
 import { BoundPressure } from "../pressure/Pressure";
+import { pairedEntityResponse } from "../../../../../.storybook/paired-fixtures";
 
 const id = "ent_01900000-0000-7000-8000-000000000201";
 const source = <T extends "hourly" | "daily">(type: T) => ({ kind: "entity-state" as const, entity_id: id, entity_type: forecastTypes[type] });
@@ -23,6 +24,32 @@ function entity(type: "hourly" | "daily", value: unknown, unit: "metric" | "us" 
   }));
   return { id, name: "Forecast", type: forecastTypes[type], enabled: true, availability: { status: "available" }, quantities, state: { value, observed_at: at } };
 }
+/** Convert this synthetic forecast's display leaves to the fixed Core units. */
+function forecastResponse(display: ReturnType<typeof entity>) {
+  const canonical = structuredClone(display);
+  const periods = (canonical.state.value as { periods?: Record<string, unknown>[] }).periods ?? [];
+  periods.forEach((period, index) => Object.entries(period).forEach(([field, value]) => {
+    if (typeof value !== "number") return;
+    const path = `/periods/${index}/${field}`;
+    const unit = display.quantities[path]?.unit;
+    let converted = value, canonicalUnit = unit;
+    if (field.startsWith("temperature") || field === "apparent_temperature") {
+      converted = unit === "[degF]" ? (value - 32) * 5 / 9 : unit === "K" ? value - 273.15 : value;
+      canonicalUnit = "Cel";
+    } else if (field === "precipitation_rate") {
+      converted = unit === "[in_i]/h" ? value * 25.4 : value; canonicalUnit = "mm/h";
+    } else if (field === "pressure") {
+      converted = unit === "[in_i'Hg]" ? value * 33.863788 : value; canonicalUnit = "hPa";
+    } else if (field === "wind_speed" || field === "wind_gust") {
+      converted = unit === "[mi_i]/h" ? value * 1609.344 / 3600 : value; canonicalUnit = "m/s";
+    } else if (field === "wind_direction") canonicalUnit = "deg";
+    else if (field === "uv_index") canonicalUnit = "index";
+    else canonicalUnit = "%";
+    period[field] = converted;
+    canonical.quantities[path] = { unit: canonicalUnit, label: canonicalUnit, fraction_digits: 0 };
+  }));
+  return pairedEntityResponse(display, canonical);
+}
 const daily = { periods: [
   { starts_at: "2026-11-09T00:00:00Z", date: "2026-11-09", condition: "rain", temperature_min: 0, temperature_max: 10, precipitation_probability: 9 },
   { starts_at: "2026-11-10T00:00:00Z", date: "2026-11-10", condition: "snow", temperature_min: -5, temperature_max: 5, precipitation_probability: 90 },
@@ -36,7 +63,7 @@ async function mount(children: ReactNode) {
 }
 function core(initial: ReturnType<typeof entity>) {
   let current: ReturnType<typeof entity> | null = initial, failure = 0;
-  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify(current ?? { detail: "missing" }), { status: failure || (current ? 200 : 404) }));
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify(current ? forecastResponse(current) : { detail: "missing" }), { status: failure || (current ? 200 : 404) }));
   return { fetcher, set: (next: ReturnType<typeof entity> | null) => { current = next; }, fail: (status: number) => { failure = status; } };
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-09T10:00:30Z")); });
@@ -215,7 +242,7 @@ it("plots projected temperatures and accepts all neutral forecast measurements",
   item.quantities["/periods/0/wind_speed"] = q("[mi_i]/h", "mi/h", 1);
   item.quantities["/periods/0/wind_gust"] = q("[mi_i]/h", "mi/h", 1);
   item.quantities["/periods/0/wind_direction"] = q("deg", "°", 0);
-  item.quantities["/periods/0/uv_index"] = q("1", "", 1);
+  item.quantities["/periods/0/uv_index"] = q("index", "", 1);
   core(item);
   await mount(<BoundForecast source={source("hourly")} periods={6} />);
   expect(screen.getByRole("img").getAttribute("aria-label")).toContain("low 61°F, high 86°F");
@@ -247,11 +274,11 @@ it("renders a forecast alongside paired current weather without a household requ
   const pressureId = "ent_01900000-0000-7000-8000-000000000202";
   const pressure = { id: pressureId, name: "Pressure", type: "hearth.pressure/v1", enabled: true, availability: { status: "available" }, support: { state: {}, operations: {} }, quantities: { "": { unit: "[in_i'Hg]", label: "in Hg", fraction_digits: 2 } }, state: { value: 29.92, observed_at: at } };
   const forecast = entity("hourly", { periods: [{ starts_at: at, temperature: 60.8 }] }, "us");
-  const pairedPressure = { ...pressure, quantities: undefined, state: { observed_at: at,
-    canonical: { value: 1013.25, unit: "hPa" },
-    display: { value: 29.92, unit: "[in_i'Hg]", label: "in Hg", fraction_digits: 2 },
-  } };
-  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async input => new Response(JSON.stringify(String(input).includes(pressureId) ? pairedPressure : forecast)));
+  const pairedPressure = pairedEntityResponse(pressure, { ...pressure,
+    quantities: { "": { unit: "hPa", label: "hPa", fraction_digits: 1 } },
+    state: { value: 1013.25, observed_at: at },
+  });
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async input => new Response(JSON.stringify(String(input).includes(pressureId) ? pairedPressure : forecastResponse(forecast))));
   await mount(<><BoundForecast source={source("hourly")} /><BoundPressure source={{ kind: "entity-state", entity_id: pressureId, entity_type: "hearth.pressure/v1" }} /></>);
   expect(screen.getByRole("img").getAttribute("aria-label")).toContain("61°F");
   expect(screen.getByText("29.92")).toBeTruthy();
@@ -274,7 +301,8 @@ it("shows never-observed and disabled states", async () => {
   expect(screen.getByText("Disabled")).toBeTruthy();
   expect(document.querySelector(".forecast-body")?.getAttribute("data-value")).toBe("dimmed");
   cleanup(); vi.restoreAllMocks();
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ...item, enabled: true, state: null })));
+  const unobserved = { ...item, enabled: true, state: null };
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(pairedEntityResponse(unobserved, unobserved))));
   await mount(<BoundForecast source={source("daily")} />);
   expect(screen.getByText("Never observed")).toBeTruthy();
 });

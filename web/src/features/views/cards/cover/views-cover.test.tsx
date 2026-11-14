@@ -6,6 +6,7 @@ import { ViewDataProvider } from "../../data/provider";
 import type { FieldEntity } from "../../bindings/entity";
 import { BoundCover } from "./Cover";
 import type { CoverProps } from "./schema";
+import { pairedEntityResponse } from "../../../../../.storybook/paired-fixtures";
 
 const id = "ent_019a3e6a-4111-7000-8000-000000000401";
 const source = { kind: "entity-state" as const, entity_id: id, entity_type: "hearth.cover/v1" as const };
@@ -28,7 +29,7 @@ function core(value: FieldEntity) {
       return new Promise<Response>(respond => posts.push({ ...body, respond }));
     }
     reads++;
-    return response(api.value);
+    return response(pairedEntityResponse(api.value, api.value));
   });
   const api = {
     value, posts, reads: () => reads,

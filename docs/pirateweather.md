@@ -87,10 +87,10 @@ icon omits it), and State has no `icon`, `precipitation_type`, location name,
 retrieval time, or timezone. An empty provider summary is omitted. The Forecast
 dashboard card reads these Entities; see [Dashboards](dashboards.md).
 
-Ordinary Entity reads project forecast measurements into household units.
-Both read modes use the same unit-neutral period fields, such as `temperature`;
-per-period `quantities` metadata describes the returned numbers. Request
-`units=canonical` for values in the contract's canonical units. Ingestion,
+Entity-detail reads return both `state.canonical` and `state.display` forecast
+trees. Each uses the same unit-neutral period fields, such as `temperature`,
+with inline values and units. Collections, embedded Device Entities, and MCP
+retain single-representation reads and their canonical selector. Ingestion,
 retained State, raw audit, and Function results remain canonical. See
 [forecast read representations](units.md#forecast-snapshots).
 

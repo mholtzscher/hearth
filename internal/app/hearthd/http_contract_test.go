@@ -63,12 +63,21 @@ func TestHTTPTransportContractSnapshot(t *testing.T) {
 		t.Fatal("Entity schema must publish quantities")
 	}
 	paths := document["paths"].(map[string]any)
+	assertEntityReadContract(t, paths, schemas)
+	// Includes paths, wire schemas, component names, references and publication
+	// metadata. Intentional API extensions update this digest alongside contract tests.
+	got := fmt.Sprintf("%x", sha256.Sum256(response.Body.Bytes()))
+	const want = "6ceef78f3a0bdec755aa2ea4ab1f12bce4aca7da5b3a2c59ef1f146537aca5fe"
+	if got != want {
+		t.Fatalf("HTTP/OpenAPI contract changed: SHA-256 = %s, want %s", got, want)
+	}
+}
+
+func assertEntityReadContract(t *testing.T, paths, schemas map[string]any) {
+	t.Helper()
 	for _, operation := range []struct{ path, method, parameter string }{
-		{"/v1/entities", "get", "units"}, {"/v1/entities/{entity_id}", "get", "units"},
+		{"/v1/entities", "get", "units"},
 		{"/v1/entities/{entity_id}", "patch", "units"}, {"/v1/devices/{device_id}", "get", "units"},
-		{"/v1/entities/{entity_id}/state/history", "post", "units"},
-		{"/v1/entities/{entity_id}", "get", "include"},
-		{"/v1/entities/{entity_id}/state/history", "post", "include"},
 	} {
 		published := paths[operation.path].(map[string]any)[operation.method].(map[string]any)
 		found := false
@@ -82,11 +91,55 @@ func TestHTTPTransportContractSnapshot(t *testing.T) {
 			t.Fatalf("%s %s does not publish %s", operation.method, operation.path, operation.parameter)
 		}
 	}
-	// Includes paths, wire schemas, component names, references and publication
-	// metadata. Intentional API extensions update this digest alongside contract tests.
-	got := fmt.Sprintf("%x", sha256.Sum256(response.Body.Bytes()))
-	const want = "5047db6ef0385d4b1144f4b5c96382e6ed38c7a298fd7b5925916b97dcb5fce8"
-	if got != want {
-		t.Fatalf("HTTP/OpenAPI contract changed: SHA-256 = %s, want %s", got, want)
+	for _, operation := range []struct{ path, method string }{
+		{"/v1/entities/{entity_id}", "get"}, {"/v1/entities/{entity_id}/state/history", "post"},
+	} {
+		published := paths[operation.path].(map[string]any)[operation.method].(map[string]any)
+		for _, parameter := range published["parameters"].([]any) {
+			p := parameter.(map[string]any)
+			if p["in"] == "query" && (p["name"] == "units" || p["name"] == "include") {
+				t.Fatalf("%s %s still publishes selector %s", operation.method, operation.path, p["name"])
+			}
+		}
+	}
+	assertPairedReadSchemas(t, paths, schemas)
+}
+
+func assertPairedReadSchemas(t *testing.T, paths, schemas map[string]any) {
+	t.Helper()
+	paired := schemas["PairedStateBody"].(map[string]any)["properties"].(map[string]any)
+	for _, property := range []string{"canonical", "display", "observation_id"} {
+		if _, exists := paired[property]; !exists {
+			t.Fatalf("paired State schema missing %s", property)
+		}
+	}
+	if _, exists := paired["value"]; exists {
+		t.Fatal("paired State schema must not publish legacy value")
+	}
+	detail := paths["/v1/entities/{entity_id}"].(map[string]any)["get"].(map[string]any)
+	detailResponse := detail["responses"].(map[string]any)["200"].(map[string]any)
+	detailSchema := detailResponse["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+	if detailSchema["$ref"] != "#/components/schemas/PairedEntityBody" {
+		t.Fatalf("Entity detail must publish the paired schema: %#v", detailSchema)
+	}
+	history := paths["/v1/entities/{entity_id}/state/history"].(map[string]any)["post"].(map[string]any)
+	historyResponse := history["responses"].(map[string]any)["200"].(map[string]any)
+	historySchema := historyResponse["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+	variants := historySchema["oneOf"].([]any)
+	if len(variants) != 2 {
+		t.Fatalf("history must publish summary and bucketed variants only: %#v", variants)
+	}
+	summary := variants[0].(map[string]any)["properties"].(map[string]any)
+	bucketed := variants[1].(map[string]any)["properties"].(map[string]any)
+	for _, field := range []string{"canonical", "display"} {
+		if _, ok := summary[field]; !ok {
+			t.Fatalf("history summary missing %s", field)
+		}
+	}
+	if _, ok := bucketed["buckets"]; !ok {
+		t.Fatal("history bucketed variant missing buckets")
+	}
+	if _, ok := summary["quantity"]; ok {
+		t.Fatal("history summary publishes legacy quantity")
 	}
 }

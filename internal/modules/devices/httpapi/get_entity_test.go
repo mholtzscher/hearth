@@ -30,7 +30,7 @@ func TestGetEntityReturnsMetadataAndNullableState(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var body EntityBody
+	var body PairedEntityBody
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
@@ -73,11 +73,12 @@ func TestGetEntityMapsCurrentState(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var body EntityBody
+	var body PairedEntityBody
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.State == nil || body.State.Value != true || body.State.ObservationID != string(apiObservationID) ||
+	if body.State == nil || body.State.Canonical != true || body.State.Display != true ||
+		body.State.ObservationID != string(apiObservationID) ||
 		body.State.SourceUpdatedAt == nil || *body.State.SourceUpdatedAt != sourceUpdatedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("body = %#v", body)
 	}

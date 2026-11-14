@@ -135,10 +135,10 @@ func liveCommand(t *testing.T, base string, entity devicesapi.EntityBody, value 
 		t.Error("live Command durable evidence mismatch")
 		return false
 	}
-	var after devicesapi.EntityBody
+	var after devicesapi.PairedEntityBody
 	status, raw, err = coreRequest(t.Context(), base, http.MethodGet, "/v1/entities/"+entity.ID, "")
 	if err != nil || status != http.StatusOK || json.Unmarshal(raw, &after) != nil ||
-		after.State == nil || after.State.Value != value || after.State.ObservationID != *result.ObservationID {
+		after.State == nil || after.State.Canonical != value || after.State.ObservationID != *result.ObservationID {
 		t.Error("live State does not match Command evidence")
 		return false
 	}

@@ -5,8 +5,72 @@ independently. During each refresh, one response could advance before the other.
 The observation-match guard then removed condition words and inserted fallback
 rows until the second response arrived.
 
-The fix requests `include=canonical`: one observation or aggregation supplies both
-representations, and the frontend caches the complete pair together.
+One observation or aggregation supplies both representations, and the frontend
+caches the complete pair together. The initial captures below used an opt-in
+paired contract. The approved revision makes pairs the default for Entity-detail
+GET and aggregate-history POST, removing both representation selectors from
+those operations; other endpoints retain their existing format.
+
+## Default-contract revision
+
+The follow-up removes `include` and `units` from Entity-detail GET and numeric
+aggregate-history POST. The default wire shape is the pair. OpenAPI publishes
+only that representation, while collections, embedded Device Entities, PATCH
+responses, audit history, and MCP retain their existing formats.
+
+The frontend validates and caches a complete pair, then selects its canonical
+or display projection locally. This applies to numeric and text cards, controls,
+forecasts, and Entity detail. The detail page's raw inspector retains the paired
+wire shape rather than displaying the normalized internal model.
+
+The revision passed `mise run validate` again after integrating main's new
+application stories: 774 frontend tests, 171 Chromium
+stories, both web builds, generation, formatting, module tidying, lint, vet,
+and Go unit/integration/E2E tests. Local Go tests were non-race, with normal
+test caching for unchanged packages. Independent frontend and backend source
+reviews found no remaining actionable defects.
+
+The first run after that integration discovered six new Vite dependencies and
+reloaded running browser suites, causing initialization failures. The log
+explicitly reported dependency optimization and an unexpected test reload.
+The focused application suite then passed 24 tests on the completed optimizer
+cache, followed by the full passing gate. No tests or timeouts were weakened.
+
+A fresh isolated runtime used backend revision `3e78d25` plus the submitted
+frontend changes, with the default metric configuration and no daemon override.
+The browser used the production renderer and same-origin Core proxy:
+
+- Plain GET responses contained canonical/display pairs for scalar, composite,
+  and forecast Entities. Bucketed and unbucketed history POSTs also returned
+  pairs without flags. The live OpenAPI document omitted both selectors.
+  An Entity collection still returned its existing `state.value` shape.
+- Published wind Observations matched Core's exact returned Observation IDs.
+  [The desktop response](default-observation.json) records canonical and display
+  6.3 m/s. [Desktop](default-desktop.png) showed “Moderate breeze”;
+  [phone](default-phone.png) showed 4.5 m/s and “Gentle breeze” after a separate
+  4.4704 m/s publication.
+- Mutation observers measured zero missing-condition samples and **0 px**
+  height or following-row movement at both 1440 × 1000 and 390 × 844.
+  Phone had no horizontal overflow. See the
+  [desktop](default-desktop-result.json) and [phone](default-phone-result.json)
+  measurement receipts.
+- The Entity detail inspector showed canonical 10000 mCel and display 10 Cel
+  under the same State evidence, with no legacy `state.value` or top-level
+  `quantities`. The separate audit table still showed canonical mCel.
+
+The browser HAR recorded 70 detail/aggregate exchanges with no representation
+flags. Six reads were cancelled during navigation; completed API exchanges
+returned 200. Some large development-module bodies were truncated in the HAR;
+the direct API receipts and completed detail body establish the checked shapes.
+No Commands or model turns were sent. The owned simulator stack was stopped
+and its daemon PIDs verified absent. Evidence remains under the task's
+`/tmp/opencode/weather-jitter/default-live` directory.
+
+The videos below remain evidence of the original jitter and its paired-read
+fix, not captures of the follow-up default contract. The new screenshots and
+receipts above cover that revision. Live rain transitions and a three-hour
+pressure history remain covered by synthetic component/browser scenarios rather
+than manufactured runtime history.
 
 ## Captures
 

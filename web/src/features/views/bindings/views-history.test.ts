@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { historySeriesRequest, type HistorySeries } from "./history";
+import { pairedHistoryResponse } from "../../../../.storybook/paired-fixtures";
 
 const source = { entity_id: "ent_019a3e6a-4111-7000-8000-000000000001", entity_type: "hearth.temperature/v1" };
 const to = new Date("2026-11-01T10:00:00Z");
@@ -15,7 +16,7 @@ function summary(window: keyof typeof millis, patch?: (payload: {
   entity_id: string; range: { from: string; to: string };
   bucket: { duration: string; alignment: "range_start" };
   buckets: Array<{ range: { from: string; to: string }; metrics: { min: number | null; max: number | null; mean: number | null } }>;
-}) => void, at = to): unknown {
+}) => void, at = to, unit = "Cel"): unknown {
   const span = millis[window];
   const seriesBuckets = counts[window];
   const step = span / seriesBuckets;
@@ -34,7 +35,14 @@ function summary(window: keyof typeof millis, patch?: (payload: {
     }),
   };
   patch?.(payload);
-  return payload;
+  const canonicalUnit = unit === "Cel" ? "mCel" : unit;
+  return pairedHistoryResponse({ ...payload, quantity: { unit, label: unit, fraction_digits: 1 } }, {
+    quantity: { unit: canonicalUnit, label: canonicalUnit, fraction_digits: 1 },
+    buckets: payload.buckets.map((bucket: typeof payload.buckets[number]) => ({
+      range: bucket.range,
+      metrics: Object.fromEntries(Object.entries(bucket.metrics).map(([key, value]) => [key, value === null ? null : Number(value) * (unit === "Cel" ? 1000 : 1)])),
+    })),
+  });
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -70,24 +78,24 @@ describe("shared history loader", () => {
     expect(historySeriesRequest(source, "6h").key).toBe(historySeriesRequest({ ...source, field: "" }, "6h").key);
     const hue = { ...source, entity_type: "hearth.colorhs/v1", field: "/hue" };
     expect(historySeriesRequest(hue, "6h").key).not.toBe(historySeriesRequest({ ...hue, field: "/saturation" }, "6h").key);
-    post(summary("6h"));
+    post(summary("6h", undefined, to, "deg"));
     await historySeriesRequest(hue, "6h").load(new AbortController().signal, to);
     let body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
     expect(body.select_field).toBe("/hue");
     expect(body.result.nulls).toBeUndefined();
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(summary("6h", undefined, to, "1"))));
     await historySeriesRequest({ ...source, entity_type: "hearth.numericsetting/v1", field: "/value" }, "6h").load(new AbortController().signal, to);
     body = JSON.parse(vi.mocked(fetch).mock.calls[1][1]!.body as string);
     expect(body.select_field).toBe("/value");
     expect(body.result.nulls).toBe("gap");
   });
 
-  it("uses only the query option for a canonical history request", async () => {
+  it("loads both history projections with no query selector", async () => {
     post(summary("6h"));
-    await historySeriesRequest(source, "6h").load(new AbortController().signal, to);
-    await historySeriesRequest(source, "6h", "canonical").load(new AbortController().signal, to);
-    const calls = vi.mocked(fetch).mock.calls;
-    expect(calls[1][0]).toBe(`/v1/entities/${source.entity_id}/state/history?units=canonical`);
-    expect(calls[1][1]!.body).toBe(calls[0][1]!.body);
+    const series = await historySeriesRequest(source, "6h").load(new AbortController().signal, to) as HistorySeries;
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe(`/v1/entities/${source.entity_id}/state/history`);
+    expect(series.buckets[0].mean).toBe(1.5);
+    expect(series).toMatchObject({ canonical: { buckets: expect.arrayContaining([expect.objectContaining({ mean: 1500 })]) } });
   });
 
   it("clips the final bucket and aligns starts for every window at off-grid times", async () => {

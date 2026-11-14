@@ -41,6 +41,7 @@ export interface EntityState {
   observed_at: string;
 }
 
+/** Internal/collection representation. Detail GET is decoded from paired trees. */
 export interface Entity {
   id: string;
   device_id: string;
