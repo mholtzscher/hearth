@@ -253,7 +253,8 @@
                                     "hearth.pressure/v1",
                                     "hearth.relativehumidity/v1",
                                     "hearth.speed/v1",
-                                    "hearth.temperature/v1"
+                                    "hearth.temperature/v1",
+                                    "hearth.thermostat/v1"
                                   ]
                                 },
                                 "field": {
@@ -386,14 +387,15 @@
                                     "hearth.relativehumidity/v1",
                                     "hearth.speed/v1",
                                     "hearth.temperature/v1",
-                                    "hearth.textsensor/v1"
+                                    "hearth.textsensor/v1",
+                                    "hearth.thermostat/v1"
                                   ]
                                 },
                                 "field": {
                                   "type": "string",
                                   "maxLength": 64,
                                   "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
-                                  "description": "Select any State field by JSON Pointer; omit for the root. Numeric fields show a reading with its unit; yes/no and text fields show words. hearth.binarysensor/v1: \"\" (root); hearth.brightness/v1: \"\" (root); hearth.colorhs/v1: /active, /hue, /saturation; hearth.colormode/v1: \"\" (root); hearth.colorrgb/v1: /active, /blue, /green, /red; hearth.colortemp/v1: /active, /value; hearth.colorxy/v1: /active, /x, /y; hearth.cover/v1: /motion, /position; hearth.enumsetting/v1: \"\" (root); hearth.lock/v1: \"\" (root); hearth.numericsensor/v1: \"\" (root); hearth.numericsetting/v1: /choice, /mode, /value; hearth.power/v1: \"\" (root); hearth.pressure/v1: \"\" (root); hearth.relativehumidity/v1: \"\" (root); hearth.speed/v1: \"\" (root); hearth.temperature/v1: \"\" (root); hearth.textsensor/v1: \"\" (root)."
+                                  "description": "Select any State field by JSON Pointer; omit for the root. Numeric fields show a reading with its unit; yes/no and text fields show words. hearth.binarysensor/v1: \"\" (root); hearth.brightness/v1: \"\" (root); hearth.colorhs/v1: /active, /hue, /saturation; hearth.colormode/v1: \"\" (root); hearth.colorrgb/v1: /active, /blue, /green, /red; hearth.colortemp/v1: /active, /value; hearth.colorxy/v1: /active, /x, /y; hearth.cover/v1: /motion, /position; hearth.enumsetting/v1: \"\" (root); hearth.lock/v1: \"\" (root); hearth.numericsensor/v1: \"\" (root); hearth.numericsetting/v1: /choice, /mode, /value; hearth.power/v1: \"\" (root); hearth.pressure/v1: \"\" (root); hearth.relativehumidity/v1: \"\" (root); hearth.speed/v1: \"\" (root); hearth.temperature/v1: \"\" (root); hearth.textsensor/v1: \"\" (root); hearth.thermostat/v1: /activity, /current_humidity, /current_temperature, /fan_mode, /mode, /target_humidity, /target_temperature, /target_temperature_high, /target_temperature_low."
                                 }
                               },
                               "required": [
@@ -1575,7 +1577,8 @@
             "hearth.pressure/v1",
             "hearth.relativehumidity/v1",
             "hearth.speed/v1",
-            "hearth.temperature/v1"
+            "hearth.temperature/v1",
+            "hearth.thermostat/v1"
           ]
         },
         "field": {
@@ -1597,7 +1600,7 @@
       "type": "string",
       "maxLength": 64,
       "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
-      "description": "Select a numeric State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (%; has a range); hearth.colorhs/v1: /hue (deg), /saturation (%; has a range); hearth.colorrgb/v1: /blue (1), /green (1), /red (1); hearth.colortemp/v1: /value (/MK; has a range); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.cover/v1: /position (%; has a range); hearth.numericsensor/v1: \"\" (root) (Entity support unit; has a range); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps; has a range); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%; has a range); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel). Charts use arithmetic sample summaries, not time-weighted or circular means."
+      "description": "Select a numeric State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (%; has a range); hearth.colorhs/v1: /hue (deg), /saturation (%; has a range); hearth.colorrgb/v1: /blue (1), /green (1), /red (1); hearth.colortemp/v1: /value (/MK; has a range); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.cover/v1: /position (%; has a range); hearth.numericsensor/v1: \"\" (root) (Entity support unit; has a range); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps; has a range); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%; has a range); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel); hearth.thermostat/v1: /current_humidity (%; may be absent, mixed chart buckets are gaps), /current_temperature (mCel; may be absent, mixed chart buckets are gaps), /target_humidity (%; may be absent, mixed chart buckets are gaps), /target_temperature (mCel; may be absent, mixed chart buckets are gaps), /target_temperature_high (mCel; may be absent, mixed chart buckets are gaps), /target_temperature_low (mCel; may be absent, mixed chart buckets are gaps). Charts use arithmetic sample summaries, not time-weighted or circular means."
     },
     "DiscreteStateSource": {
       "type": "object",
@@ -1623,14 +1626,15 @@
             "hearth.lock/v1",
             "hearth.numericsetting/v1",
             "hearth.power/v1",
-            "hearth.textsensor/v1"
+            "hearth.textsensor/v1",
+            "hearth.thermostat/v1"
           ]
         },
         "field": {
           "type": "string",
           "maxLength": 64,
           "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
-          "description": "Select a yes/no or text State field by JSON Pointer; omit for the root. hearth.binarysensor/v1: \"\" (root) (yes/no); hearth.colorhs/v1: /active (yes/no); hearth.colormode/v1: \"\" (root) (one of xy, hs, color_temp); hearth.colorrgb/v1: /active (yes/no); hearth.colortemp/v1: /active (yes/no); hearth.colorxy/v1: /active (yes/no); hearth.cover/v1: /motion (one of idle, opening, closing); hearth.enumsetting/v1: \"\" (root) (text); hearth.lock/v1: \"\" (root) (one of locked, unlocked, locking, unlocking, jammed, unknown); hearth.numericsetting/v1: /choice (text), /mode (one of value, choice); hearth.power/v1: \"\" (root) (yes/no); hearth.textsensor/v1: \"\" (root) (text)."
+          "description": "Select a yes/no or text State field by JSON Pointer; omit for the root. hearth.binarysensor/v1: \"\" (root) (yes/no); hearth.colorhs/v1: /active (yes/no); hearth.colormode/v1: \"\" (root) (one of xy, hs, color_temp); hearth.colorrgb/v1: /active (yes/no); hearth.colortemp/v1: /active (yes/no); hearth.colorxy/v1: /active (yes/no); hearth.cover/v1: /motion (one of idle, opening, closing); hearth.enumsetting/v1: \"\" (root) (text); hearth.lock/v1: \"\" (root) (one of locked, unlocked, locking, unlocking, jammed, unknown); hearth.numericsetting/v1: /choice (text), /mode (one of value, choice); hearth.power/v1: \"\" (root) (yes/no); hearth.textsensor/v1: \"\" (root) (text); hearth.thermostat/v1: /activity (one of off, idle, heating, cooling, drying, fan, preheating, defrosting), /fan_mode (text), /mode (one of off, heat, cool, heat_cool, auto, dry, fan_only)."
         }
       },
       "required": [

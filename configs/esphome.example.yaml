@@ -28,3 +28,9 @@ devices:
 # Supplying address opts an entry into static operation, even with discovery off.
 # Static encrypted entries require encryption_key_file; static plaintext entries
 # require their own insecure_plaintext: true. Blocklist wins over either mode.
+
+# Thermostats map climate plus eligible sensor/switch/number/select siblings.
+# Overrides also accept exact climate, number, and select names, for example:
+#    include: ["number/Relative Humidity Offset"]
+#    exclude: ["select/Humidity Smart Control"]
+# See docs/esphome-thermostat.md for paired targets and humidity semantics.

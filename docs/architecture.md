@@ -67,6 +67,17 @@ callers, see [service input contracts](service-input-contracts.md).
 - `internal/platform/nats.RequestReplyServer` owns plain Core NATS callback admission, bounded subscription activation, schema-backed envelope decode/reply construction, trace propagation, and safe transport diagnostics shared by Devices endpoints and notification registration. Modules select schemas and retain route validation, domain calls, and outcome mapping. `Drain` remains nonblocking; `Close(ctx)` closes admission, unsubscribes, and joins admitted callbacks even after unexpected connection closure, bounding only the caller's wait. Failed activation joins callbacks before returning an error; Core cleanup joins transports before withdrawing NATS or SQLite. This primitive does not own SDK Command serving or JetStream policy.
 - `platform/lifecycle.WorkerHandle` owns cancellation and joining for the Core health supervisor, Device Fact relay, and history pruning worker. It does not own scheduling, retries, readiness, or fault policy. Unlike admission draining, stopping a worker requests cancellation; a wait timeout never proves that the worker has exited.
 - Devices group independently addressable entities; state reads and commands target entities.
+- An ESPHome Device with an eligible climate Entity uses kind `thermostat`,
+  unless an eligible cover takes precedence. The generated `hearth.thermostat/v1`
+  contract has separate mode/activity and optional
+  temperature, fan, and humidity fields. Explicit setters preserve unrelated
+  settings; two-point inventories expose paired targets even outside heat/cool
+  mode. Canonical temperature writes use integer milli-Celsius; native units and capability
+  flags remain Adapter-owned. Number/select platforms reuse numeric-setting
+  and enum-setting types without inferring units. The existing per-upstream
+  FIFO and same-generation unchanged-setting evidence policy apply; no
+  optimistic State or mutation replay is introduced. See
+  [ESPHome thermostats](esphome-thermostat.md) for constraints and future gaps.
 - ESPHome position-capable covers use Device kind `cover` and the generated
   `hearth.cover/v1` contract: integer-percent reported position and idle/opening/
   closing motion. Position `set` has a 60-second observed deadline and a

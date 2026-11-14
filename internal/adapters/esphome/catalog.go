@@ -24,6 +24,9 @@ const (
 	routeText
 	routeCover
 	routeLock
+	routeNumber
+	routeSelect
+	routeThermostat
 )
 
 // unitConversion converts an upstream sensor value into the route's canonical unit.

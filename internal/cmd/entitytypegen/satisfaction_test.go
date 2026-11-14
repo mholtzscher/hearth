@@ -461,13 +461,36 @@ func TestInCompilesMembershipLoop(t *testing.T) {
 	}
 }
 
-func TestInRejectsEmptyOrNonUniqueChoices(t *testing.T) {
+func TestInAcceptsEmptyChoiceSchemas(t *testing.T) {
+	t.Parallel()
+	for _, minimum := range []*int{nil, new(0)} {
+		roots := membershipRoots(
+			map[string]schemaNode{"value": boundedString(nil, nil)},
+			choicesSupport(minimum),
+			[]string{"value"},
+			[]string{"choices"},
+		)
+		compiled, err := compileRule(ruleManifest{
+			Op:    ruleOperatorIn,
+			Left:  referenceManifest{Root: "parameters", Path: "/value"},
+			Right: &(referenceManifest{Root: "support", Path: "/choices"}),
+		}, roots)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected := "(func() bool { for _, candidate := range support.Choices " +
+			"{ if string(parameters.Value) == string(candidate) { return true } }; return false }())"
+		if condition := ruleCondition(compiled); condition != expected {
+			t.Fatalf("empty-list membership must retain its false fallback: %s", condition)
+		}
+	}
+}
+
+func TestInRejectsNonUniqueChoices(t *testing.T) {
 	t.Parallel()
 	for name, choices := range map[string]schemaNode{
-		"empty allowed": stringArray(boundedString(nil, nil), nil, new(true)),
-		"zero minimum":  stringArray(boundedString(nil, nil), new(0), new(true)),
-		"non-unique":    stringArray(boundedString(nil, nil), new(1), new(false)),
-		"unique unset":  stringArray(boundedString(nil, nil), new(1), nil),
+		"non-unique":   stringArray(boundedString(nil, nil), new(1), new(false)),
+		"unique unset": stringArray(boundedString(nil, nil), new(1), nil),
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

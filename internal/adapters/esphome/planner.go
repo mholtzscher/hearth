@@ -13,11 +13,13 @@ import (
 	sdkenumsettingv1 "github.com/mholtzscher/hearth/sdk/adapter/enumsettingv1"
 	sdklockv1 "github.com/mholtzscher/hearth/sdk/adapter/lockv1"
 	sdknumericsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsensorv1"
+	sdknumericsettingv1 "github.com/mholtzscher/hearth/sdk/adapter/numericsettingv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
 	sdkpressurev1 "github.com/mholtzscher/hearth/sdk/adapter/pressurev1"
 	sdkrelativehumidityv1 "github.com/mholtzscher/hearth/sdk/adapter/relativehumidityv1"
 	sdktemperaturev1 "github.com/mholtzscher/hearth/sdk/adapter/temperaturev1"
 	sdktextsensorv1 "github.com/mholtzscher/hearth/sdk/adapter/textsensorv1"
+	sdkthermostatv1 "github.com/mholtzscher/hearth/sdk/adapter/thermostatv1"
 )
 
 const (
@@ -63,6 +65,13 @@ type skippedEntity struct {
 	Ref          EntityRef
 	UpstreamType string
 	Reason       string
+}
+
+func (planner *entityPlanner) skipCapability(entity nativeapi.EntityInfo, reason string) {
+	planner.skipped = append(planner.skipped, skippedEntity{
+		Ref:          EntityRef{Type: entity.Type, Name: entity.Name},
+		UpstreamType: entity.UpstreamType, Reason: reason,
+	})
 }
 
 // planDevice maps one device's entities into a Registration. It is pure: it reads only its arguments.
@@ -156,6 +165,10 @@ func (planner *entityPlanner) add(entity nativeapi.EntityInfo) error {
 		name = planner.deviceName
 	}
 	switch entity.Type {
+	case nativeapi.EntityClimate:
+		return planner.planThermostat(name, identity, upstream, entity)
+	case nativeapi.EntityNumber, nativeapi.EntitySelect:
+		return planner.planSetting(name, identity, upstream, entity)
 	case nativeapi.EntitySensor:
 		mapping, ok := catalogSensor(entity.DeviceClass, entity.Unit)
 		if !ok {
@@ -286,6 +299,11 @@ func (planner *entityPlanner) deviceKind() string {
 			return "cover"
 		}
 	}
+	for _, route := range planner.routes {
+		if route.Kind == routeThermostat {
+			return "thermostat"
+		}
+	}
 	hasBrightness := false
 	for _, route := range planner.routes {
 		switch route.Kind {
@@ -293,7 +311,8 @@ func (planner *entityPlanner) deviceKind() string {
 			return deviceKindSensor
 		case routeLightBrightness:
 			hasBrightness = true
-		case routeSwitchPower, routeLightPower, routeLightColor, routeLightEffect, routeCover, routeLock:
+		case routeSwitchPower, routeLightPower, routeLightColor, routeLightEffect, routeCover, routeLock,
+			routeNumber, routeSelect, routeThermostat:
 			// These controls do not distinguish the device kind.
 		}
 	}
@@ -305,6 +324,12 @@ func (planner *entityPlanner) deviceKind() string {
 
 func newDescriptor(metadata adapter.EntityMetadata, route entityRoute) (adapter.EntityDescriptor, error) {
 	switch route.Kind {
+	case routeThermostat:
+		return sdkthermostatv1.NewEntityDescriptor(metadata, route.Thermostat)
+	case routeNumber:
+		return sdknumericsettingv1.NewEntityDescriptor(metadata, route.Number)
+	case routeSelect:
+		return sdkenumsettingv1.NewEntityDescriptor(metadata, route.Select)
 	case routeTemperature:
 		return sdktemperaturev1.NewEntityDescriptor(metadata, temperatureSupport())
 	case routeHumidity:

@@ -23,6 +23,11 @@ function entityOf(type: string, value: unknown, support: unknown = { state: {}, 
     "hearth.relativehumidity/v1": { "": q("%", "%", 1) },
     "hearth.speed/v1": { "": q("m/s", "m/s", 1) },
     "hearth.temperature/v1": { "": q("Cel", "°C", 1) },
+    "hearth.thermostat/v1": {
+      "/current_temperature": q("Cel", "°C", 1), "/target_temperature": q("Cel", "°C", 1),
+      "/target_temperature_low": q("Cel", "°C", 1), "/target_temperature_high": q("Cel", "°C", 1),
+      "/current_humidity": q("%", "%", 1), "/target_humidity": q("%", "%", 1),
+    },
   };
   return { id, type, name: "Hallway", enabled: true, availability: { status: "available" }, support, quantities: quantities[type] ?? {}, state: { value, observed_at } };
 }
@@ -40,15 +45,16 @@ describe("State field catalog", () => {
     expect(quantityTypes).toEqual([
       "hearth.brightness/v1", "hearth.colorhs/v1", "hearth.colorrgb/v1", "hearth.colortemp/v1", "hearth.colorxy/v1",
       "hearth.cover/v1", "hearth.numericsensor/v1", "hearth.numericsetting/v1", "hearth.pressure/v1",
-      "hearth.relativehumidity/v1", "hearth.speed/v1", "hearth.temperature/v1",
+      "hearth.relativehumidity/v1", "hearth.speed/v1", "hearth.temperature/v1", "hearth.thermostat/v1",
     ]);
     expect(textTypes).toContain("hearth.textsensor/v1");
     expect(textTypes).toContain("hearth.colorrgb/v1");
     expect(textTypes).toContain("hearth.cover/v1");
+    expect(textTypes).toContain("hearth.thermostat/v1");
   });
   it("declares units for fixed numeric fields", () => {
     const fields = Object.values(stateFields).flatMap(fields => Object.values(fields));
-    expect(fields).toHaveLength(29);
+    expect(fields).toHaveLength(38);
     expect(stateFields["hearth.lock/v1"][""]).toMatchObject({
       value_type: "string", enum: ["locked", "unlocked", "locking", "unlocking", "jammed", "unknown"],
     });
@@ -59,7 +65,7 @@ describe("State field catalog", () => {
     expect(stateFields["hearth.cover/v1"]["/motion"]).toEqual({
       value_type: "string", presence: "always", enum: ["idle", "opening", "closing"],
     });
-    expect(fields.filter(isQuantityField)).toHaveLength(16);
+    expect(fields.filter(isQuantityField)).toHaveLength(22);
     for (const field of fields) {
       if (!isQuantityField(field) || typeof field.quantity.unit !== "string") continue;
       expect(field.quantity.unit.length).toBeGreaterThan(0);
@@ -68,6 +74,27 @@ describe("State field catalog", () => {
 });
 
 describe("reading adapter", () => {
+  it("reads delivered thermostat quantities and preserves unknown optional targets", () => {
+    const type = "hearth.thermostat/v1";
+    const entity = {
+      ...entityOf(type, { mode: "heat", current_temperature: 68, target_temperature_low: 64.4 }),
+      quantities: {
+        ...entityOf(type, {}).quantities,
+        "/current_temperature": { unit: "[degF]", label: "°F", fraction_digits: 1 },
+        "/target_temperature_low": { unit: "[degF]", label: "°F", fraction_digits: 1 },
+      },
+    };
+    expect(readingAdapter.metric(entity, source(type, "/current_temperature"))).toMatchObject({
+      value: 68, format: { unit_label: "°F", fraction_digits: 1 },
+    });
+    expect(readingAdapter.metric(entity, source(type, "/target_temperature_low"))).toMatchObject({ value: 64.4 });
+    expect(readingAdapter.metric(entity, source(type, "/target_temperature_high"))).toEqual({ absent: true, observed_at });
+    expect(readingAdapter.metric({ ...entity, state: null }, source(type, "/current_temperature"))).toBeNull();
+    expect(() => readingAdapter.metric(entityOf(type, { mode: "heat", current_temperature: "unknown" }),
+      source(type, "/current_temperature"))).toThrow();
+    expect(stateFields[type]["/mode"]).toMatchObject({ value_type: "string", presence: "always" });
+    expect(stateFields[type]["/activity"]).toMatchObject({ value_type: "string", presence: "sometimes" });
+  });
   it("keeps canonical and household cache keys and requests separate", async () => {
     const selected = source("hearth.temperature/v1");
     const normal = entityStateRequest(selected), canonical = entityStateRequest(selected, "canonical");

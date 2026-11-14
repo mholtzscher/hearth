@@ -8,6 +8,8 @@ import (
 	"github.com/mholtzscher/hearth/entitytypes/quantitykind"
 )
 
+const forecastTemperatureField = "temperature"
+
 // Forecast measurements have stable, unit-neutral names in every representation.
 // This table declares the canonical quantities for the bounded period arrays,
 // which are not selectable scalar State fields.
@@ -19,7 +21,7 @@ type forecastQuantity struct {
 
 func forecastQuantities() []forecastQuantity {
 	return []forecastQuantity{
-		{"temperature", unitCelsius, quantitykind.Temperature},
+		{forecastTemperatureField, unitCelsius, quantitykind.Temperature},
 		{"apparent_temperature", unitCelsius, quantitykind.Temperature},
 		{"temperature_min", unitCelsius, quantitykind.Temperature},
 		{"temperature_max", unitCelsius, quantitykind.Temperature},

@@ -1055,4 +1055,159 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 			t.Error("catalog accepted event support for a closed type")
 		}
 	})
+	t.Run("hearth.thermostat/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_thermostatv1"), TypeID: EntityTypeThermostatV1, Support: EntitySupport("{\"state\":{\"modes\":[\"off\",\"heat\",\"cool\",\"heat_cool\",\"fan_only\"],\"fan_modes\":[\"Auto\",\"Continuous\"],\"temperature_minimum\":-10000,\"temperature_maximum\":32000,\"humidity_minimum\":10,\"humidity_maximum\":80},\"operations\":{\"set_mode\":{},\"set_target\":{},\"set_range\":{},\"set_fan_mode\":{},\"set_humidity\":{}}}")}
+		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {
+			t.Errorf("catalog stateless = %v, %v, want false", stateless, err)
+		}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{\"modes\":[\"off\",\"heat\",\"cool\",\"heat_cool\",\"fan_only\"],\"fan_modes\":[\"Auto\",\"Continuous\"],\"temperature_minimum\":-10000,\"temperature_maximum\":32000,\"humidity_minimum\":10,\"humidity_maximum\":80},\"operations\":{\"set_mode\":{},\"set_target\":{},\"set_range\":{},\"set_fan_mode\":{},\"set_humidity\":{}}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{\"modes\":[\"off\",\"heat\",\"cool\",\"heat_cool\",\"fan_only\"],\"fan_modes\":[\"Auto\",\"Continuous\"],\"temperature_minimum\":-10000,\"temperature_maximum\":32000,\"humidity_minimum\":10,\"humidity_maximum\":80},\"operations\":{\"set_mode\":{},\"set_target\":{},\"set_range\":{},\"set_fan_mode\":{},\"set_humidity\":{}}}")
+		}
+		normalizedState, err := catalog.NormalizeState(entity, Value("{\"mode\":\"off\"}"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{\"mode\":\"off\"}")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"mode\":\"off\"}")
+		}
+		if _, err := catalog.NormalizeState(entity, Value("{\"mode\":\"dry\"}")); err == nil {
+			t.Error("catalog support-invalid State unexpectedly accepted")
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"state\":{\"modes\":[\"off\"],\"fan_modes\":[],\"temperature_minimum\":1,\"temperature_maximum\":0,\"humidity_minimum\":0,\"humidity_maximum\":100},\"operations\":{}}")); err == nil {
+			t.Error("catalog invalid support 1 unexpectedly accepted")
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"state\":{\"modes\":[\"off\"],\"fan_modes\":[],\"temperature_minimum\":-273150,\"temperature_maximum\":1000000,\"humidity_minimum\":80.5,\"humidity_maximum\":80},\"operations\":{}}")); err == nil {
+			t.Error("catalog invalid support 2 unexpectedly accepted")
+		}
+		resolvedSetFanMode, err := catalog.ResolveCommand(entity, OperationName("set_fan_mode"), CommandParameters("{\"fan_mode\":\"Auto\"}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set_fan_mode: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSetFanMode.Parameters, []byte("{\"fan_mode\":\"Auto\"}")) {
+			t.Errorf("catalog normalized set_fan_mode parameters = %s, want %s", resolvedSetFanMode.Parameters, "{\"fan_mode\":\"Auto\"}")
+		}
+		if resolvedSetFanMode.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set_fan_mode deadline = %v, want %v", resolvedSetFanMode.Deadline, 10000*time.Millisecond)
+		}
+		if _, err := catalog.ResolveCommand(entity, OperationName("set_fan_mode"), CommandParameters("{\"fan_mode\":\"Low\"}")); err == nil {
+			t.Error("catalog support-invalid set_fan_mode parameters unexpectedly accepted")
+		}
+		if resolvedSetFanMode.Outcome != OutcomeObserved {
+			t.Errorf("catalog set_fan_mode outcome = %v, want %v", resolvedSetFanMode.Outcome, OutcomeObserved)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_fan_mode"), Parameters: CommandParameters("{\"fan_mode\":\"Auto\"}")}, Value("{\"mode\":\"off\",\"fan_mode\":\"Auto\"}")); err != nil || !satisfied {
+			t.Errorf("catalog set_fan_mode satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_fan_mode"), Parameters: CommandParameters("{\"fan_mode\":\"Auto\"}")}, Value("{\"mode\":\"off\"}")); err != nil || satisfied {
+			t.Errorf("catalog set_fan_mode unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		resolvedSetHumidity, err := catalog.ResolveCommand(entity, OperationName("set_humidity"), CommandParameters("{\"humidity\":10}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set_humidity: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSetHumidity.Parameters, []byte("{\"humidity\":10}")) {
+			t.Errorf("catalog normalized set_humidity parameters = %s, want %s", resolvedSetHumidity.Parameters, "{\"humidity\":10}")
+		}
+		if resolvedSetHumidity.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set_humidity deadline = %v, want %v", resolvedSetHumidity.Deadline, 10000*time.Millisecond)
+		}
+		if _, err := catalog.ResolveCommand(entity, OperationName("set_humidity"), CommandParameters("{\"humidity\":9.9}")); err == nil {
+			t.Error("catalog support-invalid set_humidity parameters unexpectedly accepted")
+		}
+		if resolvedSetHumidity.Outcome != OutcomeObserved {
+			t.Errorf("catalog set_humidity outcome = %v, want %v", resolvedSetHumidity.Outcome, OutcomeObserved)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_humidity"), Parameters: CommandParameters("{\"humidity\":55.5}")}, Value("{\"mode\":\"off\",\"target_humidity\":55.5,\"current_humidity\":20}")); err != nil || !satisfied {
+			t.Errorf("catalog set_humidity satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_humidity"), Parameters: CommandParameters("{\"humidity\":55.5}")}, Value("{\"mode\":\"off\",\"current_humidity\":55.5}")); err != nil || satisfied {
+			t.Errorf("catalog set_humidity unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		resolvedSetMode, err := catalog.ResolveCommand(entity, OperationName("set_mode"), CommandParameters("{\"mode\":\"heat\"}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set_mode: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSetMode.Parameters, []byte("{\"mode\":\"heat\"}")) {
+			t.Errorf("catalog normalized set_mode parameters = %s, want %s", resolvedSetMode.Parameters, "{\"mode\":\"heat\"}")
+		}
+		if resolvedSetMode.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set_mode deadline = %v, want %v", resolvedSetMode.Deadline, 10000*time.Millisecond)
+		}
+		if _, err := catalog.ResolveCommand(entity, OperationName("set_mode"), CommandParameters("{\"mode\":\"dry\"}")); err == nil {
+			t.Error("catalog support-invalid set_mode parameters unexpectedly accepted")
+		}
+		if resolvedSetMode.Outcome != OutcomeObserved {
+			t.Errorf("catalog set_mode outcome = %v, want %v", resolvedSetMode.Outcome, OutcomeObserved)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_mode"), Parameters: CommandParameters("{\"mode\":\"heat\"}")}, Value("{\"mode\":\"heat\",\"activity\":\"idle\"}")); err != nil || !satisfied {
+			t.Errorf("catalog set_mode satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_mode"), Parameters: CommandParameters("{\"mode\":\"heat\"}")}, Value("{\"mode\":\"off\",\"activity\":\"heating\"}")); err != nil || satisfied {
+			t.Errorf("catalog set_mode unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		resolvedSetRange, err := catalog.ResolveCommand(entity, OperationName("set_range"), CommandParameters("{\"low\":-10000,\"high\":32000}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set_range: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSetRange.Parameters, []byte("{\"low\":-10000,\"high\":32000}")) {
+			t.Errorf("catalog normalized set_range parameters = %s, want %s", resolvedSetRange.Parameters, "{\"low\":-10000,\"high\":32000}")
+		}
+		if resolvedSetRange.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set_range deadline = %v, want %v", resolvedSetRange.Deadline, 10000*time.Millisecond)
+		}
+		if _, err := catalog.ResolveCommand(entity, OperationName("set_range"), CommandParameters("{\"low\":1,\"high\":0}")); err == nil {
+			t.Error("catalog support-invalid set_range parameters unexpectedly accepted")
+		}
+		if resolvedSetRange.Outcome != OutcomeObserved {
+			t.Errorf("catalog set_range outcome = %v, want %v", resolvedSetRange.Outcome, OutcomeObserved)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_range"), Parameters: CommandParameters("{\"low\":-5000,\"high\":20000}")}, Value("{\"mode\":\"off\",\"target_temperature_low\":-5000,\"target_temperature_high\":20000,\"target_temperature\":25000}")); err != nil || !satisfied {
+			t.Errorf("catalog set_range satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_range"), Parameters: CommandParameters("{\"low\":-5000,\"high\":20000}")}, Value("{\"mode\":\"heat\",\"target_temperature_low\":-5000}")); err != nil || satisfied {
+			t.Errorf("catalog set_range unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		resolvedSetTarget, err := catalog.ResolveCommand(entity, OperationName("set_target"), CommandParameters("{\"temperature\":-10000}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set_target: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSetTarget.Parameters, []byte("{\"temperature\":-10000}")) {
+			t.Errorf("catalog normalized set_target parameters = %s, want %s", resolvedSetTarget.Parameters, "{\"temperature\":-10000}")
+		}
+		if resolvedSetTarget.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set_target deadline = %v, want %v", resolvedSetTarget.Deadline, 10000*time.Millisecond)
+		}
+		if _, err := catalog.ResolveCommand(entity, OperationName("set_target"), CommandParameters("{\"temperature\":-10001}")); err == nil {
+			t.Error("catalog support-invalid set_target parameters unexpectedly accepted")
+		}
+		if resolvedSetTarget.Outcome != OutcomeObserved {
+			t.Errorf("catalog set_target outcome = %v, want %v", resolvedSetTarget.Outcome, OutcomeObserved)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_target"), Parameters: CommandParameters("{\"temperature\":-5000}")}, Value("{\"mode\":\"off\",\"target_temperature\":-5000,\"current_temperature\":25000}")); err != nil || !satisfied {
+			t.Errorf("catalog set_target satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_target"), Parameters: CommandParameters("{\"temperature\":-5000}")}, Value("{\"mode\":\"off\",\"current_temperature\":-5000}")); err != nil || satisfied {
+			t.Errorf("catalog set_target unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"mode\":\"off\"}"), Value("{\"mode\":\"off\"}")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"mode\":\"heat_cool\",\"activity\":\"heating\",\"current_temperature\":-20000,\"target_temperature\":-5000,\"target_temperature_low\":22000,\"target_temperature_high\":18000,\"fan_mode\":\"Auto\",\"current_humidity\":0,\"target_humidity\":55.5}"), Value("{\"mode\":\"off\"}")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_thermostatv1"), TypeID: EntityTypeThermostatV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set_mode\":{},\"set_target\":{},\"set_range\":{},\"set_fan_mode\":{},\"set_humidity\":{}},\"state\":{\"modes\":[\"off\",\"heat\",\"cool\",\"heat_cool\",\"fan_only\"],\"fan_modes\":[\"Auto\",\"Continuous\"],\"temperature_minimum\":-10000,\"temperature_maximum\":32000,\"humidity_minimum\":10,\"humidity_maximum\":80}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
+	})
 }

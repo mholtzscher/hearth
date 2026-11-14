@@ -1,0 +1,197 @@
+{
+  "cases": [
+    {
+      "name": "all-controls-with-paired-and-single-targets",
+      "support": {
+        "state": {
+          "modes": ["off", "heat", "cool", "heat_cool", "fan_only"],
+          "fan_modes": ["Auto", "Continuous"],
+          "temperature_minimum": -10000,
+          "temperature_maximum": 32000,
+          "humidity_minimum": 10,
+          "humidity_maximum": 80
+        },
+        "operations": {"set_mode": {}, "set_target": {}, "set_range": {}, "set_fan_mode": {}, "set_humidity": {}}
+      },
+      "states": [
+        {"value": {"mode": "off"}, "valid": true},
+        {"value": {"mode": "heat_cool", "activity": "heating", "current_temperature": -20000, "target_temperature": -5000, "target_temperature_low": 22000, "target_temperature_high": 18000, "fan_mode": "Auto", "current_humidity": 0, "target_humidity": 55.5}, "valid": true},
+        {"value": {"mode": "fan_only", "activity": "defrosting", "target_temperature": 1000000}, "valid": true},
+        {"value": {}, "valid": false},
+        {"value": {"mode": "dry"}, "valid": false},
+        {"value": {"mode": "unknown"}, "valid": false},
+        {"value": {"mode": "heat", "fan_mode": "Low"}, "valid": false},
+        {"value": {"mode": "heat", "activity": "running"}, "valid": false},
+        {"value": {"mode": "heat", "current_temperature": -273151}, "valid": false},
+        {"value": {"mode": "heat", "target_temperature": 1.5}, "valid": false},
+        {"value": {"mode": "heat", "current_humidity": 100.1}, "valid": false},
+        {"value": {"mode": "heat", "target_humidity": null}, "valid": false},
+        {"value": {"mode": "heat", "extra": true}, "valid": false}
+      ],
+      "operations": {
+        "set_mode": {
+          "parameters": [
+            {"value": {"mode": "heat"}, "valid": true},
+            {"value": {"mode": "dry"}, "valid": false},
+            {"value": {"mode": "unknown"}, "valid": false},
+            {"value": {}, "valid": false},
+            {"value": {"mode": "heat", "extra": true}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"mode": "heat"}, "state": {"mode": "heat", "activity": "idle"}, "satisfied": true},
+            {"parameters": {"mode": "heat"}, "state": {"mode": "off", "activity": "heating"}, "satisfied": false}
+          ]
+        },
+        "set_target": {
+          "parameters": [
+            {"value": {"temperature": -10000}, "valid": true},
+            {"value": {"temperature": 32000}, "valid": true},
+            {"value": {"temperature": -10001}, "valid": false},
+            {"value": {"temperature": 32001}, "valid": false},
+            {"value": {"temperature": 1.5}, "valid": false},
+            {"value": {}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"temperature": -5000}, "state": {"mode": "off", "target_temperature": -5000, "current_temperature": 25000}, "satisfied": true},
+            {"parameters": {"temperature": -5000}, "state": {"mode": "off", "current_temperature": -5000}, "satisfied": false},
+            {"parameters": {"temperature": -5000}, "state": {"mode": "heat", "target_temperature": -4999}, "satisfied": false}
+          ]
+        },
+        "set_range": {
+          "parameters": [
+            {"value": {"low": -10000, "high": 32000}, "valid": true},
+            {"value": {"low": 0, "high": 0}, "valid": true},
+            {"value": {"low": 1, "high": 0}, "valid": false},
+            {"value": {"low": -10001, "high": 0}, "valid": false},
+            {"value": {"low": 0, "high": 32001}, "valid": false},
+            {"value": {"low": 0}, "valid": false},
+            {"value": {"low": 0, "high": 1, "extra": true}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"low": -5000, "high": 20000}, "state": {"mode": "off", "target_temperature_low": -5000, "target_temperature_high": 20000, "target_temperature": 25000}, "satisfied": true},
+            {"parameters": {"low": -5000, "high": 20000}, "state": {"mode": "heat", "target_temperature_low": -5000}, "satisfied": false},
+            {"parameters": {"low": -5000, "high": 20000}, "state": {"mode": "heat", "target_temperature_low": -5000, "target_temperature_high": 20001}, "satisfied": false},
+            {"parameters": {"low": -5000, "high": 20000}, "state": {"mode": "heat", "target_temperature_high": 20000}, "satisfied": false}
+          ]
+        },
+        "set_fan_mode": {
+          "parameters": [
+            {"value": {"fan_mode": "Auto"}, "valid": true},
+            {"value": {"fan_mode": "Low"}, "valid": false},
+            {"value": {"fan_mode": ""}, "valid": false},
+            {"value": {}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"fan_mode": "Auto"}, "state": {"mode": "off", "fan_mode": "Auto"}, "satisfied": true},
+            {"parameters": {"fan_mode": "Auto"}, "state": {"mode": "off"}, "satisfied": false},
+            {"parameters": {"fan_mode": "Auto"}, "state": {"mode": "off", "fan_mode": "Continuous"}, "satisfied": false}
+          ]
+        },
+        "set_humidity": {
+          "parameters": [
+            {"value": {"humidity": 10}, "valid": true},
+            {"value": {"humidity": 55.5}, "valid": true},
+            {"value": {"humidity": 80}, "valid": true},
+            {"value": {"humidity": 9.9}, "valid": false},
+            {"value": {"humidity": 80.1}, "valid": false},
+            {"value": {}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"humidity": 55.5}, "state": {"mode": "off", "target_humidity": 55.5, "current_humidity": 20}, "satisfied": true},
+            {"parameters": {"humidity": 55.5}, "state": {"mode": "off", "current_humidity": 55.5}, "satisfied": false},
+            {"parameters": {"humidity": 55.5}, "state": {"mode": "cool", "target_humidity": 55.6}, "satisfied": false}
+          ]
+        }
+      }
+    },
+    {
+      "name": "paired-target-only",
+      "support": {
+        "state": {
+          "modes": ["off", "heat_cool"],
+          "fan_modes": [],
+          "temperature_minimum": 10000,
+          "temperature_maximum": 32000,
+          "humidity_minimum": 0,
+          "humidity_maximum": 100
+        },
+        "operations": {"set_range": {}}
+      },
+      "states": [
+        {"value": {"mode": "heat_cool", "target_temperature_low": 22000, "target_temperature_high": 18000}, "valid": true},
+        {"value": {"mode": "heat_cool", "target_temperature_high": 1000001}, "valid": false}
+      ],
+      "operations": {
+        "set_range": {
+          "parameters": [
+            {"value": {"low": 18000, "high": 22000}, "valid": true},
+            {"value": {"low": 22000, "high": 18000}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"low": 18000, "high": 22000}, "state": {"mode": "off", "target_temperature_low": 18000, "target_temperature_high": 22000}, "satisfied": true},
+            {"parameters": {"low": 18000, "high": 22000}, "state": {"mode": "off", "target_temperature_low": 18000}, "satisfied": false}
+          ]
+        }
+      }
+    },
+    {
+      "name": "single-target-only",
+      "support": {
+        "state": {
+          "modes": ["off", "heat"],
+          "fan_modes": [],
+          "temperature_minimum": -5000,
+          "temperature_maximum": 30000,
+          "humidity_minimum": 0,
+          "humidity_maximum": 100
+        },
+        "operations": {"set_target": {}}
+      },
+      "states": [
+        {"value": {"mode": "heat", "target_temperature": 0}, "valid": true},
+        {"value": {"mode": "heat", "fan_mode": "Auto"}, "valid": false}
+      ],
+      "operations": {
+        "set_target": {
+          "parameters": [
+            {"value": {"temperature": 0}, "valid": true},
+            {"value": {"temperature": -5001}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"temperature": 0}, "state": {"mode": "heat", "target_temperature": 0}, "satisfied": true},
+            {"parameters": {"temperature": 0}, "state": {"mode": "heat"}, "satisfied": false}
+          ]
+        }
+      }
+    },
+    {
+      "name": "read-only",
+      "support": {
+        "state": {
+          "modes": ["off", "auto"],
+          "fan_modes": [],
+          "temperature_minimum": -273150,
+          "temperature_maximum": 1000000,
+          "humidity_minimum": 0,
+          "humidity_maximum": 100
+        },
+        "operations": {}
+      },
+      "states": [
+        {"value": {"mode": "auto", "current_temperature": -273150, "current_humidity": 100}, "valid": true},
+        {"value": {"mode": "auto", "fan_mode": "Auto"}, "valid": false}
+      ],
+      "operations": {}
+    }
+  ],
+  "invalid_supports": [
+    {
+      "state": {"modes": ["off"], "fan_modes": [], "temperature_minimum": 1, "temperature_maximum": 0, "humidity_minimum": 0, "humidity_maximum": 100},
+      "operations": {}
+    },
+    {
+      "state": {"modes": ["off"], "fan_modes": [], "temperature_minimum": -273150, "temperature_maximum": 1000000, "humidity_minimum": 80.5, "humidity_maximum": 80},
+      "operations": {}
+    }
+  ]
+}
