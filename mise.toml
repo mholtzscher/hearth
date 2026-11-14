@@ -230,6 +230,30 @@ run = '''pnpm --dir web run dev --host 127.0.0.1 --strictPort'''
 description = "Run the dashboard dev server against a remote hearthd (override with HEARTHD_URL and NATS_MONITOR_URL)"
 run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NATS_MONITOR_URL:-http://wanda:8222}" pnpm --dir web run dev'''
 
+[tasks."storybook"]
+description = "Run isolated dashboard stories and MCP at http://127.0.0.1:6006"
+run = '''pnpm --dir web run storybook'''
+
+[tasks."storybook-build"]
+description = "Typecheck and build the standalone Storybook"
+depends = ["web-install"]
+run = '''pnpm --dir web run build-storybook'''
+
+[tasks."storybook-test"]
+description = "Run dashboard stories in Chromium with interaction and accessibility checks"
+depends = ["web-install"]
+run = '''pnpm --dir web run test-storybook'''
+
+[tasks."storybook-browser-install"]
+description = "Install Chromium for Storybook tests (CI also passes --with-deps)"
+depends = ["web-install"]
+run = '''pnpm --dir web exec playwright install chromium'''
+
+[tasks."storybook-manifest-check"]
+description = "Verify the built Storybook's component APIs and story snippets"
+depends = ["web-install"]
+run = '''pnpm --dir web run check-storybook-manifest'''
+
 [tasks."validate-backend"]
 description = "Run Go and validation-script checks"
 depends = [
@@ -240,4 +264,4 @@ depends = [
 
 [tasks."validate"]
 description = "Run all validation"
-depends = ["validate-backend", "web-test", "web-build"]
+depends = ["validate-backend", "web-test", "web-build", "storybook-test", "storybook-build"]

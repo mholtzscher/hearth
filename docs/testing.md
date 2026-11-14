@@ -110,6 +110,11 @@ GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
 - Frontend: `mise run web-install` when needed, then
   `mise run --skip-deps web-test -- <filter>` and
   `mise run --skip-deps web-build` for typecheck/build.
+- Storybook: install Chromium once with `mise run storybook-browser-install`.
+  Use `mise run --skip-deps storybook-test -- <story-file>` for real-browser
+  component, interaction, and accessibility checks. These use synthetic Core HTTP
+  fixtures, not production Core, and are not E2E tests. See
+  [dashboard development with Storybook](storybook.md).
 
 ## CI Go caches
 
@@ -135,7 +140,8 @@ fixtures do not establish model selection quality.
 
 Unset `GO_PACKAGES` and run `mise run validate` after final integration. It covers
 generation, formatting, module tidying, lint, all default test levels, generated
-fixture execution, vet, frontend tests, and frontend build. Database-scale tooling
+fixture execution, vet, frontend tests/build, and Storybook tests/build. Install
+the Storybook browser before this gate. Database-scale tooling
 tests remain on-demand via `mise run dbload-test`. Local Go tests are non-race;
 CI enables race detection.
 
