@@ -23,7 +23,8 @@ export const OpenAndDismiss: Story = {
     const trigger = canvas.getByRole("button", { name: "Reading details" });
     await userEvent.click(trigger);
     const body = within(canvasElement.ownerDocument.body);
-    await expect(await body.findByRole("dialog", { name: "Living room reading" })).toBeVisible();
+    // The portal exists before its fade-in makes it visible.
+    await waitFor(() => expect(body.getByRole("dialog", { name: "Living room reading" })).toBeVisible());
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(trigger).toHaveFocus());
   },
