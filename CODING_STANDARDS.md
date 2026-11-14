@@ -706,6 +706,217 @@ ends the generation, and follows its reconnect/resynchronization policy instead
 of silently dropping a chosen report.
 ```
 
+## Dashboard design system
+
+Apply this section to new and changed code under `web/`. The dashboard is moving
+to one styling system, one component library, and one token list. Code that
+predates a rule is a migration candidate, not a finding against an unrelated
+change. [`design-system.test.ts`](web/src/design-system.test.ts) holds the
+remaining counts of class selectors, raw form controls, and direct `radix-ui`
+imports, and fails when one grows.
+
+### Style elements with utilities, not class selectors
+
+Put styles on the element as Tailwind utilities. A stylesheet holds only theme
+tokens, element resets, keyframes, and custom variants.
+
+**Why:** A class selector is defined in a different file from the component it
+styles. Outside a cascade layer it also overrides every utility, including the
+ones on shadcn controls.
+**Applies to:** New and changed files under `web/src` and `web/.storybook`.
+Existing class selectors are migration candidates.
+**Source:** stated
+
+Bad:
+
+```tsx
+// index.css: .view-card-title { color: var(--ink); font-weight: 500; }
+<Title className="view-card-title">{title}</Title>
+```
+
+Good:
+
+```tsx
+<Title className="font-medium text-foreground">{title}</Title>
+```
+
+### Adjust another component's element through its slot classes
+
+Put a class on the element it styles. A parent that needs to change a child's
+part passes classes through the child's `className` or `classNames` prop, and
+the child merges them with `cn`.
+
+**Why:** A selector that targets another component's element stops applying,
+with no error, when that component changes its markup or its own styles.
+**Applies to:** New and changed components under `web/src`. A descendant variant
+such as `[&_.token.string]:text-chart-5` is allowed for markup the component does
+not author: Prism tokens, Markdown output, and Recharts.
+**Source:** stated
+
+Bad:
+
+```css
+.view-cover-tile .view-card-body { gap: 2px; }
+```
+
+Good:
+
+```tsx
+<CardFrame classNames={{ body: "gap-0.5" }} />
+```
+
+### Name a component's parts with `data-slot`
+
+Give each part of a shared component a `data-slot` name. A test finds an element
+by its role or label first, and by `data-slot` only when it has neither.
+
+**Why:** A class name used as a test hook looks like styling and blocks its
+removal. A role or label lookup also checks what a person can perceive.
+**Applies to:** New and changed components and tests under `web/src`.
+**Source:** observed + stated
+
+The components in [`components/ui`](web/src/components/ui/button.tsx) already set
+`data-slot`.
+
+Bad:
+
+```ts
+container.querySelector(".view-card-arrival");
+```
+
+Good:
+
+```ts
+screen.getByRole("button", { name: "Source" });
+container.querySelector('[data-slot="card-arrival"]'); // decorative, no role
+```
+
+### Express state as a data or ARIA attribute
+
+Record a component's visual state in a `data-*` or `aria-*` attribute and style
+it with attribute variants. Children react through `group-data-*` variants.
+
+**Why:** A state class is a second copy of the state that styles, tests, and
+assistive technology cannot share.
+**Applies to:** New and changed components under `web/src`.
+**Source:** observed + stated
+
+[`ServerStatus`](web/src/components/ServerStatus.tsx) already publishes its state
+as `data-state`.
+
+Bad:
+
+```tsx
+<article className={`view-toggle-tile${on ? " is-on" : ""}`} />
+```
+
+Good:
+
+```tsx
+<article data-on={on || undefined} className="group/card data-on:border-ring" />
+```
+
+### Take design values from theme tokens
+
+Use the `@theme` names in [`index.css`](web/src/index.css) for colour, type size,
+radius, and easing. Use a role name such as `foreground`, `muted-foreground`,
+`border`, or `card` where one fits the purpose.
+
+**Why:** A literal value drifts from [`DESIGN.md`](DESIGN.md) and cannot be
+changed in one place.
+**Applies to:** New and changed styles under `web/src`. Layout geometry such as
+widths, gaps, and grid tracks may use arbitrary values. When `DESIGN.md` names a
+value that `@theme` lacks, add it to both.
+**Source:** stated
+
+Bad:
+
+```tsx
+<p className="rounded-[10px] text-[#a6a6a6]" />
+```
+
+Good:
+
+```tsx
+<p className="rounded-lg text-muted-foreground" />
+```
+
+### Use the shared control from `components/ui`
+
+Render a button, text field, select, switch, segmented control, dialog, popover,
+or notice with the component in `web/src/components/ui`.
+
+**Why:** A control written in a feature gets its own focus, hover, and disabled
+treatment, so the household workspace and the Development pages end up with
+different controls.
+**Applies to:** New and changed code under `web/src`. When the shared component
+lacks a size or state that a surface needs, add it to the component. A bare
+`<button>` is allowed for a press target with no button appearance, such as the
+whole-card press of a tile. Existing raw controls are migration candidates.
+**Source:** stated
+
+Bad:
+
+```tsx
+<button className="primary" onClick={save}>Save dashboard</button>
+```
+
+Good:
+
+```tsx
+<Button onClick={save}>Save dashboard</Button>
+```
+
+### Import Radix only in `components/ui`
+
+Wrap each Radix primitive once in `web/src/components/ui` and import the wrapper
+everywhere else.
+
+**Why:** A primitive imported directly is styled and configured again at each
+call site, so one widget ends up with several implementations.
+**Applies to:** New and changed code under `web/src`. When no wrapper exists, add
+it to `components/ui` first.
+**Source:** observed + stated
+
+[`App.tsx`](web/src/App.tsx) uses the popover wrapper.
+
+Bad:
+
+```tsx
+import { Popover } from "radix-ui";
+```
+
+Good:
+
+```tsx
+import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
+```
+
+### Share a style at three uses with one intent
+
+Move a control or style into `components/ui` when three or more places use it
+for the same purpose. Keep a part that one feature owns in that feature.
+
+**Why:** Extracting earlier couples code that only looks alike. Extracting
+later leaves several copies that diverge.
+**Applies to:** New and changed components under `web/src`. Two components that
+look similar but serve different purposes stay separate.
+**Source:** stated
+
+Bad:
+
+```text
+The Development Card and the view CardFrame are merged because both draw a
+bordered surface, although only CardFrame carries status, age, and Source.
+```
+
+Good:
+
+```text
+A segmented control that seven files rebuild from aria-pressed buttons becomes
+one component. The cover diagram, used by one card, stays with that card.
+```
+
 ## Structural review
 
 Apply this section when a change creates, renames, moves, or splits files or
