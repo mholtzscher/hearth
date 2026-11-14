@@ -12,6 +12,7 @@ import { parseDefinition } from "../catalog/compatibility";
 import { deviceReading, lightReading, parseDevice } from "../bindings/device";
 import type { FieldEntity } from "../bindings/entity";
 import type { Resolved, TextData, SeriesData } from "../bindings/types";
+import { pairedEntityResponse } from "../../../../.storybook/paired-fixtures";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 const id = "ent_019a3e6a-4111-7000-8000-000000000001";
@@ -38,7 +39,8 @@ it.each([
 });
 
 it("State and numeric fields share one validated Entity request", async () => {
-  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id, type: "hearth.colorhs/v1", name: "Lamp", enabled: true, availability: { status: "available" }, support: {}, quantities: { "/hue": { unit: "deg", label: "°", fraction_digits: 0 }, "/saturation": { unit: "%", label: "%", fraction_digits: 0 } }, state: { value: { active: true, hue: 42, saturation: 64 }, observed_at: at } })));
+  const reading = { id, type: "hearth.colorhs/v1", name: "Lamp", enabled: true, availability: { status: "available" }, support: {}, quantities: { "/hue": { unit: "deg", label: "°", fraction_digits: 0 }, "/saturation": { unit: "%", label: "%", fraction_digits: 0 } }, state: { value: { active: true, hue: 42, saturation: 64 }, observed_at: at } };
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(pairedEntityResponse(reading, reading))));
   const source = { entity_id: id, entity_type: "hearth.colorhs/v1" };
   render(<ViewDataProvider><BoundState label="Mode" source={{ ...source, field: "/active" }} /><BoundMetric label="Hue" source={{ ...source, field: "/hue" }} /></ViewDataProvider>, { wrapper: MemoryRouter });
   expect(await screen.findByText("Active")).toBeTruthy();

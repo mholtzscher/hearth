@@ -11,6 +11,7 @@ import type { PowerSource } from "../../bindings/schema";
 import { ViewRenderer } from "../../renderer/ViewRenderer";
 import { ToggleTileEditor } from "./Editor";
 import { toggleTileSchema } from "./schema";
+import { pairedEntityResponse, pairedHistoryResponse } from "../../../../../.storybook/paired-fixtures";
 
 const at = "2026-11-09T10:00:00Z";
 const id = (number: number) => `ent_019a3e6a-4111-7000-8000-${String(number).padStart(12, "0")}`;
@@ -49,10 +50,11 @@ function core(values: Entity[], options: { failChanges?: boolean; failGet?: numb
         const value = index === 20 ? null : Number(entity?.state?.value ?? 0);
         return { range: { from: new Date(from + index * step).toISOString(), to: new Date(Math.min(to, from + (index + 1) * step)).toISOString() }, metrics: { min: value, max: value, mean: value } };
       });
-      return response({ range: body.range, quantity: entity?.quantities?.[""], buckets });
+      const quantity = entity!.quantities![""];
+      return response(pairedHistoryResponse({ range: body.range, quantity, buckets }, { quantity, buckets }));
     }
     gets.push(entityId);
-    return response(entity ?? {}, options.failGet ?? (entity ? 200 : 404));
+    return response(entity ? pairedEntityResponse(entity, entity) : {}, options.failGet ?? (entity ? 200 : 404));
   });
   function satisfy(post: Post) {
     const entity = entities.get(post.id)!;

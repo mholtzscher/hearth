@@ -7,6 +7,7 @@ import type { FieldEntity } from "../../bindings/entity";
 import { BoundAirPurifier } from "./AirPurifier";
 import { airCategory } from "./category";
 import type { AirPurifierProps } from "./schema";
+import { pairedEntityResponse } from "../../../../../.storybook/paired-fixtures";
 
 const at = "2026-11-09T10:00:00Z";
 const id = (n: number) => `ent_019a3e6a-4111-7000-8000-${String(n).padStart(12, "0")}`;
@@ -35,7 +36,7 @@ function core(values: Entity[]) {
     const url = String(input), entityId = url.split("/")[3].split("?")[0];
     if (url.endsWith("/commands")) return new Promise<Response>(respond => posts.push({ id: entityId, body: JSON.parse(String(init?.body)), respond }));
     const value = entities.get(entityId);
-    return response(value ?? {}, value ? 200 : 404);
+    return response(value ? pairedEntityResponse(value, value) : {}, value ? 200 : 404);
   });
   return { entities, posts, satisfy(post: Post) { const value = entities.get(post.id)!; value.state = { value: post.body.parameters.value, observed_at: "2026-11-09T10:00:01Z" }; post.respond(response({ command_id: "cmd", status: "satisfied", observation_id: "obs", value: post.body.parameters.value })); }, fail(post: Post) { post.respond(response({ status: 502, detail: "Rejected" }, 502)); } };
 }

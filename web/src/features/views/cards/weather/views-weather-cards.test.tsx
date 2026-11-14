@@ -56,8 +56,7 @@ function station(overrides: Record<number, Partial<FieldEntity>> = {}): FieldEnt
 
 /**
  * HTTP-shaped Core double. It stores canonical State and history, projects
- * them into the household system by default, and returns them unchanged for
- * `units=canonical`. Like Core, it projects a generic sensor only when the
+ * them into the household system and pairs both projections. Like Core, it projects a generic sensor only when the
  * sensor declares a quantity kind. History defaults to the current value in
  * every bucket.
  */
@@ -77,16 +76,16 @@ function core(entities: FieldEntity[], histories: Record<number, History> = {}, 
     };
   };
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const url = String(input), [path, query] = url.split("?"), canonical = query === "units=canonical", paired = query === "include=canonical";
+    const url = String(input), [path] = url.split("?");
     const entityId = path.split("/")[3], found = byId.get(entityId);
     requests.push(url);
-    if (canonical || query === "include=canonical") await heldReads.get(entityId);
+    if (!path.endsWith("/state/history")) await heldReads.get(entityId);
     if (path.endsWith("/commands")) { posts.push(entityId); return response({}, 500); }
     if (!path.endsWith("/state/history") && stateFailures.has(entityId)) return response({ detail: "Reading unavailable" }, 503);
     if (path.endsWith("/state/history")) {
       if (historyFailures.has(entityId)) return response({ detail: "History unavailable" }, 503);
       if (!found) return response({}, 404);
-      const body = JSON.parse(String(init?.body)), shown = present(found, canonical);
+      const body = JSON.parse(String(init?.body)), shown = present(found, false);
       const step = ({ "1m0s": 60000, "5m0s": 300000, "30m0s": 1800000 } as Record<string, number>)[body.result.bucket.duration];
       const from = Date.parse(body.range.from), to = Date.parse(body.range.to), count = Math.ceil((to - from) / step);
       const history = histories[Number(entityId.slice(-3))] ?? (() => Number(found.state?.value ?? 0));
@@ -94,15 +93,15 @@ function core(entities: FieldEntity[], histories: Record<number, History> = {}, 
         const start = from + index * step, value = present(found, working).value(history(Math.round((to - start) / 60000)));
         return { range: { from: new Date(start).toISOString(), to: new Date(Math.min(to, start + step)).toISOString() }, metrics: { min: value, max: value, mean: value } };
       });
-      const summary = { range: body.range, quantity: shown.quantity, buckets: buckets(canonical) };
-      return response(paired ? pairedHistoryResponse(summary, { quantity: present(found, true).quantity, buckets: buckets(true) }) : summary);
+      const summary = { range: body.range, quantity: shown.quantity, buckets: buckets(false) };
+      return response(pairedHistoryResponse(summary, { quantity: present(found, true).quantity, buckets: buckets(true) }));
     }
     if (!found) return response({}, 404);
     const representation = (working: boolean) => {
       const shown = present(found, working), state = found.state;
       return { ...found, quantities: { "": shown.quantity }, state: state && { ...state, value: shown.value(state.value as number) } };
     };
-    return response(paired ? pairedEntityResponse(representation(false), representation(true)) : representation(canonical));
+    return response(pairedEntityResponse(representation(false), representation(true)));
   });
   return { posts, requests, historyFailures, stateFailures, heldReads, entities: byId };
 }
@@ -134,8 +133,8 @@ it.each(["metric", "us"] as const)("words the shared weather example from canoni
   expect(within(card("Rain")).getByText(us ? "This storm · Rain now, 0.27 in/h" : "This storm · Rain now, 6.8 mm/h")).toBeTruthy();
   expect(card("Rain").querySelector(".view-metric-value")!.textContent).toBe(us ? "0.73in" : "18.6mm");
   expect(document.body.textContent).not.toMatch(/Feels like|Dew point/);
-  expect(api.requests.every(url => url.endsWith("?include=canonical"))).toBe(true);
-  const speedReads = api.requests.filter(url => url === `/v1/entities/${id(103)}?include=canonical`);
+  expect(api.requests.every(url => !url.includes("?"))).toBe(true);
+  const speedReads = api.requests.filter(url => url === `/v1/entities/${id(103)}`);
   // Outside and Wind share one read, including their formula inputs.
   expect(speedReads).toHaveLength(1);
   await act(() => vi.advanceTimersByTimeAsync(35000));
@@ -292,7 +291,7 @@ it.each(["metric", "us"] as const)("shows household Wind speed history with gaps
   expect(wind.querySelector(".view-weather-aside .view-trend")).toBeTruthy();
   const histories = api.requests.filter(url => url.includes("/state/history"));
   expect(histories.length).toBeGreaterThan(0);
-  expect(histories.every(url => url === `/v1/entities/${id(103)}/state/history?include=canonical`)).toBe(true);
+  expect(histories.every(url => url === `/v1/entities/${id(103)}/state/history`)).toBe(true);
   fireEvent.click(within(wind).getByRole("button", { name: "Source" }));
   expect(screen.getByText("The trend shows sustained wind speed, not gusts or direction.")).toBeTruthy();
   expect(screen.getByText(/5-minute interval; the shaded band/)).toBeTruthy();

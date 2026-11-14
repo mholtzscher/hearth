@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { BoundTimeSeries } from "../cards/time-series/TimeSeries";
 import { BoundMetric } from "../cards/metric/Metric";
 import { ViewDataProvider } from "../data/provider";
+import { pairedEntityResponse } from "../../../../.storybook/paired-fixtures";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -17,7 +18,7 @@ const entity = {
 function refuseHistory(problem: { status: number; code: string }) {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => String(url).includes("/state/history") && init?.method === "POST"
     ? new Response(JSON.stringify({ title: "Unprocessable Entity", detail: "History query failed.", ...problem }), { status: problem.status })
-    : new Response(JSON.stringify(entity)));
+    : new Response(JSON.stringify(pairedEntityResponse(entity, { ...entity, quantities: { "": { unit: "mCel", label: "mCel", fraction_digits: 0 } }, state: { ...entity.state, value: 12500 } }))));
 }
 
 it("asks for a shorter window when Core refuses a series as too much history", async () => {
