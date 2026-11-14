@@ -12,4 +12,6 @@
 !internal/modules/automations/automation-definition.schema.json
 web/node_modules
 web/dist
+web/storybook-static
+web/test-results
 web/.data

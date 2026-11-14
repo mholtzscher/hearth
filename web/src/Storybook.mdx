@@ -1,0 +1,51 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+
+<Meta title="Start here" />
+
+# Hearth dashboard development
+
+Develop the real dashboard components without Core, NATS, credentials, or devices.
+The preview supplies the production dark theme, Figtree, routing, the read cache,
+and the Command queue. HTTP requests use synthetic, story-local household data.
+
+## Find an example
+
+The sidebar includes every current dashboard catalog element. Stack, Grid,
+Heading, and Note are renderer stories because they are graph nodes rather than
+standalone React components. The card stories document their bound components.
+The renderer's Morning Dashboard and Phone Dashboard show the same definition
+at desktop and phone widths. Device stories exercise the actual light color
+popover and phone dialog.
+
+Use Controls to explore props, the test widget to run interactions and
+accessibility checks, and the viewport toolbar to inspect responsive behavior.
+Stories marked `ai-generated` still need human review.
+
+## Build with an agent
+
+Connect to `http://127.0.0.1:6006/mcp`. Discover documented components, inspect
+their props and examples, update the affected stories, run the test tool, and
+inspect browser previews. Report the direct story links and actual test results.
+
+This is an application, not a published component library. Storybook's generated
+snippets currently use `from 'hearth-dashboard'`; that package has no public
+component exports. Import from the source module used by the colocated story
+instead, such as `@/features/views/cards/metric/Metric` or
+`@/components/ui/button`. Fixture helpers in snippets are Storybook-only; use
+real Entity IDs in application code.
+
+## Keep evidence distinct
+
+Observed State, Entity availability, and Command outcome are separate facts.
+A mock satisfied Command updates only this story's synthetic data. It proves
+the UI's response and refresh behavior, not a real device effect.
+
+Stories use a fixed clock and explicit Core HTTP handlers. An unhandled Core API
+request receives a 500 response and fails its story. Storybook has no live
+backend proxies. Use story-local handler overrides to reproduce loading, missing
+data, unavailable Entities, or failures.
+Use the production catalog schema when composing graphs; the 16-reference limit
+still applies.
+
+The repository guide `docs/storybook.md` covers commands, fixture authoring,
+agent setup, CI, and NixOS browser configuration.

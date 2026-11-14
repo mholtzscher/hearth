@@ -20,5 +20,11 @@ configs/*.yaml
 # Web dashboard build/runtime artifacts
 web/node_modules/
 web/dist/
+web/storybook-static/
+web/test-results/
+web/src/**/__screenshots__/
+web/.storybook/.cache/
 web/.env
 /.agents/skills/simulator-validation/scripts/__pycache__
+
+*storybook.log

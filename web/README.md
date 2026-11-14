@@ -104,6 +104,22 @@ or whitespace-only. A 404
 from the page means the dashboard is connected to an older Core build. See
 `web/src/pages/AgentPage.tsx` and `internal/modules/agent`.
 
+## Develop components with Storybook
+
+Use [the Storybook workflow](../docs/storybook.md) to develop dashboard components
+without Core, NATS, model credentials, or devices:
+
+```sh
+mise run web-install
+mise run storybook-browser-install
+mise run storybook
+```
+
+Open http://127.0.0.1:6006. The same server exposes the agent MCP endpoint at
+http://127.0.0.1:6006/mcp. Stories use the production dark theme and synthetic HTTP
+fixtures. `mise run storybook-test` runs browser interaction/accessibility checks;
+`mise run storybook-build` creates `web/storybook-static`.
+
 ## Build
 
 ```sh
