@@ -25,4 +25,7 @@ export const Daily: Story = {
     await expect(canvas.getAllByRole("listitem")).toHaveLength(7);
   },
 };
-export const NeverObserved: Story = { beforeEach: ({ msw }) => { msw.use(entityScenario(201, "unobserved")); } };
+export const NeverObserved: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(201, "unobserved")); },
+  play: async ({ canvas }) => { await expect(await canvas.findByText("Never observed")).toBeVisible(); },
+};

@@ -9,6 +9,9 @@ import "../src/index.css";
 import "./preview.css";
 import { fixtureNow, createCoreHandlers } from "./msw-handlers";
 
+// Core requests that no handler answered during the current story.
+const unhandledCoreRequests: string[] = [];
+
 const preview: Preview = {
   tags: ["autodocs"],
   decorators: [
@@ -26,9 +29,15 @@ const preview: Preview = {
     const worker = setupWorker();
     await worker.start({
       quiet: true,
-      onUnhandledRequest(request, print) {
-        const path = new URL(request.url).pathname;
-        if (/^\/(v1(?:\/|$)|healthz$|readyz$|nats-monitor(?:\/|$))/.test(path)) print.error();
+      // Throwing answers the request with a 500. The default handles only print and pass it through.
+      async onUnhandledFrame({ frame, defaults }) {
+        if (!("request" in frame.data)) return;
+        const { method, url } = frame.data.request;
+        const path = new URL(url).pathname;
+        if (!/^\/(v1(?:\/|$)|healthz$|readyz$|nats-monitor(?:\/|$))/.test(path)) return;
+        unhandledCoreRequests.push(`${method} ${path}`);
+        await defaults.error();
+        throw new Error(`Unhandled Core request: ${method} ${path}`);
       },
     });
     return worker;
@@ -39,11 +48,16 @@ const preview: Preview = {
     setBaseUrl("");
     MockDate.set(fixtureNow);
     msw.use(...createCoreHandlers());
+    unhandledCoreRequests.length = 0;
     return () => {
       MockDate.reset();
       setBaseUrl(previousBase ?? "");
       if (previousBase === null) localStorage.removeItem("hearth.baseUrl");
     };
+  },
+  // A component can absorb the failed request, so fail the story as well.
+  afterEach() {
+    if (unhandledCoreRequests.length > 0) throw new Error(`Unhandled Core requests: ${unhandledCoreRequests.join(", ")}`);
   },
   parameters: {
     layout: "fullscreen",

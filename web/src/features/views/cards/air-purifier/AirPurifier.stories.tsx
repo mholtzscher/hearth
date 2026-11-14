@@ -25,5 +25,14 @@ type Story = StoryObj<typeof meta>;
 export const FullCard: Story = {
   play: async ({ canvas }) => { await expect(await canvas.findByRole("switch", { name: /power/i })).toHaveAttribute("aria-checked", "true"); },
 };
-export const Tile: Story = { args: { layout: "tile", mode: undefined, fan_level: undefined, display: undefined, child_lock: undefined } };
-export const Disabled: Story = { beforeEach: ({ msw }) => { msw.use(entityScenario(301, "disabled")); } };
+export const Tile: Story = {
+  args: { layout: "tile", mode: undefined, fan_level: undefined, display: undefined, child_lock: undefined },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Good")).toBeVisible();
+    await expect(canvas.queryByText("Filter life")).not.toBeInTheDocument();
+  },
+};
+export const Disabled: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(301, "disabled")); },
+  play: async ({ canvas }) => { await expect(await canvas.findByText("Disabled")).toBeVisible(); },
+};

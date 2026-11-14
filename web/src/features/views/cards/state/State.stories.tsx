@@ -19,5 +19,14 @@ type Story = StoryObj<typeof meta>;
 export const Closed: Story = {
   play: async ({ canvas }) => { await expect(await canvas.findByText("Closed")).toBeVisible(); },
 };
-export const NeverObserved: Story = { beforeEach: ({ msw }) => { msw.use(entityScenario(1, "unobserved")); } };
-export const Disabled: Story = { beforeEach: ({ msw }) => { msw.use(entityScenario(1, "disabled")); } };
+export const NeverObserved: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(1, "unobserved")); },
+  play: async ({ canvas }) => { await expect(await canvas.findByText("Never observed")).toBeVisible(); },
+};
+export const Disabled: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(1, "disabled")); },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Disabled")).toBeVisible();
+    await expect(canvas.getByText("Closed")).toBeVisible();
+  },
+};

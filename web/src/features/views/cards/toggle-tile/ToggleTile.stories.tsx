@@ -29,8 +29,21 @@ export const MeteredPlug: Story = {
     await waitFor(() => expect(control).toHaveAttribute("aria-checked", "true"));
   },
 };
-export const Disabled: Story = { beforeEach: ({ msw }) => { msw.use(entityScenario(4, "disabled")); } };
-export const ReadOnly: Story = { beforeEach: ({ msw }) => { msw.use(entityScenario(4, "read-only")); } };
+export const Disabled: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(4, "disabled")); },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Disabled")).toBeVisible();
+    await expect(canvas.getByRole("switch")).toBeDisabled();
+  },
+};
+/** An Entity without a set Operation shows its State and offers no control. */
+export const ReadOnly: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(4, "read-only")); },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Read-only")).toBeVisible();
+    await expect(canvas.queryByRole("switch")).not.toBeInTheDocument();
+  },
+};
 export const Rejected: Story = {
   beforeEach: ({ msw }) => { msw.use(http.post("/v1/entities/:id/commands", () => HttpResponse.json({ detail: "Rejected" }, { status: 502 }))); },
   play: async ({ canvas, userEvent }) => {

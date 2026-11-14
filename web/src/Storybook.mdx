@@ -40,9 +40,10 @@ Observed State, Entity availability, and Command outcome are separate facts.
 A mock satisfied Command updates only this story's synthetic data. It proves
 the UI's response and refresh behavior, not a real device effect.
 
-Stories use a fixed clock and explicit Core HTTP handlers. Unhandled Core API
-requests fail, and Storybook has no live backend proxies. Use story-local handler
-overrides to reproduce loading, missing data, unavailable Entities, or failures.
+Stories use a fixed clock and explicit Core HTTP handlers. An unhandled Core API
+request receives a 500 response and fails its story. Storybook has no live
+backend proxies. Use story-local handler overrides to reproduce loading, missing
+data, unavailable Entities, or failures.
 Use the production catalog schema when composing graphs; the 16-reference limit
 still applies.
 

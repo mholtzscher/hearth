@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { entityId } from "../../../../../.storybook/fixtures";
+import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
 import { BoundWind } from "./Wind";
 
 const meta = {
@@ -20,5 +21,17 @@ type Story = StoryObj<typeof meta>;
 export const WithGusts: Story = {
   play: async ({ canvas }) => { await expect(await canvas.findByText("6.3")).toBeVisible(); },
 };
-export const SpeedOnly: Story = { args: { gust: undefined, direction: undefined, max_gust: undefined, trend: undefined } };
-export const Phone: Story = { globals: { viewport: { value: "phone", isRotated: false } } };
+export const SpeedOnly: Story = {
+  args: { gust: undefined, direction: undefined, max_gust: undefined, trend: undefined },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("6.3")).toBeVisible();
+    await expect(canvas.queryByText(/Gusts/)).not.toBeInTheDocument();
+  },
+};
+export const Phone: Story = {
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByText("6.3");
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};

@@ -22,5 +22,11 @@ type Story = StoryObj<typeof meta>;
 export const Ledger: Story = {
   play: async ({ canvas }) => { await expect(await canvas.findByText("Closed")).toBeVisible(); },
 };
-export const Lanes: Story = { args: { style: "lanes" } };
-export const Feed: Story = { args: { style: "feed" } };
+export const Lanes: Story = {
+  args: { style: "lanes" },
+  play: async ({ canvas }) => { await expect(await canvas.findByText("Open 23 h 20 min")).toBeVisible(); },
+};
+export const Feed: Story = {
+  args: { style: "feed" },
+  play: async ({ canvas }) => { await expect(await canvas.findByRole("heading", { name: "Overnight" })).toBeVisible(); },
+};

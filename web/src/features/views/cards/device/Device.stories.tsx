@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { deviceId } from "../../../../../.storybook/fixtures";
+import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
 import { BoundDevice } from "./Device";
 
 const meta = {
@@ -37,5 +38,6 @@ export const PhoneColorSheet: Story = {
     await expect(await body.findByRole("dialog", { name: "Light color" })).toBeVisible();
     await userEvent.click(body.getByRole("button", { name: "Close color picker" }));
     await expect(canvas.getByRole("button", { name: /Adjust color/ })).toHaveFocus();
+    await expectNoHorizontalOverflow(canvasElement);
   },
 };

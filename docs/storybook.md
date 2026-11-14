@@ -51,7 +51,8 @@ Storybook's MCP and component manifest features are upstream preview features.
 
 Stories tagged `ai-generated` await human review. Remove that tag after reviewing
 their data, behavior, and appearance. `needs-work` marks stories not yet passing
-browser verification and must not be mistaken for reviewed examples.
+browser verification and must not be mistaken for reviewed examples. The story
+tests skip them.
 
 ## Add a story with realistic data
 
@@ -72,9 +73,9 @@ Command response is not proof of a real device effect.
 
 Override an endpoint in a story's `beforeEach({ msw })` using `msw.use(...)`.
 Use explicit method/path handlers for loading, empty, unavailable, rejected, or
-transport-error cases. The preview blocks unhandled Core API requests, and its
-Vite configuration has no live backend proxies. Keep assertions about observed
-State distinct from Command outcomes.
+transport-error cases. An unhandled Core API request receives a 500 response and
+fails its story. The preview's Vite configuration has no live backend proxies.
+Keep assertions about observed State distinct from Command outcomes.
 
 Use `Meta<typeof Component>` and `StoryObj<typeof meta>`, real component imports,
 and object-literal args so the manifest can extract complete snippets. Card
@@ -84,9 +85,13 @@ so set `title` explicitly for a card in a kebab-case folder such as
 `toggle-tile/ToggleTile.stories.tsx`. Prefer
 direct component stories for discoverable props, with
 renderer/composition stories for catalog layouts. Add a play function when it
-proves async data arrival, a meaningful interaction, or a portal contract. Static
-variants need no repetitive play assertion. Keep the single `CssCheck` story as
-the production CSS loading check.
+proves async data arrival, a meaningful interaction, or a portal contract. A
+story that reads Entity data needs one awaited assertion on the content that
+defines its state. Without it, the accessibility check audits the loading state
+and the story passes whatever it renders. A story that renders synchronously
+from args needs no play assertion. A phone story also calls
+`expectNoHorizontalOverflow` from `.storybook/play.ts`. Keep the single
+`CssCheck` story as the production CSS loading check.
 
 The generated snippets currently use a `hearth-dashboard` package import, but this
 application does not publish component exports. Use the source-module import from

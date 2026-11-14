@@ -29,5 +29,14 @@ export const AllOff: Story = {
     await expect(canvas.getByRole("switch", { name: /Plug/ })).toHaveAttribute("aria-checked", "false");
   },
 };
-export const NoGroupAction: Story = { args: { all_off: undefined } };
-export const OneTargetUnavailable: Story = { beforeEach: ({ msw }) => { msw.use(entityScenario(3, "unavailable")); } };
+export const NoGroupAction: Story = {
+  args: { all_off: undefined },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("switch", { name: /Fan/ });
+    await expect(canvas.queryByRole("button", { name: /All off/i })).not.toBeInTheDocument();
+  },
+};
+export const OneTargetUnavailable: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(3, "unavailable")); },
+  play: async ({ canvas }) => { await expect(await canvas.findByText("Unavailable")).toBeVisible(); },
+};

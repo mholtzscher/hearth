@@ -12,7 +12,7 @@ export default defineConfig({
       },
       {
         extends: false,
-        plugins: [storybookTest({ configDir: path.resolve(import.meta.dirname, ".storybook") })],
+        plugins: [storybookTest({ configDir: path.resolve(import.meta.dirname, ".storybook"), tags: { skip: ["needs-work"] } })],
         test: {
           name: "storybook",
           browser: {

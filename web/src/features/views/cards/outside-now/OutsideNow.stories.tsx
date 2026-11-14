@@ -24,5 +24,14 @@ type Story = StoryObj<typeof meta>;
 export const RainyMorning: Story = {
   play: async ({ canvas }) => { await expect(await canvas.findByText("9.4")).toBeVisible(); },
 };
-export const TemperatureOnly: Story = { args: { humidity: undefined, wind: undefined, wind_direction: undefined, rain_rate: undefined, rain_today: undefined } };
-export const HumidityUnavailable: Story = { beforeEach: ({ msw }) => { msw.use(entityScenario(102, "unavailable")); } };
+export const TemperatureOnly: Story = {
+  args: { humidity: undefined, wind: undefined, wind_direction: undefined, rain_rate: undefined, rain_today: undefined },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("9.4")).toBeVisible();
+    await expect(canvas.queryByText("Humidity")).not.toBeInTheDocument();
+  },
+};
+export const HumidityUnavailable: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(102, "unavailable")); },
+  play: async ({ canvas }) => { await expect(await canvas.findByText("Unavailable")).toBeVisible(); },
+};
