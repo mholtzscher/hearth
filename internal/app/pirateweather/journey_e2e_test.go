@@ -58,7 +58,7 @@ func TestWeatherCompanionCoreJourney(t *testing.T) {
 	assertRetainedWeatherForecasts(t, coreURL, &mode)
 	mode.Store(0)
 	assertWeatherMCP(t, coreURL, config.AdapterID)
-	var after devicesapi.EntityBody
+	var after devicesapi.PairedEntityBody
 	weatherJSON(t, coreURL, http.MethodGet, "/v1/entities/"+temperature.ID, "", &after)
 	if after.State == nil || after.State.ObservationID != observationID {
 		t.Fatal("forecast Functions changed current State")
@@ -104,8 +104,9 @@ func TestWeatherCompanionCoreJourney(t *testing.T) {
 	}
 
 	// Existing enablement and canonical IDs survive restart and coordinate/name correction.
-	weatherJSON(t, coreURL, http.MethodPatch, "/v1/entities/"+temperature.ID, `{"enabled":false}`, &after)
-	weatherJSON(t, coreURL, http.MethodPatch, "/v1/entities/"+daily.ID, `{"enabled":false}`, &after)
+	var patched devicesapi.EntityBody
+	weatherJSON(t, coreURL, http.MethodPatch, "/v1/entities/"+temperature.ID, `{"enabled":false}`, &patched)
+	weatherJSON(t, coreURL, http.MethodPatch, "/v1/entities/"+daily.ID, `{"enabled":false}`, &patched)
 	mode.Store(3)
 	config.Location.Name = "Renamed Weather"
 	latitude := 1.0
@@ -113,9 +114,9 @@ func TestWeatherCompanionCoreJourney(t *testing.T) {
 	stopAgain, joinAgain := startWeatherCompanion(t, config, transport)
 	waitWeatherCondition(t, func() bool {
 		weatherJSON(t, coreURL, http.MethodGet, "/v1/entities/"+temperature.ID, "", &after)
-		var refreshed devicesapi.EntityBody
+		var refreshed devicesapi.PairedEntityBody
 		weatherJSON(t, coreURL, http.MethodGet, "/v1/entities/"+humidity.ID, "", &refreshed)
-		var unavailable devicesapi.EntityBody
+		var unavailable devicesapi.PairedEntityBody
 		weatherJSON(t, coreURL, http.MethodGet, "/v1/entities/"+hourly.ID, "", &unavailable)
 		return after.Availability.Status == "available" && refreshed.State != nil &&
 			refreshed.State.ObservationID != humidity.State.ObservationID && unavailable.Availability.Status == "unavailable"
@@ -151,25 +152,26 @@ func assertForecastStates(t *testing.T, coreURL string, hourly, daily devicesapi
 		{hourly, "hearth.hourlyforecast/v1", "temperature", 12.5},
 		{daily, "hearth.dailyforecast/v1", "temperature_min", 4},
 	} {
-		var got devicesapi.EntityBody
+		var got devicesapi.PairedEntityBody
 		weatherJSON(t, coreURL, http.MethodGet, "/v1/entities/"+forecast.entity.ID, "", &got)
 		if got.Type != forecast.kind || got.State == nil || got.State.SourceUpdatedAt != nil {
 			t.Fatalf("forecast State: %+v", got)
 		}
-		value, ok := got.State.Value.(map[string]any)
+		value, ok := got.State.Canonical.(map[string]any)
 		if !ok {
-			t.Fatalf("forecast value: %+v", got.State.Value)
+			t.Fatalf("forecast value: %+v", got.State.Canonical)
 		}
 		periods, ok := value["periods"].([]any)
 		if !ok || len(periods) != 1 {
 			t.Fatalf("forecast periods: %+v", value)
 		}
 		period, ok := periods[0].(map[string]any)
-		if !ok || period[forecast.field] != forecast.value || period["condition"] != "rain" {
+		if !ok || period["condition"] != "rain" {
 			t.Fatalf("forecast period: %+v", periods[0])
 		}
-		if quantity := got.Quantities["/periods/0/"+forecast.field]; quantity.Unit != "Cel" {
-			t.Fatalf("forecast quantity: %+v", quantity)
+		reading, ok := period[forecast.field].(map[string]any)
+		if !ok || reading["value"] != forecast.value || reading["unit"] != "Cel" {
+			t.Fatalf("forecast reading: %+v", period[forecast.field])
 		}
 	}
 }
@@ -182,7 +184,7 @@ func assertRestartedWeatherEntities(
 ) {
 	t.Helper()
 	for _, original := range entities {
-		var refreshed devicesapi.EntityBody
+		var refreshed devicesapi.PairedEntityBody
 		weatherJSON(t, coreURL, http.MethodGet, "/v1/entities/"+original.ID, "", &refreshed)
 		wantEnabled := original.ID != temperature.ID && original.ID != daily.ID
 		if refreshed.ID != original.ID || refreshed.DeviceID != original.DeviceID || refreshed.Enabled != wantEnabled {

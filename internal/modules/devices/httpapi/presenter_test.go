@@ -38,7 +38,12 @@ func TestEntityReadRepresentationsAcrossHTTP(t *testing.T) {
 		},
 	}
 	router, _ := testAPI(t, stub)
-	for _, path := range []string{"/v1/entities/" + string(apiEntityID), "/v1/entities", "/v1/devices/" + string(apiDeviceID)} {
+	detail := performRequest(router, "/v1/entities/"+string(apiEntityID))
+	require.Equal(t, http.StatusOK, detail.Code, detail.Body.String())
+	require.Contains(t, detail.Body.String(), `"x":{"value":1000,"unit":"10*-4"}`)
+	require.Contains(t, detail.Body.String(), `"x":{"value":0.1,"unit":"1"`)
+	require.NotContains(t, detail.Body.String(), `"quantities"`)
+	for _, path := range []string{"/v1/entities", "/v1/devices/" + string(apiDeviceID)} {
 		for _, tc := range []struct{ query, value, unit string }{{"", `"x":0.1`, `"unit":"1"`}, {"?units=canonical", `"y":9007199254740993`, `"unit":"10*-4"`}} {
 			rec := performRequest(router, path+tc.query)
 			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -63,7 +68,7 @@ func TestEntityReadRepresentationsAcrossHTTP(t *testing.T) {
 			require.Contains(t, rec.Body.String(), `"y":9007199254740993`)
 		}
 	}
-	for _, path := range []string{"/v1/entities/" + string(apiEntityID), "/v1/entities", "/v1/devices/" + string(apiDeviceID)} {
+	for _, path := range []string{"/v1/entities", "/v1/devices/" + string(apiDeviceID)} {
 		rec := performRequest(router, path+"?units=private_sentinel")
 		require.GreaterOrEqual(t, rec.Code, 400)
 		require.Less(t, rec.Code, 500)
@@ -73,9 +78,13 @@ func TestEntityReadRepresentationsAcrossHTTP(t *testing.T) {
 	rec := performRequest(router, "/v1/entities/"+string(apiEntityID))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `"state":null`)
-	require.Contains(t, rec.Body.String(), `"/x"`)
+	list := performRequest(router, "/v1/entities")
+	require.Equal(t, http.StatusOK, list.Code)
+	require.Contains(t, list.Body.String(), `"state":null`)
+	require.Contains(t, list.Body.String(), `"/x"`)
 	view.Entity.TypeID = devices.EntityTypeColortempV1
 	view.Entity.Support = []byte(`{"state":{"minimum":153,"maximum":500}}`)
+	view.State = &devices.State{Value: []byte(`{"active":true,"value":200}`)}
 	rec = performRequest(router, "/v1/entities/"+string(apiEntityID))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Contains(t, rec.Body.String(), `"range":{"minimum":153,"maximum":500}`)
@@ -89,11 +98,13 @@ func TestEntityReadRepresentationsAcrossHTTP(t *testing.T) {
 	require.Contains(t, rec.Body.String(), `"choice":"auto"`)
 	var body struct {
 		State struct {
-			Value map[string]any `json:"value"`
+			Canonical map[string]any `json:"canonical"`
+			Display   map[string]any `json:"display"`
 		} `json:"state"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.NotContains(t, body.State.Value, "value")
+	require.NotContains(t, body.State.Canonical, "value")
+	require.NotContains(t, body.State.Display, "value")
 }
 
 func TestEntityWithEqualBoundsRemainsReadable(t *testing.T) {

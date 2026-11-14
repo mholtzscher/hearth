@@ -96,12 +96,12 @@ func TestESPHomeCoverThroughProductionCore(t *testing.T) {
 		}))
 		waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
 			raw := successfulFunctionCoreRequest(t, client, core, http.MethodGet, "/v1/entities/"+door.ID, "")
-			var entity httpapi.EntityBody
+			var entity httpapi.PairedEntityBody
 			if err := json.Unmarshal(raw, &entity); err != nil {
 				return false, err
 			}
-			value, err := json.Marshal(entity.State.Value)
-			return string(value) == `{"motion":"opening","position":42}`, err
+			value, err := json.Marshal(entity.State.Canonical)
+			return string(value) == `{"motion":"opening","position":{"unit":"%","value":42}}`, err
 		})
 		select {
 		case result := <-response:
@@ -142,7 +142,7 @@ func TestESPHomeCoverThroughProductionCore(t *testing.T) {
 		require.Equal(t, "hearth.cover/v1", read.Type)
 		require.JSONEq(t, `{"position":99,"motion":"opening"}`, string(read.State.Value))
 		afterRaw := successfulFunctionCoreRequest(t, client, core, http.MethodGet, "/v1/entities/"+door.ID, "")
-		var after httpapi.EntityBody
+		var after httpapi.PairedEntityBody
 		require.NoError(t, json.Unmarshal(afterRaw, &after))
 		require.Equal(t, *positionResult.ObservationID, after.State.ObservationID)
 

@@ -283,7 +283,7 @@ func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 					"/v1/entities/"+source.powerEntityID,
 					"",
 				)
-				return strings.Contains(string(raw), `"value":false`), nil
+				return strings.Contains(string(raw), `"canonical":false`), nil
 			})
 			session, err := adapter.Connect(
 				t.Context(),
@@ -439,7 +439,7 @@ func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 				"/v1/entities/"+source.powerEntityID,
 				"",
 			)
-			if !strings.Contains(string(state), `"value":true`) {
+			if !strings.Contains(string(state), `"canonical":true`) {
 				t.Fatalf("fixed-target effect did not change State: %s", state)
 			}
 			missing := fmt.Sprintf(

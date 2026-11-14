@@ -149,7 +149,7 @@ func TestMonitoringCoreJourney(
 	cloud.name = "Renamed"
 	cloud.mu.Unlock()
 	stop, join = startCompanion(t, c, cloud)
-	var after devicesapi.EntityBody
+	var after devicesapi.PairedEntityBody
 	waitCondition(t, func() bool {
 		coreJSON(t, base, http.MethodGet, "/v1/entities/"+battery.ID, "", &after)
 		var devices struct {
@@ -169,9 +169,10 @@ func TestMonitoringCoreJourney(
 	cloud.mu.Unlock()
 	// The successful renamed runtime published fresh unchanged evidence. Capture
 	// its final retained identity after release, before testing absence/replacement.
-	coreJSON(t, base, http.MethodGet, "/v1/entities/"+lock.ID, "", &lock)
+	var lockSnapshot devicesapi.PairedEntityBody
+	coreJSON(t, base, http.MethodGet, "/v1/entities/"+lock.ID, "", &lockSnapshot)
 	stop, join = startCompanion(t, c, cloud)
-	assertUnavailableRetained(t, base, lock, "device_missing")
+	assertUnavailableRetained(t, base, lockSnapshot, "device_missing")
 	stop()
 	join()
 	cloud.mu.Lock()
@@ -189,7 +190,7 @@ func TestMonitoringCoreJourney(
 		coreJSON(t, base, http.MethodGet, "/v1/devices", "", &devices)
 		return len(devices.Items) == 1 && devices.Items[0].Name == "Replacement"
 	})
-	assertUnavailableRetained(t, base, lock, "device_offline")
+	assertUnavailableRetained(t, base, lockSnapshot, "device_offline")
 	var retained struct {
 		Items []struct {
 			ID string `json:"observation_id"`
@@ -210,16 +211,16 @@ func TestMonitoringCoreJourney(
 	join()
 }
 
-func assertUnavailableRetained(t *testing.T, base string, before devicesapi.EntityBody, reason string) {
+func assertUnavailableRetained(t *testing.T, base string, before devicesapi.PairedEntityBody, reason string) {
 	t.Helper()
-	var after devicesapi.EntityBody
+	var after devicesapi.PairedEntityBody
 	waitCondition(t, func() bool {
 		coreJSON(t, base, http.MethodGet, "/v1/entities/"+before.ID, "", &after)
 		return after.Availability.Status == "unavailable" && after.Availability.Reason != nil &&
 			strings.HasSuffix(after.Availability.Reason.Code, reason)
 	})
 	if after.State == nil || after.State.ObservationID != before.State.ObservationID ||
-		after.State.Value != before.State.Value {
+		after.State.Canonical != before.State.Canonical || after.State.Display != before.State.Display {
 		t.Fatal("unavailability fabricated physical evidence")
 	}
 }

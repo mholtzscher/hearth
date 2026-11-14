@@ -105,7 +105,7 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 		httpBody := successfulFunctionCoreRequest(t, client, core, http.MethodGet, "/v1/entities/"+entity, "")
 		mcp := connectAutomationFunctionsMCP(t, core)
 		mcpBody := automationFunctionsMCP(t, mcp, "get_entity", `{"entity_id":"`+entity+`"}`)
-		type entityRead struct {
+		type legacyEntityRead struct {
 			State struct {
 				Value json.Number `json:"value"`
 			} `json:"state"`
@@ -119,32 +119,45 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 				} `json:"range"`
 			} `json:"quantities"`
 		}
-		var httpRead, mcpRead entityRead
+		var httpRead struct {
+			State struct {
+				Canonical struct {
+					Value json.Number `json:"value"`
+					Unit  string      `json:"unit"`
+				} `json:"canonical"`
+				Display struct {
+					Value          json.Number `json:"value"`
+					Unit           string      `json:"unit"`
+					Label          string      `json:"label"`
+					FractionDigits int         `json:"fraction_digits"`
+					Range          struct {
+						Minimum float64 `json:"minimum"`
+						Maximum float64 `json:"maximum"`
+					} `json:"range"`
+				} `json:"display"`
+			} `json:"state"`
+		}
+		var mcpRead legacyEntityRead
 		require.NoError(t, json.Unmarshal(httpBody, &httpRead))
 		require.NoError(t, json.Unmarshal(mcpBody, &mcpRead))
-		value, parseErr := httpRead.State.Value.Float64()
+		value, parseErr := httpRead.State.Display.Value.Float64()
 		require.NoError(t, parseErr)
 		require.InDelta(t, expected, value, 1e-9)
-		require.Equal(t, httpRead.State.Value, mcpRead.State.Value)
-		require.Equal(t, httpRead.Quantities, mcpRead.Quantities)
-		require.Equal(t, unit, httpRead.Quantities[""].Unit)
-		require.InDelta(t, minimum, httpRead.Quantities[""].Range.Minimum, 1e-9)
-		require.InDelta(t, maximum, httpRead.Quantities[""].Range.Maximum, 1e-9)
-		canonical := successfulFunctionCoreRequest(
-			t,
-			client,
-			core,
-			http.MethodGet,
-			"/v1/entities/"+entity+"?units=canonical",
-			"",
-		)
+		require.Equal(t, httpRead.State.Display.Value, mcpRead.State.Value)
+		require.Equal(t, unit, httpRead.State.Display.Unit)
+		require.Equal(t, httpRead.State.Display.Unit, mcpRead.Quantities[""].Unit)
+		require.Equal(t, httpRead.State.Display.Label, mcpRead.Quantities[""].Label)
+		require.Equal(t, httpRead.State.Display.FractionDigits, mcpRead.Quantities[""].FractionDigits)
+		require.InDelta(t, minimum, httpRead.State.Display.Range.Minimum, 1e-9)
+		require.InDelta(t, maximum, httpRead.State.Display.Range.Maximum, 1e-9)
+		require.Equal(t, httpRead.State.Display.Range, mcpRead.Quantities[""].Range)
+		require.Equal(t, json.Number("21500"), httpRead.State.Canonical.Value)
+		require.Equal(t, "mCel", httpRead.State.Canonical.Unit)
 		canonicalMCP := automationFunctionsMCP(t, mcp, "get_entity", `{"entity_id":"`+entity+`","units":"canonical"}`)
-		for _, raw := range [][]byte{canonical, canonicalMCP} {
-			var value entityRead
-			require.NoError(t, json.Unmarshal(raw, &value))
-			require.Equal(t, json.Number("21500"), value.State.Value)
-			require.Equal(t, "mCel", value.Quantities[""].Unit)
-		}
+		var canonicalRead legacyEntityRead
+		require.NoError(t, json.Unmarshal(canonicalMCP, &canonicalRead))
+		require.Equal(t, httpRead.State.Canonical.Value, canonicalRead.State.Value)
+		require.Equal(t, httpRead.State.Canonical.Unit, canonicalRead.Quantities[""].Unit)
 		audit := successfulFunctionCoreRequest(
 			t,
 			client,
@@ -164,7 +177,17 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 				} `json:"state"`
 				Quantities map[string]devices.QuantityMetadata `json:"quantities"`
 			}
-			var httpForecast, mcpForecast forecastRead
+			var httpForecast struct {
+				State *struct {
+					Canonical struct {
+						Periods []map[string]json.RawMessage `json:"periods"`
+					} `json:"canonical"`
+					Display struct {
+						Periods []map[string]json.RawMessage `json:"periods"`
+					} `json:"display"`
+				} `json:"state"`
+			}
+			var mcpForecast forecastRead
 			require.Eventually(t, func() bool {
 				raw := successfulFunctionCoreRequest(
 					t,
@@ -179,23 +202,39 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 			}, 5*time.Second, 10*time.Millisecond)
 			raw := automationFunctionsMCP(t, mcp, "get_entity", `{"entity_id":"`+forecastEntity+`"}`)
 			require.NoError(t, json.Unmarshal(raw, &mcpForecast))
-			require.Equal(t, httpForecast, mcpForecast)
 			field := forecast.field
-			var number float64
-			require.NoError(t, json.Unmarshal(httpForecast.State.Value.Periods[0][field], &number))
-			require.InDelta(t, expected, number, 1e-9)
-			require.Equal(t, unit, httpForecast.Quantities["/periods/0/"+field].Unit)
-			require.NotContains(t, httpForecast.State.Value.Periods[0], forecast.field+"_c")
-			forecastCanonical := successfulFunctionCoreRequest(
-				t,
-				client,
-				core,
-				http.MethodGet,
-				"/v1/entities/"+forecastEntity+"?units=canonical",
-				"",
-			)
-			var source forecastRead
-			require.NoError(t, json.Unmarshal(forecastCanonical, &source))
+			require.Len(t, httpForecast.State.Canonical.Periods, 1)
+			require.Len(t, httpForecast.State.Display.Periods, 1)
+			require.Len(t, mcpForecast.State.Value.Periods, 1)
+			canonicalPeriod := httpForecast.State.Canonical.Periods[0]
+			displayPeriod := httpForecast.State.Display.Periods[0]
+			mcpPeriod := mcpForecast.State.Value.Periods[0]
+			require.Len(t, displayPeriod, len(canonicalPeriod))
+			require.Len(t, mcpPeriod, len(canonicalPeriod))
+			for name, value := range canonicalPeriod {
+				require.Contains(t, displayPeriod, name)
+				require.Contains(t, mcpPeriod, name)
+				if name != field {
+					require.JSONEq(t, string(value), string(displayPeriod[name]))
+					require.JSONEq(t, string(value), string(mcpPeriod[name]))
+				}
+			}
+			require.Len(t, mcpForecast.Quantities, 1)
+			var display, canonical struct {
+				Value float64 `json:"value"`
+				Unit  string  `json:"unit"`
+			}
+			require.NoError(t, json.Unmarshal(httpForecast.State.Display.Periods[0][field], &display))
+			require.NoError(t, json.Unmarshal(httpForecast.State.Canonical.Periods[0][field], &canonical))
+			require.InDelta(t, expected, display.Value, 1e-9)
+			require.Equal(t, unit, display.Unit)
+			require.InDelta(t, 21.5, canonical.Value, 0)
+			require.Equal(t, "Cel", canonical.Unit)
+			var mcpValue float64
+			require.NoError(t, json.Unmarshal(mcpForecast.State.Value.Periods[0][field], &mcpValue))
+			require.InDelta(t, display.Value, mcpValue, 0)
+			require.Equal(t, display.Unit, mcpForecast.Quantities["/periods/0/"+field].Unit)
+			require.NotContains(t, httpForecast.State.Display.Periods[0], forecast.field+"_c")
 			forecastCanonicalMCP := automationFunctionsMCP(
 				t,
 				mcp,
@@ -204,15 +243,12 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 			)
 			var mcpSource forecastRead
 			require.NoError(t, json.Unmarshal(forecastCanonicalMCP, &mcpSource))
-			require.Equal(t, source, mcpSource)
-			for path := range httpForecast.Quantities {
-				require.Contains(t, source.Quantities, path, "read modes must expose identical forecast paths")
-			}
-			require.Contains(t, source.State.Value.Periods[0], forecast.field)
+			require.Len(t, mcpSource.Quantities, 1)
+			require.Contains(t, mcpSource.Quantities, "/periods/0/"+field)
 			// Forecast ingestion normalizes the typed float to this canonical token;
 			// neither household projection nor the preference restart may rewrite it.
-			require.Equal(t, "21.5", string(source.State.Value.Periods[0][forecast.field]))
-			require.Equal(t, "Cel", source.Quantities["/periods/0/"+forecast.field].Unit)
+			require.Equal(t, "21.5", string(mcpSource.State.Value.Periods[0][forecast.field]))
+			require.Equal(t, canonical.Unit, mcpSource.Quantities["/periods/0/"+forecast.field].Unit)
 			forecastAudit := successfulFunctionCoreRequest(
 				t,
 				client,
@@ -224,7 +260,7 @@ func TestQuantityPresentationThroughCore(t *testing.T) {
 			require.Contains(
 				t,
 				string(forecastAudit),
-				`"`+forecast.field+`":`+string(source.State.Value.Periods[0][forecast.field]),
+				`"`+forecast.field+`":`+string(mcpSource.State.Value.Periods[0][forecast.field]),
 			)
 		}
 	}
