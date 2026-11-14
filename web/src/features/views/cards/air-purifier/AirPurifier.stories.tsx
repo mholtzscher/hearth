@@ -5,6 +5,7 @@ import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundAirPurifier } from "./AirPurifier";
 
 const meta = {
+  title: "features/views/cards/AirPurifier",
   component: BoundAirPurifier,
   tags: ["ai-generated"],
   args: {

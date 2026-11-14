@@ -3,10 +3,17 @@ import { expect } from "storybook/test";
 import { catalogExamples, dashboardDefinition, definitionFor } from "../../../../.storybook/fixtures";
 import { ViewRenderer } from "./ViewRenderer";
 
+// Controls choose a valid example instead of editing raw definition JSON.
+const examples = Object.fromEntries([
+  ["Morning dashboard", dashboardDefinition],
+  ...Object.values(catalogExamples).map(element => [element.type, definitionFor(element)]),
+]);
+
 const meta = {
   component: ViewRenderer,
   tags: ["ai-generated"],
   args: { definition: dashboardDefinition, headingLevel: 3 },
+  argTypes: { definition: { options: Object.keys(examples), mapping: examples, control: { type: "select" } } },
   parameters: { docs: { description: { component: "Render a validated hearth.dashboard/v1 graph. Layout and text nodes are catalog elements, not independent React components. Unsupported content remains recoverable." } } },
 } satisfies Meta<typeof ViewRenderer>;
 export default meta;

@@ -5,6 +5,7 @@ import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundReadingList } from "./ReadingList";
 
 const meta = {
+  title: "features/views/cards/ReadingList",
   component: BoundReadingList,
   tags: ["ai-generated"],
   args: {

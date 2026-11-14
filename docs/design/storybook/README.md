@@ -5,14 +5,16 @@ using synthetic, story-local HTTP fixtures. They do not prove Core behavior or
 physical-device compatibility. There is no baseline capture because the base
 revision (`a6cb875`) has no Storybook.
 
-Captured from the uncommitted feature snapshot on 2026-11-13. The depicted
-stories, CSS, and fixtures are unchanged in the delivered revision. Later
-changes only repair generated prop documentation and exclude the mock worker
-from the production build.
+The phone captures and recording come from the uncommitted feature snapshot on
+2026-11-13. The stories, CSS, and fixtures they show are unchanged in the
+delivered revision. Later changes repair generated prop documentation and
+controls, add explicit card titles, and exclude the mock worker from the
+production build. `desktop.png` was recaptured on 2026-11-14 to show the
+current controls.
 
 | File | Capture conditions and observed result |
 | --- | --- |
-| `desktop.png` | Morning Dashboard in the Storybook manager, 1440×1100. Production theme, controls, readings, and history render without Core. |
+| `desktop.png` | Morning Dashboard in the Storybook manager, 1440×1100, default args. Production theme, readings, and history render without Core. `definition` is a dropdown of valid examples. `active` is a boolean control. |
 | `phone-dashboard.png` | Phone Dashboard, 390px wide, full-page capture. Document width and scroll width both measure 390px. |
 | `phone-color.png` | Device card at 390×844 with the real light-color dialog open after setting red. The synthetic observed swatch and hex value agree. |
 | `light-control.mp4` | 26-second browser recording at 390×844: open the picker, enter `#ff0000`, submit, and observe the red swatch. The recording ends during the close-button interaction. |

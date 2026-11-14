@@ -5,6 +5,7 @@ import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundWeekPattern } from "./WeekPattern";
 
 const meta = {
+  title: "features/views/cards/WeekPattern",
   component: BoundWeekPattern,
   tags: ["ai-generated"],
   args: {

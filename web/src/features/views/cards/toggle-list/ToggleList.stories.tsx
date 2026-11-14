@@ -5,6 +5,7 @@ import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundToggleList } from "./ToggleList";
 
 const meta = {
+  title: "features/views/cards/ToggleList",
   component: BoundToggleList,
   tags: ["ai-generated"],
   args: {

@@ -23,7 +23,11 @@ const config: StorybookConfig = {
   features: { componentsManifest: true },
   typescript: {
     reactDocgen: "react-docgen-typescript",
+    // These options replace Storybook's defaults, so restate the ones controls rely on.
     reactDocgenTypescriptOptions: {
+      shouldExtractLiteralValuesFromEnum: true,
+      shouldRemoveUndefinedFromOptional: true,
+      savePropValueAsString: true,
       // The manifest drops inherited sources over 30 props. Keep a useful native subset.
       propFilter: (prop) => !prop.parent?.fileName.includes("node_modules") || [
         "id", "role", "tabIndex", "name", "required", "readOnly", "min", "max", "step",
@@ -35,7 +39,7 @@ const config: StorybookConfig = {
       ].includes(prop.name),
     },
   },
-  core: { disableTelemetry: true },
+  core: { disableTelemetry: true, disableWhatsNewNotifications: true },
   viteFinal(config) {
     config.publicDir = path.resolve(import.meta.dirname, "public");
     config.plugins = [...(config.plugins ?? []), tailwindcss()];

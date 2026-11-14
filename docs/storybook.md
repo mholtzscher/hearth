@@ -77,7 +77,11 @@ Vite configuration has no live backend proxies. Keep assertions about observed
 State distinct from Command outcomes.
 
 Use `Meta<typeof Component>` and `StoryObj<typeof meta>`, real component imports,
-and object-literal args so the manifest can extract complete snippets. Prefer
+and object-literal args so the manifest can extract complete snippets. Card
+stories use the title `features/views/cards/<Component>`. Storybook omits a
+folder from the generated title only when the folder name matches the file name,
+so set `title` explicitly for a card in a kebab-case folder such as
+`toggle-tile/ToggleTile.stories.tsx`. Prefer
 direct component stories for discoverable props, with
 renderer/composition stories for catalog layouts. Add a play function when it
 proves async data arrival, a meaningful interaction, or a portal contract. Static

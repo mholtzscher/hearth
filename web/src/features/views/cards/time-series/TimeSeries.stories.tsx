@@ -5,6 +5,7 @@ import { entityId } from "../../../../../.storybook/fixtures";
 import { BoundTimeSeries } from "./TimeSeries";
 
 const meta = {
+  title: "features/views/cards/TimeSeries",
   component: BoundTimeSeries,
   tags: ["ai-generated"],
   args: {
