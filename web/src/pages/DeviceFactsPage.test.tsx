@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   installCollectionFetch,
@@ -176,6 +176,29 @@ function buildDeviceFixtures(): Device[] {
 }
 
 describe("DeviceFactsPage entity and device enrichment", () => {
+  it("filters retained facts and disables observation dispositions for Entity events", async () => {
+    installCollectionFetch({
+      "/v1/entities": pagedCollection(buildEntityFixtures(), PAGE_SIZE),
+      "/v1/devices": pagedCollection(buildDeviceFixtures(), PAGE_SIZE),
+    });
+    render(<DeviceFactsPage />);
+    await screen.findByText(fixtures.targetEntityName);
+    const family = screen.getByRole("group", { name: "Family" });
+    const dispositions = screen.getByRole("group", { name: "Disposition (observations only)" });
+    fireEvent.click(within(dispositions).getByRole("button", { name: "Unchanged" }));
+    expect(within(dispositions).getByRole("button", { name: "Unchanged" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByText(fixtures.targetEntityName)).toBeNull();
+    fireEvent.click(within(family).getByRole("button", { name: "Entity events" }));
+    for (const button of within(dispositions).getAllByRole("button")) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(await screen.findByText(fixtures.targetEntityName)).toBeTruthy();
+    expect(within(family).getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.change(screen.getByRole("combobox", { name: "Row cap" }), { target: { value: "25" } });
+    expect((screen.getByRole("combobox", { name: "Row cap" }) as HTMLSelectElement).value).toBe("25");
+  });
+
   it("names an entity and device that only appear on a later collection page", async () => {
     const { requests } = installCollectionFetch({
       "/v1/entities": pagedCollection(buildEntityFixtures(), PAGE_SIZE),
