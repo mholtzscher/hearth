@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 import { automationHandlers, childAutomationId, definition } from "../../../.storybook/automation-fixtures";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play";
 import { AutomationCard } from "./AutomationCard";
@@ -44,7 +44,7 @@ export const ReferencedAutomation: Story = {
     await expect(canvas.getByRole("link", { name: "Open Automation and history" })).toHaveAttribute("href", `/automations/${childAutomationId}`);
     await userEvent.keyboard("{Escape}");
     await expect(canvas.queryByRole("heading", { name: "Settle the hallway" })).not.toBeInTheDocument();
-    await expect(opener).toHaveFocus();
+    await waitFor(() => expect(opener).toHaveFocus());
   },
 };
 
