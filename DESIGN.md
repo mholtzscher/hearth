@@ -241,6 +241,11 @@ For modal dialogs, Radix owns focus containment, Escape dismissal, and focus ret
 
 Use modal `forceMount` only while an exit transition intentionally retains a blocking modal. It retains the closed portal, content, and overlay, including scroll locking and hiding the rest of the page from assistive technology. Setting `hidden` on the content does not dismiss that overlay or release those effects. End the transition by removing `forceMount` or unmounting the dialog; do not leave a closed modal mounted indefinitely.
 
+The expanded canvas stays in place and retains `useModalFocus`. Moving its editor
+into a Dialog portal remounts the editor and loses invalid, unsaved input.
+Decision dialogs use the shared Dialog; this exception applies only to the
+expanded canvas.
+
 `components/ui/Popover` uses the Source popover's gray-2 surface, 12px corners, 22px padding, and available-height scrolling. Its 10px flex gap serves Development Connection Settings; Source adoption supplies its own inner spacing.
 
 ### Notices

@@ -153,6 +153,21 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    box-sizing: border-box;
+    }
+  button, input, textarea, select {
+    font: inherit;
+    }
+  button {
+    cursor: pointer;
+    }
+  button:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+    }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
     }
   body {
     @apply bg-background text-foreground;
@@ -168,6 +183,13 @@
     background: color-mix(in oklch, var(--violet) 40%, transparent);
     color: var(--gray-10);
     }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @keyframes view-pending { 50% { opacity:.4; } }
