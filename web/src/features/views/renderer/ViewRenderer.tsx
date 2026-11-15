@@ -1,4 +1,5 @@
 import { Component, useContext, type CSSProperties, type ReactNode } from "react";
+import { Button } from "../../../components/ui/button";
 import type { ViewElement } from "../catalog";
 import { readDefinition } from "../catalog/compatibility";
 import { CardFrame, HeadingLevel } from "../cards/CardFrame";
@@ -31,10 +32,12 @@ function gridKind(graph: Graph, id: string) {
   const types = elements.map(element => element?.type);
   const isTile = (element: ViewElement | null | undefined) => element?.type === "ToggleTile" ||
     ((element?.type === "AirPurifier" || element?.type === "Cover") && element.props.layout === "tile");
-  if (elements.every(isTile)) return " view-grid-toggle";
-  if (types.every(type => type === "Metric" || type === "State")) return " view-grid-reading";
-  return "";
+  if (elements.every(isTile)) return "toggle";
+  if (types.every(type => type === "Metric" || type === "State")) return "reading";
+  return undefined;
 }
+
+const unsupportedStyles = "rounded-card border border-dashed border-gray-4 px-4 py-3.5 text-label leading-normal text-muted-foreground";
 
 /**
  * Keeps one failing card from blanking the whole view, and says so rather than
@@ -48,23 +51,26 @@ class CardBoundary extends Component<{ resetKey: string; title: string; children
   }
   render() {
     if (!this.state.failed) return this.props.children;
-    return <CardFrame className="view-card-failed" title={this.props.title} status={[{ key: "error", tone: "error", text: "This card couldn't be shown" }]} sources={[]}>
-      <p className="view-card-recovery">Edit the view or ask Hearth to change it.</p>
+    return <CardFrame title={this.props.title} status={[{ key: "error", tone: "error", text: "This card couldn't be shown" }]} sources={[]}>
+      <p className="text-label leading-normal text-muted-foreground">Edit the view or ask Hearth to change it.</p>
     </CardFrame>;
   }
 }
 
-function ViewNode({ graph, id }: { graph: Graph; id: string }) {
+function ViewNode({ graph, id, followsHeading = false }: { graph: Graph; id: string; followsHeading?: boolean }) {
   const node = graph.elements[id];
   const Heading = `h${useContext(HeadingLevel)}` as "h3";
   // Unsupported content stays unrendered with its descendants, so none of them start reads.
-  if (!node) return <div className="view-unsupported">Unsupported component · original content preserved</div>;
-  const children = graph.children[id].map(child => <ViewNode key={child} graph={graph} id={child} />);
+  if (!node) return <div className={unsupportedStyles}>Unsupported component · original content preserved</div>;
+  const children = graph.children[id].map((child, index, siblings) => <ViewNode key={child} graph={graph} id={child} followsHeading={node.type === "Stack" && index > 0 && graph.elements[siblings[index - 1]]?.type === "Heading"} />);
   switch (node.type) {
-    case "Stack": return <div className={`view-stack gap-${node.props.gap}`}>{children}</div>;
-    case "Grid": return <div data-slot="view-grid" data-grid-kind={gridKind(graph, id).trim().replace("view-grid-", "") || undefined} className={`view-grid${gridKind(graph, id)}`} style={{ "--view-columns": node.props.columns } as CSSProperties}>{children}</div>;
-    case "Heading": return <Heading className="view-heading">{node.props.text}</Heading>;
-    case "Note": return <p className="view-note">{node.props.text}</p>;
+    case "Stack": return <div className={`grid min-w-0 gap-(--stack-gap) ${node.props.gap === "small" ? "[--stack-gap:8px]" : node.props.gap === "large" ? "[--stack-gap:24px]" : "[--stack-gap:16px]"}`}>{children}</div>;
+    case "Grid": {
+      const kind = gridKind(graph, id);
+      return <div data-slot="view-grid" data-grid-kind={kind} className={`grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,max(var(--view-min-card,248px),calc((100%_-_(var(--view-columns)_-_1)_*_12px)_/_var(--view-columns)))),1fr))] gap-3 ${kind ? "[--view-min-card:160px]" : "max-tablet:grid-cols-1"}`} style={{ "--view-columns": node.props.columns } as CSSProperties}>{children}</div>;
+    }
+    case "Heading": return <Heading className="text-title leading-[1.4] font-semibold text-balance">{node.props.text}</Heading>;
+    case "Note": return <p className={`max-w-[70ch] text-body leading-[1.7] text-muted-foreground ${followsHeading ? "mt-[calc(4px-var(--stack-gap))]" : ""}`}>{node.props.text}</p>;
     case "Metric": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Reading"}><BoundMetric {...node.props} /></CardBoundary>;
     case "TimeSeries": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundTimeSeries {...node.props} /></CardBoundary>;
     case "State": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "State"}><BoundState {...node.props} /></CardBoundary>;
@@ -85,23 +91,23 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
 }
 
 export function DownloadDefinition({ raw }: { raw: unknown }) {
-  return <button className="view-text-button" onClick={() => {
+  return <Button variant="link" size="default" className="p-0 underline" onClick={() => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(raw, null, 2)], { type: "application/json" }));
     const link = document.createElement("a"); link.href = url; link.download = "hearth-view.json"; link.click(); URL.revokeObjectURL(url);
-  }}>Download original definition</button>;
+  }}>Download original definition</Button>;
 }
 /** headingLevel is the level of the view's own Heading elements; the host's title sits one level above. Card titles use the next level. */
 export function ViewRenderer({ definition, active = true, headingLevel }: { definition: unknown; active?: boolean; headingLevel: 3 | 4 }) {
   const view = readDefinition(definition);
-  if (view.status === "unavailable") return <div className="view-unsupported"><p>{view.reason}</p><DownloadDefinition raw={definition} /></div>;
-  if (!active) return <div className="view-summary">{view.status === "supported" ? view.definition.title : view.title}<span>Open view to load live readings</span></div>;
+  if (view.status === "unavailable") return <div className={unsupportedStyles}><p>{view.reason}</p><DownloadDefinition raw={definition} /></div>;
+  if (!active) return <div className="text-foreground">{view.status === "supported" ? view.definition.title : view.title}<span className="block text-label leading-normal text-muted-foreground">Open view to load live readings</span></div>;
   const graph: Graph = view.status === "partial" ? view : {
     root: view.definition.spec.root,
     elements: view.definition.spec.elements,
     children: Object.fromEntries(Object.entries(view.definition.spec.elements).map(([key, node]) => [key, "children" in node ? node.children : []])),
   };
   return <HeadingLevel.Provider value={headingLevel}>
-    {view.status === "partial" && <div className="view-unsupported">Some content requires a newer Hearth version. Editing is disabled. <DownloadDefinition raw={definition} /></div>}
+    {view.status === "partial" && <div className={unsupportedStyles}>Some content requires a newer Hearth version. Editing is disabled. <DownloadDefinition raw={definition} /></div>}
     <ViewNode graph={graph} id={graph.root} />
   </HeadingLevel.Provider>;
 }
