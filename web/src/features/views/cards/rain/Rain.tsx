@@ -6,7 +6,7 @@ import { listArrivals, oldestObservation, rowSources, rowStates } from "../readi
 import { Trend, trendMethod } from "../metric/Trend";
 import { rainWord } from "../weather/formulas";
 import { canonicalValue, derivedTreatment, formatReading, shownData } from "../weather/readings";
-import { SlotStatus, slotRows, useWeatherReads, WeatherReading, WeatherZones, weatherTrendParts, type WeatherRead } from "../weather/WeatherParts";
+import { SlotStatus, slotRows, useWeatherReads, WeatherReading, WeatherZones, weatherConditions, weatherDetail, weatherTrendParts, type WeatherRead } from "../weather/WeatherParts";
 import { rainPeriods, rainSchema, type RainPeriod } from "./schema";
 
 type Props = z.infer<typeof rainSchema>;
@@ -51,7 +51,7 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
   const displayed = rowStates(all);
   const history = reads.history("rate");
   const word = mmPerHour === undefined ? undefined : rainWord(mmPerHour);
-  return <CardFrame className="view-weather view-rain" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Rain"} status={status.entries}
+  return <CardFrame className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Rain"} status={status.entries}
     observedAt={oldestObservation(displayed)} observedLabel={all.length > 1 ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
       <p>Rain or Dry comes from the rain rate: light rain is below 2.5 mm/h and heavy rain above 7.6 mm/h. The storm total leads while it is above zero.</p>
@@ -61,17 +61,17 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
     <WeatherZones aside={trend && history && rateStatus.value !== "empty" && <Trend window={trend} resource={history} dimmed={rateStatus.value === "dimmed"} className="@min-[460px]:mt-0" bandClassName="fill-chart-4" classNames={{ ...weatherTrendParts, mean: rateStatus.value !== "dimmed" ? "stroke-[color:color-mix(in_oklch,var(--chart-4)_50%,var(--gray-9))]" : undefined }} />}>
       {stormLeads ? <>
         <WeatherReading data={stormData} status={status} />
-        <p data-slot="weather-conditions" className="view-weather-conditions" data-value={derivedTreatment(stormReading, rateReading)}>This storm{!rateData ? "" : mmPerHour === undefined ? ` · Rate ${formatReading(rateData)}` : word ? ` · ${word} now, ${formatReading(rateData)}` : " · Stopped for now"}</p>
+        <p data-slot="weather-conditions" className={weatherConditions} data-value={derivedTreatment(stormReading, rateReading)}>This storm{!rateData ? "" : mmPerHour === undefined ? ` · Rate ${formatReading(rateData)}` : word ? ` · ${word} now, ${formatReading(rateData)}` : " · Stopped for now"}</p>
       </> : rateData && mmPerHour === 0 ? <>
         <WeatherReading status={rateStatus} words="Dry" />
-        <p className="view-weather-detail" data-value={rateStatus.value}>Rate {formatReading(rateData)}</p>
+        <p className={weatherDetail} data-value={rateStatus.value}>Rate {formatReading(rateData)}</p>
       </> : <>
         <WeatherReading data={rateData} status={rateStatus} />
-        {word && <p data-slot="weather-conditions" className="view-weather-conditions" data-value={rateStatus.value}>{word}</p>}
+        {word && <p data-slot="weather-conditions" className={weatherConditions} data-value={rateStatus.value}>{word}</p>}
       </>}
     </WeatherZones>
-    {totalsLine.length > 0 && <p data-slot="rain-totals" className="view-weather-inline">
-      {totalsLine.map((total, index) => <span key={total.period} data-value={cardStatus(total.resource).value}>
+    {totalsLine.length > 0 && <p data-slot="rain-totals" className={`mt-1 ${weatherDetail}`}>
+      {totalsLine.map((total, index) => <span key={total.period} data-value={cardStatus(total.resource).value} className="data-[value=dimmed]:text-gray-7">
         {index > 0 && " · "}{periodNames[total.period]} {sharedUnit ? total.data!.value.toFixed(total.data!.format.fraction_digits) : formatReading(total.data!)}
       </span>)}{sharedUnit && ` ${totalsLine[0].data!.format.unit_label}`}
     </p>}

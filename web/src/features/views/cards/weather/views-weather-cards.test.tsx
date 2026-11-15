@@ -122,16 +122,16 @@ it.each(["metric", "us"] as const)("words the shared weather example from canoni
   const us = system === "us";
   expect(screen.getAllByRole("article")).toHaveLength(4);
   const outside = card("Outside");
-  expect(outside.querySelector('[data-slot="weather-reading"]')!.textContent).toBe(us ? "48.9°F" : "9.4°C");
+  expect(outside.querySelector('[data-slot="reading"]')!.textContent).toBe(us ? "48.9°F" : "9.4°C");
   // 6.8 mm/h is Rain and 6.3 m/s is force 4, whatever unit the card shows.
   expect(within(outside).getByText("Rain · Breezy")).toBeTruthy();
   expect(within(outside).getByText(us ? "24 h high 51.6, low 48.9 °F" : "24 h high 10.9, low 9.4 °C")).toBeTruthy();
   expect(within(outside).getByText("Wind from SE")).toBeTruthy();
   expect(within(card("Wind")).getByText("Moderate breeze")).toBeTruthy();
   expect(within(card("Wind")).getByText(us ? "Gusts 25.1 mi/h" : "Gusts 11.2 m/s")).toBeTruthy();
-  expect(card("Pressure").querySelector('[data-slot="weather-reading"]')!.textContent).toMatch(us ? /^29\.62in\sHg$/u : /^1003\.2hPa$/u);
+  expect(card("Pressure").querySelector('[data-slot="reading"]')!.textContent).toMatch(us ? /^29\.62in\sHg$/u : /^1003\.2hPa$/u);
   expect(within(card("Rain")).getByText(us ? "This storm · Rain now, 0.27 in/h" : "This storm · Rain now, 6.8 mm/h")).toBeTruthy();
-  expect(card("Rain").querySelector('[data-slot="weather-reading"]')!.textContent).toBe(us ? "0.73in" : "18.6mm");
+  expect(card("Rain").querySelector('[data-slot="reading"]')!.textContent).toBe(us ? "0.73in" : "18.6mm");
   expect(document.body.textContent).not.toMatch(/Feels like|Dew point/);
   expect(api.requests.every(url => !url.includes("?"))).toBe(true);
   const speedReads = api.requests.filter(url => url === `/v1/entities/${id(103)}`);
@@ -149,14 +149,14 @@ it("keeps the complete weather reading visible until a refresh arrives", async (
   api.entities.get(id(103))!.state = { value: 9.4, observed_at: "2026-11-09T10:00:40Z" };
 
   await act(() => vi.advanceTimersByTimeAsync(10_000));
-  expect(card("Wind").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("14.1mi/h");
+  expect(card("Wind").querySelector('[data-slot="reading"]')!.textContent).toBe("14.1mi/h");
   expect(within(card("Wind")).getByText("Moderate breeze")).toBeTruthy();
   expect(within(card("Outside")).getByText("Rain · Breezy")).toBeTruthy();
   expect(within(card("Outside")).queryByText("Wind direction")).toBeNull();
 
   await act(async () => { release(); });
   await flush();
-  expect(card("Wind").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("21.0mi/h");
+  expect(card("Wind").querySelector('[data-slot="reading"]')!.textContent).toBe("21.0mi/h");
   expect(within(card("Wind")).getByText("Fresh breeze")).toBeTruthy();
   expect(within(card("Outside")).getByText("Rain · Windy")).toBeTruthy();
   expect(api.posts).toHaveLength(0);
@@ -167,7 +167,7 @@ it("retains both representations and their weather words when a refresh fails", 
   await mount(<ViewRenderer headingLevel={3} definition={weather} />);
   api.stateFailures.add(id(105)); api.stateFailures.add(id(103));
   await act(() => vi.advanceTimersByTimeAsync(10_000));
-  expect(card("Wind").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("14.1mi/h");
+  expect(card("Wind").querySelector('[data-slot="reading"]')!.textContent).toBe("14.1mi/h");
   expect(within(card("Wind")).getByText("Moderate breeze")).toBeTruthy();
   expect(card("Wind").querySelector('[data-slot="weather-compass-arrow"]')).toBeTruthy();
   expect(within(card("Outside")).getByText("Rain · Breezy")).toBeTruthy();
@@ -192,19 +192,19 @@ it("leads with the storm total, then the rate or Dry, and keeps totals as the st
   const props = { rate, storm: total(107), totals: { day: total(106), week: total(108), month: total(109), year: total(110) } };
   core(station());
   await mount(<BoundRain {...props} />);
-  expect(card("Rain").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("18.6mm");
+  expect(card("Rain").querySelector('[data-slot="reading"]')!.textContent).toBe("18.6mm");
   expect(card("Rain").querySelector('[data-slot="rain-totals"]')!.textContent).toBe("Today 16.2 · This week 22.9 · This month 71.4 · This year 688.1 mm");
   cleanup(); vi.restoreAllMocks();
 
   core(station({ 105: { state: { value: 0, observed_at: at } }, 107: { state: { value: 0, observed_at: at } } }));
   await mount(<BoundRain {...props} />);
-  expect(card("Rain").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("Dry");
+  expect(card("Rain").querySelector('[data-slot="reading"]')!.textContent).toBe("Dry");
   expect(within(card("Rain")).getByText("Rate 0.0 mm/h")).toBeTruthy();
   cleanup(); vi.restoreAllMocks();
 
   core(station({ 107: { state: { value: 0, observed_at: at } } }));
   await mount(<BoundRain {...props} />);
-  expect(card("Rain").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("6.8mm/h");
+  expect(card("Rain").querySelector('[data-slot="reading"]')!.textContent).toBe("6.8mm/h");
   expect(card("Rain").querySelector('[data-slot="weather-conditions"]')!.textContent).toBe("Rain");
 });
 
@@ -302,7 +302,7 @@ it.each(["empty", "failed"] as const)("keeps current Wind readings when history 
   const api = core(station(), { 103: () => null });
   if (state === "failed") api.historyFailures.add(id(103));
   await mount(<BoundWind speed={source(103, "hearth.speed/v1")} trend="24h" />);
-  expect(card("Wind").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("6.3m/s");
+  expect(card("Wind").querySelector('[data-slot="reading"]')!.textContent).toBe("6.3m/s");
   expect(within(card("Wind")).getByText("Moderate breeze")).toBeTruthy();
   expect(within(card("Wind")).getByText(state === "empty" ? "No history in the last 24 h." : "Couldn't load history.")).toBeTruthy();
   expect(card("Wind").querySelector('[data-slot="trend-mean"]')).toBeNull();
@@ -316,7 +316,7 @@ it("retains Wind history through refresh failure and restores it without hiding 
   api.historyFailures.add(id(103));
   api.entities.get(id(103))!.state = { value: 7, observed_at: "2026-11-09T10:01:00Z" };
   await act(() => vi.advanceTimersByTimeAsync(60_000));
-  expect(card("Wind").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("7.0m/s");
+  expect(card("Wind").querySelector('[data-slot="reading"]')!.textContent).toBe("7.0m/s");
   expect(within(card("Wind")).getByText("Couldn't refresh history. Showing the last interval.")).toBeTruthy();
   expect(within(card("Wind")).getByText("24 h range 6.3–9.4 m/s")).toBeTruthy();
   api.historyFailures.clear(); histories[103] = () => 7;
@@ -368,7 +368,7 @@ it.each([
   expect(within(card("Wind")).getByText("Moderate breeze").getAttribute("data-value")).toBe(slot === "speed" ? "dimmed" : "live");
   expect(within(card("Wind")).getByText(/From SE · 135°/).getAttribute("data-value")).toBe("dimmed");
   expect(within(card("Wind")).getByText(state === "unavailable" ? "Unavailable" : "Disabled")).toBeTruthy();
-  expect(card("Wind").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("6.3m/s");
+  expect(card("Wind").querySelector('[data-slot="reading"]')!.textContent).toBe("6.3m/s");
 
   failed.availability = { status: "available" };
   failed.enabled = true;
@@ -485,7 +485,7 @@ it.each([undefined, "6h", "24h"] as const)("warns, expires cached tendency, and 
   api.entities.get(pressure.entity_id)!.state = { value: 1004, observed_at: "2026-11-09T10:01:00Z" };
   await act(() => vi.advanceTimersByTimeAsync(60_000));
   expect(within(card("Pressure")).getByText("Couldn't refresh pressure history")).toBeTruthy();
-  expect(card("Pressure").querySelector('[data-slot="weather-reading"]')!.textContent).toBe("1004.0hPa");
+  expect(card("Pressure").querySelector('[data-slot="reading"]')!.textContent).toBe("1004.0hPa");
   // The last interval can still describe the tendency until its samples expire.
   expect(within(card("Pressure")).getByText("Falling")).toBeTruthy();
 
@@ -527,7 +527,7 @@ it.each(["metric", "us"] as const)("identifies cached outdoor extrema and their 
   expect(within(card("Outside")).getByText("Couldn't refresh temperature history")).toBeTruthy();
   expect(within(card("Outside")).getByText(`Last loaded 24 h: ${highLow}`)).toBeTruthy();
   expect(within(card("Outside")).queryByText(`24 h ${highLow}`)).toBeNull();
-  expect(card("Outside").querySelector('[data-slot="weather-reading"]')!.textContent).toBe(system === "metric" ? "20.0°C" : "68.0°F");
+  expect(card("Outside").querySelector('[data-slot="reading"]')!.textContent).toBe(system === "metric" ? "20.0°C" : "68.0°F");
   fireEvent.click(within(card("Outside")).getByRole("button", { name: "Source" }));
   expect(historyInterval()).toEqual(loadedInterval);
   fireEvent.click(screen.getByRole("button", { name: "Close details" }));

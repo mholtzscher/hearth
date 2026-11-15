@@ -7,7 +7,7 @@ import { cardStatus, type CardStatus } from "../status";
 import { Trend, trendMethod } from "../metric/Trend";
 import { pressureTendency } from "../weather/formulas";
 import { shownData, threeHourChange } from "../weather/readings";
-import { useWeatherReads, WeatherReading, WeatherZones, weatherTrendParts } from "../weather/WeatherParts";
+import { useWeatherReads, WeatherReading, WeatherZones, weatherDetail, weatherTrendParts } from "../weather/WeatherParts";
 import { pressureSchema } from "./schema";
 
 type Props = z.infer<typeof pressureSchema>;
@@ -26,16 +26,16 @@ function TendencyLine({ data, history, canonical, status }: { data?: MetricData;
     const loading = history.status === "loading" || canonical.status === "loading";
     const failed = history.status === "error" || canonical.status === "error";
     const words = loading ? "Loading the last 3 hours…" : failed ? "Couldn't load the last 3 hours." : "Tendency unavailable · no recent or 3\u00a0h reading";
-    return <p className="view-weather-detail">{words}</p>;
+    return <p className={weatherDetail}>{words}</p>;
   }
   const tendency = pressureTendency(hPa.now - hPa.then);
   const Icon = icons[tendency.direction];
   const digits = history.data!.format.fraction_digits;
   const shown = Number((change.now - change.then).toFixed(digits));
   const sign = shown > 0 ? "+" : shown < 0 ? "−" : "±";
-  return <p data-slot="pressure-tendency" className="view-weather-tendency" data-value={status.value}>
-    <Icon aria-hidden="true" />{tendency.words}
-    <span>{sign}{Math.abs(shown).toFixed(digits)} {history.data!.format.unit_label} in 3&nbsp;h</span>
+  return <p data-slot="pressure-tendency" className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-label leading-normal text-gray-9 tabular-nums data-[value=dimmed]:text-gray-7" data-value={status.value}>
+    <Icon className="size-4 shrink-0" aria-hidden="true" />{tendency.words}
+    <span className="text-muted-foreground before:me-1.5 before:text-gray-6 before:[content:'·'_/'']">{sign}{Math.abs(shown).toFixed(digits)} {history.data!.format.unit_label} in 3&nbsp;h</span>
   </p>;
 }
 
@@ -51,7 +51,7 @@ export function BoundPressure({ label, source, trend }: Props) {
   const recent = reads.history("pressure")!, canonical = reads.history("canonical")!;
   const history = trend === "6h" ? recent : reads.history("trend");
   const metadata = reading.metadata;
-  return <CardFrame className="view-weather view-pressure" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Pressure"} status={status.entries}
+  return <CardFrame className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Pressure"} status={status.entries}
     observedAt={data?.observed_at} arrival={data ? { updatedAt: data.observed_at, shown: `${data.value.toFixed(data.format.fraction_digits)} ${data.format.unit_label}`, eligible: status.glows } : undefined}
     sources={metadata ? [{ entityId: metadata.id, label: metadata.label, availability: metadata.availability, enabled: metadata.enabled }] : []}
     sourceExtra={<>

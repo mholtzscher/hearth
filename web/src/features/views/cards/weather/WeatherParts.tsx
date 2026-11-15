@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { cn } from "../../../../lib/utils";
 import { useNumericReads } from "../../bindings/registry";
 import type { MetricData, NumericSource, ReadUnits, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
 import { StatusList } from "../CardFrame";
+import { Reading, ReadingUnit } from "../Reading";
 import { cardStatus, type CardStatus } from "../status";
 import type { ReadingRow } from "../reading-list/ReadingRows";
 
@@ -14,6 +16,8 @@ export type WeatherReads<K extends string> = {
 
 /** A trend in the wide weather aside uses a taller plot. */
 export const weatherTrendParts = { plot: "@min-[460px]:h-[72px]", drawing: "@min-[460px]:h-[72px]" };
+export const weatherConditions = "text-label leading-normal text-gray-9 text-balance data-[value=dimmed]:text-gray-8";
+export const weatherDetail = "text-label leading-normal text-muted-foreground tabular-nums text-pretty data-[value=dimmed]:text-gray-7";
 
 /**
  * Current readings, plus history where a window is given, for a card's named
@@ -40,20 +44,20 @@ export function useWeatherReads<K extends string>(slots: Array<[K, WeatherRead |
 
 /** The fixed 40px reading, or words such as Dry at the same scale. Dimmed or empty by the card state table. */
 export function WeatherReading({ data, status, words }: { data?: MetricData; status: CardStatus; words?: string }) {
-  return <p data-slot="weather-reading" className={`view-metric-value${words ? " view-state-value" : ""}`} data-value={status.value}>
+  return <Reading value={status.value} className={words ? "[overflow-wrap:anywhere] text-balance" : undefined}>
     {words ?? (data ? data.value.toFixed(data.format.fraction_digits) : "—")}
-    {!words && data?.format.unit_label && <small>{data.format.unit_label}</small>}
-  </p>;
+    {!words && data?.format.unit_label && <ReadingUnit>{data.format.unit_label}</ReadingUnit>}
+  </Reading>;
 }
 
 /**
  * The lead reading and its words, with the card's other readings beside them
  * in a wide card and below them otherwise. Without details there is one zone.
  */
-export function WeatherZones({ aside, children }: { aside?: ReactNode; children: ReactNode }) {
-  return <div className="view-weather-zones">
-    <div data-slot="weather-main" className="view-weather-main">{children}</div>
-    {aside ? <div data-slot="weather-aside" className="view-weather-aside">{aside}</div> : null}
+export function WeatherZones({ aside, children, wind }: { aside?: ReactNode; children: ReactNode; wind?: boolean }) {
+  return <div className={cn("flex min-w-0 flex-col gap-1.5", aside && "@min-[460px]:grid @min-[460px]:grid-cols-2 @min-[460px]:items-start @min-[460px]:gap-6", aside && wind && "@min-[460px]:grid-cols-[minmax(max-content,1fr)_minmax(0,1fr)] @min-[460px]:items-center")}>
+    <div data-slot="weather-main" className="flex min-w-0 flex-col gap-1.5">{children}</div>
+    {aside ? <div data-slot="weather-aside" className="flex min-w-0 flex-col gap-1.5">{aside}</div> : null}
   </div>;
 }
 
@@ -61,7 +65,7 @@ export function WeatherZones({ aside, children }: { aside?: ReactNode; children:
 export function SlotStatus({ name, resource }: { name: string; resource?: Resolved<unknown> }) {
   const entries = resource ? cardStatus(resource).entries : [];
   if (entries.length === 0) return null;
-  return <div data-slot="weather-slot-status" className="view-weather-slot-status"><span>{name}</span><StatusList className="basis-full" entries={entries} /></div>;
+  return <div data-slot="weather-slot-status" className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-label leading-normal text-muted-foreground"><span>{name}</span><StatusList className="basis-full" entries={entries} /></div>;
 }
 
 /** A row for each bound slot, in order, so the footer, afterglow, and Source cover every reading the card uses. */
