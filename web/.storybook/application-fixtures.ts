@@ -29,13 +29,14 @@ export type ApplicationScenario = {
   historyFailure?: boolean;
   saveConflict?: boolean;
   dashboards?: "empty";
-  conversations?: "searchable";
-  messages?: "long";
+  conversations?: "searchable" | "empty" | "error";
+  messages?: "long" | "rich";
 };
 
 /** Each factory owns its history, stream attempts, and saved revision; stories never share writes. */
 export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
   const histories = new Map<string, AgentMessage[]>([[conversationId, structuredClone(loadedMessages)]]);
+  if (scenario.conversations === "empty") histories.clear();
   if (scenario.conversations === "searchable") {
     for (let index = 1; index <= 12; index++) {
       histories.set(`conversation_story_${index}`, [
@@ -49,6 +50,17 @@ export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
       content: index % 2 ? `Room ${Math.ceil(index / 2)} is comfortable. The temperature is 21.5 °C and the lamp is on.` : `Check room ${index / 2 + 1}.`,
       created_at: fixtureNow,
     })));
+  }
+  if (scenario.messages === "rich") {
+    // Synthetic compatibility fixture: a future artifact is retained beside a Markdown reply.
+    histories.set(conversationId, [
+      { message_id: 1, role: "user", content: "Summarize the rooms.", created_at: fixtureNow },
+      { message_id: 2, role: "assistant", content: "", created_at: fixtureNow,
+        calls: [{ id: "future", name: "present_future", arguments: "{}" }] },
+      { message_id: 3, role: "tool", content: "Future artifact", tool_call_id: "future", tool_name: "present_future",
+        artifacts: [{ kind: "unsupported", artifact_id: "future-story", original: { kind: "hearth.future", artifact_id: "future-story" } }], created_at: fixtureNow },
+      { message_id: 4, role: "assistant", content: "**Room readings**\n\n- Kitchen: 21 °C\n- Bedroom: 20 °C\n\n| Room | Temperature |\n| --- | --- |\n| Kitchen | 21 °C |\n\n```json\n{\"temperature\":21}\n```", created_at: fixtureNow },
+    ]);
   }
   const initial: Dashboard = {
     id: dashboardId, revision: 1, definition: structuredClone(dashboardDefinition),
@@ -66,12 +78,14 @@ export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
       return HttpResponse.json({ status: scenario.server === "not-ready" ? "not_ready" : "ready" },
         { status: scenario.server === "not-ready" ? 503 : 200 });
     }),
-    http.get("/v1/agent/conversations", () => HttpResponse.json({
-      conversations: [...histories].map(([id, messages]) => ({
-        id, created_at: fixtureNow, last_message_at: fixtureNow, message_count: messages.length,
-        preview: messages.find(message => message.role === "user")?.content ?? "New conversation",
+    http.get("/v1/agent/conversations", () => scenario.conversations === "error"
+      ? HttpResponse.json({ detail: "Synthetic conversation list unavailable" }, { status: 503 })
+      : HttpResponse.json({
+        conversations: [...histories].map(([id, messages]) => ({
+          id, created_at: fixtureNow, last_message_at: fixtureNow, message_count: messages.length,
+          preview: messages.find(message => message.role === "user")?.content ?? "New conversation",
+        })),
       })),
-    })),
     http.post("/v1/agent/conversations", () => {
       const id = `conversation_story_new_${++created}`;
       histories.set(id, []);
@@ -79,7 +93,10 @@ export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
     }),
     http.get("/v1/agent/conversations/:id/messages", ({ params }) => {
       if (scenario.historyFailure) return HttpResponse.json({ detail: "Conversation history unavailable" }, { status: 503 });
-      return HttpResponse.json({ messages: histories.get(String(params.id)) ?? [] });
+      const messages = histories.get(String(params.id)) ?? [];
+      return HttpResponse.json({ messages: messages.map(message => ({
+        ...message, artifacts: message.artifacts?.map(item => item.kind === "unsupported" ? item.original : item),
+      })) });
     }),
     http.post("/v1/agent/conversations/:id/messages/stream", async ({ params, request }) => {
       const { text, view_context } = z.object({ text: z.string(), view_context: viewContextSchema.optional() }).parse(await request.json());

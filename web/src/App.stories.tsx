@@ -465,3 +465,79 @@ export const ReadingOlderMessages: Story = {
     await expect(await canvas.findByRole("button", { name: "Jump to latest" })).toBeVisible();
   },
 };
+
+export const EmptyRecent: Story = {
+  parameters: { applicationScenario: { conversations: "empty" } },
+  play: async ({ canvas }) => {
+    const recent = within(await canvas.findByRole("region", { name: "Recent" }));
+    await expect(await recent.findByText("Conversations you start appear here.")).toBeVisible();
+    await expect(canvas.getByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
+  },
+};
+
+export const RecentListFailure: Story = {
+  parameters: { applicationScenario: { conversations: "error" } },
+  play: async ({ canvas }) => {
+    const recent = within(await canvas.findByRole("region", { name: "Recent" }));
+    await expect(await recent.findByRole("alert")).toHaveTextContent("Could not load conversations.");
+    await expect(recent.getByRole("button", { name: "Retry" })).toBeEnabled();
+  },
+};
+
+export const PhoneHistorySearch: Story = {
+  parameters: { applicationScenario: { conversations: "searchable" } },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Open navigation" }));
+    const recent = within(canvas.getByRole("region", { name: "Recent" }));
+    const search = await recent.findByRole("searchbox", { name: "Search conversations" });
+    const navigation = canvas.getByRole("navigation", { name: "Main navigation" });
+    await waitFor(() => expect(navigation).toBeVisible());
+    await userEvent.click(search);
+    await expect(navigation).not.toBeVisible();
+    await userEvent.type(search, "garden");
+    await expect(await recent.findByRole("status")).toHaveTextContent("No conversations match “garden”.");
+    await userEvent.click(recent.getByRole("heading", { name: "Recent" }));
+    await expect(search).not.toHaveFocus();
+    await expect(search).toHaveValue("garden");
+    await expect(navigation).not.toBeVisible();
+    await expect(recent.getByText("No conversations match “garden”.")).toBeVisible();
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+export const RichConversation: Story = {
+  parameters: { appPath: conversationPath, applicationScenario: { messages: "rich" } },
+  play: async ({ canvas, userEvent }) => {
+    const log = within(await canvas.findByRole("log"));
+    await expect(await log.findByText("Room readings")).toBeVisible();
+    await expect(log.getByRole("table")).toBeVisible();
+    await expect(log.getByText('{"temperature":21}')).toBeVisible();
+    await expect(log.getByText("Kitchen: 21 °C")).toBeVisible();
+    await expect(log.getByText("This artifact cannot be shown in this Hearth version. The original tool result is retained.")).toBeVisible();
+    await userEvent.click(log.getByText("Original artifact"));
+    await expect(log.getByText(/hearth.future/)).toBeVisible();
+  },
+};
+
+export const StarterQuestion: Story = {
+  play: async context => {
+    await expect(await context.canvas.findByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
+    await context.userEvent.click(context.canvas.getByRole("button", { name: "Show me the temperatures" }));
+    await expect(await context.canvas.findByText(sentReply)).toBeVisible();
+    await expect(within(context.canvas.getByRole("log")).getByText("Show me the temperatures throughout the house.")).toBeVisible();
+  },
+};
+
+export const TabletConversationCanvas: Story = {
+  parameters: { appPath: conversationPath },
+  globals: { viewport: { value: "tablet", isRotated: false } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await expect(await canvas.findByText(conversationReply)).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Open in canvas" }));
+    const view = within(await canvas.findByRole("region", { name: "View canvas" }));
+    await expect(await view.findByRole("heading", { name: "Morning overview" })).toBeVisible();
+    await expect(await view.findByRole("switch", { name: "Hallway lamp power" })).toHaveAttribute("aria-checked", "true");
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};

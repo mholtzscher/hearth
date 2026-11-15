@@ -14,6 +14,7 @@ type ArtifactDisplay = { select: (item: PresentedArtifact) => void; openId: stri
 const ArtifactContext = createContext<ArtifactDisplay>({ select: () => {}, openId: null, visible: true });
 const toolGroups = groupPartByType({ "tool-call": ["group-tools"] });
 const markdownPlugins = [remarkGfm];
+const markdownContainerProps = { "data-slot": "message-markdown", className: "message-markdown" };
 
 function plural(count: number, noun: string) { return `${count} ${noun}${count === 1 ? "" : "s"}`; }
 
@@ -47,7 +48,7 @@ function ArtifactBody({ definition, live }: { definition: unknown; live: boolean
     observer.observe(body);
     return () => observer.disconnect();
   }, [live]);
-  return <div ref={ref} className="artifact-body" aria-live="off" style={live ? undefined : { minHeight: height }}><ViewRenderer definition={definition} active={live} headingLevel={4} /></div>;
+  return <div ref={ref} data-slot="artifact-body" className="artifact-body" aria-live="off" style={live ? undefined : { minHeight: height }}><ViewRenderer definition={definition} active={live} headingLevel={4} /></div>;
 }
 
 function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
@@ -68,13 +69,13 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
   // The canvas already shows the open view, so its card stays compact.
   const open = openId === data.artifact.artifact_id;
   // An inline view's cards are the frame; a narrow column keeps "Open" on the title row and names the action in full.
-  return <div ref={ref} className={`artifact-preview artifact-view${open ? " open" : ""}`}>
+  return <div ref={ref} data-slot="artifact-preview" data-kind="view" data-open={open || undefined} className={`artifact-preview artifact-view${open ? " open" : ""}`}>
     <div className="artifact-header">
       <span className="artifact-icon"><PanelsTopLeftIcon aria-hidden="true" /></span>
       <div className="artifact-text"><h3>{title}</h3><p>{summary}</p></div>
       {open
         ? <button onClick={() => select(data)}><CheckIcon aria-hidden="true" />Showing in canvas</button>
-        : <button onClick={() => select(data)} aria-label="Open in canvas"><span>Open<span className="artifact-open-detail"> in canvas</span></span><ArrowRightIcon aria-hidden="true" /></button>}
+        : <button onClick={() => select(data)} aria-label="Open in canvas"><span>Open<span data-slot="artifact-open-detail" className="artifact-open-detail"> in canvas</span></span><ArrowRightIcon aria-hidden="true" /></button>}
     </div>
     {!open && <ArtifactBody definition={data.artifact.definition} live={visible && near} />}
   </div>;
@@ -125,7 +126,7 @@ function AssistantMessage() {
       switch (part.type) {
         case "group-tools": return <ToolGroup count={part.indices.length} pending={part.indices.length - part.counts.complete}>{children}</ToolGroup>;
         case "tool-call": return <ToolPart {...part} />;
-        case "text": return <MarkdownTextPrimitive className="message-markdown" remarkPlugins={markdownPlugins} smooth={false} skipHtml />;
+        case "text": return <MarkdownTextPrimitive containerProps={markdownContainerProps} remarkPlugins={markdownPlugins} smooth={false} skipHtml />;
         case "data":
           if (part.name === "hearth-view") return <ArtifactPart {...part} />;
           return part.name === "hearth-view-pending" ? <PendingArtifactPart {...part} /> : null;

@@ -348,7 +348,7 @@ it.each([
   expect(log.getAllByText("Hearth")).toHaveLength(1);
   expect(log.queryByText("Hidden tool narration")).toBeNull();
   if (reply) expect(log.getAllByText(reply)).toHaveLength(1);
-  else expect(screen.getByRole("log").querySelectorAll(".message-markdown")).toHaveLength(0);
+  else expect(screen.getByRole("log").querySelectorAll('[data-slot="message-markdown"]')).toHaveLength(0);
   expect(fetcher.mock.calls.filter(([path]) => String(path).endsWith("/messages/stream"))).toHaveLength(1);
 });
 
@@ -356,8 +356,8 @@ it("renders views in the reply, opens the canvas on demand, and closes an unedit
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith("/messages") ? historyWithView : { conversations: [] }))));
   mount("/conversations/conv-1");
   const open = await screen.findByRole("button", { name: "Open in canvas" });
-  expect(open.closest(".artifact-preview")?.classList.contains("artifact-view")).toBe(true);
-  expect(open.querySelector(".artifact-open-detail")?.textContent).toBe(" in canvas");
+  expect(open.closest('[data-slot="artifact-preview"]')?.getAttribute("data-kind")).toBe("view");
+  expect(open.querySelector('[data-slot="artifact-open-detail"]')?.textContent).toBe(" in canvas");
   expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
   expect(screen.queryByRole("group", { name: "Workspace panels" })).toBeNull();
   expect(within(screen.getByRole("log")).getByText("Hello home")).toBeTruthy();
@@ -403,7 +403,7 @@ it("switches a view card's readings a screen away from view and keeps its height
   act(() => resizes.forEach(callback => callback([], {} as ResizeObserver)));
   act(() => latest().notify(false));
   const summary = within(log).getByText("Open view to load live readings");
-  expect(summary.closest<HTMLElement>(".artifact-body")?.style.minHeight).toBe("868px");
+  expect(summary.closest<HTMLElement>('[data-slot="artifact-body"]')?.style.minHeight).toBe("868px");
 });
 
 it("asks before closing a view with manual edits", async () => {
@@ -526,7 +526,7 @@ it("renders assistant Markdown and copies its original text with native copied f
   mount("/conversations/conv-1");
   const log = within(screen.getByRole("log"));
   expect((await log.findByText("Room readings")).tagName).toBe("STRONG");
-  const markdown = within(log.getByText("Room readings").closest(".message-markdown")!);
+  const markdown = within(log.getByText("Room readings").closest('[data-slot="message-markdown"]')!);
   expect(markdown.getAllByRole("listitem")).toHaveLength(2);
   expect(log.getByRole("table")).toBeTruthy();
   expect(log.getByRole("link", { name: "Details" }).getAttribute("href")).toBe("https://example.com");
