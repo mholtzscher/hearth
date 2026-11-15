@@ -3,7 +3,6 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
 import { DecisionDialog } from "../DecisionDialog.tsx";
-import { CardSource } from "../../features/views/cards/CardSource.tsx";
 import { Button } from "./button.tsx";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from "./dialog.tsx";
 
@@ -140,6 +139,21 @@ export const PhoneSheet: Story = {
     await expect(style.borderTopLeftRadius).toBe("14px");
     await expect(style.borderTopRightRadius).toBe("14px");
     await expect(style.borderBottomLeftRadius).toBe("0px");
+    await expect(parseFloat(style.maxHeight)).toBeCloseTo(window.innerHeight * 0.85, 1);
+    for (const [property, value] of Object.entries({
+      backgroundColor: "rgb(21, 21, 21)", color: "rgb(244, 244, 244)",
+      padding: "22px 22px 24px", fontSize: "14px", lineHeight: "21px",
+    })) await expect(style.getPropertyValue(property.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)), property).toBe(value);
+    await expect(style.fontFamily).toContain("Figtree Variable");
+    const handle = getComputedStyle(dialog, "::before");
+    await expect(handle.width).toBe("32px");
+    await expect(handle.height).toBe("4px");
+    await expect(handle.marginTop).toBe("-10px");
+    await expect(handle.marginBottom).toBe("18px");
+    await expect(parseFloat(handle.marginLeft)).toBeCloseTo((rect.width - 44 - 32) / 2, 1);
+    await expect(handle.marginRight).toBe(handle.marginLeft);
+    await expect(handle.borderRadius).toBe("2px");
+    await expect(handle.backgroundColor).toBe("rgb(87, 87, 87)");
     await expectNoHorizontalOverflow(canvasElement);
   },
 };
@@ -166,30 +180,5 @@ export const ProgrammaticDecision: Story = {
     await userEvent.keyboard("{Escape}");
     await expect(body.queryByRole("dialog", { name: "Unsaved decision" })).not.toBeInTheDocument();
     await expect(trigger).toHaveFocus();
-  },
-};
-
-/** Temporary reference: the actual Source sheet and its legacy CSS, until D7. */
-export const HouseholdSheetComparison: Story = {
-  globals: { viewport: { value: "phone", isRotated: false } },
-  render: () => <>
-    <CardSource title="Living room" observedLabel="Observed" now={0} sources={[]} />
-    <Decision placement="bottom" />
-  </>,
-  play: async ({ canvas, canvasElement, userEvent }) => {
-    const body = within(canvasElement.ownerDocument.body);
-    await userEvent.click(canvas.getByRole("button", { name: "Source" }));
-    const legacy = await body.findByRole("dialog", { name: "Source details" });
-    const properties = ["width", "maxHeight", "backgroundColor", "color", "borderRadius", "padding", "fontFamily", "fontSize", "lineHeight"] as const;
-    const expected = Object.fromEntries(properties.map(property => [property, getComputedStyle(legacy)[property]]));
-    const handle = getComputedStyle(legacy, "::before");
-    const handleProperties = ["width", "height", "margin", "borderRadius", "backgroundColor"] as const;
-    const expectedHandle = Object.fromEntries(handleProperties.map(property => [property, handle[property]]));
-    await userEvent.click(within(legacy).getByRole("button", { name: "Close details" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Discard changes" }));
-    const shared = await body.findByRole("dialog", { name: "Discard changes?" });
-    for (const property of properties) await expect(getComputedStyle(shared)[property], property).toBe(expected[property]);
-    for (const property of handleProperties) await expect(getComputedStyle(shared, "::before")[property], `handle ${property}`).toBe(expectedHandle[property]);
-    await expectNoHorizontalOverflow(canvasElement);
   },
 };
