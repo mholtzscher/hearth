@@ -5,7 +5,7 @@ import { textField } from "../../bindings/state-fields";
 import type { EntitySource, Words } from "../../bindings/types";
 import { TextField } from "../../editor/TextField";
 import { FieldSelect } from "../../editor/FieldSelect";
-import { Input } from "../../../../components/ui/input";
+import { Input } from "../../../../components/input";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 export function WordsEditor({ source, words, onChange }: { source: EntitySource; words?: Words; onChange: (words?: Words) => void }) {

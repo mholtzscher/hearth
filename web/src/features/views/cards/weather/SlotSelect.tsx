@@ -1,6 +1,6 @@
 import { quantityField, resolveQuantity } from "../../bindings/state-fields";
 import type { SensorChoice } from "../time-series/Editor";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 /**

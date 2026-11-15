@@ -1,7 +1,7 @@
 import type { FieldEntity } from "../../bindings/entity";
 import { useControl } from "../../data/provider";
 import { choiceWords, choicesOf } from "./category";
-import { SegmentedControl } from "../../../../components/ui/segmented-control";
+import { SegmentedControl } from "../../../../components/segmented-control";
 
 export function ModeControl({ entity, label }: { entity: FieldEntity; label: string }) {
   const [control, request] = useControl({ entityId: entity.id, operation: "set" });

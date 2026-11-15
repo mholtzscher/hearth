@@ -3,7 +3,7 @@ import { TextField } from "../../editor/TextField";
 import type { SensorChoice } from "../time-series/Editor";
 import { choicesOf } from "./category";
 import { airPurifierSchema, type AirPurifierProps, type AirPurifierRole } from "./schema";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 const labels: Record<AirPurifierRole, string> = { power: "Power", pm25: "PM2.5", filter_life: "Filter life", mode: "Mode", fan_level: "Fan level", display: "Display", child_lock: "Child lock" };

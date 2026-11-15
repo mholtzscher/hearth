@@ -775,7 +775,7 @@ removal. A role or label lookup also checks what a person can perceive.
 **Applies to:** New and changed components and tests under `web/src`.
 **Source:** observed + stated
 
-The components in [`components/ui`](web/src/components/ui/button.tsx) already set
+The shared components in [`components`](web/src/components/button.tsx) already set
 `data-slot`.
 
 Bad:
@@ -801,7 +801,7 @@ assistive technology cannot share.
 **Applies to:** New and changed components under `web/src`.
 **Source:** observed + stated
 
-[`ServerStatus`](web/src/components/ServerStatus.tsx) already publishes its state
+[`ServerStatus`](web/src/features/workspace/ServerStatus.tsx) already publishes its state
 as `data-state`.
 
 Bad:
@@ -841,10 +841,10 @@ Good:
 <p className="rounded-lg text-muted-foreground" />
 ```
 
-### Use the shared control from `components/ui`
+### Use the shared control from `components`
 
 Render a button, text field, select, switch, segmented control, dialog, popover,
-or notice with the component in `web/src/components/ui`.
+or notice with the component in `web/src/components`.
 
 **Why:** A control written in a feature gets its own focus, hover, and disabled
 treatment, so the household workspace and the Development pages end up with
@@ -867,15 +867,15 @@ Good:
 <Button onClick={save}>Save dashboard</Button>
 ```
 
-### Import Radix only in `components/ui`
+### Import Radix only in low-level component wrappers
 
-Wrap each Radix primitive once in `web/src/components/ui` and import the wrapper
+Wrap each Radix primitive once in `web/src/components` and import the wrapper
 everywhere else.
 
 **Why:** A primitive imported directly is styled and configured again at each
 call site, so one widget ends up with several implementations.
 **Applies to:** New and changed code under `web/src`. When no wrapper exists, add
-it to `components/ui` first.
+it to `components` first.
 **Source:** observed + stated
 
 [`App.tsx`](web/src/App.tsx) uses the popover wrapper.
@@ -889,12 +889,12 @@ import { Popover } from "radix-ui";
 Good:
 
 ```tsx
-import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/popover.tsx";
 ```
 
 ### Share a style at three uses with one intent
 
-Move a control or style into `components/ui` when three or more places use it
+Move a control or style into `components` when three or more places use it
 for the same purpose. Keep a part that one feature owns in that feature.
 
 **Why:** Extracting earlier couples code that only looks alike. Extracting
@@ -916,6 +916,19 @@ Good:
 A segmented control that seven files rebuild from aria-pressed buttons becomes
 one component. The cover diagram, used by one card, stays with that card.
 ```
+
+### Keep shared components independent of features
+
+Put reusable controls and compositions in `web/src/components`, and keep
+feature-owned behavior in `web/src/features`. Shared components must not import
+from features. Status and error presentations can remain shared even when they
+use common Hearth vocabulary. Place stories and tests alongside their owner,
+and import shared components directly from their modules rather than a barrel.
+
+**Why:** Features can compose shared UI without reversing the ownership boundary,
+and readers can find examples and tests with the code they exercise.
+**Applies to:** New and reorganized dashboard components and feature code.
+**Source:** stated
 
 ## Structural review
 

@@ -1,5 +1,5 @@
 import { Component, useContext, type CSSProperties, type ReactNode } from "react";
-import { Button } from "../../../components/ui/button";
+import { Button } from "../../../components/button";
 import type { ViewElement } from "../catalog";
 import { readDefinition } from "../catalog/compatibility";
 import { CardFrame, HeadingLevel } from "../cards/CardFrame";

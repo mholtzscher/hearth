@@ -1,7 +1,7 @@
 import type { FieldEntity } from "../../bindings/entity";
 import { useControl } from "../../data/provider";
 import { Minus, Plus } from "lucide-react";
-import { Button } from "../../../../components/ui/button";
+import { Button } from "../../../../components/button";
 import { cn } from "../../../../lib/utils";
 
 export function FanStepper({ entity, levels, active, label }: { entity: FieldEntity; levels: number; active: boolean; label: string }) {

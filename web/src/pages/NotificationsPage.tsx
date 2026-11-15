@@ -3,11 +3,14 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import { notificationsApi } from "../api/notifications.ts";
-import { ErrorBox, Facts, StatusChip, linkClass } from "../components/common.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { Input } from "../components/ui/input.tsx";
-import { Label } from "../components/ui/label.tsx";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table.tsx";
+import { ErrorBox } from "../components/error-box.tsx";
+import { Facts } from "../components/facts.tsx";
+import { StatusChip } from "../components/status-chip.tsx";
+import { linkClass } from "../components/link-styles.ts";
+import { Button } from "../components/button.tsx";
+import { Input } from "../components/input.tsx";
+import { Label } from "../components/label.tsx";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/table.tsx";
 
 function AttemptDetail({ id }: { id: string }) {
   const { data, error, loading, refresh } = useApi(`notification-${id}`, () => notificationsApi.attempt(id));

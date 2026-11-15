@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import { feedEntries } from "../../bindings/changes";
-import { Button } from "../../../../components/ui/button";
+import { Button } from "../../../../components/button";
 import type { TimelineRow } from "./Lanes";
 
 export function TimelineFeed({ rows, windowWords }: { rows: TimelineRow[]; windowWords: string }) {

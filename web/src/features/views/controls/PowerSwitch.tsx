@@ -1,6 +1,6 @@
 import type { FieldEntity } from "../bindings/entity";
 import { useControl } from "../data/provider";
-import { Switch } from "../../../components/ui/switch";
+import { Switch } from "../../../components/switch";
 
 /**
  * A power Entity's switch. While a Command is pending it shows the requested

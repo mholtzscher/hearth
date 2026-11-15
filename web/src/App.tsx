@@ -5,17 +5,17 @@ import { flushSync } from "react-dom";
 import { Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useMatch, useNavigate, type RouteObject, type RouterProviderProps } from "react-router-dom";
 import { api, ApiError, getBaseUrl, useBaseUrlVersion } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
-import { StatusChip } from "./components/common.tsx";
-import { PhoneBarSlot } from "./components/PhoneBarSlot.ts";
-import { ServerStatus, serverLabels, type ServerState } from "./components/ServerStatus.tsx";
-import { Button } from "./components/ui/button.tsx";
-import { Input } from "./components/ui/input.tsx";
-import { Label } from "./components/ui/label.tsx";
+import { StatusChip } from "./components/status-chip.tsx";
+import { PhoneBarSlot } from "./features/workspace/PhoneBarSlot.ts";
+import { ServerStatus, serverLabels, type ServerState } from "./features/workspace/ServerStatus.tsx";
+import { Button } from "./components/button.tsx";
+import { Input } from "./components/input.tsx";
+import { Label } from "./components/label.tsx";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "./components/ui/popover.tsx";
+} from "./components/popover.tsx";
 import AdaptersPage from "./pages/AdaptersPage.tsx";
 import AutomationDetailPage from "./pages/AutomationDetailPage.tsx";
 import AutomationDraftPage from "./pages/AutomationDraftPage.tsx";

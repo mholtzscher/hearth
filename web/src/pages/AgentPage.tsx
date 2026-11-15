@@ -3,10 +3,10 @@ import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, PanelsTopLeftIcon, XIcon } 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
-import { usePhoneBarSlot } from "../components/PhoneBarSlot";
-import { Button } from "../components/ui/button";
-import { Notice } from "../components/ui/notice";
-import { SegmentedControl } from "../components/ui/segmented-control";
+import { usePhoneBarSlot } from "../features/workspace/PhoneBarSlot";
+import { Button } from "../components/button";
+import { Notice } from "../components/notice";
+import { SegmentedControl } from "../components/segmented-control";
 import { cn } from "../lib/utils";
 import { Canvas } from "../features/dashboards/Canvas";
 import { useWorkspace } from "../features/dashboards/Workspace";

@@ -1,7 +1,7 @@
 import { ArrowDownToLineIcon, ArrowUpToLineIcon, SquareIcon } from "lucide-react";
 import { CardFrame } from "../CardFrame";
 import { Reading } from "../Reading";
-import { Button } from "../../../../components/ui/button";
+import { Button } from "../../../../components/button";
 import { CoverDiagram } from "./CoverDiagram";
 import { CoverTile } from "./CoverTile";
 import { useCover } from "./data";

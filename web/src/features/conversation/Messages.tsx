@@ -5,8 +5,8 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import remarkGfm from "remark-gfm";
 import { automationContextSchema, viewContextSchema } from "../../api/agent";
 import { cn } from "../../lib/utils";
-import { Button } from "../../components/ui/button";
-import { Notice } from "../../components/ui/notice";
+import { Button } from "../../components/button";
+import { Notice } from "../../components/notice";
 import { readAutomationDocument } from "../automations/document";
 import { AutomationArtifactPreview } from "./AutomationArtifactPreview";
 import { artifactAction, artifactFrame, artifactHeader, artifactIcon, artifactSummary, artifactTitle } from "./artifactStyles";

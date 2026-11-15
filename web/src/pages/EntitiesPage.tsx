@@ -4,10 +4,15 @@ import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { formatEntityState } from "../api/entity-state";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, Entity } from "../api/types.ts";
-import { EmptyRow, ErrorBox, linkClass, MonoId, RawJson, StatusChip } from "../components/common.tsx";
-import { forecastSummary } from "../components/forecast-summary.ts";
-import { Button } from "../components/ui/button.tsx";
-import { Input } from "../components/ui/input.tsx";
+import { EmptyRow } from "../components/empty-row.tsx";
+import { ErrorBox } from "../components/error-box.tsx";
+import { linkClass } from "../components/link-styles.ts";
+import { MonoId } from "../components/mono-id.tsx";
+import { RawJson } from "../components/raw-json.tsx";
+import { StatusChip } from "../components/status-chip.tsx";
+import { forecastSummary } from "../features/entities/forecast-summary.ts";
+import { Button } from "../components/button.tsx";
+import { Input } from "../components/input.tsx";
 import {
   Table,
   TableBody,
@@ -15,7 +20,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../components/ui/table.tsx";
+} from "../components/table.tsx";
 
 export default function EntitiesPage() {
   const [cursor, setCursor] = useState<string | undefined>(undefined);

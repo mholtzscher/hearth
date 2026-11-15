@@ -9,18 +9,16 @@ import {
   getNatsWsUrl,
   setNatsWsUrl,
 } from "../api/nats.ts";
-import {
-  EmptyRow,
-  ErrorBox,
-  Facts,
-  JsonCode,
-  RawJson,
-  Section,
-  StatusChip,
-} from "../components/common.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { Card, CardContent } from "../components/ui/card.tsx";
-import { Input } from "../components/ui/input.tsx";
+import { EmptyRow } from "../components/empty-row.tsx";
+import { ErrorBox } from "../components/error-box.tsx";
+import { Facts } from "../components/facts.tsx";
+import { JsonCode } from "../components/json-code.tsx";
+import { RawJson } from "../components/raw-json.tsx";
+import { Section } from "../components/section.tsx";
+import { StatusChip } from "../components/status-chip.tsx";
+import { Button } from "../components/button.tsx";
+import { Card, CardContent } from "../components/card.tsx";
+import { Input } from "../components/input.tsx";
 import {
   Table,
   TableBody,
@@ -28,7 +26,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../components/ui/table.tsx";
+} from "../components/table.tsx";
 
 const MAX_MESSAGES = 200;
 

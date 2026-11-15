@@ -1,6 +1,6 @@
 import { Canvas } from "../features/dashboards/Canvas";
 import { useWorkspace } from "../features/workspace/Workspace";
-import { Button } from "../components/ui/button";
+import { Button } from "../components/button";
 
 export default function AutomationDraftPage() {
   const workspace = useWorkspace();

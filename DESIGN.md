@@ -207,7 +207,7 @@ Cards use a 12px radius and a 1px neutral border. Shared buttons, fields, and ho
 
 ### Buttons
 
-Both surfaces use `components/ui/Button` with 8px corners and 14px text. The `default` size is 32px high; `touch` is 44px. Icon-only buttons use the square `icon` (32px) or `icon-touch` (44px) size and have an accessible name.
+Both surfaces use `Button` from `components/button.tsx` with 8px corners and 14px text. The `default` size is 32px high; `touch` is 44px. Icon-only buttons use the square `icon` (32px) or `icon-touch` (44px) size and have an accessible name.
 
 Primary buttons are orange with dark, semibold text. Hover uses solid `orange-hover`; disabled primary buttons use `gray-3` background and border with `gray-7` text at full opacity. Outline buttons use the card surface, a neutral border, and regular-weight foreground text; hover uses `gray-3`. Use outline for filters, paging, and secondary workspace actions. The secondary, ghost, destructive, and link variants remain available. Disabled non-primary buttons use 50% opacity.
 
@@ -215,19 +215,19 @@ Every variant uses a 2px violet focus outline with a 3px offset. The shared Butt
 
 ### Switches
 
-`components/ui/Switch` uses the household 44×24px pill track and 18px thumb. Its target is 32px high by default or 44px with `size="touch"`. The target has 8px corners and the shared 2px violet focus outline with a 3px offset; the visible track remains pill-shaped.
+`Switch` from `components/switch.tsx` uses the household 44×24px pill track and 18px thumb. Its target is 32px high by default or 44px with `size="touch"`. The target has 8px corners and the shared 2px violet focus outline with a 3px offset; the visible track remains pill-shaped.
 
 Off uses a `gray-3` track, `gray-7` border, and `gray-8` thumb. On uses a violet track and a `gray-10` thumb. Disabled switches keep those state colors at 50% opacity.
 
 ### Segmented controls
 
-`components/ui/SegmentedControl` renders native `aria-pressed` buttons in an accessibly named group. The caller supplies the current value; a value that matches no option leaves every segment unselected. Each enabled segment remains in the Tab order.
+`SegmentedControl` from `components/segmented-control.tsx` renders native `aria-pressed` buttons in an accessibly named group. The caller supplies the current value; a value that matches no option leaves every segment unselected. Each enabled segment remains in the Tab order.
 
 Segments have a 32px minimum height by default or 44px with `size="touch"`. Long labels wrap and increase the height. The frame adds 2px padding and a 1px border on each side. Selected segments use violet-soft, violet-text, and a 1px inset violet line. Shared segments have 8px corners, the shared 2px violet focus outline with a 3px offset, and 50% disabled opacity.
 
 ### Fields
 
-`components/ui/Input`, `Textarea`, and `NativeSelect` share a card background, a 1px `gray-4` border, 8px corners, and 14px text with a 21px line height. Horizontal padding is 8px. Focus uses a 2px violet outline with a 3px offset; invalid fields use a destructive-colour border, and disabled fields use 50% opacity.
+`Input`, `Textarea`, and `NativeSelect` in `components` share a card background, a 1px `gray-4` border, 8px corners, and 14px text with a 21px line height. Horizontal padding is 8px. Focus uses a 2px violet outline with a 3px offset; invalid fields use a destructive-colour border, and disabled fields use 50% opacity.
 
 Input and NativeSelect default to 32px high with 4px vertical padding. The `touch` size is 44px with 8px vertical padding; `auto` uses 32px with a fine pointer and 44px with a coarse pointer. These size names replace the native numeric `size` attribute. NativeSelect keeps the browser's selection behavior and arrow.
 
@@ -235,7 +235,7 @@ Textarea has a 44px minimum height and 8px vertical padding. Its native `rows` p
 
 ### Dialogs and popovers
 
-`components/ui/Dialog` uses the household gray-2 surface, 14px corners, dim backdrop, and centered decision layout. `placement="bottom"` becomes a viewport-bounded sheet at 720px and below, with 14px top corners, square bottom corners, and safe-area padding. Short desktop viewports allow the dialog body to scroll.
+`Dialog` from `components/dialog.tsx` uses the household gray-2 surface, 14px corners, dim backdrop, and centered decision layout. `placement="bottom"` becomes a viewport-bounded sheet at 720px and below, with 14px top corners, square bottom corners, and safe-area padding. Short desktop viewports allow the dialog body to scroll.
 
 For modal dialogs, Radix owns focus containment, Escape dismissal, and focus return to a registered trigger. Programmatically opened adopters must preserve their own return-focus target. Non-modal dialogs do not trap focus or render an overlay.
 
@@ -246,11 +246,11 @@ into a Dialog portal remounts the editor and loses invalid, unsaved input.
 Decision dialogs use the shared Dialog; this exception applies only to the
 expanded canvas.
 
-`components/ui/Popover` uses the Source popover's gray-2 surface, 12px corners, 22px padding, and available-height scrolling. Its 10px flex gap serves Development Connection Settings; Source adoption supplies its own inner spacing.
+`Popover` from `components/popover.tsx` uses the Source popover's gray-2 surface, 12px corners, 22px padding, and available-height scrolling. Its 10px flex gap serves Development Connection Settings; Source adoption supplies its own inner spacing.
 
 ### Notices
 
-`components/ui/Notice` uses the household error tint: a 45% destructive-colour border, an 8% destructive-colour background, foreground text, 8px corners, and 12px padding. Its text uses the 12px caption step with an 18px line height. Notices grow with their content rather than taking a control height.
+`Notice` from `components/notice.tsx` uses the household error tint: a 45% destructive-colour border, an 8% destructive-colour background, foreground text, 8px corners, and 12px padding. Its text uses the 12px caption step with an 18px line height. Notices grow with their content rather than taking a control height.
 
 Callers choose `role="alert"` for errors or `role="status"` for non-urgent feedback. Recovery actions remain caller-owned shared Buttons.
 

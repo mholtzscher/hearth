@@ -4,7 +4,7 @@ import type { JsonPath } from "../../api/automation-json";
 import type { AutomationBranchCondition, AutomationComparison, AutomationStep, AutomationTrigger } from "../../api/types";
 import { ExpressionCode, JsonCode } from "./AutomationCode";
 import { documentValue, type AutomationDocument } from "./document";
-import { Button } from "../../components/ui/button";
+import { Button } from "../../components/button";
 
 const note = "block text-caption leading-normal text-muted-foreground";
 const paragraph = "my-[5px] text-label text-muted-foreground";

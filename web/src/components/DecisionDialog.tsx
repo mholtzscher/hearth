@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Dialog as SharedDialog, DialogContent, DialogTitle } from "./ui/dialog";
+import { Dialog as SharedDialog, DialogContent, DialogTitle } from "./dialog";
 
 /** Programmatic decisions restore focus to the control that opened them. */
 export function DecisionDialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {

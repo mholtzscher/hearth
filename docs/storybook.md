@@ -110,10 +110,15 @@ Controls resets that draft; canvas edits do not update Controls. Other card
 editors have no direct stories. ViewEditor mounts Device and OutsideNow editors
 inside collapsed sections, but its stories do not interact with those sections.
 
-The `components/ui` catalog includes stories for Button, Input, Textarea,
+The `components` catalog includes colocated stories for Button, Input, Textarea,
 NativeSelect, Switch, SegmentedControl, Dialog, Popover, Notice, Accordion,
 Badge, Card, ChartContainer, Label, Separator, and Table. ChartContainer also
 appears in TimeSeries stories.
+
+Shared controls and compositions live in `src/components` and do not import
+features. Feature-specific stories and tests live alongside their owning feature.
+Shared status and error UI may use common Hearth vocabulary without becoming
+feature-owned.
 
 The `application/Workspace` group runs the real application shell, conversation,
 and full dashboard canvas together. It includes desktop, tablet, and phone

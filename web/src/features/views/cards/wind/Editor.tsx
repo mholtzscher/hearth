@@ -6,7 +6,7 @@ import type { SensorChoice } from "../time-series/Editor";
 import { sensorUnits } from "../weather/schema";
 import { SlotSelect } from "../weather/SlotSelect";
 import { windSchema } from "./schema";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 type Value = z.infer<typeof windSchema>;

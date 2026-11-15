@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { XIcon } from "lucide-react";
-import { Button } from "../../../components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "../../../components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
-import { SegmentedControl } from "../../../components/ui/segmented-control";
+import { Button } from "../../../components/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "../../../components/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "../../../components/popover";
+import { SegmentedControl } from "../../../components/segmented-control";
 import { sliderClasses, sliderLabelClasses } from "./slider-styles";
 import { cn } from "../../../lib/utils";
 import { pointer } from "../bindings/state-fields";

@@ -6,8 +6,8 @@ import { TextField } from "../../editor/TextField";
 import { FieldSelect } from "../../editor/FieldSelect";
 import { WordsEditor } from "../state/Editor";
 import type { SensorChoice } from "../time-series/Editor";
-import { Button } from "../../../../components/ui/button";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { Button } from "../../../../components/button";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 export function ReadingListEditor({ value, choices, onChange }: { value: z.infer<typeof readingListSchema>; choices: SensorChoice[]; onChange: (value: z.infer<typeof readingListSchema>) => void }) {

@@ -7,17 +7,15 @@ import { readAutomationDocument } from "../features/automations/document";
 import { useOptionalWorkspace } from "../features/workspace/Workspace";
 import { useApi } from "../api/hooks.ts";
 import type { Automation, Collection } from "../api/types.ts";
-import {
-  EmptyRow,
-  ErrorBox,
-  MonoId,
-  RawJson,
-  StatusChip,
-  linkClass,
-} from "../components/common.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { Notice } from "../components/ui/notice.tsx";
-import { SegmentedControl } from "../components/ui/segmented-control.tsx";
+import { EmptyRow } from "../components/empty-row.tsx";
+import { ErrorBox } from "../components/error-box.tsx";
+import { MonoId } from "../components/mono-id.tsx";
+import { RawJson } from "../components/raw-json.tsx";
+import { StatusChip } from "../components/status-chip.tsx";
+import { linkClass } from "../components/link-styles.ts";
+import { Button } from "../components/button.tsx";
+import { Notice } from "../components/notice.tsx";
+import { SegmentedControl } from "../components/segmented-control.tsx";
 import {
   Table,
   TableBody,
@@ -25,7 +23,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../components/ui/table.tsx";
+} from "../components/table.tsx";
 import { describeAutomationSteps } from "./automation-step-tree.ts";
 
 /** One page read from the ID-ascending Automation keyset. */

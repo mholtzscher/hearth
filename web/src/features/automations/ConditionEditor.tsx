@@ -5,10 +5,10 @@ import type { NotificationDestination } from "../../api/notifications";
 import { isQuantityField, resolveQuantity, stateFields } from "../views/bindings/state-fields";
 import type { AdapterFunction } from "./resources";
 import { useId } from "react";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { NativeSelect } from "../../components/ui/native-select";
-import { Textarea } from "../../components/ui/textarea";
+import { Button } from "../../components/button";
+import { Input } from "../../components/input";
+import { NativeSelect } from "../../components/native-select";
+import { Textarea } from "../../components/textarea";
 
 const field = "grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 text-label";
 const condition = "my-2 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5 border-l border-gray-5 pl-3 max-tablet:pl-[9px]";

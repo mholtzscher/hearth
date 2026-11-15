@@ -1,7 +1,7 @@
 import { Link as RouterLink } from "react-router-dom";
 import { automationJsonFieldText } from "../api/automation-json.ts";
 import type { AutomationBranchCondition, AutomationStep } from "../api/types.ts";
-import { linkClass } from "../components/common.tsx";
+import { linkClass } from "../components/link-styles.ts";
 import { assertNever, automationDurationText, describeAutomationCondition, describeAutomationSteps } from "./automation-step-tree.ts";
 
 function BindingView({ owner, field, source, label }: { owner?: object; field?: string; source?: string; label: string }) {

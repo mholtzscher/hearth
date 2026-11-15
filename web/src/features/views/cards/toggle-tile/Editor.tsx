@@ -5,7 +5,7 @@ import { isQuantityField, resolveQuantity, stateFields } from "../../bindings/st
 import type { EntitySource, SeriesWindow } from "../../bindings/types";
 import { TextField } from "../../editor/TextField";
 import type { SensorChoice } from "../time-series/Editor";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 const sourceKey = (source: EntitySource) => `${source.entity_id}:${source.field ?? ""}`;

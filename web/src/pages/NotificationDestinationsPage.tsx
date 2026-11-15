@@ -3,9 +3,11 @@ import { Link } from "react-router-dom";
 import { useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import { notificationsApi } from "../api/notifications.ts";
-import { ErrorBox, StatusChip, linkClass } from "../components/common.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table.tsx";
+import { ErrorBox } from "../components/error-box.tsx";
+import { StatusChip } from "../components/status-chip.tsx";
+import { linkClass } from "../components/link-styles.ts";
+import { Button } from "../components/button.tsx";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/table.tsx";
 
 export default function NotificationDestinationsPage() {
   const [cursor, setCursor] = useState("");

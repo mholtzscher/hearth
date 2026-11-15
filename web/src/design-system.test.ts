@@ -7,20 +7,36 @@ import { cn, RADIUS_TOKENS, TEXT_TOKENS } from "./lib/utils.ts";
 /**
  * Keep the dashboard on one design system (CODING_STANDARDS.md, Dashboard design
  * system). Only the specialized BrightnessSlider and LightColorPicker inputs
- * remain outside components/ui. Lower a count if an exception disappears; never
- * raise one.
+ * remain outside the low-level field components. Lower a count if an exception
+ * disappears; never raise one.
  */
 
 /** Selectors that contain a class, by stylesheet. A stylesheet that is not listed may hold none. */
 const CLASS_SELECTORS: Record<string, number> = {};
 
-/** Raw <select>, <textarea>, and <input> elements outside components/ui, by directory. */
+/** Raw <select>, <textarea>, and <input> elements outside field wrappers, by directory. */
 const RAW_CONTROLS: Record<string, number> = {
   "src/features": 5,
 };
 
-/** Files outside components/ui that import radix-ui. */
+/** Files outside the low-level wrappers that import radix-ui. */
 const RADIX_IMPORTS: string[] = [];
+
+const RAW_CONTROL_WRAPPERS = new Set([
+  "src/components/input.tsx",
+  "src/components/native-select.tsx",
+  "src/components/textarea.tsx",
+]);
+const RADIX_WRAPPERS = new Set([
+  "src/components/accordion.tsx",
+  "src/components/badge.tsx",
+  "src/components/button.tsx",
+  "src/components/dialog.tsx",
+  "src/components/label.tsx",
+  "src/components/popover.tsx",
+  "src/components/separator.tsx",
+  "src/components/switch.tsx",
+]);
 
 const web = path.resolve(import.meta.dirname, "..");
 
@@ -71,11 +87,32 @@ function countClassSelectors(css: string): number {
   return count;
 }
 
-/** Application source: TypeScript outside components/ui that is neither a test nor a story. */
+/** Application source, including shared compositions but excluding tests and stories. */
 function applicationSource(): string[] {
   return files("src").filter(file =>
-    /\.tsx?$/.test(file) && !/\.(test|stories)\.tsx?$/.test(file) && !file.startsWith("src/components/ui/"));
+    /\.tsx?$/.test(file) && !/\.(test|stories)\.tsx?$/.test(file));
 }
+
+function isWrapper(file: string, rule: "raw-control" | "radix"): boolean {
+  return (rule === "raw-control" ? RAW_CONTROL_WRAPPERS : RADIX_WRAPPERS).has(file);
+}
+
+describe("design system wrapper classification", () => {
+  it.each([
+    ["src/components/input.tsx", true, false],
+    ["src/components/native-select.tsx", true, false],
+    ["src/components/textarea.tsx", true, false],
+    ["src/components/dialog.tsx", false, true],
+    ["src/components/badge.tsx", false, true],
+    ["src/components/raw-json.tsx", false, false],
+    ["src/components/DecisionDialog.tsx", false, false],
+    ["src/features/views/controls/LightColorPicker.tsx", false, false],
+    ["src/components/nested/input.tsx", false, false],
+  ] as const)("classifies %s by its exact file and rule", (file, rawControl, radix) => {
+    expect(isWrapper(file, "raw-control")).toBe(rawControl);
+    expect(isWrapper(file, "radix")).toBe(radix);
+  });
+});
 
 describe("countClassSelectors", () => {
   it("counts each selector in a list that contains a class", () => {
@@ -113,9 +150,10 @@ describe("design system limits", () => {
       .toEqual(CLASS_SELECTORS);
   });
 
-  it("holds raw form controls outside components/ui to their limit", () => {
+  it("holds raw form controls outside field wrappers to their limit", () => {
     const measured: Record<string, number> = {};
     for (const file of applicationSource()) {
+      if (isWrapper(file, "raw-control")) continue;
       const count = read(file).match(/<(select|textarea|input)(?=[\s/>])/g)?.length ?? 0;
       if (count === 0) continue;
       const segments = file.split("/");
@@ -123,13 +161,13 @@ describe("design system limits", () => {
       const directory = segments.length > 2 ? segments.slice(0, 2).join("/") : segments[0];
       measured[directory] = (measured[directory] ?? 0) + count;
     }
-    expect(measured, "Use the field and select components in components/ui. If a count fell, lower its limit to match.")
+    expect(measured, "Use the field and select components in components. If a count fell, lower its limit to match.")
       .toEqual(RAW_CONTROLS);
   });
 
-  it("keeps radix-ui imports inside components/ui", () => {
-    const measured = applicationSource().filter(file => /from\s+["']radix-ui["']/.test(read(file)));
-    expect(measured, "Import the wrapper from components/ui instead of radix-ui. If a file stopped importing it, remove it from the list.")
+  it("keeps radix-ui imports inside low-level wrappers", () => {
+    const measured = applicationSource().filter(file => !isWrapper(file, "radix") && /from\s+["']radix-ui["']/.test(read(file)));
+    expect(measured, "Import the wrapper from components instead of radix-ui. If a file stopped importing it, remove it from the list.")
       .toEqual(RADIX_IMPORTS);
   });
 });

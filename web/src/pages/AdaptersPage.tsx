@@ -3,18 +3,16 @@ import type { ReactNode } from "react";
 import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Adapter, Collection } from "../api/types.ts";
-import {
-  EmptyRow,
-  ErrorBox,
-  Facts,
-  linkClass,
-  RawJson,
-  Section,
-  StatusChip,
-} from "../components/common.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { Card, CardContent } from "../components/ui/card.tsx";
-import { Input } from "../components/ui/input.tsx";
+import { EmptyRow } from "../components/empty-row.tsx";
+import { ErrorBox } from "../components/error-box.tsx";
+import { Facts } from "../components/facts.tsx";
+import { linkClass } from "../components/link-styles.ts";
+import { RawJson } from "../components/raw-json.tsx";
+import { Section } from "../components/section.tsx";
+import { StatusChip } from "../components/status-chip.tsx";
+import { Button } from "../components/button.tsx";
+import { Card, CardContent } from "../components/card.tsx";
+import { Input } from "../components/input.tsx";
 import {
   Table,
   TableBody,
@@ -22,7 +20,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../components/ui/table.tsx";
+} from "../components/table.tsx";
 
 function AdapterHealthHistory({ adapterId }: { adapterId: string }) {
   const [cursor, setCursor] = useState<string | undefined>(undefined);

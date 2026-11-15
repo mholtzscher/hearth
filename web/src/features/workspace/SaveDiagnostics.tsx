@@ -1,6 +1,6 @@
 import type { AutomationSaveDiagnostic } from "../../api/automations";
-import { Button } from "../../components/ui/button";
-import { Notice } from "../../components/ui/notice";
+import { Button } from "../../components/button";
+import { Notice } from "../../components/notice";
 
 export function SaveDiagnostics({ issues, onSelectStep }: { issues: AutomationSaveDiagnostic[]; onSelectStep?: (id: string) => void }) {
   if (!issues.length) return null;

@@ -1,8 +1,8 @@
 import { TextField } from "../../editor/TextField";
 import type { SensorChoice } from "../time-series/Editor";
 import { confirmsOpen, coverSchema, type CoverProps } from "./schema";
-import { Input } from "../../../../components/ui/input";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { Input } from "../../../../components/input";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 export function CoverEditor({ value, choices, onChange }: { value: CoverProps; choices: SensorChoice[]; onChange: (value: CoverProps) => void }) {

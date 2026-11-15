@@ -1,8 +1,8 @@
 import { SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Link, useMatch } from "react-router-dom";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
+import { Button } from "../../components/button";
+import { Input } from "../../components/input";
 import { cn } from "../../lib/utils";
 import { useConversations } from "./ConversationsProvider";
 import { groupByRecency, useLocalDay } from "./recency";
