@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
-import { deviceId } from "../../../../../.storybook/fixtures";
+import { deviceId, entityId, fixtureEntity } from "../../../../../.storybook/fixtures";
 import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
+import { createCoreHandlers } from "../../../../../.storybook/msw-handlers";
 import { BoundDevice } from "./Device";
 
 const meta = {
@@ -39,5 +40,27 @@ export const PhoneColorSheet: Story = {
     await userEvent.click(body.getByRole("button", { name: "Close color picker" }));
     await expect(canvas.getByRole("button", { name: /Adjust color/ })).toHaveFocus();
     await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+export const ColorModeUnavailable: Story = {
+  beforeEach: ({ msw }) => {
+    const mode = fixtureEntity(11);
+    mode.availability.status = "unavailable";
+    msw.use(...createCoreHandlers([mode]));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Unavailable")).toBeVisible();
+    await expect(canvas.getByText("Lamp color mode")).toBeVisible();
+  },
+};
+export const AdditionalReadingsTruncated: Story = {
+  beforeEach: ({ msw }) => {
+    const readings = Array.from({ length: 13 }, (_, index) => fixtureEntity(6, {
+      id: entityId(500 + index), device_id: deviceId(2), name: `Circuit ${index + 1}`,
+    }));
+    msw.use(...createCoreHandlers(readings));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Showing 12 of 13 readings. Open Source for every Entity.")).toBeVisible();
   },
 };

@@ -91,6 +91,35 @@ export const PhoneWeatherRefresh: Story = {
 };
 export const Stack: Story = { args: { definition: definitionFor(catalogExamples.Stack) } };
 export const Grid: Story = { args: { definition: definitionFor(catalogExamples.Grid) } };
+export const CompactReadingGrid: Story = {
+  args: { definition: {
+    schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Readings",
+    spec: { root: "root", elements: {
+      root: { type: "Stack", props: { gap: "small" }, children: ["grid"] },
+      grid: { type: "Grid", props: { columns: 2 }, children: ["metric", "state"] },
+      metric: catalogExamples.Metric, state: catalogExamples.State,
+    } },
+  } },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("94.0")).toBeVisible();
+    await expect(await canvas.findByText("Closed")).toBeVisible();
+  },
+};
+export const CompactToggleGrid: Story = {
+  args: { definition: {
+    schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Quick switches",
+    spec: { root: "root", elements: {
+      root: { type: "Grid", props: { columns: 2 }, children: ["plug", "cover"] },
+      plug: catalogExamples.ToggleTile,
+      cover: { type: "Cover", props: { layout: "tile", label: "Garage door",
+        source: { kind: "entity-state", entity_id: entityId(401), entity_type: "hearth.cover/v1" } } },
+    } },
+  } },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("switch", { name: "Office plug power" })).toHaveAttribute("aria-checked", "false");
+    await expect(await canvas.findByText("Closed")).toBeVisible();
+  },
+};
 export const Heading: Story = { args: { definition: definitionFor(catalogExamples.Heading) } };
 export const Note: Story = { args: { definition: definitionFor(catalogExamples.Note) } };
 export const Inactive: Story = {

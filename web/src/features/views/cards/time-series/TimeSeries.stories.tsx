@@ -41,3 +41,15 @@ export const HistoryUnavailable: Story = {
   // Each series reports its own failure, and the two requests settle separately.
   play: async ({ canvas }) => { await waitFor(() => expect(canvas.getAllByText("Couldn't load this reading")).toHaveLength(2)); },
 };
+export const InspectReading: Story = {
+  args: OneSeries.args,
+  play: async ({ canvas, userEvent }) => {
+    const chart = await canvas.findByRole("region", { name: /^Temperatures/ });
+    await expect(chart).toHaveTextContent("Outdoor: latest");
+    const plot = chart.querySelector("svg");
+    if (!plot) throw new Error("The history plot did not render");
+    const rect = plot.getBoundingClientRect();
+    await userEvent.pointer({ target: plot, coords: { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 } });
+    await expect(await canvas.findByText(/Outdoor avg/)).toBeInTheDocument();
+  },
+};

@@ -89,3 +89,28 @@ export const PhoneSheet: Story = {
     await expectNoHorizontalOverflow(canvasElement);
   },
 };
+export const WhiteAndColor: Story = {
+  args: {
+    controls: lightColorControls([
+      fixtureEntity(12),
+      fixtureEntity(12, {
+        id: entityId(16), type: "hearth.colortemp/v1", name: "Lamp white",
+        support: { state: { minimum: 153, maximum: 499 }, operations: { set: { step: 5 } } },
+        state: { ...fixtureEntity(12).state!, value: { active: false, value: 370 } },
+      }),
+    ]),
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /Adjust white or color/ }));
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await body.findByRole("button", { name: "White" }));
+    await expect(body.getByText(/Warm ·/)).toBeVisible();
+    await expect(body.getByText(/Cool ·/)).toBeVisible();
+  },
+};
+export const InlineFeedback: Story = {
+  args: { inlineFeedback: true },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByRole("button", { name: /Adjust color/ })).toBeVisible();
+  },
+};

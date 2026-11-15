@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
-import { entityId } from "../../../../../.storybook/fixtures";
-import { entityScenario } from "../../../../../.storybook/msw-handlers";
+import { entityId, fixtureEntity } from "../../../../../.storybook/fixtures";
+import { createCoreHandlers, entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundForecast } from "./Forecast";
 
 const meta = {
@@ -28,4 +28,31 @@ export const Daily: Story = {
 export const NeverObserved: Story = {
   beforeEach: ({ msw }) => { msw.use(entityScenario(201, "unobserved")); },
   play: async ({ canvas }) => { await expect(await canvas.findByText("Never observed")).toBeVisible(); },
+};
+export const CrossingMidnight: Story = {
+  beforeEach: ({ msw }) => {
+    const forecast = fixtureEntity(201);
+    const value = forecast.state!.value as { periods: { starts_at: string }[] };
+    value.periods.forEach((period, index) => {
+      period.starts_at = new Date(Date.parse("2026-11-09T20:00:00Z") + index * 3_600_000).toISOString();
+    });
+    msw.use(...createCoreHandlers([forecast]));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("img", { name: /Next 12 hours/ })).toBeVisible();
+  },
+};
+export const PartialUnavailableForecast: Story = {
+  args: Daily.args,
+  beforeEach: ({ msw }) => {
+    const forecast = fixtureEntity(202);
+    const value = forecast.state!.value as { periods: { date: string }[] };
+    value.periods[0].date = "2026-11-08";
+    forecast.availability.status = "unavailable";
+    msw.use(...createCoreHandlers([forecast]));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText(/Showing the remaining days of a forecast/)).toBeVisible();
+    await expect(canvas.getAllByRole("listitem", { name: /low/ })).toHaveLength(6);
+  },
 };

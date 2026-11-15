@@ -59,3 +59,10 @@ export const SourceDetails: Story = {
     await expect(await within(canvasElement.ownerDocument.body).findByRole("link", { name: /Office plug/ })).toHaveAttribute("href", `/entities/${entityId(4)}`);
   },
 };
+export const MeteringUnavailable: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(6, "unavailable")); },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Unavailable")).toBeVisible();
+    await expect(canvas.getByText("7.9")).toBeVisible();
+  },
+};

@@ -36,3 +36,11 @@ export const Disabled: Story = {
   beforeEach: ({ msw }) => { msw.use(entityScenario(301, "disabled")); },
   play: async ({ canvas }) => { await expect(await canvas.findByText("Disabled")).toBeVisible(); },
 };
+export const TileWithModeUnavailable: Story = {
+  args: { layout: "tile" },
+  beforeEach: ({ msw }) => { msw.use(entityScenario(304, "unavailable")); },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Unavailable")).toBeVisible();
+    await expect(await canvas.findByText("Manual")).toBeVisible();
+  },
+};
