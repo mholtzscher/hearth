@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn } from "storybook/test";
+import { expect } from "storybook/test";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
 import { Button } from "./button.tsx";
 
@@ -29,20 +29,19 @@ export const Status: Story = {
   },
 };
 
-const retry = fn();
 export const RecoveryAction: Story = {
-  args: {
-    children: <>
-      History could not be loaded. Your prompt is preserved.
-      <Button className="m-1.5" variant="outline" size="touch" onClick={retry}>Retry loading history</Button>
-    </>,
+  render: function RecoveryAction(args) {
+    const [requested, setRequested] = useState(false);
+    return <HouseholdNotice {...args}>
+      {requested ? "Retry requested. Your prompt is preserved." : "History could not be loaded. Your prompt is preserved."}
+      <Button className="m-1.5" variant="outline" size="touch" onClick={() => setRequested(true)}>Retry loading history</Button>
+    </HouseholdNotice>;
   },
-  beforeEach: () => { retry.mockClear(); },
   play: async ({ canvas, userEvent, canvasElement }) => {
     await userEvent.tab();
     await expect(canvas.getByRole("button", { name: "Retry loading history" })).toHaveFocus();
     await userEvent.keyboard("{Enter}");
-    await expect(retry).toHaveBeenCalledOnce();
+    await expect(canvas.getByRole("alert")).toHaveTextContent("Retry requested. Your prompt is preserved.");
     await expectNoHorizontalOverflow(canvasElement);
   },
 };
