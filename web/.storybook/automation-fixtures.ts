@@ -34,7 +34,8 @@ const child: Automation = {
 
 export function automationHandlers() {
   return [
-    http.get("/v1/automations", () => HttpResponse.json({ items: [automation], next_cursor: null })),
+    http.get("/v1/automations", () => HttpResponse.json({ items: [automation, child], next_cursor: null })),
+    http.get(`/v1/automations/${automationId}`, () => HttpResponse.json(automation)),
     http.get(`/v1/automations/${childAutomationId}`, () => HttpResponse.json(child)),
     http.get("/v1/notification-destinations", () => HttpResponse.json({ items: [{ id: destinationId, name: "Household" }], next_cursor: null })),
     http.get("/v1/adapters", () => HttpResponse.json({ items: [], next_cursor: null })),
