@@ -19,10 +19,10 @@ function SwitchRow({ power, label }: { power: PowerReading; label: string }) {
   return <li className="view-switch-row">
     {glow !== undefined && <span key={glow} className="view-row-arrival" aria-hidden="true" />}
     <div className="view-switch-row-name"><span>{label}</span><StatusList entries={status.entries} />
-      {canSet ? <ControlStatus entityId={power.source.entity_id} subject="power" pending={value => value === true ? "Turning on…" : "Turning off…"} idle={power.since} /> : <p className="view-power-idle">{power.entity ? "Read-only" : power.since}</p>}
+      {canSet ? <ControlStatus className="mt-0.5 min-h-[42px] text-muted-foreground" entityId={power.source.entity_id} subject="power" pending={value => value === true ? "Turning on…" : "Turning off…"} idle={power.since} /> : <p className="view-power-idle">{power.entity ? "Read-only" : power.since}</p>}
     </div>
     <span className="view-row-value" data-value={status.value}>{data ? data.on ? "On" : "Off" : "—"}</span>
-    {canSet ? <PowerSwitch entity={power.entity!} label={`${label} power`} /> : <span className="view-switch-unavailable" aria-hidden="true" />}
+    {canSet ? <PowerSwitch className="m-0" entity={power.entity!} label={`${label} power`} /> : <span className="view-switch-unavailable" aria-hidden="true" />}
   </li>;
 }
 

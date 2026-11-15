@@ -97,7 +97,7 @@ it("sends mode and fan strings and shows requested controls without changing obs
 
 it("leaves every mode unselected when no mode has been observed", async () => {
   const values = fixture();
-  delete values[3].state;
+  Reflect.deleteProperty(values[3], "state");
   const api = core(values);
   await mount(<BoundAirPurifier {...props} />);
   const mode = screen.getByRole("group", { name: "Mode" });

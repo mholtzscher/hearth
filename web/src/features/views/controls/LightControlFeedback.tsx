@@ -1,6 +1,7 @@
 import type { CommandFailure } from "../../../api/commands";
 import { useControls } from "../data/provider";
-import { lightFailures } from "./ControlStatus";
+import { controlStatusClasses, controlStatusLineClasses, lightFailures } from "./ControlStatus";
+import { StatusDot } from "./StatusDot";
 import { colorHex, readColor, type LightColorControls } from "./light-color";
 
 const shortFailures: Record<CommandFailure["kind"], string> = {
@@ -28,10 +29,10 @@ export function LightControlFeedback({ controls, brightnessId, powerId, detailed
   const active = entries.flatMap((entry, index) => states[index].phase === "idle" ? [] : [{ ...entry, state: states[index] }]);
   const failed = active.filter(entry => entry.state.phase === "failed");
   const pending = active.length - failed.length;
-  if (detailed) return <div className="view-color-feedback">
-    {active.map(({ id, name, pending, state }) => <div data-slot="control-status" className="view-control-status" key={id}>
-      <p role={state.phase === "failed" ? "alert" : "status"} data-tone={state.phase === "failed" ? "error" : "info"}>
-        <span className="view-status-dot" aria-hidden="true" />
+  if (detailed) return <div>
+    {active.map(({ id, name, pending, state }) => <div data-slot="control-status" className={controlStatusClasses} key={id}>
+      <p className={controlStatusLineClasses} role={state.phase === "failed" ? "alert" : "status"} data-tone={state.phase === "failed" ? "error" : "info"}>
+        <StatusDot tone={state.phase === "failed" ? "error" : "info"} />
         {state.phase === "failed" ? `${name}: ${lightFailures[state.failure.kind]}` : pending(state.requested)}
       </p>
     </div>)}
@@ -41,14 +42,14 @@ export function LightControlFeedback({ controls, brightnessId, powerId, detailed
     ? [failed.length ? `${failed.length} failed` : "", pending ? `${pending} pending` : ""].filter(Boolean).join(" · ")
     : single?.state.phase === "failed" ? `${single.name} ${shortFailures[single.state.failure.kind]}`
     : single ? single.name === "Power" ? single.pending(single.state.requested) : `Setting ${single.name.toLowerCase()}…` : "";
-  if (inline) return <span className="view-color-feedback-indicator" aria-hidden={hidden || undefined} data-tone={failed.length ? "error" : "info"}>
+  if (inline) return <span data-slot="color-feedback-indicator" className="whitespace-nowrap text-[13px] text-info data-[tone=error]:text-destructive" aria-hidden={hidden || undefined} data-tone={failed.length ? "error" : "info"}>
     <span id={descriptionId} className="sr-only" role={failed.length ? "alert" : "status"}>{summary}</span>
     {summary && <span aria-hidden="true">{failed.length ? "Failed" : "Pending"}</span>}
   </span>;
-  return <div data-slot="control-status" data-light-feedback className="view-control-status view-light-feedback" aria-hidden={hidden || undefined} inert={hidden || undefined}>
-    <p role={failed.length ? "alert" : "status"} data-tone={failed.length ? "error" : "info"}>
-      {summary && <button type="button" onClick={onDetails}>
-        <span className="view-status-dot" aria-hidden="true" /><span>{summary} · Details</span>
+  return <div data-slot="control-status" data-light-feedback className={controlStatusClasses} aria-hidden={hidden || undefined} inert={hidden || undefined}>
+    <p className={`${controlStatusLineClasses} whitespace-nowrap`} role={failed.length ? "alert" : "status"} data-tone={failed.length ? "error" : "info"}>
+      {summary && <button type="button" className="relative flex max-w-full cursor-pointer items-baseline gap-1.5 p-0 text-start font-[inherit] text-inherit before:absolute before:-inset-y-[11.5px] before:inset-x-0" onClick={onDetails}>
+        <StatusDot tone={failed.length ? "error" : "info"} /><span className="overflow-hidden text-ellipsis">{summary} · Details</span>
       </button>}
     </p>
   </div>;

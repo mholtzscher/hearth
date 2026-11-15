@@ -3,6 +3,7 @@ import { observationAge, useArrivals, useMinuteClock, type Arrival } from "./obs
 import { CardSource, type SourceItem } from "./CardSource";
 import type { StatusEntry } from "./status";
 import { cn } from "../../../lib/utils";
+import { StatusDot } from "../controls/StatusDot";
 
 export type { SourceItem } from "./CardSource";
 
@@ -18,7 +19,7 @@ export function StatusList({ entries, className, separators = true }: { entries:
   if (entries.length === 0) return null;
   return <ul data-slot="card-status" className={cn("view-status flex list-none flex-wrap gap-x-2 gap-y-0 text-label leading-normal text-gray-9", className)}>
     {entries.map((entry, index) => <li key={entry.key} data-tone={entry.tone} className={cn("inline-flex items-baseline gap-1.5 data-[tone=warn]:text-warning data-[tone=error]:text-destructive", separators && index > 0 && "before:text-gray-6 before:[content:'·'_/_'']")}>
-      <span className={cn("view-status-dot shrink-0 self-center rounded-full", entry.tone === "warn" && "bg-warning", entry.tone === "error" && "bg-destructive")} aria-hidden="true" /><span>{entry.text}{entry.detail && <span className="text-muted-foreground"> {entry.detail}</span>}</span>
+      <StatusDot tone={entry.tone} /><span>{entry.text}{entry.detail && <span className="text-muted-foreground"> {entry.detail}</span>}</span>
     </li>)}
   </ul>;
 }

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { StatusDot } from "../../controls/StatusDot";
 import { entityStateRequest, readEntity, type FieldEntity } from "../../bindings/entity";
 import { useReadings } from "../../bindings/registry";
 import { useReads } from "../../data/provider";
@@ -11,7 +12,7 @@ const names: Record<AirPurifierRole, string> = { power: "Power", pm25: "PM2.5", 
 
 export function Category({ value, dimmed }: { value: number; dimmed: boolean }) {
   const category = airCategory(value);
-  return <span className="view-air-purifier-category" data-tone={category.tone} data-dimmed={dimmed || undefined}><span className="view-status-dot" aria-hidden="true" />{category.words}</span>;
+  return <span className="view-air-purifier-category" data-tone={category.tone} data-dimmed={dimmed || undefined}><StatusDot tone={dimmed ? "dimmed" : category.tone} />{category.words}</span>;
 }
 
 /** Read each bound role explicitly; support and observed State share the read cache. */

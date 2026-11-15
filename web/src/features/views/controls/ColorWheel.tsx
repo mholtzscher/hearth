@@ -14,7 +14,7 @@ export function ColorWheel({ value, disabled, pending, onBegin, onChange, onEnd,
     return { hue: Math.round((Math.atan2(y, x) * 180 / Math.PI + 360) % 360) % 360, saturation: Math.min(100, Math.round(Math.hypot(x, y) * 100)) };
   };
   return <>
-    <div className="view-color-wheel" role="slider" tabIndex={disabled ? -1 : 0} aria-label="Color wheel"
+    <div className="relative mx-auto my-4 size-[220px] max-w-full touch-none cursor-crosshair rounded-full [background:radial-gradient(circle,#fff_0%,transparent_70.7%),conic-gradient(from_90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)] aria-disabled:cursor-not-allowed aria-disabled:grayscale focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring" role="slider" tabIndex={disabled ? -1 : 0} aria-label="Color wheel"
       aria-valuemin={0} aria-valuemax={359} aria-valuenow={value.hue}
       aria-valuetext={`Hue ${value.hue} degrees, saturation ${value.saturation} percent`}
       aria-describedby={hintId} aria-disabled={disabled} aria-busy={pending || undefined}
@@ -41,8 +41,8 @@ export function ColorWheel({ value, disabled, pending, onBegin, onChange, onEnd,
         else return;
         event.preventDefault(); onChange(next);
       }} onBlur={onBlur}>
-      <span className="view-color-wheel-marker" style={position} />
+      <span className="pointer-events-none absolute size-[18px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#fff] shadow-[0_1px_4px_#000]" style={position} />
     </div>
-    <p id={hintId} className="view-color-hint">Left/right: hue. Up/down: saturation. Shift for larger steps.</p>
+    <p id={hintId} className="mt-3 text-[13px] leading-normal text-gray-8">Left/right: hue. Up/down: saturation. Shift for larger steps.</p>
   </>;
 }
