@@ -154,7 +154,7 @@ it.each(["disabled", "unavailable", "read-only", "never-observed"])("handles %s 
   }
   if (state === "never-observed") {
     expect(screen.getByText("Never observed")).toBeTruthy();
-    expect(document.querySelector(".view-metric-value")?.textContent).toBe("—");
+    expect(document.querySelector('[data-slot="reading"]')?.textContent).toBe("—");
   }
 });
 
@@ -162,7 +162,7 @@ it.each([404, 503])("shows a %i read failure without offering a speculative cont
   const api = core([power()], { failGet: status });
   await mount(<BoundToggleTile source={source()} label="Fan" />);
   expect(screen.queryByRole("switch")).toBeNull();
-  expect(document.querySelector(".view-metric-value")?.textContent).toBe("—");
+  expect(document.querySelector('[data-slot="reading"]')?.textContent).toBe("—");
   expect(api.posts).toHaveLength(0);
 });
 
@@ -204,23 +204,23 @@ it("uses one explicit metric for the reading and gap-preserving sparkline withou
   const watts = numeric();
   const api = core([power(), watts]);
   await mount(<BoundToggleTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h" }} />);
-  expect(document.querySelector(".view-power-metric")?.textContent).toBe("7.9 W");
+  expect(document.querySelector('[data-slot="power-metric"]')?.textContent).toBe("7.9 W");
   expect(api.histories).toEqual([watts.id]);
-  expect(document.querySelector(".view-trend-mean")?.getAttribute("d")?.match(/M/g)).toHaveLength(2);
+  expect(document.querySelector('[data-slot="trend-mean"]')?.getAttribute("d")?.match(/M/g)).toHaveLength(2);
   fireEvent.click(screen.getByRole("switch")); await flush();
   api.satisfy(api.posts[0]); await flush(); await flush();
-  expect(document.querySelector(".view-metric-value")?.textContent).toBe("Off7.9 W");
+  expect(document.querySelector('[data-slot="reading"]')?.textContent).toBe("Off7.9 W");
   expect(api.histories).toHaveLength(1);
   watts.state = { value: 0, observed_at: "2026-11-09T10:00:02Z" };
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(document.querySelector(".view-power-metric")?.textContent).toBe("0.0 W");
+  expect(document.querySelector('[data-slot="power-metric"]')?.textContent).toBe("0.0 W");
   expect(api.histories).toHaveLength(1);
 });
 
 it("does not fall back to a different numeric Entity when the selected metric is missing", async () => {
   core([power(), numeric(21, "V", 120.7)]);
   await mount(<BoundToggleTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h" }} />);
-  expect(document.querySelector(".view-power-metric")?.textContent).toBe("—");
+  expect(document.querySelector('[data-slot="power-metric"]')?.textContent).toBe("—");
   expect(screen.getByText("Entity not found")).toBeTruthy();
   expect(screen.queryByText(/120\.7/)).toBeNull();
   expect(screen.getByRole("switch")).toBeTruthy();
@@ -234,7 +234,7 @@ it("keeps an optional detail reading independently bound and states the oldest d
   await mount(<BoundToggleTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h", detail: { source: metricSource(22), label: "Total energy" } }} />);
   expect(screen.getByText("Total energy")).toBeTruthy();
   expect(screen.getByRole("article", { name: "Plug" }).querySelector('[data-slot="card-footer"] time')?.getAttribute("datetime")).toBe(energy.state!.observed_at);
-  expect(document.querySelectorAll(".view-trend")).toHaveLength(1);
+  expect(document.querySelectorAll('[data-slot="trend"]')).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Source" }));
   expect(screen.getAllByRole("link")).toHaveLength(3);
   expect(api.posts).toHaveLength(0);
@@ -252,14 +252,14 @@ it("edits one same-Device metric binding for both reading and sparkline without 
   expect(screen.queryByRole("option", { name: /Other plug draw/ })).toBeNull();
   fireEvent.change(screen.getByLabelText("Sparkline source"), { target: { value: `${volts.id}:` } });
   await flush();
-  expect(document.querySelector(".view-power-metric")?.textContent).toBe("120.7 V");
-  expect(document.querySelector(".view-trend")?.textContent).toContain("V");
+  expect(document.querySelector('[data-slot="power-metric"]')?.textContent).toBe("120.7 V");
+  expect(document.querySelector('[data-slot="trend"]')?.textContent).toContain("V");
   expect(api.histories).toContain(volts.id);
   expect(api.posts).toHaveLength(0);
   fireEvent.change(screen.getByLabelText("Sparkline source"), { target: { value: "" } });
   await flush();
-  expect(document.querySelector(".view-power-metric")).toBeNull();
-  expect(document.querySelector(".view-trend")).toBeNull();
+  expect(document.querySelector('[data-slot="power-metric"]')).toBeNull();
+  expect(document.querySelector('[data-slot="trend"]')).toBeNull();
   expect(api.posts).toHaveLength(0);
 });
 

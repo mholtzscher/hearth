@@ -43,8 +43,8 @@ function Light({ light, rows, name, entities }: { light: LightReading; rows: Ret
   // The slider states the level, so the detail line doesn't repeat it.
   const detailLevel = !light.on && level !== undefined && !dimmable;
   return <>
-    <div className="view-light">
-      <span className="view-light-swatch" aria-hidden="true" data-off={!light.on || empty || undefined} data-dimmed={dimmed || colorDimmed || undefined} style={{ backgroundColor: light.on && !empty ? light.swatch : undefined }} />
+    <div data-slot="light" className="view-light">
+      <span data-slot="light-swatch" className="view-light-swatch" aria-hidden="true" data-off={!light.on || empty || undefined} data-dimmed={dimmed || colorDimmed || undefined} style={{ backgroundColor: light.on && !empty ? light.swatch : undefined }} />
       <p className="view-metric-value" data-value={empty ? "empty" : dimmed ? "dimmed" : "live"}>
         {empty ? "—" : light.on ? <>On{!dimmable && level !== undefined && <small>{level} %</small>}</> : "Off"}
       </p>
@@ -55,13 +55,13 @@ function Light({ light, rows, name, entities }: { light: LightReading; rows: Ret
       {switchable && <PowerSwitch entity={light.power} label={`${name} power`} />}
     </div>
     {switchable && ((!dimmable ? feedback : powerFeedback) ?? <ControlStatus entityId={light.power.id} pending={requested => requested === true ? "Turning on…" : "Turning off…"} />)}
-    {!empty && (detailLevel || light.colorText) && <p className="view-light-detail">
+    {!empty && (detailLevel || light.colorText) && <p data-slot="light-detail" className="view-light-detail">
       {detailLevel && <span data-dimmed={brightness.status.value === "dimmed" || undefined}>Brightness {level} %{light.colorText ? " · " : ""}</span>}
       <span data-dimmed={colorDimmed || undefined}>{light.colorText}</span>
     </p>}
     {light.colorPreviewUnavailable && <p className="view-chart-note">Color preview unavailable; canonical reading is missing or out of date.</p>}
     {dimmable && <BrightnessSlider key={light.brightness.id} entity={light.brightness} label={`${name} brightness`} feedback={feedback} />}
-    {rows.filter(row => row.status.entries.length).map(row => <div className="view-light-status" key={row.key}>
+    {rows.filter(row => row.status.entries.length).map(row => <div data-slot="light-status" className="view-light-status" key={row.key}>
       <span>{row.name}</span><StatusList entries={row.status.entries} />
     </div>)}
   </>;

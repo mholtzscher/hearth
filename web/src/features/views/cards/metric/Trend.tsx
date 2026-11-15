@@ -20,11 +20,11 @@ export function Trend({ window, resource, dimmed, className, bandClassName }: { 
   const data = resource.data;
   if (!data) {
     const words = resource.status === "loading" ? "Loading history…" : resource.status === "error" ? (resource.error === tooMuchHistory ? tooMuchHistory : "Couldn't load history.") : `No history in the last ${windowWords[window]}.`;
-    return <div className={cn("view-trend", className)} data-value={dimmed ? "dimmed" : "live"}><div className="view-trend-plot" /><p>{words}</p></div>;
+    return <div data-slot="trend" className={cn("view-trend", className)} data-value={dimmed ? "dimmed" : "live"}><div className="view-trend-plot" /><p>{words}</p></div>;
   }
   const sampled = data.buckets.filter(bucket => bucket.mean !== null);
   if (sampled.length === 0) {
-    return <div className={cn("view-trend", className)} data-value={dimmed ? "dimmed" : "live"}><div className="view-trend-plot" /><p>No history in the last {windowWords[window]}.</p>{resource.refreshFailed && <p>Couldn't refresh history. Showing the last interval.</p>}</div>;
+    return <div data-slot="trend" className={cn("view-trend", className)} data-value={dimmed ? "dimmed" : "live"}><div className="view-trend-plot" /><p>No history in the last {windowWords[window]}.</p>{resource.refreshFailed && <p>Couldn't refresh history. Showing the last interval.</p>}</div>;
   }
   const lows = sampled.map(bucket => bucket.min ?? bucket.mean!), highs = sampled.map(bucket => bucket.max ?? bucket.mean!);
   const low = Math.min(...lows), high = Math.max(...highs);
@@ -48,11 +48,11 @@ export function Trend({ window, resource, dimmed, className, bandClassName }: { 
   }).join("");
   const digits = data.format.fraction_digits;
   const unit = data.format.unit_label ? ` ${data.format.unit_label}` : "";
-  return <div className={cn("view-trend", className)} data-value={dimmed ? "dimmed" : "live"}>
+  return <div data-slot="trend" className={cn("view-trend", className)} data-value={dimmed ? "dimmed" : "live"}>
     <div className="view-trend-plot" aria-hidden="true">
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" focusable="false">
-        {!dimmed && <path className={cn("view-trend-band", bandClassName)} d={band} />}
-        <path className="view-trend-mean" d={mean} />
+        {!dimmed && <path data-slot="trend-band" className={cn("view-trend-band", bandClassName)} d={band} />}
+        <path data-slot="trend-mean" className="view-trend-mean" d={mean} />
       </svg>
     </div>
     <p>{windowWords[window]} range {low.toFixed(digits)}–{high.toFixed(digits)}{unit}</p>

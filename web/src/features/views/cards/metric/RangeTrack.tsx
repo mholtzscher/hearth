@@ -20,7 +20,7 @@ export function RangeTrack({ data, dimmed }: { data: MetricData & { range: NonNu
   return <div className="view-range" data-value={dimmed ? "dimmed" : "live"}>
     <div className="view-range-track" aria-hidden="true">
       <span className="view-range-fill" style={{ width: `${share * 100}%` }} />
-      <span className="view-range-marker" style={{ left: `${share * 100}%` }} />
+      <span data-slot="range-marker" className="view-range-marker" style={{ left: `${share * 100}%` }} />
     </div>
     <p className="view-range-ends" aria-hidden="true"><span>{bound(minimum, digits)}</span><span>{bound(maximum, digits)}{unit}</span></p>
     <p className="sr-only">Range {bound(minimum, digits)} to {bound(maximum, digits)}{unit}</p>
