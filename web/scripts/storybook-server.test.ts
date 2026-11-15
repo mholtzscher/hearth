@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assertRouteAvailable, exactHost, ownsRoute, parseOptions, parsePort } from "./storybook-server.ts";
-import { EventEmitter } from "node:events";
-import { installStoryObserver, type StoryObserverScope } from "./storybook-observer.ts";
 
 test("startup defaults and custom local/HTTPS ports stay separate", () => {
   assert.deepEqual(parseOptions([]), { port: 6006, httpsPort: 6606, tailscale: false });
@@ -48,19 +46,4 @@ test("cleanup ownership requires the unchanged listener, target, and full path s
   Object.assign(changed.Web["desktop.example.ts.net:6616"].Handlers, { "/other": { Proxy: "http://127.0.0.1:9090" } });
   assert.equal(ownsRoute(changed, config), false);
   assert.throws(() => assertRouteAvailable(changed, config, config), /already has a service/);
-});
-
-test("browser observer retains fast completion and rejects caught play or report failures", () => {
-  const scope = {} as StoryObserverScope;
-  installStoryObserver(scope);
-  const channel = new EventEmitter();
-  scope.__STORYBOOK_ADDONS_CHANNEL__ = channel;
-  channel.emit("storyFinished", { status: "success" });
-  assert.deepEqual(scope.__HEARTH_STORY_CHECK__, { status: "success", errors: [] });
-  // Storybook can log a caught play exception without a pageerror or error display.
-  channel.emit("playFunctionThrewException", { message: "assertion failed" });
-  channel.emit("storyFinished", { status: "success" });
-  assert.deepEqual(scope.__HEARTH_STORY_CHECK__.errors, ["playFunctionThrewException"]);
-  channel.emit("storyFinished", { status: "error" });
-  assert.equal(scope.__HEARTH_STORY_CHECK__.status, "error");
 });

@@ -60,7 +60,7 @@ export function exactHost(host: string): string {
   return normalized;
 }
 
-export function findChromium(): string | undefined {
+function findChromium(): string | undefined {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
   for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
     for (const name of ["chromium", "chromium-browser"]) {
@@ -78,7 +78,7 @@ function readJSON(file: string) {
   }
 }
 
-export function readConfig(): ServerConfig {
+function readConfig(): ServerConfig {
   const config = readJSON(configFile);
   if (!config) throw new Error("No managed Storybook configuration. Run mise run storybook-start first.");
   parsePort(String(config.port));
@@ -90,8 +90,8 @@ export function readConfig(): ServerConfig {
   return config;
 }
 
-export function localURL(config: ServerConfig) { return `http://127.0.0.1:${config.port}`; }
-export function browserURL(config: ServerConfig) {
+function localURL(config: ServerConfig) { return `http://127.0.0.1:${config.port}`; }
+function browserURL(config: ServerConfig) {
   return config.tailnet ? `https://${config.tailnet.host}:${config.tailnet.port}` : localURL(config);
 }
 
@@ -228,7 +228,7 @@ function serve() {
   ], Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)));
 }
 
-export async function main(action: string, args: string[]) {
+async function main(action: string, args: string[]) {
   switch (action) {
     case "start": await start(args); break;
     case "stop":

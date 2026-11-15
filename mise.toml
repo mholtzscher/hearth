@@ -248,10 +248,6 @@ run = '''node web/scripts/storybook-server.ts start'''
 description = "Stop this worktree's managed Storybook and its owned Tailscale route"
 run = '''node web/scripts/storybook-server.ts stop'''
 
-[tasks."storybook-check"]
-description = "Check a rendered story in Chromium (managed URL by default)"
-run = '''node web/scripts/storybook-check.ts'''
-
 [tasks."storybook-start-test"]
 description = "Test Storybook startup decisions and readiness protocol"
 run = '''node --test web/scripts/storybook-server*.test.ts'''
