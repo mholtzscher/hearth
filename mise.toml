@@ -223,6 +223,16 @@ description = "Typecheck and build the dashboard"
 depends = ["web-install"]
 run = '''pnpm --dir web run build'''
 
+[tasks."web-check"]
+description = "Check web lint and formatting with Ultracite"
+depends = ["web-install"]
+run = '''pnpm --dir web run check'''
+
+[tasks."web-fix"]
+description = "Apply Ultracite web formatting and safe lint fixes"
+depends = ["web-install"]
+run = '''pnpm --dir web run fix'''
+
 [tasks."web-test"]
 description = "Run the dashboard frontend tests (Vitest + jsdom)"
 depends = ["web-install"]
@@ -250,7 +260,7 @@ run = '''node web/scripts/storybook-server.ts stop'''
 
 [tasks."storybook-start-test"]
 description = "Test Storybook startup decisions and readiness protocol"
-run = '''node --test web/scripts/storybook-server*.test.ts'''
+run = '''pnpm --dir web exec vitest run --project scripts'''
 
 [tasks."storybook-build"]
 description = "Typecheck and build the standalone Storybook"
@@ -282,4 +292,4 @@ depends = [
 
 [tasks."validate"]
 description = "Run all validation"
-depends = ["validate-backend", "web-test", "web-build", "storybook-test", "storybook-build", "storybook-start-test"]
+depends = ["validate-backend", "web-check", "web-test", "web-build", "storybook-test", "storybook-build", "storybook-start-test"]

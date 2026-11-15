@@ -26,17 +26,26 @@ export interface NotificationPage<T> {
 }
 
 export const notificationsApi = {
-  destinations: (cursor = "") => apiFetch<NotificationPage<NotificationDestination>>(
-    `/v1/notification-destinations?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
-  ),
-  destination: (id: string) => apiFetch<NotificationDestination>(`/v1/notification-destinations/${encodeURIComponent(id)}`),
+  destinations: (cursor = "") =>
+    apiFetch<NotificationPage<NotificationDestination>>(
+      `/v1/notification-destinations?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+    ),
+  destination: (id: string) =>
+    apiFetch<NotificationDestination>(
+      `/v1/notification-destinations/${encodeURIComponent(id)}`
+    ),
   // Intentionally one fetch: a repeat invocation can produce another message.
-  send: (id: string, title: string, message: string) => apiFetch<NotificationAttempt>(
-    `/v1/notification-destinations/${encodeURIComponent(id)}/notifications`,
-    { method: "POST", body: JSON.stringify({ title, message }) },
-  ),
-  attempts: (destinationId = "", cursor = "") => apiFetch<NotificationPage<NotificationAttempt>>(
-    `/v1/notifications?limit=50${destinationId ? `&destination_id=${encodeURIComponent(destinationId)}` : ""}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
-  ),
-  attempt: (id: string) => apiFetch<NotificationAttempt>(`/v1/notifications/${encodeURIComponent(id)}`),
+  send: (id: string, title: string, message: string) =>
+    apiFetch<NotificationAttempt>(
+      `/v1/notification-destinations/${encodeURIComponent(id)}/notifications`,
+      { method: "POST", body: JSON.stringify({ title, message }) }
+    ),
+  attempts: (destinationId = "", cursor = "") =>
+    apiFetch<NotificationPage<NotificationAttempt>>(
+      `/v1/notifications?limit=50${destinationId ? `&destination_id=${encodeURIComponent(destinationId)}` : ""}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+    ),
+  attempt: (id: string) =>
+    apiFetch<NotificationAttempt>(
+      `/v1/notifications/${encodeURIComponent(id)}`
+    ),
 };

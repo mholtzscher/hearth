@@ -1,8 +1,12 @@
-import { CommandError, type CommandFailure, type CommandRequest } from "../../../api/commands";
+import { CommandError } from "../../../api/commands";
+import type { CommandFailure, CommandRequest } from "../../../api/commands";
 import type { CommandResult } from "../../../api/types";
 
 /** One controllable Operation on one Entity. */
-export type ControlTarget = { entityId: string; operation: "set" | "stop" };
+export interface ControlTarget {
+  entityId: string;
+  operation: "set" | "stop";
+}
 /**
  * queue: a newer value waits for the Command in flight, then only the latest is sent.
  * replace: a newer value is sent at once and the earlier Command's outcome is ignored.
@@ -28,12 +32,20 @@ export type ControlState =
   | { phase: "failed"; requested: unknown; failure: CommandFailure };
 
 /** current identifies the latest send; an outcome from any other send is ignored. */
-type Entry = { state: ControlState; listeners: Set<() => void>; inFlight: boolean; current: number };
+interface Entry {
+  state: ControlState;
+  listeners: Set<() => void>;
+  inFlight: boolean;
+  current: number;
+}
 
-export type CommandQueueDeps = {
-  execute: (entityId: string, request: CommandRequest) => Promise<CommandResult>;
+export interface CommandQueueDeps {
+  execute: (
+    entityId: string,
+    request: CommandRequest
+  ) => Promise<CommandResult>;
   refreshState: () => Promise<void>;
-};
+}
 
 const idle: ControlState = { phase: "idle" };
 const key = (target: ControlTarget) => `${target.entityId}|${target.operation}`;
@@ -52,9 +64,13 @@ export class CommandQueue {
   private generation = 0;
   private readonly deps: CommandQueueDeps;
 
-  constructor(deps: CommandQueueDeps) { this.deps = deps; }
+  constructor(deps: CommandQueueDeps) {
+    this.deps = deps;
+  }
 
-  snapshot(target: ControlTarget): ControlState { return this.entries.get(key(target))?.state ?? idle; }
+  snapshot(target: ControlTarget): ControlState {
+    return this.entries.get(key(target))?.state ?? idle;
+  }
 
   subscribe(target: ControlTarget, listener: () => void): () => void {
     const entry = this.entry(target);
@@ -65,10 +81,18 @@ export class CommandQueue {
     };
   }
 
-  request(target: ControlTarget, value: ControlValue, policy: RequestPolicy = "queue"): void {
+  request(
+    target: ControlTarget,
+    value: ControlValue,
+    policy: RequestPolicy = "queue"
+  ): void {
     const entry = this.entry(target);
     if (entry.inFlight && policy === "queue") {
-      this.update(entry, { phase: "pending", requested: value, queued: { value } });
+      CommandQueue.update(entry, {
+        phase: "pending",
+        requested: value,
+        queued: { value },
+      });
       return;
     }
     void this.send(target, entry, value);
@@ -80,10 +104,12 @@ export class CommandQueue {
    */
   forget(target: ControlTarget): void {
     const entry = this.entries.get(key(target));
-    if (!entry) return;
-    entry.current++;
+    if (!entry) {
+      return;
+    }
+    entry.current += 1;
     entry.inFlight = false;
-    this.update(entry, idle);
+    CommandQueue.update(entry, idle);
     this.release(target, entry);
   }
 
@@ -93,18 +119,25 @@ export class CommandQueue {
    * dispose and reuse it when it remounts the provider.
    */
   dispose(): void {
-    this.generation++;
+    this.generation += 1;
     for (const [entryKey, entry] of this.entries) {
       entry.inFlight = false;
       entry.state = idle;
-      if (entry.listeners.size === 0) this.entries.delete(entryKey);
+      if (entry.listeners.size === 0) {
+        this.entries.delete(entryKey);
+      }
     }
   }
 
   private entry(target: ControlTarget): Entry {
     let entry = this.entries.get(key(target));
     if (!entry) {
-      entry = { state: idle, listeners: new Set(), inFlight: false, current: 0 };
+      entry = {
+        state: idle,
+        listeners: new Set(),
+        inFlight: false,
+        current: 0,
+      };
       this.entries.set(key(target), entry);
     }
     return entry;
@@ -116,49 +149,80 @@ export class CommandQueue {
    * until the next request.
    */
   private release(target: ControlTarget, entry: Entry): void {
-    if (entry.listeners.size === 0 && entry.state.phase === "idle") this.entries.delete(key(target));
+    if (entry.listeners.size === 0 && entry.state.phase === "idle") {
+      this.entries.delete(key(target));
+    }
   }
 
-  private update(entry: Entry, state: ControlState): void {
+  private static update(entry: Entry, state: ControlState): void {
     entry.state = state;
-    entry.listeners.forEach(listener => listener());
+    for (const listener of entry.listeners) {
+      listener();
+    }
   }
 
-  private async send(target: ControlTarget, entry: Entry, value: ControlValue): Promise<void> {
-    const generation = this.generation, send = ++entry.current;
+  private async send(
+    target: ControlTarget,
+    entry: Entry,
+    value: ControlValue
+  ): Promise<void> {
+    const { generation } = this;
+    entry.current += 1;
+    const send = entry.current;
     entry.inFlight = true;
-    this.update(entry, { phase: "pending", requested: value });
+    CommandQueue.update(entry, { phase: "pending", requested: value });
     let failure: CommandFailure | undefined;
     let result: CommandResult | undefined;
     try {
-      result = await this.deps.execute(target.entityId, { operation: target.operation, parameters: typeof value === "object" ? value : { value } });
+      result = await this.deps.execute(target.entityId, {
+        operation: target.operation,
+        parameters: typeof value === "object" ? value : { value },
+      });
     } catch (error) {
-      failure = error instanceof CommandError ? error.failure : { kind: "internal" };
+      failure =
+        error instanceof CommandError ? error.failure : { kind: "internal" };
     }
-    if (generation !== this.generation || send !== entry.current) return;
+    if (generation !== this.generation || send !== entry.current) {
+      return;
+    }
     entry.inFlight = false;
     // A newer request supersedes this outcome, including a failure.
-    const queued = entry.state.phase === "pending" ? entry.state.queued : undefined;
+    const queued =
+      entry.state.phase === "pending" ? entry.state.queued : undefined;
     if (queued) {
       void this.send(target, entry, queued.value);
       return;
     }
     if (failure) {
-      this.update(entry, { phase: "failed", requested: value, failure });
+      CommandQueue.update(entry, {
+        phase: "failed",
+        requested: value,
+        failure,
+      });
       void this.deps.refreshState();
       this.release(target, entry);
       return;
     }
     if (result?.status === "dispatched" && target.operation === "stop") {
-      this.update(entry, { phase: "dispatched", requested: value, at: Date.now() });
+      CommandQueue.update(entry, {
+        phase: "dispatched",
+        requested: value,
+        at: Date.now(),
+      });
       void this.deps.refreshState();
       return;
     }
     const confirming: ControlState = { phase: "confirming", requested: value };
-    this.update(entry, confirming);
+    CommandQueue.update(entry, confirming);
     await this.deps.refreshState();
-    if (generation !== this.generation || send !== entry.current || entry.state !== confirming) return;
-    this.update(entry, idle);
+    if (
+      generation !== this.generation ||
+      send !== entry.current ||
+      entry.state !== confirming
+    ) {
+      return;
+    }
+    CommandQueue.update(entry, idle);
     this.release(target, entry);
   }
 }

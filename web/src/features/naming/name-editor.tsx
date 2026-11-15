@@ -1,0 +1,173 @@
+import { useEffect, useId, useRef, useState } from "react";
+
+import { apiFetch, getBaseUrl, useBaseUrlVersion } from "../../api/client.ts";
+import type { DevicePatch } from "../../api/types.ts";
+import { Button } from "../../components/button.tsx";
+import { Input } from "../../components/input.tsx";
+import { Label } from "../../components/label.tsx";
+
+interface NamingMetadata {
+  name: string;
+  adapter_name: string;
+  name_override: string | null;
+}
+
+interface Props {
+  objectId: string;
+  kind: "device" | "entity";
+  metadata: NamingMetadata;
+  onUpdated: (metadata: NamingMetadata) => void;
+}
+
+const Editor = ({ objectId, kind, metadata, onUpdated }: Props) => {
+  const fieldId = useId();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState("");
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+
+  const submit = async (override: string | null) => {
+    if (pending) {
+      return;
+    }
+    const base = getBaseUrl();
+    setPending(true);
+    setError(null);
+    setStatus("Saving name…");
+    const body: DevicePatch = { name_override: override };
+    try {
+      const updated = await apiFetch<NamingMetadata>(
+        `/v1/${kind === "device" ? "devices" : "entities"}/${encodeURIComponent(objectId)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/merge-patch+json" },
+          body: JSON.stringify(body),
+        }
+      );
+      if (!active.current || getBaseUrl() !== base) {
+        return;
+      }
+      onUpdated({
+        name: updated.name,
+        adapter_name: updated.adapter_name,
+        name_override: updated.name_override,
+      });
+      setEditing(false);
+      setStatus(override === null ? "Name reset." : "Name saved.");
+    } catch (error_) {
+      if (!active.current || getBaseUrl() !== base) {
+        return;
+      }
+      setError(error_ instanceof Error ? error_.message : String(error_));
+      setStatus("");
+    }
+    if (active.current && getBaseUrl() === base) {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 grid gap-2" aria-label={`${kind} name`}>
+      <p className="text-sm">Display name: {metadata.name}</p>
+      <p className="text-muted-foreground text-sm">
+        Adapter name: {metadata.adapter_name}
+      </p>
+      <p className="text-sm">
+        {metadata.name_override === null
+          ? "Using Adapter name"
+          : "Name override active"}
+      </p>
+      {editing ? (
+        <form
+          className="grid gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit(draft);
+          }}
+        >
+          <Label htmlFor={fieldId}>Display name</Label>
+          <Input
+            id={fieldId}
+            autoFocus
+            value={draft}
+            disabled={pending}
+            aria-describedby={`${fieldId}-count`}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <p id={`${fieldId}-count`} className="text-muted-foreground text-xs">
+            {[...draft].length} code points. Names must contain 1–128 code
+            points after trimming.
+          </p>
+          <div className="flex gap-2">
+            <Button size="default" type="submit" disabled={pending}>
+              {pending ? "Saving…" : "Save name"}
+            </Button>
+            <Button
+              size="default"
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => {
+                setEditing(false);
+                setError(null);
+                setStatus("");
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <Button
+          size="default"
+          variant="outline"
+          disabled={pending}
+          onClick={() => {
+            setDraft(metadata.name);
+            setEditing(true);
+            setError(null);
+            setStatus("");
+          }}
+        >
+          Rename
+        </Button>
+      )}
+      <Button
+        size="default"
+        variant="outline"
+        disabled={pending || metadata.name_override === null}
+        onClick={() => {
+          void submit(null);
+        }}
+      >
+        Reset to Adapter name
+      </Button>
+      <output className="block text-sm">{status}</output>
+      {error && (
+        <p role="alert" className="text-destructive text-sm">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+};
+
+const NameEditor = (props: Props) => {
+  const version = useBaseUrlVersion();
+  return (
+    <Editor
+      key={JSON.stringify([props.kind, props.objectId, version])}
+      {...props}
+    />
+  );
+};
+
+export default NameEditor;

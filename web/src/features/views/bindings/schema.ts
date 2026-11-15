@@ -1,45 +1,84 @@
 import { z } from "zod";
+
 import { deviceID, entityID, plainText } from "../catalog/primitives";
-import { fieldGuide, fieldTypes, quantityTypes, readingFieldGuide, textFieldGuide, textTypes } from "./state-fields";
+import {
+  fieldGuide,
+  fieldTypes,
+  quantityTypes,
+  readingFieldGuide,
+  textFieldGuide,
+  textTypes,
+} from "./state-fields";
 
 export const numericTypes = quantityTypes;
 export const seriesWindows = ["1h", "6h", "24h", "7d"] as const;
-const fieldPointer = z.string().max(64).regex(/^(\/[a-z][a-z0-9_]*)*$/);
+const fieldPointer = z
+  .string()
+  .max(64)
+  .regex(/^(?:\/[a-z][a-z0-9_]*)*$/u);
 const entitySource = {
-  entity_id: entityID, entity_type: z.enum(numericTypes),
-  field: fieldPointer.describe(fieldGuide).meta({ id: "NumericField" }).optional(),
+  entity_id: entityID,
+  entity_type: z.enum(numericTypes),
+  field: fieldPointer
+    .describe(fieldGuide)
+    .meta({ id: "NumericField" })
+    .optional(),
 };
-export const stateBindingSchema = z.strictObject({ kind: z.literal("entity-state"), ...entitySource }).meta({ id: "NumericStateSource" });
+export const stateBindingSchema = z
+  .strictObject({ kind: z.literal("entity-state"), ...entitySource })
+  .meta({ id: "NumericStateSource" });
 export const seriesBindingSchema = z.strictObject({
-  kind: z.literal("entity-series"), ...entitySource, window: z.enum(seriesWindows),
+  kind: z.literal("entity-series"),
+  ...entitySource,
+  window: z.enum(seriesWindows),
 });
 /** A yes/no or text State field, shown in words. */
-export const textBindingSchema = z.strictObject({
-  kind: z.literal("entity-state"), entity_id: entityID, entity_type: z.enum(textTypes),
-  field: fieldPointer.describe(textFieldGuide).optional(),
-}).meta({ id: "DiscreteStateSource" });
+export const textBindingSchema = z
+  .strictObject({
+    kind: z.literal("entity-state"),
+    entity_id: entityID,
+    entity_type: z.enum(textTypes),
+    field: fieldPointer.describe(textFieldGuide).optional(),
+  })
+  .meta({ id: "DiscreteStateSource" });
 /** Any State field: a numeric reading with its unit, or words. */
 export const readingBindingSchema = z.strictObject({
-  kind: z.literal("entity-state"), entity_id: entityID, entity_type: z.enum(fieldTypes),
+  kind: z.literal("entity-state"),
+  entity_id: entityID,
+  entity_type: z.enum(fieldTypes),
   field: fieldPointer.describe(readingFieldGuide).optional(),
 });
 /** A Device and whichever readable Entities it has when the view is shown. */
-export const deviceBindingSchema = z.strictObject({ kind: z.literal("device"), device_id: deviceID });
+export const deviceBindingSchema = z.strictObject({
+  kind: z.literal("device"),
+  device_id: deviceID,
+});
 /** Only a power Entity's root boolean has the power.set Command contract. */
-export const powerBindingSchema = z.strictObject({
-  kind: z.literal("entity-state"), entity_id: entityID,
-  entity_type: z.literal("hearth.power/v1"), field: z.literal("").optional(),
-}).meta({ id: "PowerSource" });
+export const powerBindingSchema = z
+  .strictObject({
+    kind: z.literal("entity-state"),
+    entity_id: entityID,
+    entity_type: z.literal("hearth.power/v1"),
+    field: z.literal("").optional(),
+  })
+  .meta({ id: "PowerSource" });
 export type PowerSource = z.infer<typeof powerBindingSchema>;
 /** An enum setting's root choice. Its choices come from the Entity's support. */
-export const choiceBindingSchema = z.strictObject({
-  kind: z.literal("entity-state"), entity_id: entityID,
-  entity_type: z.literal("hearth.enumsetting/v1"), field: z.literal("").optional(),
-}).meta({ id: "ChoiceSource" });
+export const choiceBindingSchema = z
+  .strictObject({
+    kind: z.literal("entity-state"),
+    entity_id: entityID,
+    entity_type: z.literal("hearth.enumsetting/v1"),
+    field: z.literal("").optional(),
+  })
+  .meta({ id: "ChoiceSource" });
 export type ChoiceSource = z.infer<typeof choiceBindingSchema>;
 /** Words for a yes/no field, such as Open and Closed for a door contact. Text fields ignore them. */
-export const wordsSchema = z.strictObject({ true: plainText(40), false: plainText(40) })
-  .describe("Words for a yes/no field's true and false values, such as Open and Closed for a door contact. Only yes/no fields accept words.")
+export const wordsSchema = z
+  .strictObject({ true: plainText(40), false: plainText(40) })
+  .describe(
+    "Words for a yes/no field's true and false values, such as Open and Closed for a door contact. Only yes/no fields accept words."
+  )
   .meta({ id: "BooleanWords" });
 export type StateBinding = z.infer<typeof stateBindingSchema>;
 export type SeriesBinding = z.infer<typeof seriesBindingSchema>;

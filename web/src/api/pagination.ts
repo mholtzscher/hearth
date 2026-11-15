@@ -23,12 +23,15 @@ export class CollectionPaginationError extends Error {
 /** Path for one page of a collection read: always the maximum page size, plus
     the continuation cursor (URL-encoded, since cursors are opaque and may carry
     `+`, `/`, `=` and other reserved characters) when following one. */
-function collectionPagePath(path: string, cursor: string | undefined): string {
+const collectionPagePath = (
+  path: string,
+  cursor: string | undefined
+): string => {
   const params = `limit=${COLLECTION_PAGE_LIMIT}${
     cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`
   }`;
   return `${path}${path.includes("?") ? "&" : "?"}${params}`;
-}
+};
 
 /** Read every page of a collection endpoint and return them as one Collection.
 
@@ -42,30 +45,39 @@ function collectionPagePath(path: string, cursor: string | undefined): string {
     CollectionPaginationError, so a caller's error handling sees a failed read
     instead of a silently truncated one. The returned Collection carries no
     `next_cursor`: every page was consumed. */
-export async function fetchAllCollectionPages<T>(path: string): Promise<Collection<T>> {
+export const fetchAllCollectionPages = <T>(
+  path: string
+): Promise<Collection<T>> => {
   const items: T[] = [];
   const followedCursors = new Set<string>();
-  let cursor: string | undefined;
-  let pagesFetched = 0;
 
-  for (;;) {
-    const page = await apiFetch<Collection<T>>(collectionPagePath(path, cursor));
-    pagesFetched += 1;
+  const fetchPage = async (
+    cursor: string | undefined,
+    previousPages: number
+  ): Promise<Collection<T>> => {
+    const page = await apiFetch<Collection<T>>(
+      collectionPagePath(path, cursor)
+    );
+    const pagesFetched = previousPages + 1;
     items.push(...page.items);
 
     const next = page.next_cursor;
-    if (next === undefined || next === "") return { items };
+    if (next === undefined || next === "") {
+      return { items };
+    }
     if (followedCursors.has(next)) {
       throw new CollectionPaginationError(
-        `pagination for ${path} repeated cursor ${JSON.stringify(next)} after ${pagesFetched} page(s); refusing to loop`,
+        `pagination for ${path} repeated cursor ${JSON.stringify(next)} after ${pagesFetched} page(s); refusing to loop`
       );
     }
     if (pagesFetched >= MAX_COLLECTION_PAGES) {
       throw new CollectionPaginationError(
-        `pagination for ${path} exceeded ${MAX_COLLECTION_PAGES} pages at limit=${COLLECTION_PAGE_LIMIT}; refusing to continue`,
+        `pagination for ${path} exceeded ${MAX_COLLECTION_PAGES} pages at limit=${COLLECTION_PAGE_LIMIT}; refusing to continue`
       );
     }
     followedCursors.add(next);
-    cursor = next;
-  }
-}
+    return fetchPage(next, pagesFetched);
+  };
+
+  return fetchPage(undefined, 0);
+};

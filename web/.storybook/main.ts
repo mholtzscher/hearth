@@ -1,6 +1,8 @@
+import path from "node:path";
+
 import type { StorybookConfig } from "@storybook/react-vite";
 import tailwindcss from "@tailwindcss/vite";
-import path from "node:path";
+
 import { exactHost, parsePort } from "../scripts/storybook-server.ts";
 
 const allowedHost = process.env.HEARTH_STORYBOOK_ALLOWED_HOST;
@@ -8,16 +10,13 @@ const allowedHosts = allowedHost ? [exactHost(allowedHost)] : [];
 const httpsPort = process.env.HEARTH_STORYBOOK_HTTPS_PORT;
 
 const config: StorybookConfig = {
-  stories: [
-    "../src/**/*.mdx",
-    "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"
-  ],
+  stories: ["../src/**/*.mdx", "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
   addons: [
     "@storybook/addon-vitest",
     "@storybook/addon-a11y",
     "@storybook/addon-docs",
     "@storybook/addon-mcp",
-    "msw-storybook-addon"
+    "msw-storybook-addon",
   ],
   framework: {
     name: "@storybook/react-vite",
@@ -34,47 +33,92 @@ const config: StorybookConfig = {
       shouldRemoveUndefinedFromOptional: true,
       savePropValueAsString: true,
       // The manifest drops inherited sources over 30 props. Keep a useful native subset.
-      propFilter: (prop) => !prop.parent?.fileName.includes("node_modules") || [
-        "id", "role", "tabIndex", "name", "required", "readOnly", "min", "max", "step",
-        "aria-label", "aria-labelledby", "aria-describedby", "aria-invalid", "aria-errormessage",
-        "aria-required", "aria-disabled", "aria-expanded", "aria-controls", "aria-busy",
-        "disabled", "type", "value", "defaultValue",
-        "placeholder", "onChange", "onClick", "children", "checked", "defaultChecked",
-        "onCheckedChange",
-        "open", "defaultOpen", "onOpenChange", "modal", "htmlFor",
-        "collapsible", "onValueChange", "orientation", "dir",
-      ].includes(prop.name),
+      propFilter: (prop) =>
+        !prop.parent?.fileName.includes("node_modules") ||
+        [
+          "id",
+          "role",
+          "tabIndex",
+          "name",
+          "required",
+          "readOnly",
+          "min",
+          "max",
+          "step",
+          "aria-label",
+          "aria-labelledby",
+          "aria-describedby",
+          "aria-invalid",
+          "aria-errormessage",
+          "aria-required",
+          "aria-disabled",
+          "aria-expanded",
+          "aria-controls",
+          "aria-busy",
+          "disabled",
+          "type",
+          "value",
+          "defaultValue",
+          "placeholder",
+          "onChange",
+          "onClick",
+          "children",
+          "checked",
+          "defaultChecked",
+          "onCheckedChange",
+          "open",
+          "defaultOpen",
+          "onOpenChange",
+          "modal",
+          "htmlFor",
+          "collapsible",
+          "onValueChange",
+          "orientation",
+          "dir",
+        ].includes(prop.name),
     },
   },
-  core: { disableTelemetry: true, disableWhatsNewNotifications: true, allowedHosts },
-  viteFinal(config) {
+  core: {
+    disableTelemetry: true,
+    disableWhatsNewNotifications: true,
+    allowedHosts,
+  },
+  viteFinal(viteConfig) {
     // Prebundle shared dependencies so late discovery cannot reload an active test.
-    config.optimizeDeps = {
-      ...config.optimizeDeps,
-      include: [...(config.optimizeDeps?.include ?? []), "prism-react-renderer", "cn/config"],
+    viteConfig.optimizeDeps = {
+      ...viteConfig.optimizeDeps,
+      include: [
+        ...(viteConfig.optimizeDeps?.include ?? []),
+        "prism-react-renderer",
+        "cn/config",
+      ],
     };
-    config.publicDir = path.resolve(import.meta.dirname, "public");
-    config.plugins = [...(config.plugins ?? []), tailwindcss()];
-    config.resolve = {
-      ...config.resolve,
+    viteConfig.publicDir = path.resolve(import.meta.dirname, "public");
+    viteConfig.plugins = [...(viteConfig.plugins ?? []), tailwindcss()];
+    viteConfig.resolve = {
+      ...viteConfig.resolve,
       alias: { "@": path.resolve(import.meta.dirname, "../src") },
     };
-    config.server = {
-      ...config.server,
+    viteConfig.server = {
+      ...viteConfig.server,
       allowedHosts,
       // The browser must connect through HTTPS, not to Vite's loopback backend port.
-      ...(allowedHost && httpsPort ? {
-        hmr: {
-          ...(typeof config.server?.hmr === "object" ? config.server.hmr : {}),
-          host: allowedHost,
-          protocol: "wss",
-          clientPort: parsePort(httpsPort),
-        },
-      } : {}),
+      ...(allowedHost && httpsPort
+        ? {
+            hmr: {
+              ...(typeof viteConfig.server?.hmr === "object"
+                ? viteConfig.server.hmr
+                : {}),
+              host: allowedHost,
+              protocol: "wss",
+              clientPort: parsePort(httpsPort),
+            },
+          }
+        : {}),
       proxy: {},
       fs: { allow: [path.resolve(import.meta.dirname, "../..")] },
     };
-    return config;
+    return viteConfig;
   },
 };
 export default config;

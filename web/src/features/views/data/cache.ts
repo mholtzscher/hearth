@@ -1,20 +1,35 @@
-export type ReadRequest = {
+export interface ReadRequest {
   key: string;
   kind: "state" | "series";
   load: (signal: AbortSignal, to: Date) => Promise<unknown>;
-};
-export type ReadSnapshot = { data?: unknown; error?: Error; loading: boolean };
-type Entry = {
-  request: ReadRequest; snapshot: ReadSnapshot; listeners: Set<() => void>;
+}
+export interface ReadSnapshot {
+  data?: unknown;
+  error?: Error;
+  loading: boolean;
+}
+interface Entry {
+  request: ReadRequest;
+  snapshot: ReadSnapshot;
+  listeners: Set<() => void>;
   controller?: AbortController;
   requestedTo?: number;
   pendingTo?: Date;
   /** refreshState asked for a read while one was in flight; one more read follows it. */
   followUp?: boolean;
   /** refreshState callers waiting for this entry's next completed read. */
-  waiters: Array<() => void>;
-};
+  waiters: (() => void)[];
+}
 export const emptySnapshot: ReadSnapshot = { loading: true };
+
+const now = (): Date => new Date(Math.floor(Date.now() / 1000) * 1000);
+const visible = (): boolean => document.visibilityState !== "hidden";
+const settle = (entry: Entry): void => {
+  const waiters = entry.waiters.splice(0);
+  for (const resolve of waiters) {
+    resolve();
+  }
+};
 
 /** A connection owns one cache. Cards and formatting never own refresh work. */
 export class ReadCache {
@@ -27,18 +42,28 @@ export class ReadCache {
   private listening = false;
   private seriesRefreshQueued = false;
 
-  snapshot(key: string): ReadSnapshot { return this.entries.get(key)?.snapshot ?? emptySnapshot; }
+  snapshot(key: string): ReadSnapshot {
+    return this.entries.get(key)?.snapshot ?? emptySnapshot;
+  }
 
   subscribe(request: ReadRequest, listener: () => void): () => void {
     let entry = this.entries.get(request.key);
     if (!entry) {
-      entry = { request, snapshot: emptySnapshot, listeners: new Set(), waiters: [] };
+      entry = {
+        request,
+        snapshot: emptySnapshot,
+        listeners: new Set(),
+        waiters: [],
+      };
       this.entries.set(request.key, entry);
     }
     entry.listeners.add(listener);
     if (entry.listeners.size === 1) {
-      if (request.kind === "series") this.queueSeriesRefresh();
-      else void this.read(entry, this.now());
+      if (request.kind === "series") {
+        this.queueSeriesRefresh();
+      } else {
+        void this.read(entry, now());
+      }
     }
     this.start();
     return () => {
@@ -48,7 +73,9 @@ export class ReadCache {
         this.entries.delete(request.key);
         settle(entry);
       }
-      if (this.entries.size === 0) this.stop();
+      if (this.entries.size === 0) {
+        this.stop();
+      }
     };
   }
 
@@ -62,11 +89,16 @@ export class ReadCache {
     this.scheduleFast();
     let released = false;
     return () => {
-      if (released) return;
+      if (released) {
+        return;
+      }
       released = true;
       const count = (this.boosted.get(key) ?? 1) - 1;
-      if (count > 0) this.boosted.set(key, count);
-      else this.boosted.delete(key);
+      if (count > 0) {
+        this.boosted.set(key, count);
+      } else {
+        this.boosted.delete(key);
+      }
       this.scheduleFast();
     };
   }
@@ -74,7 +106,10 @@ export class ReadCache {
   dispose(): void {
     this.boosted.clear();
     this.stop();
-    for (const entry of this.entries.values()) { entry.controller?.abort(); settle(entry); }
+    for (const entry of this.entries.values()) {
+      entry.controller?.abort();
+      settle(entry);
+    }
     this.entries.clear();
   }
 
@@ -84,40 +119,61 @@ export class ReadCache {
    * confirmed, so one more read follows it. Resolves once each of those reads
    * has settled, successfully or not, or its entry is gone. Never rejects.
    */
-  refreshState(): Promise<void> {
-    const to = this.now();
-    const waits: Array<Promise<void>> = [];
+  async refreshState(): Promise<void> {
+    const to = now();
+    const waits: Promise<void>[] = [];
     for (const entry of this.entries.values()) {
-      if (entry.request.kind !== "state") continue;
-      waits.push(new Promise(resolve => entry.waiters.push(resolve)));
-      if (entry.controller) entry.followUp = true;
-      else void this.read(entry, to, true);
+      if (entry.request.kind !== "state") {
+        continue;
+      }
+      const waiter = Promise.withResolvers<undefined>();
+      entry.waiters.push(() => waiter.resolve(undefined));
+      waits.push(waiter.promise);
+      if (entry.controller) {
+        entry.followUp = true;
+      } else {
+        void this.read(entry, to, true);
+      }
     }
-    return Promise.all(waits).then(() => undefined);
+    await Promise.all(waits);
   }
 
-  private now(): Date { return new Date(Math.floor(Date.now() / 1000) * 1000); }
   private queueSeriesRefresh(): void {
-    if (this.seriesRefreshQueued) return;
+    if (this.seriesRefreshQueued) {
+      return;
+    }
     this.seriesRefreshQueued = true;
     queueMicrotask(() => {
       this.seriesRefreshQueued = false;
-      const to = this.now();
-      for (const entry of this.entries.values()) if (entry.request.kind === "series") void this.read(entry, to);
+      const to = now();
+      for (const entry of this.entries.values()) {
+        if (entry.request.kind === "series") {
+          void this.read(entry, to);
+        }
+      }
     });
   }
-  private visible(): boolean { return document.visibilityState !== "hidden"; }
   private refresh = (): void => {
-    if (!this.visible()) return;
-    const to = this.now();
-    for (const entry of this.entries.values()) void this.read(entry, to);
+    if (!visible()) {
+      return;
+    }
+    const to = now();
+    for (const entry of this.entries.values()) {
+      void this.read(entry, to);
+    }
   };
   private visibility = (): void => {
-    if (this.visible()) { this.refresh(); this.schedule(); }
-    else this.clearTimers();
+    if (visible()) {
+      this.refresh();
+      this.schedule();
+    } else {
+      this.clearTimers();
+    }
   };
   private start(): void {
-    if (this.listening) return;
+    if (this.listening) {
+      return;
+    }
     this.listening = true;
     window.addEventListener("focus", this.refresh);
     window.addEventListener("online", this.refresh);
@@ -126,32 +182,51 @@ export class ReadCache {
   }
   private schedule(): void {
     this.clearTimers();
-    if (!this.visible()) return;
+    if (!visible()) {
+      return;
+    }
     this.stateTimer = setInterval(() => {
-      const to = this.now();
-      for (const entry of this.entries.values()) if (entry.request.kind === "state") void this.read(entry, to);
+      const to = now();
+      for (const entry of this.entries.values()) {
+        if (entry.request.kind === "state") {
+          void this.read(entry, to);
+        }
+      }
     }, 10_000);
     const series = () => {
       const to = new Date(Math.floor(Date.now() / 60_000) * 60_000);
-      for (const entry of this.entries.values()) if (entry.request.kind === "series") void this.read(entry, to);
-      this.seriesTimer = setTimeout(series, 60_000 - Date.now() % 60_000);
+      for (const entry of this.entries.values()) {
+        if (entry.request.kind === "series") {
+          void this.read(entry, to);
+        }
+      }
+      this.seriesTimer = setTimeout(series, 60_000 - (Date.now() % 60_000));
     };
-    this.seriesTimer = setTimeout(series, 60_000 - Date.now() % 60_000);
+    this.seriesTimer = setTimeout(series, 60_000 - (Date.now() % 60_000));
     this.scheduleFast();
   }
   private scheduleFast(): void {
     clearInterval(this.fastTimer);
     this.fastTimer = undefined;
-    if (this.boosted.size === 0 || !this.listening || !this.visible()) return;
+    if (this.boosted.size === 0 || !this.listening || !visible()) {
+      return;
+    }
     this.fastTimer = setInterval(() => {
-      const to = this.now();
+      const to = now();
       for (const key of this.boosted.keys()) {
         const entry = this.entries.get(key);
-        if (entry?.request.kind === "state") void this.read(entry, to);
+        if (entry?.request.kind === "state") {
+          void this.read(entry, to);
+        }
       }
-    }, 1_000);
+    }, 1000);
   }
-  private clearTimers(): void { clearInterval(this.stateTimer); clearTimeout(this.seriesTimer); clearInterval(this.fastTimer); this.fastTimer = undefined; }
+  private clearTimers(): void {
+    clearInterval(this.stateTimer);
+    clearTimeout(this.seriesTimer);
+    clearInterval(this.fastTimer);
+    this.fastTimer = undefined;
+  }
   private stop(): void {
     this.clearTimers();
     window.removeEventListener("focus", this.refresh);
@@ -160,9 +235,16 @@ export class ReadCache {
     this.listening = false;
   }
   private async read(entry: Entry, to: Date, forced = false): Promise<void> {
-    if (!forced && !this.visible()) return;
+    if (!forced && !visible()) {
+      return;
+    }
     if (entry.controller) {
-      if (entry.request.kind === "series" && entry.requestedTo !== to.getTime()) entry.pendingTo = to;
+      if (
+        entry.request.kind === "series" &&
+        entry.requestedTo !== to.getTime()
+      ) {
+        entry.pendingTo = to;
+      }
       return;
     }
     const controller = new AbortController();
@@ -170,31 +252,35 @@ export class ReadCache {
     entry.requestedTo = to.getTime();
     try {
       const data = await entry.request.load(controller.signal, to);
-      if (!controller.signal.aborted) entry.snapshot = { data, loading: false };
+      if (!controller.signal.aborted) {
+        entry.snapshot = { data, loading: false };
+      }
     } catch (error) {
-      if (!controller.signal.aborted) entry.snapshot = {
-        data: entry.snapshot.data, loading: false,
-        error: error instanceof Error ? error : new Error("Read failed"),
-      };
+      if (!controller.signal.aborted) {
+        entry.snapshot = {
+          data: entry.snapshot.data,
+          loading: false,
+          error: error instanceof Error ? error : new Error("Read failed"),
+        };
+      }
     } finally {
       entry.controller = undefined;
       if (!controller.signal.aborted) {
-        entry.listeners.forEach(listener => listener());
+        for (const listener of entry.listeners) {
+          listener();
+        }
         const pending = entry.pendingTo;
         entry.pendingTo = undefined;
         if (entry.followUp) {
           entry.followUp = false;
-          void this.read(entry, this.now(), true);
+          void this.read(entry, now(), true);
         } else {
           settle(entry);
-          if (pending) void this.read(entry, pending);
+          if (pending) {
+            void this.read(entry, pending);
+          }
         }
       }
     }
   }
-}
-
-function settle(entry: Entry): void {
-  const waiters = entry.waiters.splice(0);
-  waiters.forEach(resolve => resolve());
 }

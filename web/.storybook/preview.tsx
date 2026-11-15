@@ -1,10 +1,12 @@
 import type { Preview } from "@storybook/react-vite";
 import MockDate from "mockdate";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { mswLoader } from "msw-storybook-addon/csf3";
 import { setupWorker } from "msw/browser";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+
 import { setBaseUrl } from "../src/api/client";
 import { ViewDataProvider } from "../src/features/views/data/provider";
+
 import "../src/index.css";
 import { fixtureNow, createCoreHandlers } from "./msw-handlers";
 
@@ -14,36 +16,59 @@ const unhandledCoreRequests: string[] = [];
 const preview: Preview = {
   tags: ["autodocs"],
   decorators: [
-    (Story, context) => context.parameters.application ? <Story /> : (
-      <MemoryRouter key={context.id} initialEntries={[context.parameters.route?.entry ?? "/"]}>
-        <ViewDataProvider key={context.id}>
-          <main className="block h-auto min-h-screen translate-none bg-background p-6 text-label text-foreground *:mx-auto *:max-w-[1080px] max-tablet:p-3">
-            {context.parameters.route
-              ? <Routes><Route path={context.parameters.route.path} element={<Story />} /></Routes>
-              : <Story />}
-          </main>
-        </ViewDataProvider>
-      </MemoryRouter>
-    ),
+    (Story, context) =>
+      context.parameters.application ? (
+        <Story />
+      ) : (
+        <MemoryRouter
+          key={context.id}
+          initialEntries={[context.parameters.route?.entry ?? "/"]}
+        >
+          <ViewDataProvider key={context.id}>
+            <main className="bg-background text-label text-foreground max-tablet:p-3 block h-auto min-h-screen translate-none p-6 *:mx-auto *:max-w-[1080px]">
+              {context.parameters.route ? (
+                <Routes>
+                  <Route
+                    path={context.parameters.route.path}
+                    element={<Story />}
+                  />
+                </Routes>
+              ) : (
+                <Story />
+              )}
+            </main>
+          </ViewDataProvider>
+        </MemoryRouter>
+      ),
   ],
-  loaders: [mswLoader(async () => {
-    const worker = setupWorker();
-    await worker.start({
-      quiet: true,
-      // Throwing answers the request with a 500. The default handles only print and pass it through.
-      async onUnhandledFrame({ frame, defaults }) {
-        if (!("request" in frame.data)) return;
-        const { method, url } = frame.data.request;
-        const path = new URL(url).pathname;
-        if (!/^\/(v1(?:\/|$)|healthz$|readyz$|nats-monitor(?:\/|$))/.test(path)) return;
-        unhandledCoreRequests.push(`${method} ${path}`);
-        await defaults.error();
-        throw new Error(`Unhandled Core request: ${method} ${path}`);
-      },
-    });
-    return worker;
-  })],
-  async beforeEach(context) {
+  loaders: [
+    mswLoader(async () => {
+      const worker = setupWorker();
+      await worker.start({
+        quiet: true,
+        // Throwing answers the request with a 500. The default handles only print and pass it through.
+        async onUnhandledFrame({ frame, defaults }) {
+          if (!("request" in frame.data)) {
+            return;
+          }
+          const { method, url } = frame.data.request;
+          const path = new URL(url).pathname;
+          if (
+            !/^\/(?:v1(?:\/|$)|healthz$|readyz$|nats-monitor(?:\/|$))/u.test(
+              path
+            )
+          ) {
+            return;
+          }
+          unhandledCoreRequests.push(`${method} ${path}`);
+          await defaults.error();
+          throw new Error(`Unhandled Core request: ${method} ${path}`);
+        },
+      });
+      return worker;
+    }),
+  ],
+  beforeEach(context) {
     const { msw } = context;
     document.documentElement.classList.add("dark");
     const previousBase = localStorage.getItem("hearth.baseUrl");
@@ -54,22 +79,31 @@ const preview: Preview = {
     return () => {
       MockDate.reset();
       setBaseUrl(previousBase ?? "");
-      if (previousBase === null) localStorage.removeItem("hearth.baseUrl");
+      if (previousBase === null) {
+        localStorage.removeItem("hearth.baseUrl");
+      }
     };
   },
   // A component can absorb the failed request, so fail the story as well.
-  async afterEach() {
-    if (unhandledCoreRequests.length > 0) throw new Error(`Unhandled Core requests: ${unhandledCoreRequests.join(", ")}`);
+  afterEach() {
+    if (unhandledCoreRequests.length > 0) {
+      throw new Error(
+        `Unhandled Core requests: ${unhandledCoreRequests.join(", ")}`
+      );
+    }
   },
   parameters: {
     options: {
-      storySort: { method: "alphabetical", order: ["Start here", "Components", "Pages", "Application"] },
+      storySort: {
+        method: "alphabetical",
+        order: ["Start here", "Components", "Pages", "Application"],
+      },
     },
     layout: "fullscreen",
     controls: {
       matchers: {
-        color: /(background|color)$/i,
-        date: /Date$/i,
+        color: /(?:background|color)$/iu,
+        date: /Date$/iu,
       },
     },
     a11y: { test: "error" },
@@ -77,7 +111,10 @@ const preview: Preview = {
       options: {
         phone: { name: "Phone", styles: { width: "390px", height: "844px" } },
         tablet: { name: "Tablet", styles: { width: "900px", height: "900px" } },
-        desktop: { name: "Desktop", styles: { width: "1440px", height: "1000px" } },
+        desktop: {
+          name: "Desktop",
+          styles: { width: "1440px", height: "1000px" },
+        },
       },
     },
   },

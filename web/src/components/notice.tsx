@@ -1,23 +1,38 @@
 import type { ReactNode } from "react";
+
 import { cn } from "../lib/utils.ts";
 
-type NoticeProps = {
+interface NoticeProps {
   /** Choose alert for an error or status for non-urgent feedback. */
   role: "alert" | "status";
   className?: string;
   children: ReactNode;
-};
+}
 
-function Notice({ role, className, children }: NoticeProps) {
+const noticeClasses =
+  "border-destructive/45 bg-destructive/8 text-caption text-foreground my-3 rounded-md border p-3 leading-normal";
+
+type StatusNoticeProps = Omit<NoticeProps, "role">;
+
+const StatusNotice = ({ className, children }: StatusNoticeProps) => (
+  <output data-slot="notice" className={cn(noticeClasses, "block", className)}>
+    {children}
+  </output>
+);
+
+const Notice = ({ role, className, children }: NoticeProps) => {
+  if (role === "status") {
+    return <StatusNotice className={className}>{children}</StatusNotice>;
+  }
   return (
     <div
       data-slot="notice"
       role={role}
-      className={cn("my-3 rounded-md border border-destructive/45 bg-destructive/8 p-3 text-caption leading-normal text-foreground", className)}
+      className={cn(noticeClasses, className)}
     >
       {children}
     </div>
   );
-}
+};
 
-export { Notice, type NoticeProps };
+export { Notice, type NoticeProps, StatusNotice, type StatusNoticeProps };

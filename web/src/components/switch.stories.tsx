@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, waitFor } from "storybook/test";
+
 import { Switch } from "./switch";
 
 const meta = {
@@ -11,10 +12,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-async function expectTreatment(control: HTMLElement, checked: boolean) {
-  const track = control.querySelector('[data-slot="switch-track"]')!;
-  const thumb = control.querySelector('[data-slot="switch-thumb"]')!;
-  const trackStyle = getComputedStyle(track), thumbStyle = getComputedStyle(thumb);
+const expectTreatment = async (control: HTMLElement, checked: boolean) => {
+  const track = control.querySelector<HTMLElement>(
+    '[data-slot="switch-track"]'
+  );
+  const thumb = control.querySelector<HTMLElement>(
+    '[data-slot="switch-thumb"]'
+  );
+  if (!track || !thumb) {
+    throw new Error("Switch is missing its visual parts");
+  }
+  const trackStyle = getComputedStyle(track);
+  const thumbStyle = getComputedStyle(thumb);
   await expect(trackStyle.width).toBe("44px");
   await expect(trackStyle.height).toBe("24px");
   await expect(trackStyle.borderWidth).toBe("1px");
@@ -22,14 +31,24 @@ async function expectTreatment(control: HTMLElement, checked: boolean) {
   await expect(trackStyle.borderRadius).toBe("12px");
   await expect(thumbStyle.width).toBe("18px");
   await expect(thumbStyle.height).toBe("18px");
-  await expect(parseFloat(thumbStyle.borderRadius)).toBeGreaterThanOrEqual(9);
+  await expect(
+    Number(thumbStyle.borderRadius.replace("px", ""))
+  ).toBeGreaterThanOrEqual(9);
   await waitFor(() => {
-    expect(getComputedStyle(track).backgroundColor).toBe(checked ? "rgb(167, 123, 255)" : "rgb(31, 31, 31)");
-    expect(getComputedStyle(track).borderColor).toBe(checked ? "rgb(167, 123, 255)" : "rgb(125, 125, 125)");
-    expect(getComputedStyle(thumb).backgroundColor).toBe(checked ? "rgb(244, 244, 244)" : "rgb(166, 166, 166)");
-    expect(thumb.getBoundingClientRect().left - track.getBoundingClientRect().left).toBe(checked ? 23 : 3);
+    expect(getComputedStyle(track).backgroundColor).toBe(
+      checked ? "rgb(167, 123, 255)" : "rgb(31, 31, 31)"
+    );
+    expect(getComputedStyle(track).borderColor).toBe(
+      checked ? "rgb(167, 123, 255)" : "rgb(125, 125, 125)"
+    );
+    expect(getComputedStyle(thumb).backgroundColor).toBe(
+      checked ? "rgb(244, 244, 244)" : "rgb(166, 166, 166)"
+    );
+    expect(
+      thumb.getBoundingClientRect().left - track.getBoundingClientRect().left
+    ).toBe(checked ? 23 : 3);
   });
-}
+};
 
 export const Off: Story = {
   play: async ({ canvas, userEvent }) => {
@@ -51,7 +70,16 @@ export const On: Story = {
 };
 export const Disabled: Story = {
   args: { disabled: true, defaultChecked: true, onCheckedChange: fn() },
-  render: args => <div className="flex gap-6"><Switch {...args}/><Switch aria-label="Disabled off switch" disabled onCheckedChange={args.onCheckedChange}/></div>,
+  render: (args) => (
+    <div className="flex gap-6">
+      <Switch {...args} />
+      <Switch
+        aria-label="Disabled off switch"
+        disabled
+        onCheckedChange={(checked) => args.onCheckedChange?.(checked)}
+      />
+    </div>
+  ),
   play: async ({ canvas, userEvent, args }) => {
     const control = canvas.getByRole("switch", { name: "Enable automation" });
     const off = canvas.getByRole("switch", { name: "Disabled off switch" });
@@ -81,7 +109,9 @@ export const Keyboard: Story = {
     await expect(style.outlineWidth).toBe("2px");
     await expect(style.outlineStyle).toBe("solid");
     await expect(style.outlineOffset).toBe("3px");
-    await waitFor(() => expect(getComputedStyle(control).outlineColor).toBe("rgb(167, 123, 255)"));
+    await waitFor(() =>
+      expect(getComputedStyle(control).outlineColor).toBe("rgb(167, 123, 255)")
+    );
     await userEvent.keyboard(" ");
     await expect(control).toHaveAttribute("aria-checked", "true");
     await expect(args.onCheckedChange).toHaveBeenCalledWith(true);
@@ -97,7 +127,12 @@ export const Invalid: Story = {
   args: { "aria-invalid": true },
   play: async ({ canvas }) => {
     const control = canvas.getByRole("switch", { name: "Enable automation" });
-    const track = control.querySelector('[data-slot="switch-track"]')!;
+    const track = control.querySelector<HTMLElement>(
+      '[data-slot="switch-track"]'
+    );
+    if (!track) {
+      throw new Error("Switch is missing its track");
+    }
     await expect(control).toHaveAttribute("aria-invalid", "true");
     await expect(getComputedStyle(track).borderColor).toBe("rgb(255, 92, 122)");
   },
@@ -111,11 +146,16 @@ export const Sizes: Story = {
     </div>
   ),
   play: async ({ canvas }) => {
-    for (const [name, height] of [["Default switch", "32px"], ["Touch switch", "44px"]]) {
-      const control = canvas.getByRole("switch", { name });
-      await expect(getComputedStyle(control).width).toBe("44px");
-      await expect(getComputedStyle(control).height).toBe(height);
-      await expect(getComputedStyle(control).borderRadius).toBe("8px");
-    }
+    await Promise.all(
+      [
+        ["Default switch", "32px"],
+        ["Touch switch", "44px"],
+      ].map(async ([name, height]) => {
+        const control = canvas.getByRole("switch", { name });
+        await expect(getComputedStyle(control).width).toBe("44px");
+        await expect(getComputedStyle(control).height).toBe(height);
+        await expect(getComputedStyle(control).borderRadius).toBe("8px");
+      })
+    );
   },
 };

@@ -1,40 +1,20 @@
 # Hearth Debug Dashboard
 
-React household workspace and development dashboard for `hearthd`. It exposes
-conversations, dashboards, Automation authoring and retained execution evidence,
-alongside Adapter, Device, Entity, Command, Notification, and NATS diagnostics.
+React household workspace and development dashboard for `hearthd`. It exposes conversations, dashboards, Automation authoring and retained execution evidence, alongside Adapter, Device, Entity, Command, Notification, and NATS diagnostics.
 
 ## Automation authoring
 
-The Automations library offers cards and the diagnostic table. Cards have
-switchable Sentence and Step stack read styles. **Edit Automation** opens the
-stack builder; **New Automation** starts a disabled draft. Every path owns its
-ordered Steps, including nested If/Else and first-match Choose paths.
+The Automations library offers cards and the diagnostic table. Cards have switchable Sentence and Step stack read styles. **Edit Automation** opens the stack builder; **New Automation** starts a disabled draft. Every path owns its ordered Steps, including nested If/Else and first-match Choose paths.
 
-Conversation Automation artifacts are separate from dashboard views. A card can
-reference a saved Automation's current definition, propose a new Automation, or
-propose replacement against a saved revision. **Open in canvas** selects it.
-Only browser **Save** creates or replaces it; **Save and enable** makes enablement
-explicit. The household agent uses `present_automation` for proposals rather than
-calling create/replace directly. External MCP and HTTP CRUD are unchanged.
+Conversation Automation artifacts are separate from dashboard views. A card can reference a saved Automation's current definition, propose a new Automation, or propose replacement against a saved revision. **Open in canvas** selects it. Only browser **Save** creates or replaces it; **Save and enable** makes enablement explicit. The household agent uses `present_automation` for proposals rather than calling create/replace directly. External MCP and HTTP CRUD are unchanged.
 
-Function, Read-State, and Set-Variables Steps use the exact-JSON inspector.
-Untouched literals and expressions retain their source tokens, including numbers
-beyond JavaScript's safe integer range. The editor validates the canonical
-Automation schema; Core rechecks current resource support when saving.
-Review model-authored proposals before Save: exact transport does not guarantee
-that the model reproduces every original literal.
+Function, Read-State, and Set-Variables Steps use the exact-JSON inspector. Untouched literals and expressions retain their source tokens, including numbers beyond JavaScript's safe integer range. The editor validates the canonical Automation schema; Core rechecks current resource support when saving. Review model-authored proposals before Save: exact transport does not guarantee that the model reproduces every original literal.
 
-Failed saves retain the draft. A revision conflict offers reload or explicit
-save-as-new; an ambiguous creation is not automatically retried. Check the library
-before trying another creation. Referenced children open read-only previews of
-their current definitions. Real execution and retained Run/Skip evidence remain
-on the detail page; draft changes are never a simulation or a Run.
+Failed saves retain the draft. A revision conflict offers reload or explicit save-as-new; an ambiguous creation is not automatically retried. Check the library before trying another creation. Referenced children open read-only previews of their current definitions. Real execution and retained Run/Skip evidence remain on the detail page; draft changes are never a simulation or a Run.
 
 ## Prerequisites
 
-- `hearthd` running, default `http://127.0.0.1:8080`. For a local simulator
-  stack with worktree-specific ports, use `mise run simulator-start` instead.
+- `hearthd` running, default `http://127.0.0.1:8080`. For a local simulator stack with worktree-specific ports, use `mise run simulator-start` instead.
 - Node + pnpm, provided by mise: run `mise install` from the repo root.
 
 ## Run
@@ -45,69 +25,34 @@ pnpm install
 pnpm run dev
 ```
 
-Open http://127.0.0.1:5173. `/v1`, `/healthz`, `/readyz`, and `/openapi.json`
-are proxied to `HEARTHD_URL` (default `http://127.0.0.1:8080`):
+Open http://127.0.0.1:5173. `/v1`, `/healthz`, `/readyz`, and `/openapi.json` are proxied to `HEARTHD_URL` (default `http://127.0.0.1:8080`):
 
 ```sh
 HEARTHD_URL=http://127.0.0.1:8080 pnpm run dev
 ```
 
-To point at a non-loopback `hearthd` on a trusted network, set the base URL in
-the toolbar (stored in `localStorage`) instead of using the proxy. The HTTP API
-has no authentication, so keep `hearthd` on loopback or a trusted network.
-Browsers block cross-origin reads unless the server sends CORS headers, and
-`hearthd` serves none: in a browser, leave the base URL empty to use the
-same-origin vite proxy. A non-empty base URL only works from a same-origin
-deployment or once `hearthd` gains CORS support.
+To point at a non-loopback `hearthd` on a trusted network, set the base URL in the toolbar (stored in `localStorage`) instead of using the proxy. The HTTP API has no authentication, so keep `hearthd` on loopback or a trusted network. Browsers block cross-origin reads unless the server sends CORS headers, and `hearthd` serves none: in a browser, leave the base URL empty to use the same-origin vite proxy. A non-empty base URL only works from a same-origin deployment or once `hearthd` gains CORS support.
 
 ## Remote access (Tailscale)
 
-The dev server binds loopback only (`mise run web-dev` passes `--host 127.0.0.1`),
-so expose it with `tailscale serve` instead of widening the bind:
+The dev server binds loopback only (`mise run web-dev` passes `--host 127.0.0.1`), so expose it with `tailscale serve` instead of widening the bind:
 
 ```sh
 mise run web-dev                                          # loopback
 tailscale serve --bg --http=8088 http://127.0.0.1:5173    # tailnet only
 ```
 
-→ `http://<machine>.<tailnet>.ts.net:8088/` (use `--https=443` for a TLS
-certificate). Tailscale forwards the original Host header, so `vite.config.ts`
-allowlists this machine's tailnet names automatically when `tailscale` is on
-`PATH`. Set `HEARTH_ALLOWED_HOSTS=host.example,.suffix.example` for any other
-name (a leading dot allows the whole suffix).
+→ `http://<machine>.<tailnet>.ts.net:8088/` (use `--https=443` for a TLS certificate). Tailscale forwards the original Host header, so `vite.config.ts` allowlists this machine's tailnet names automatically when `tailscale` is on `PATH`. Set `HEARTH_ALLOWED_HOSTS=host.example,.suffix.example` for any other name (a leading dot allows the whole suffix).
 
-Only the dashboard port needs to be reachable: `hearthd` stays on
-`127.0.0.1:8080` because the proxy runs server-side. Neither the dashboard nor
-the HTTP API authenticates, so every device your tailnet ACLs allow can use it.
+Only the dashboard port needs to be reachable: `hearthd` stays on `127.0.0.1:8080` because the proxy runs server-side. Neither the dashboard nor the HTTP API authenticates, so every device your tailnet ACLs allow can use it.
 
 ## Household agent
 
-`/agent` drives hearthd's required household agent (`POST /v1/agent/conversations`,
-`POST .../{id}/messages`, `GET .../{id}/messages`): Eino ADK in-process with
-OpenAI Responses, an embedded automation skill, and SQLite conversation history.
-Turns stream over SSE (`POST
-.../{id}/messages/stream`: `turn.started`, `tool.preparing`, `tool.started`,
-`tool.finished`, `view.presented`, `turn.finished`/`turn.failed`) so tool
-activity renders incrementally; a view being written holds its place in the
-reply from `tool.preparing` until it is presented. Each session reconciles with
-history at turn end. `ConversationsProvider` owns the requests
-above the routes, so navigating within Hearth or starting another conversation
-does not cancel an active turn. New conversations appear in Recent immediately.
-Reloading or closing the tab, or switching the Core connection, still cancels
-requests. The stream route is a plain Echo handler and stays out of
-`openapi.json`. The browser holds no model key. Conversation URLs identify
-server-side durable history. Core always registers these routes: the agent is a required module,
-configured by the non-secret `agent` block in `configs/hearthd.yaml` (including
-optional `agent.model`, default `gpt-5.6-luna`) and the environment-only
-`HEARTH_OPENAI_API_KEY`. Core fails startup when that variable is missing, empty,
-or whitespace-only. A 404
-from the page means the dashboard is connected to an older Core build. See
-`web/src/pages/AgentPage.tsx` and `internal/modules/agent`.
+`/agent` drives hearthd's required household agent (`POST /v1/agent/conversations`, `POST .../{id}/messages`, `GET .../{id}/messages`): Eino ADK in-process with OpenAI Responses, an embedded automation skill, and SQLite conversation history. Turns stream over SSE (`POST .../{id}/messages/stream`: `turn.started`, `tool.preparing`, `tool.started`, `tool.finished`, `view.presented`, `turn.finished`/`turn.failed`) so tool activity renders incrementally; a view being written holds its place in the reply from `tool.preparing` until it is presented. Each session reconciles with history at turn end. `ConversationsProvider` owns the requests above the routes, so navigating within Hearth or starting another conversation does not cancel an active turn. New conversations appear in Recent immediately. Reloading or closing the tab, or switching the Core connection, still cancels requests. The stream route is a plain Echo handler and stays out of `openapi.json`. The browser holds no model key. Conversation URLs identify server-side durable history. Core always registers these routes: the agent is a required module, configured by the non-secret `agent` block in `configs/hearthd.yaml` (including optional `agent.model`, default `gpt-5.6-luna`) and the environment-only `HEARTH_OPENAI_API_KEY`. Core fails startup when that variable is missing, empty, or whitespace-only. A 404 from the page means the dashboard is connected to an older Core build. See `web/src/pages/agent-page.tsx` and `internal/modules/agent`.
 
 ## Develop components with Storybook
 
-Use [the Storybook workflow](../docs/storybook.md) to develop dashboard components
-without Core, NATS, model credentials, or devices:
+Use [the Storybook workflow](../docs/storybook.md) to develop dashboard components without Core, NATS, model credentials, or devices:
 
 ```sh
 mise run web-install
@@ -115,10 +60,18 @@ mise run storybook-browser-install
 mise run storybook
 ```
 
-Open http://127.0.0.1:6006. The same server exposes the agent MCP endpoint at
-http://127.0.0.1:6006/mcp. Stories use the production dark theme and synthetic HTTP
-fixtures. `mise run storybook-test` runs browser interaction/accessibility checks;
-`mise run storybook-build` creates `web/storybook-static`.
+Open http://127.0.0.1:6006. The same server exposes the agent MCP endpoint at http://127.0.0.1:6006/mcp. Stories use the production dark theme and synthetic HTTP fixtures. `mise run storybook-test` runs browser interaction/accessibility checks; `mise run storybook-build` creates `web/storybook-static`.
+
+## Check and fix web code
+
+Ultracite uses its default Oxlint core, React, and Vitest rules and Oxfmt formatting. From the repository root:
+
+```sh
+mise run web-check
+mise run web-fix
+```
+
+`web-check` reports lint and formatting errors without changing files. `web-fix` applies formatting and safe lint fixes; review the diff and fix remaining diagnostics before running `web-check` again. CI and `mise run validate` enforce the same check. Build output, dependencies, and the generated MSW worker are excluded.
 
 ## Build
 
@@ -129,61 +82,29 @@ pnpm run preview
 
 ## Container image
 
-Releases publish `ghcr.io/mholtzscher/hearth/hearth-web:<tag>` (same tag as the
-`ko` Go images): a static build served by nginx, proxying `/v1`, `/healthz`,
-`/readyz`, `/openapi.json` to `HEARTHD_URL` and `/nats-monitor` to
-`NATS_MONITOR_URL` (same-origin, so no CORS setup is needed). Point it at
-`hearthd` at container start:
+Releases publish `ghcr.io/mholtzscher/hearth/hearth-web:<tag>` (same tag as the `ko` Go images): a static build served by nginx, proxying `/v1`, `/healthz`, `/readyz`, `/openapi.json` to `HEARTHD_URL` and `/nats-monitor` to `NATS_MONITOR_URL` (same-origin, so no CORS setup is needed). Point it at `hearthd` at container start:
 
 ```sh
 mise run web-docker-build
 docker run --rm -p 8081:80 -e HEARTHD_URL=http://hearthd:8080 hearth-web:dev
 ```
 
-The `HEARTHD_URL` hostname must resolve when the container starts (nginx
-resolves proxy targets at startup). The NATS websocket URL stays editable in
-the NATS page (stored in `localStorage`), so it needs no proxy.
+The `HEARTHD_URL` hostname must resolve when the container starts (nginx resolves proxy targets at startup). The NATS websocket URL stays editable in the NATS page (stored in `localStorage`), so it needs no proxy.
 
 ## Pages
 
 - **Entities**: list (optional `device_id` filter), link to detail.
-- **Entity detail**: metadata, state, support, enable/disable toggle
-  (`PATCH /v1/entities/{id}`), command sender (`POST …/commands`) with
-  power/brightness presets, command history, availability history, raw JSON.
+- **Entity detail**: metadata, state, support, enable/disable toggle (`PATCH /v1/entities/{id}`), command sender (`POST …/commands`) with power/brightness presets, command history, availability history, raw JSON.
 - **Devices**: list + detail with embedded entities.
 - **Adapters**: list + detail with runtime evidence, health history, raw JSON.
 - **Commands**: household history newest-first (`GET /v1/commands`) with entity/status filters, lookup by `cmd_…` id (`GET /v1/commands/{id}`) with shareable `?command_id=` links and recent IDs, outcome timeline with latency, and links to entity pages and automation step attempts.
-- **Automations**: switchable Sentence/Step stack cards, stack authoring,
-  retained Run/Skip history, manual Runs, and revision-checked enablement.
-  Notification leaves have structured destination/title/message editing.
-  Run notification evidence is separate from Commands and links to independent
-  attempt detail. Missing/pruned detail never changes a retained Step outcome.
-- **Destinations / Notifications**: destination discovery, one-shot manual test
-  sends and paginated attempt history. Unknown outcomes are ambiguous, never
-  automatically retried. See [Core notification usage](../docs/notifications.md).
-- **NATS**: live wire traffic (`hearth.v1.adapter.>` over websocket) with
-  subject presets, pause/clear, and subject filter; plus server info from the
-  NATS monitoring endpoint (connections with subscriptions, JetStream stream
-  `HEARTH_OBSERVATIONS_V1` state and consumer lag).
-- **Device facts**: reads Core's `HEARTH_DEVICE_FACTS_V1` JetStream stream over
-  the same websocket. A bounded retained snapshot (newest 200, newest-first,
-  `hearth.v1.core.fact.>`) is read through a short-lived ephemeral consumer that
-  is deleted as soon as the read completes; live streaming is off by default and
-  adds a separate ephemeral `DeliverNew` tail that sees only facts published
-  after it is created. Both consumers are page-owned and deleted on completion or
-  disable, with `inactive_threshold` as orphan safety for a closed tab. Entity and
-  device names are enrichment from the HTTP read API; the payload and subject
-  carry only the canonical entity id. Neither path offers durable recovery.
+- **Automations**: switchable Sentence/Step stack cards, stack authoring, retained Run/Skip history, manual Runs, and revision-checked enablement. Notification leaves have structured destination/title/message editing. Run notification evidence is separate from Commands and links to independent attempt detail. Missing/pruned detail never changes a retained Step outcome.
+- **Destinations / Notifications**: destination discovery, one-shot manual test sends and paginated attempt history. Unknown outcomes are ambiguous, never automatically retried. See [Core notification usage](../docs/notifications.md).
+- **NATS**: live wire traffic (`hearth.v1.adapter.>` over websocket) with subject presets, pause/clear, and subject filter; plus server info from the NATS monitoring endpoint (connections with subscriptions, JetStream stream `HEARTH_OBSERVATIONS_V1` state and consumer lag).
+- **Device facts**: reads Core's `HEARTH_DEVICE_FACTS_V1` JetStream stream over the same websocket. A bounded retained snapshot (newest 200, newest-first, `hearth.v1.core.fact.>`) is read through a short-lived ephemeral consumer that is deleted as soon as the read completes; live streaming is off by default and adds a separate ephemeral `DeliverNew` tail that sees only facts published after it is created. Both consumers are page-owned and deleted on completion or disable, with `inactive_threshold` as orphan safety for a closed tab. Entity and device names are enrichment from the HTTP read API; the payload and subject carry only the canonical entity id. Neither path offers durable recovery.
 
 Health (`/healthz`) and readiness (`/readyz`) poll every 10s in the header.
 
 ## NATS debugging prerequisites
 
-The simulator stack configures loopback WebSocket and monitoring listeners in
-`configs/nats.simulator.conf` on `SIM_NATS_PORT + 1` and `SIM_NATS_PORT + 4000`.
-`mise run simulator-start` passes the WebSocket URL to Vite as
-`VITE_NATS_WS_URL` and the monitoring URL as `NATS_MONITOR_URL`. For a separate
-NATS deployment, supply both URLs when starting Vite. The WebSocket URL is
-editable in the NATS page (stored in `localStorage`) and both pages share one
-refcounted connection per URL, so one page's teardown never closes the other's
-socket. Restart the simulator stack after changing its NATS configuration.
+The simulator stack configures loopback WebSocket and monitoring listeners in `configs/nats.simulator.conf` on `SIM_NATS_PORT + 1` and `SIM_NATS_PORT + 4000`. `mise run simulator-start` passes the WebSocket URL to Vite as `VITE_NATS_WS_URL` and the monitoring URL as `NATS_MONITOR_URL`. For a separate NATS deployment, supply both URLs when starting Vite. The WebSocket URL is editable in the NATS page (stored in `localStorage`) and both pages share one refcounted connection per URL, so one page's teardown never closes the other's socket. Restart the simulator stack after changing its NATS configuration.

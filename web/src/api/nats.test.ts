@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { getNatsWsUrl, setNatsWsUrl } from "./nats.ts";
 
-afterEach(() => {
-  localStorage.clear();
-  vi.unstubAllEnvs();
-});
+describe(getNatsWsUrl, () => {
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllEnvs();
+  });
 
-describe("getNatsWsUrl", () => {
   it("uses the worktree WebSocket listener supplied to Vite", () => {
     vi.stubEnv("VITE_NATS_WS_URL", "ws://127.0.0.1:4283");
     expect(getNatsWsUrl()).toBe("ws://127.0.0.1:4283");

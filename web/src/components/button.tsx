@@ -1,18 +1,21 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "../lib/utils.ts"
-import { Slot } from "radix-ui"
+import { cva } from "class-variance-authority";
+import type { VariantProps } from "class-variance-authority";
+import { Slot } from "radix-ui";
+import * as React from "react";
+
+import { cn } from "../lib/utils.ts";
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-transparent bg-clip-padding text-label leading-normal font-normal whitespace-nowrap cursor-pointer outline-none select-none transition-colors duration-150 ease-out-expo motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-3 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button text-label ease-out-expo focus-visible:outline-ring aria-invalid:border-destructive inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-transparent bg-clip-padding leading-normal font-normal whitespace-nowrap transition-colors duration-150 outline-none select-none focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-solid disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "border-primary bg-primary text-primary-foreground font-semibold hover:border-orange-hover hover:bg-orange-hover disabled:border-gray-3 disabled:bg-gray-3 disabled:text-gray-7 disabled:opacity-100",
+        default:
+          "border-primary bg-primary text-primary-foreground hover:border-orange-hover hover:bg-orange-hover disabled:border-gray-3 disabled:bg-gray-3 disabled:text-gray-7 font-semibold disabled:opacity-100",
         outline:
           "border-border bg-card text-foreground hover:bg-gray-3 aria-expanded:bg-gray-3",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-secondary text-secondary-foreground aria-expanded:bg-secondary aria-expanded:text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]",
         ghost:
           "text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
         destructive:
@@ -31,9 +34,9 @@ const buttonVariants = cva(
       size: "default",
     },
   }
-)
+);
 
-function Button({
+const Button = ({
   className,
   variant = "default",
   size = "default",
@@ -41,9 +44,9 @@ function Button({
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
-  const Comp = asChild ? Slot.Root : "button"
+    asChild?: boolean;
+  }) => {
+  const Comp = asChild ? Slot.Root : "button";
 
   return (
     <Comp
@@ -53,7 +56,7 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
-  )
-}
+  );
+};
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };

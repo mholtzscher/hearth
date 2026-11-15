@@ -108,6 +108,7 @@ GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
   changes need owning fixture/real-boundary checks; review generated diffs rather
   than editing outputs by hand.
 - Frontend: `mise run web-install` when needed, then
+  `mise run --skip-deps web-check` for Ultracite lint and formatting,
   `mise run --skip-deps web-test -- <filter>` and
   `mise run --skip-deps web-build` for typecheck/build.
 - Storybook: install Chromium once with `mise run storybook-browser-install`.

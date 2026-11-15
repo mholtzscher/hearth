@@ -1,0 +1,1203 @@
+import { useEffect, useState } from "react";
+
+import { editJsonSource } from "../../api/automation-json";
+import type { JsonPath } from "../../api/automation-json";
+import { useBaseUrlVersion } from "../../api/client";
+import type { NotificationDestination } from "../../api/notifications";
+import type { Automation, AutomationStep, Entity } from "../../api/types";
+import { Button } from "../../components/button";
+import { Card } from "../../components/card";
+import { NativeSelect } from "../../components/native-select";
+import { Switch } from "../../components/switch";
+import {
+  Condition,
+  Field,
+  Select,
+  StateGuide,
+  conditionSource,
+  entityOptions,
+  firstEntity,
+  q,
+} from "./condition-editor";
+import type { Context, Resources } from "./condition-editor";
+import {
+  automationDocumentIssues,
+  documentValue,
+  editAutomationDocument,
+  newDocumentID,
+  readAutomationDocument,
+  sequenceDocument,
+} from "./document";
+import type { AutomationDocument } from "./document";
+import { getOperationParametersSchema } from "./operation-parameters";
+import { collection, discoverFunctions } from "./resources";
+import type { AdapterFunction } from "./resources";
+
+const field = "grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 text-label";
+const fields = "grid grid-cols-[minmax(0,1fr)] gap-2.5";
+const actions = "mt-2.5 flex flex-wrap items-center justify-start gap-3";
+const summary =
+  "min-h-9 cursor-pointer py-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-3";
+const paragraph = "my-[5px] text-label text-muted-foreground";
+
+type LoadedResources = Resources & { backend: number };
+
+const emptyResources = (backend: number): LoadedResources => ({
+  backend,
+  entities: [],
+  automations: [],
+  destinations: [],
+  functions: [],
+});
+
+interface EditorProps {
+  document: AutomationDocument;
+  onChange: (document: AutomationDocument) => void;
+  onValidityChange?: (valid: boolean) => void;
+}
+
+const Binding = ({
+  ctx,
+  path,
+  name,
+  label,
+}: {
+  ctx: Context;
+  path: JsonPath;
+  name: string;
+  label: string;
+}) => {
+  let obj: Record<string, unknown>;
+  try {
+    obj = JSON.parse(documentValue(ctx.document, path));
+  } catch {
+    return null;
+  }
+  const expr = `${name}_expr`;
+  const isExpr = expr in obj;
+  const literal = name === "parameters" ? "{}" : q("");
+  const toggle = (next: boolean) => {
+    const oldKey = next ? name : expr;
+    const newKey = next ? expr : name;
+    // Replacing this object preserves every unrelated token; the mutually exclusive pair changes atomically.
+    const source = documentValue(ctx.document, path);
+    try {
+      // Operate on the object slice without passing through an invalid intermediate document.
+      const removed = editJsonSource(source, [oldKey], undefined);
+      ctx.apply(
+        path,
+        editJsonSource(removed, [newKey], next ? q("true") : literal)
+      );
+    } catch {
+      /* retain existing binding */
+    }
+  };
+  return (
+    <>
+      <label className={field}>
+        <span>{label} binding</span>
+        <NativeSelect
+          size="auto"
+          className="w-full min-w-0"
+          value={isExpr ? "expression" : "literal"}
+          onChange={(event) => toggle(event.target.value === "expression")}
+        >
+          <option value="literal">Literal</option>
+          <option value="expression">Expression</option>
+        </NativeSelect>
+      </label>
+      <Field
+        ctx={ctx}
+        path={[...path, isExpr ? expr : name]}
+        label={`${label}${!isExpr && name === "parameters" ? " · exact JSON" : ""}`}
+        raw={!isExpr && name === "parameters"}
+        multiline={!isExpr && name === "parameters"}
+      />
+    </>
+  );
+};
+const supportedOperations = (entity: Entity): string[] => {
+  const { operations } = entity.support;
+  return operations &&
+    typeof operations === "object" &&
+    !Array.isArray(operations)
+    ? Object.keys(operations)
+    : [];
+};
+const SchemaGuide = ({
+  schema,
+  title,
+}: {
+  schema?: Record<string, unknown>;
+  title: string;
+}) => (
+  <details className="text-caption text-muted-foreground">
+    <summary className={summary}>{title}</summary>
+    {schema ? (
+      <pre className="text-caption text-gray-9 [overflow-wrap:anywhere] whitespace-pre-wrap">
+        {JSON.stringify(schema, null, 2)}
+      </pre>
+    ) : (
+      <p className={paragraph}>
+        No schema is available for this selection. Core validates the current
+        support at Save.
+      </p>
+    )}
+  </details>
+);
+const CommandEditor = ({
+  ctx,
+  path,
+  step,
+}: {
+  ctx: Context;
+  path: JsonPath;
+  step: Extract<AutomationStep, { kind: "command" }>;
+}) => {
+  const eligible = ctx.resources.entities.filter(
+    (entity) => supportedOperations(entity).length > 0
+  );
+  const selected = ctx.resources.entities.find(
+    (entity) => entity.id === step.entity_id
+  );
+  const operations = selected ? supportedOperations(selected) : [];
+  const changeEntity = (id: string) => {
+    const entity = eligible.find((item) => item.id === id);
+    if (!entity) {
+      return;
+    }
+    const available = supportedOperations(entity);
+    const source = editJsonSource(
+      documentValue(ctx.document, path),
+      ["entity_id"],
+      q(id)
+    );
+    ctx.apply(
+      path,
+      available.includes(step.operation)
+        ? source
+        : editJsonSource(source, ["operation"], q(available[0]))
+    );
+  };
+  return (
+    <>
+      <label className={field}>
+        <span>Entity</span>
+        <NativeSelect
+          size="auto"
+          className="w-full min-w-0"
+          value={step.entity_id}
+          onChange={(event) => changeEntity(event.target.value)}
+        >
+          {!eligible.some((entity) => entity.id === step.entity_id) && (
+            <option value={step.entity_id} disabled>
+              {step.entity_id} · unavailable or no supported Operations
+            </option>
+          )}
+          {eligible.map((entity) => (
+            <option key={entity.id} value={entity.id}>
+              {entity.name} · {entity.id}
+            </option>
+          ))}
+        </NativeSelect>
+      </label>
+      <label className={field}>
+        <span>Supported Operation</span>
+        <NativeSelect
+          size="auto"
+          className="w-full min-w-0"
+          value={step.operation}
+          onChange={(event) =>
+            ctx.apply([...path, "operation"], q(event.target.value))
+          }
+        >
+          {!operations.includes(step.operation) && (
+            <option value={step.operation} disabled>
+              {step.operation} · not currently supported
+            </option>
+          )}
+          {operations.map((operation) => (
+            <option key={operation} value={operation}>
+              {operation}
+            </option>
+          ))}
+        </NativeSelect>
+      </label>
+      <SchemaGuide
+        title="Operation parameter schema · canonical units"
+        schema={
+          selected &&
+          getOperationParametersSchema(selected.type, step.operation)
+        }
+      />
+      <Binding ctx={ctx} path={path} name="parameters" label="Parameters" />
+    </>
+  );
+};
+const newStep = (
+  ctx: Context,
+  kind: string,
+  selectedFunction?: AdapterFunction
+): string | undefined => {
+  const id = newDocumentID(ctx.document, "step");
+  const entity = firstEntity(ctx);
+  if (kind === "delay") {
+    return q({ id, kind, duration_ms: 1000 });
+  }
+  if (kind === "command") {
+    const target = ctx.resources.entities.find(
+      (e) => supportedOperations(e).length
+    );
+    const operation = target && supportedOperations(target)[0];
+    return target && operation
+      ? q({ id, kind, entity_id: target.id, operation, parameters: {} })
+      : undefined;
+  }
+  if (kind === "function") {
+    return selectedFunction
+      ? q({
+          id,
+          kind,
+          adapter_id: selectedFunction.adapter_id,
+          function_key: selectedFunction.function_key,
+          contract_fingerprint: selectedFunction.contract_fingerprint,
+          arguments: {},
+        })
+      : undefined;
+  }
+  if (kind === "notification") {
+    const [destination] = ctx.resources.destinations;
+    return destination
+      ? q({ id, kind, destination_id: destination.id, title: "", message: "" })
+      : undefined;
+  }
+  if (kind === "sub_automation") {
+    const [target] = ctx.resources.automations;
+    return target ? q({ id, kind, automation_id: target.id }) : undefined;
+  }
+  const condition = q({
+    id: newDocumentID(ctx.document, "condition"),
+    kind: "expression",
+    expr: "true",
+  });
+  const child = q({
+    id: newDocumentID(ctx.document, "wait"),
+    kind: "delay",
+    duration_ms: 1000,
+  });
+  if (kind === "if") {
+    return `{"id":${q(id)},"kind":"if","conditions":${condition},"then":[${child}]}`;
+  }
+  if (kind === "choose") {
+    return `{"id":${q(id)},"kind":"choose","branches":[{"id":${q(newDocumentID(ctx.document, "branch"))},"conditions":${condition},"steps":[${child}]}]}`;
+  }
+  if (kind === "read_state" && entity) {
+    return q({ id, kind, entity_id: entity, value_pointer: "" });
+  }
+  if (kind === "set_variables") {
+    return q({ id, kind, assignments: { value: null } });
+  }
+  return undefined;
+};
+const SequenceEditor = ({
+  ctx,
+  path,
+  steps,
+  title,
+}: {
+  ctx: Context;
+  path: JsonPath;
+  steps: AutomationStep[];
+  title: string;
+}) => {
+  const [kind, setKind] = useState("delay");
+  const [functionKey, setFunctionKey] = useState("");
+  const selectedFunction =
+    ctx.resources.functions.find(
+      (item) =>
+        JSON.stringify([item.adapter_id, item.function_key]) === functionKey
+    ) ?? ctx.resources.functions[0];
+  return (
+    <section className="min-w-0">
+      <h4 className="text-body mt-2.5 font-semibold">{title}</h4>
+      <ol className="m-0 list-none p-0">
+        {steps.map((step, index) => (
+          <li className="min-w-0 py-2" key={step.id}>
+            <details
+              className="border-border border-t py-1"
+              data-automation-step-id={step.id}
+              open
+            >
+              <summary className={summary}>
+                {step.kind.replaceAll("_", " ")} · {step.id}
+              </summary>
+              <StepEditor ctx={ctx} path={[...path, index]} step={step} />
+              <div className={actions}>
+                <span className="text-caption text-muted-foreground basis-full">
+                  Actions for {step.id} · {title}
+                </span>
+                <Button
+                  variant="outline"
+                  size="touch"
+                  className="max-w-full"
+                  aria-label={`Move up Step ${step.id} in ${title}`}
+                  disabled={index === 0}
+                  onClick={() =>
+                    ctx.sequence(path, (children) => {
+                      [children[index - 1], children[index]] = [
+                        children[index],
+                        children[index - 1],
+                      ];
+                      return children;
+                    })
+                  }
+                >
+                  Move up
+                </Button>
+                <Button
+                  variant="outline"
+                  size="touch"
+                  className="max-w-full"
+                  aria-label={`Move down Step ${step.id} in ${title}`}
+                  disabled={index === steps.length - 1}
+                  onClick={() =>
+                    ctx.sequence(path, (children) => {
+                      [children[index + 1], children[index]] = [
+                        children[index],
+                        children[index + 1],
+                      ];
+                      return children;
+                    })
+                  }
+                >
+                  Move down
+                </Button>
+                <Button
+                  variant="outline"
+                  size="touch"
+                  className="max-w-full"
+                  aria-label={`Remove Step ${step.id} from ${title}`}
+                  disabled={steps.length === 1}
+                  onClick={() =>
+                    ctx.sequence(path, (children) =>
+                      children.filter((_, i) => i !== index)
+                    )
+                  }
+                >
+                  Remove Step
+                </Button>
+              </div>
+            </details>
+          </li>
+        ))}
+      </ol>
+      <div className={actions}>
+        <label className="flex flex-wrap items-center gap-2">
+          Add Step{" "}
+          <NativeSelect
+            size="auto"
+            className="w-auto max-w-full"
+            value={kind}
+            onChange={(event) => setKind(event.target.value)}
+          >
+            {[
+              "delay",
+              "command",
+              "notification",
+              "sub_automation",
+              "if",
+              "choose",
+              "function",
+              "read_state",
+              "set_variables",
+            ].map((k) => (
+              <option key={k} value={k}>
+                {k.replaceAll("_", " ")}
+              </option>
+            ))}
+          </NativeSelect>
+        </label>
+        {kind === "function" && (
+          <label className="flex flex-wrap items-center gap-2">
+            Function{" "}
+            <NativeSelect
+              size="auto"
+              className="w-auto max-w-full"
+              value={
+                selectedFunction
+                  ? JSON.stringify([
+                      selectedFunction.adapter_id,
+                      selectedFunction.function_key,
+                    ])
+                  : ""
+              }
+              onChange={(event) => setFunctionKey(event.target.value)}
+            >
+              {!selectedFunction && (
+                <option value="">No Functions available</option>
+              )}
+              {ctx.resources.functions.map((item) => (
+                <option
+                  key={JSON.stringify([item.adapter_id, item.function_key])}
+                  value={JSON.stringify([item.adapter_id, item.function_key])}
+                >
+                  {item.adapter_id} / {item.function_key}
+                  {item.callable ? "" : " · offline"}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+        )}
+        <Button
+          variant="outline"
+          size="touch"
+          className="max-w-full"
+          disabled={!newStep(ctx, kind, selectedFunction)}
+          onClick={() => {
+            const source = newStep(ctx, kind, selectedFunction);
+            if (source) {
+              ctx.sequence(path, (children) => [...children, source]);
+            }
+          }}
+        >
+          Add to {title}
+        </Button>
+      </div>
+    </section>
+  );
+};
+const StepEditor = ({
+  ctx,
+  path,
+  step,
+}: {
+  ctx: Context;
+  path: JsonPath;
+  step: AutomationStep;
+}) => {
+  const p = (segment: string): JsonPath => [...path, segment];
+  const delay = () =>
+    q({
+      id: newDocumentID(ctx.document, "wait"),
+      kind: "delay",
+      duration_ms: 1000,
+    });
+  return (
+    <div className={fields}>
+      {step.kind === "delay" && (
+        <Field
+          ctx={ctx}
+          path={p("duration_ms")}
+          label="Wait · milliseconds"
+          raw
+        />
+      )}
+      {step.kind === "command" && (
+        <CommandEditor ctx={ctx} path={path} step={step} />
+      )}
+      {step.kind === "notification" && (
+        <>
+          <Select
+            ctx={ctx}
+            path={p("destination_id")}
+            label="Destination"
+            options={ctx.resources.destinations.map((d) => ({
+              value: d.id,
+              label: `${d.name} · ${d.id}`,
+            }))}
+          />
+          <Binding ctx={ctx} path={path} name="title" label="Title" />
+          <Binding ctx={ctx} path={path} name="message" label="Message" />
+          <p className={paragraph}>
+            Provider acceptance does not prove delivery.
+          </p>
+        </>
+      )}
+      {step.kind === "sub_automation" && (
+        <Select
+          ctx={ctx}
+          path={p("automation_id")}
+          label="Automation"
+          options={ctx.resources.automations.map((a) => ({
+            value: a.id,
+            label: `${a.definition.name} · ${a.id}`,
+          }))}
+        />
+      )}
+      {step.kind === "if" && (
+        <>
+          <Condition
+            ctx={ctx}
+            value={step.conditions}
+            path={p("conditions")}
+            reached
+          />
+          <SequenceEditor
+            ctx={ctx}
+            path={p("then")}
+            steps={step.then}
+            title="Then"
+          />
+          {step.else ? (
+            <>
+              <SequenceEditor
+                ctx={ctx}
+                path={p("else")}
+                steps={step.else}
+                title="Else"
+              />
+              <Button
+                variant="outline"
+                size="touch"
+                className="max-w-full"
+                onClick={() => ctx.apply(p("else"), undefined)}
+              >
+                Remove Else
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="outline"
+              size="touch"
+              className="max-w-full"
+              onClick={() => ctx.apply(p("else"), `[${delay()}]`)}
+            >
+              Add Else
+            </Button>
+          )}
+        </>
+      )}
+      {step.kind === "choose" && (
+        <>
+          {step.branches.map((branch, index) => (
+            <details
+              className="border-gray-5 max-tablet:pl-[9px] my-2 min-w-0 border-l pl-3"
+              open
+              key={branch.id}
+            >
+              <summary className={summary}>
+                Path {index + 1} · {branch.id}
+              </summary>
+              <Condition
+                ctx={ctx}
+                value={branch.conditions}
+                path={[...p("branches"), index, "conditions"]}
+                reached
+              />
+              <SequenceEditor
+                ctx={ctx}
+                path={[...p("branches"), index, "steps"]}
+                steps={branch.steps}
+                title="Path Steps"
+              />
+              <div className={actions}>
+                <Button
+                  variant="outline"
+                  size="touch"
+                  className="max-w-full"
+                  disabled={index === 0}
+                  onClick={() =>
+                    ctx.sequence(p("branches"), (children) => {
+                      [children[index - 1], children[index]] = [
+                        children[index],
+                        children[index - 1],
+                      ];
+                      return children;
+                    })
+                  }
+                >
+                  Move path up
+                </Button>
+                <Button
+                  variant="outline"
+                  size="touch"
+                  className="max-w-full"
+                  disabled={index === step.branches.length - 1}
+                  onClick={() =>
+                    ctx.sequence(p("branches"), (children) => {
+                      [children[index + 1], children[index]] = [
+                        children[index],
+                        children[index + 1],
+                      ];
+                      return children;
+                    })
+                  }
+                >
+                  Move path down
+                </Button>
+                <Button
+                  variant="outline"
+                  size="touch"
+                  className="max-w-full"
+                  disabled={step.branches.length === 1}
+                  onClick={() =>
+                    ctx.sequence(p("branches"), (children) =>
+                      children.filter((_, i) => i !== index)
+                    )
+                  }
+                >
+                  Remove path
+                </Button>
+              </div>
+            </details>
+          ))}
+          <Button
+            variant="outline"
+            size="touch"
+            className="max-w-full"
+            onClick={() => {
+              const branch = `{"id":${q(newDocumentID(ctx.document, "branch"))},"conditions":{"id":${q(newDocumentID(ctx.document, "condition"))},"kind":"expression","expr":"true"},"steps":[${delay()}]}`;
+              ctx.sequence(p("branches"), (children) => [...children, branch]);
+            }}
+          >
+            Add path
+          </Button>
+          {step.default ? (
+            <>
+              <SequenceEditor
+                ctx={ctx}
+                path={p("default")}
+                steps={step.default}
+                title="Default"
+              />
+              <Button
+                variant="outline"
+                size="touch"
+                className="max-w-full"
+                onClick={() => ctx.apply(p("default"), undefined)}
+              >
+                Remove Default
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="outline"
+              size="touch"
+              className="max-w-full"
+              onClick={() => ctx.apply(p("default"), `[${delay()}]`)}
+            >
+              Add Default
+            </Button>
+          )}
+        </>
+      )}
+      {step.kind === "function" && (
+        <SchemaGuide
+          title="Function argument schema"
+          schema={
+            ctx.resources.functions.find(
+              (item) =>
+                item.adapter_id === step.adapter_id &&
+                item.function_key === step.function_key &&
+                item.contract_fingerprint === step.contract_fingerprint
+            )?.input_schema
+          }
+        />
+      )}
+      {(step.kind === "function" ||
+        step.kind === "read_state" ||
+        step.kind === "set_variables") && (
+        <Field
+          ctx={ctx}
+          path={path}
+          label="Exact JSON Step inspector"
+          raw
+          multiline
+        />
+      )}
+    </div>
+  );
+};
+const Comparisons = ({
+  ctx,
+  path,
+  values,
+  label,
+  entityId,
+  required = false,
+}: {
+  ctx: Context;
+  path: JsonPath;
+  values:
+    | { value_pointer: string; operator: string; operand: unknown }[]
+    | undefined;
+  label: string;
+  entityId: string;
+  required?: boolean;
+}) => {
+  const comparison = '{"value_pointer":"","operator":"eq","operand":true}';
+  return (
+    <section className="border-gray-5 max-tablet:pl-[9px] my-2 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5 border-l pl-3">
+      <h4 className="text-body font-semibold">{label}</h4>
+      <StateGuide ctx={ctx} entityId={entityId} />
+      {values?.map((_, index) => (
+        <div className={fields} key={index}>
+          <Field
+            ctx={ctx}
+            path={[...path, index, "value_pointer"]}
+            label="Value pointer"
+          />
+          <Select
+            ctx={ctx}
+            path={[...path, index, "operator"]}
+            label="Comparison"
+            options={["eq", "ne", "lt", "lte", "gt", "gte"].map((value) => ({
+              value,
+              label: value,
+            }))}
+          />
+          <Field
+            ctx={ctx}
+            path={[...path, index, "operand"]}
+            label="Operand · exact JSON, canonical units"
+            raw
+          />
+          <Button
+            variant="outline"
+            size="touch"
+            className="max-w-full"
+            disabled={required && values.length === 1}
+            onClick={() =>
+              values.length === 1
+                ? ctx.apply(path, undefined)
+                : ctx.sequence(path, (children) =>
+                    children.filter((_unused, i) => i !== index)
+                  )
+            }
+          >
+            Remove comparison
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        size="touch"
+        className="max-w-full"
+        onClick={() =>
+          values
+            ? ctx.sequence(path, (children) => [...children, comparison])
+            : ctx.apply(path, `[${comparison}]`)
+        }
+      >
+        Add comparison
+      </Button>
+    </section>
+  );
+};
+const TriggerEditor = ({ ctx }: { ctx: Context }) => {
+  const [kind, setKind] = useState("cron");
+  const { triggers } = ctx.document.definition;
+  const add = () => {
+    const id = newDocumentID(ctx.document, "trigger");
+    const entity = firstEntity(ctx);
+    let source: string | undefined;
+    if (kind === "cron") {
+      source = q({ id, kind, expression: "0 7 * * *" });
+    }
+    if (entity && kind === "entity_event") {
+      source = q({ id, kind, entity_id: entity, event_name: "event" });
+    }
+    if (entity && kind === "observation") {
+      source = q({ id, kind, entity_id: entity, dispositions: ["applied"] });
+    }
+    if (entity && kind === "held_state") {
+      source = q({
+        id,
+        kind,
+        entity_id: entity,
+        comparisons: [{ value_pointer: "", operator: "eq", operand: true }],
+        for_seconds: 1,
+      });
+    }
+    if (source) {
+      ctx.sequence(["triggers"], (children) => [...children, source]);
+    }
+  };
+  return (
+    <section className="min-w-0">
+      <h4 className="text-body font-semibold">Triggers</h4>
+      {triggers.length === 0 && (
+        <p className={paragraph}>
+          Manual only. Add a Trigger for automatic admission.
+        </p>
+      )}
+      {triggers.map((trigger, index) => {
+        const path: JsonPath = ["triggers", index];
+        return (
+          <details
+            className="border-border border-t py-1"
+            key={trigger.id}
+            open
+          >
+            <summary className={summary}>
+              {trigger.kind.replaceAll("_", " ")} · {trigger.id}
+            </summary>
+            <div className={fields}>
+              {trigger.kind !== "cron" && (
+                <Select
+                  ctx={ctx}
+                  path={[...path, "entity_id"]}
+                  label="Entity"
+                  options={entityOptions(ctx)}
+                />
+              )}
+              {trigger.kind === "cron" && (
+                <Field
+                  ctx={ctx}
+                  path={[...path, "expression"]}
+                  label="Cron · household timezone"
+                />
+              )}
+              {trigger.kind === "entity_event" && (
+                <Field
+                  ctx={ctx}
+                  path={[...path, "event_name"]}
+                  label="Event name"
+                />
+              )}
+              {trigger.kind === "held_state" && (
+                <Field
+                  ctx={ctx}
+                  path={[...path, "for_seconds"]}
+                  label="Held for · seconds"
+                  raw
+                />
+              )}
+              {trigger.kind === "observation" && (
+                <Field
+                  ctx={ctx}
+                  path={[...path, "dispositions"]}
+                  label="Dispositions · exact JSON array"
+                  raw
+                />
+              )}
+              {(trigger.kind === "held_state" ||
+                trigger.kind === "observation") && (
+                <>
+                  <Comparisons
+                    ctx={ctx}
+                    path={[...path, "comparisons"]}
+                    values={trigger.comparisons}
+                    label="Current value comparisons"
+                    entityId={trigger.entity_id}
+                    required={trigger.kind === "held_state"}
+                  />
+                  {trigger.kind === "observation" && (
+                    <Comparisons
+                      ctx={ctx}
+                      path={[...path, "previous_comparisons"]}
+                      values={trigger.previous_comparisons}
+                      label="Previous value comparisons"
+                      entityId={trigger.entity_id}
+                    />
+                  )}
+                </>
+              )}
+              <Button
+                variant="outline"
+                size="touch"
+                className="max-w-full"
+                onClick={() =>
+                  ctx.sequence(["triggers"], (children) =>
+                    children.filter((_, i) => i !== index)
+                  )
+                }
+              >
+                Remove Trigger
+              </Button>
+            </div>
+          </details>
+        );
+      })}
+      <div className={actions}>
+        <label className="flex flex-wrap items-center gap-2">
+          Trigger type{" "}
+          <NativeSelect
+            size="auto"
+            className="w-auto max-w-full"
+            value={kind}
+            onChange={(event) => setKind(event.target.value)}
+          >
+            {["cron", "observation", "entity_event", "held_state"].map(
+              (value) => (
+                <option key={value} value={value}>
+                  {value.replaceAll("_", " ")}
+                </option>
+              )
+            )}
+          </NativeSelect>
+        </label>
+        <Button
+          variant="outline"
+          size="touch"
+          className="max-w-full"
+          disabled={kind !== "cron" && !firstEntity(ctx)}
+          onClick={add}
+        >
+          Add Trigger
+        </Button>
+      </div>
+    </section>
+  );
+};
+export const AutomationEditor = ({
+  document,
+  onChange,
+  onValidityChange,
+}: EditorProps) => {
+  const backend = useBaseUrlVersion();
+  const [resources, setResources] = useState<LoadedResources>(() =>
+    emptyResources(backend)
+  );
+  const [loadError, setLoadError] = useState("");
+  const [invalidFields, setInvalidFields] = useState<Record<string, string>>(
+    {}
+  );
+  const [operationError, setOperationError] = useState("");
+  // A backend switch drops the previous backend's resources before the reload
+  // commits; the guard converges after the adjustment.
+  if (resources.backend !== backend) {
+    setResources(emptyResources(backend));
+  }
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const [entities, automations, destinations, functions] =
+        await Promise.allSettled([
+          collection<Entity>("/v1/entities"),
+          collection<Automation>("/v1/automations"),
+          collection<NotificationDestination>("/v1/notification-destinations"),
+          discoverFunctions(),
+        ]);
+      if (!active) {
+        return;
+      }
+      setResources({
+        backend,
+        entities: entities.status === "fulfilled" ? entities.value : [],
+        automations:
+          automations.status === "fulfilled" ? automations.value : [],
+        destinations:
+          destinations.status === "fulfilled" ? destinations.value : [],
+        functions:
+          functions.status === "fulfilled" ? functions.value.functions : [],
+      });
+      const errors = [entities, automations, destinations, functions]
+        .filter((result) => result.status === "rejected")
+        .map((result) =>
+          result.status === "rejected" ? String(result.reason) : ""
+        );
+      if (functions.status === "fulfilled") {
+        errors.push(...functions.value.errors);
+      }
+      setLoadError(errors.join("; "));
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [backend]);
+  let valid: AutomationDocument | undefined;
+  let validationError = "Invalid definition";
+  try {
+    valid = readAutomationDocument(document.source);
+  } catch (error) {
+    validationError = error instanceof Error ? error.message : validationError;
+  }
+  const issues = valid ? automationDocumentIssues(valid) : [];
+  const validDefinition = valid !== undefined;
+  const issueCount = issues.length;
+  useEffect(() => {
+    onValidityChange?.(
+      validDefinition &&
+        Object.keys(invalidFields).length === 0 &&
+        issueCount === 0 &&
+        !operationError
+    );
+  }, [
+    invalidFields,
+    issueCount,
+    onValidityChange,
+    operationError,
+    validDefinition,
+  ]);
+  const setInvalid = (key: string, value: string | null) =>
+    setInvalidFields((previous) => {
+      if (value === null) {
+        return Object.fromEntries(
+          Object.entries(previous).filter(([existing]) => existing !== key)
+        );
+      }
+      return { ...previous, [key]: value };
+    });
+  const apply = (path: JsonPath, raw: string | undefined) => {
+    if (
+      path.length &&
+      Object.keys(invalidFields).some((key) => {
+        const other = JSON.parse(key) as JsonPath;
+        return (
+          path.length <= other.length &&
+          path.every((part, i) => part === other[i])
+        );
+      })
+    ) {
+      setOperationError(
+        "Fix invalid fields before replacing their containing structure."
+      );
+      return;
+    }
+    try {
+      onChange(editAutomationDocument(document, path, raw));
+      setOperationError("");
+    } catch (error) {
+      setOperationError(
+        error instanceof Error ? error.message : "Invalid change."
+      );
+    }
+  };
+  const sequence = (
+    path: JsonPath,
+    update: (children: string[]) => string[]
+  ) => {
+    if (Object.keys(invalidFields).length) {
+      setOperationError("Fix invalid fields before changing a sequence.");
+      return;
+    }
+    try {
+      onChange(sequenceDocument(document, path, update));
+      setOperationError("");
+    } catch (error) {
+      setOperationError(
+        error instanceof Error ? error.message : "Invalid sequence."
+      );
+    }
+  };
+  const ctx: Context = {
+    document: valid ?? document,
+    resources,
+    apply,
+    sequence,
+    invalid: invalidFields,
+    setInvalid,
+  };
+  if (!valid) {
+    return (
+      <Card
+        asChild
+        className="max-tablet:p-3.5 grid gap-[18px] [overflow-wrap:anywhere]"
+      >
+        <section role="alert">
+          This Automation cannot be edited: {validationError}
+        </section>
+      </Card>
+    );
+  }
+  return (
+    <Card
+      asChild
+      className="max-tablet:p-3.5 grid gap-[18px] [overflow-wrap:anywhere]"
+    >
+      <section aria-label="Automation editor">
+        <h3 className="text-body font-semibold">Stack builder</h3>
+        <p className={paragraph}>
+          Changes remain a draft until you save. Edit each path in order.
+        </p>
+        {loadError && (
+          <p role="alert" className={`${paragraph} text-destructive`}>
+            Could not load resources: {loadError}. Existing references remain
+            unchanged.
+          </p>
+        )}
+        {operationError && (
+          <p role="alert" className={`${paragraph} text-destructive`}>
+            Change not applied: {operationError}
+          </p>
+        )}
+        {issues.map((issue) => (
+          <p
+            role="alert"
+            className={`${paragraph} text-destructive`}
+            key={`${issue.path}-${issue.message}`}
+          >
+            {issue.path}: {issue.message}
+          </p>
+        ))}
+        <Field ctx={ctx} path={["name"]} label="Name" />
+        <label className="flex items-center gap-2">
+          <Switch
+            size="default"
+            checked={valid.definition.enabled}
+            onCheckedChange={(checked) => apply(["enabled"], String(checked))}
+          />{" "}
+          Enable automatic Runs
+        </label>
+        <TriggerEditor ctx={ctx} />
+        <section className="min-w-0">
+          <h4 className="text-body font-semibold">Admission Conditions</h4>
+          <p className={paragraph}>
+            These Conditions are evaluated before an automatic Run starts.
+          </p>
+          {valid.definition.conditions ? (
+            <>
+              <Condition
+                ctx={ctx}
+                value={valid.definition.conditions}
+                path={["conditions"]}
+                reached={false}
+              />
+              <Button
+                variant="outline"
+                size="touch"
+                className="max-w-full"
+                onClick={() => apply(["conditions"], undefined)}
+              >
+                Remove admission Condition
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="outline"
+              size="touch"
+              className="max-w-full"
+              disabled={!firstEntity(ctx)}
+              onClick={() => {
+                const source = conditionSource(
+                  ctx,
+                  "entity_state",
+                  newDocumentID(document, "condition")
+                );
+                if (source) {
+                  apply(["conditions"], source);
+                }
+              }}
+            >
+              Add admission Condition
+            </Button>
+          )}
+        </section>
+        <SequenceEditor
+          ctx={ctx}
+          path={["steps"]}
+          steps={valid.definition.steps}
+          title="Steps"
+        />
+        <details className="border-border border-t py-1">
+          <summary className={summary}>
+            Advanced · exact JSON definition
+          </summary>
+          <p className={paragraph}>
+            Changes are validated against the canonical definition. Exact values
+            are retained.
+          </p>
+          <Field
+            ctx={ctx}
+            path={[]}
+            label="Exact JSON definition"
+            raw
+            multiline
+          />
+        </details>
+      </section>
+    </Card>
+  );
+};

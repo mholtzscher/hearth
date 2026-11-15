@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 import { plainText } from "../../catalog/primitives";
 
 export const headingSchema = z.strictObject({ text: plainText(120) });

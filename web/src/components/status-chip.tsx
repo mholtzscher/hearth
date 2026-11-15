@@ -2,44 +2,39 @@ import { Badge } from "./badge.tsx";
 
 type Tone = "default" | "success" | "warning" | "error" | "info";
 
-export function statusTone(status: string): Tone {
-  switch (status) {
-    case "healthy":
-    case "available":
-    case "satisfied":
-    case "ready":
-    case "ok":
-    // Automation enablement and a Run that reached its required outcomes.
-    case "enabled":
-    case "succeeded":
-      return "success";
-    // `dispatched` is in-flight-ish: accepted with no observation to verify.
-    case "dispatched":
-    // A Run still executing, and where its work came from.
-    case "running":
-    case "run":
-    case "manual":
-    case "device_fact":
-      return "info";
-    case "unhealthy":
-    case "unavailable":
-    case "rejected":
-    case "error":
-    case "failed":
-      return "error";
-    case "unknown":
-    case "disabled":
-    // An unfinished Step or Run: interrupted work is never a success.
-    case "interrupted":
-    // A Skip is a match that started no Run, and its two reasons.
-    case "skip":
-    case "automation_busy":
-    case "stale_fact":
-      return "warning";
-    default:
-      return "default";
-  }
-}
+const statusTones = new Map<string, Tone>([
+  ["healthy", "success"],
+  ["available", "success"],
+  ["satisfied", "success"],
+  ["ready", "success"],
+  ["ok", "success"],
+  // Automation enablement and a Run that reached its required outcomes.
+  ["enabled", "success"],
+  ["succeeded", "success"],
+  // `dispatched` is in-flight-ish: accepted with no observation to verify.
+  ["dispatched", "info"],
+  // A Run still executing, and where its work came from.
+  ["running", "info"],
+  ["run", "info"],
+  ["manual", "info"],
+  ["device_fact", "info"],
+  ["unhealthy", "error"],
+  ["unavailable", "error"],
+  ["rejected", "error"],
+  ["error", "error"],
+  ["failed", "error"],
+  ["unknown", "warning"],
+  ["disabled", "warning"],
+  // An unfinished Step or Run: interrupted work is never a success.
+  ["interrupted", "warning"],
+  // A Skip is a match that started no Run, and its two reasons.
+  ["skip", "warning"],
+  ["automation_busy", "warning"],
+  ["stale_fact", "warning"],
+]);
+
+export const statusTone = (status: string): Tone =>
+  statusTones.get(status) ?? "default";
 
 /** Healthy states stay quiet; problems carry the color weight. */
 const toneClass: Record<Tone, string> = {
@@ -51,7 +46,7 @@ const toneClass: Record<Tone, string> = {
 };
 
 /** Status badge with an optional context-specific tone override. */
-export function StatusChip({
+export const StatusChip = ({
   label,
   status,
   tone,
@@ -59,10 +54,8 @@ export function StatusChip({
   label?: string;
   status: string;
   tone?: Tone;
-}) {
-  return (
-    <Badge variant="outline" className={toneClass[tone ?? statusTone(status)]}>
-      {label ? `${label}: ${status}` : status}
-    </Badge>
-  );
-}
+}) => (
+  <Badge variant="outline" className={toneClass[tone ?? statusTone(status)]}>
+    {label ? `${label}: ${status}` : status}
+  </Badge>
+);

@@ -109,6 +109,8 @@ jobs:
       - uses: jdx/mise-action@v5
         with:
           cache: true
+      - name: Check dashboard lint and formatting
+        run: mise run web-check
       - name: Run dashboard tests
         run: mise run web-test
       - name: Check managed Storybook startup

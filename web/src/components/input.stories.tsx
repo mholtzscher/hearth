@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
-import { Input } from "./input.tsx";
+
 import { expectNoHorizontalOverflow } from "../../.storybook/play.ts";
 import { expectFieldFocus, expectFieldSize } from "./field-story-assertions.ts";
+import { Input } from "./input.tsx";
 
 const meta = {
   title: "Components/Input",
@@ -23,7 +24,9 @@ export const Editable: Story = {
 export const Invalid: Story = {
   args: { defaultValue: "", "aria-invalid": true },
   play: async ({ canvas }) => {
-    await expect(getComputedStyle(canvas.getByRole("textbox")).borderColor).toBe("rgb(255, 92, 122)");
+    await expect(
+      getComputedStyle(canvas.getByRole("textbox")).borderColor
+    ).toBe("rgb(255, 92, 122)");
   },
 };
 export const Disabled: Story = {
@@ -44,9 +47,18 @@ export const Sizes: Story = {
     </div>
   ),
   play: async ({ canvas, canvasElement }) => {
-    await expectFieldSize(canvas.getByRole("textbox", { name: "Default size" }), "32px");
-    await expectFieldSize(canvas.getByRole("textbox", { name: "Touch size" }), "44px");
-    await expectFieldSize(canvas.getByRole("textbox", { name: "Automatic size" }), matchMedia("(pointer: coarse)").matches ? "44px" : "32px");
+    await expectFieldSize(
+      canvas.getByRole("textbox", { name: "Default size" }),
+      "32px"
+    );
+    await expectFieldSize(
+      canvas.getByRole("textbox", { name: "Touch size" }),
+      "44px"
+    );
+    await expectFieldSize(
+      canvas.getByRole("textbox", { name: "Automatic size" }),
+      matchMedia("(pointer: coarse)").matches ? "44px" : "32px"
+    );
     await expectNoHorizontalOverflow(canvasElement);
   },
 };
@@ -73,7 +85,9 @@ export const ReadOnly: Story = {
 export const Search: Story = {
   args: { type: "search", "aria-label": "Search Device facts" },
   play: async ({ canvas, userEvent }) => {
-    const input = canvas.getByRole("searchbox", { name: "Search Device facts" });
+    const input = canvas.getByRole("searchbox", {
+      name: "Search Device facts",
+    });
     await userEvent.type(input, "temperature");
     await expect(input).toHaveValue("temperature");
     await userEvent.clear(input);

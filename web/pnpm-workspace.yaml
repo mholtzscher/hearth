@@ -2,4 +2,4 @@ allowBuilds:
   esbuild: true
 # Remove when @ts-morph/common supports patched minimatch without an override.
 overrides:
-  '@ts-morph/common>minimatch': 11.0.4
+  "@ts-morph/common>minimatch": 11.0.4

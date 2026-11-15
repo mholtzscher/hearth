@@ -1,8 +1,9 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+
 /// <reference types="vitest/config" />
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { execFileSync } from "node:child_process";
-import path from "node:path";
 import { defineConfig, searchForWorkspaceRoot } from "vite";
 
 // Proxies hearthd's HTTP API during development so the dashboard can use
@@ -20,30 +21,34 @@ const NATS_MONITOR = process.env.NATS_MONITOR_URL ?? "http://127.0.0.1:8222";
  * installed. HEARTH_ALLOWED_HOSTS adds more (comma-separated; a leading dot
  * allows a whole suffix).
  */
-function resolveAllowedHosts(): string[] {
+const tailnetHosts = (): string[] => {
+  let status: { Self?: { DNSName?: string }; MagicDNSSuffix?: string };
+  try {
+    status = JSON.parse(
+      execFileSync("tailscale", ["status", "--json"], {
+        encoding: "utf-8",
+        timeout: 2000,
+      })
+    );
+  } catch {
+    // Not installed, not running, or too slow: keep Vite's default allowlist.
+    return [];
+  }
+  // Tailscale reports DNS names with a trailing dot; Vite compares hostnames.
+  const suffix = status.MagicDNSSuffix?.replace(/\.+$/u, "");
+  const self = status.Self?.DNSName?.replace(/\.+$/u, "");
+  return [suffix ? `.${suffix}` : null, self ?? null].filter(
+    (host): host is string => host !== null
+  );
+};
+
+const resolveAllowedHosts = (): string[] => {
   const configured = (process.env.HEARTH_ALLOWED_HOSTS ?? "")
     .split(",")
     .map((host) => host.trim())
     .filter(Boolean);
   return [...tailnetHosts(), ...configured];
-}
-
-function tailnetHosts(): string[] {
-  let status: { Self?: { DNSName?: string }; MagicDNSSuffix?: string };
-  try {
-    status = JSON.parse(
-      execFileSync("tailscale", ["status", "--json"], { encoding: "utf8", timeout: 2000 }),
-    );
-  } catch {
-    return []; // Not installed, not running, or too slow: keep Vite's default allowlist.
-  }
-  // Tailscale reports DNS names with a trailing dot; Vite compares hostnames.
-  const suffix = status.MagicDNSSuffix?.replace(/\.+$/, "");
-  const self = status.Self?.DNSName?.replace(/\.+$/, "");
-  return [suffix ? `.${suffix}` : null, self ?? null].filter(
-    (host): host is string => host !== null,
-  );
-}
+};
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -61,7 +66,12 @@ export default defineConfig({
     port: Number(process.env.HEARTH_WEB_PORT ?? 5173),
     allowedHosts: resolveAllowedHosts(),
     // Generated contracts (readings catalog) live beside web/ at the repository root.
-    fs: { allow: [searchForWorkspaceRoot(process.cwd()), path.resolve(import.meta.dirname, "../contracts")] },
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        path.resolve(import.meta.dirname, "../contracts"),
+      ],
+    },
     proxy: {
       "/v1": HEARTHD,
       "/healthz": HEARTHD,
@@ -69,7 +79,7 @@ export default defineConfig({
       "/openapi.json": HEARTHD,
       "/nats-monitor": {
         target: NATS_MONITOR,
-        rewrite: (path) => path.replace(/^\/nats-monitor/, ""),
+        rewrite: (requestPath) => requestPath.replace(/^\/nats-monitor/u, ""),
       },
     },
   },

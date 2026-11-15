@@ -198,7 +198,7 @@ Device effects.
 The generated App snippets show the shared render function, not each story's
 `appPath`, `applicationScenario`, or play function. They are not standalone
 examples. To reproduce one of these composition scenarios, use its exported
-story and the shared setup in `src/App.stories.tsx`, together with
+story and the shared setup in `src/app.stories.tsx`, together with
 `.storybook/application-fixtures.ts`. The manifest check verifies snippet
 presence and extraction errors; it cannot verify those omitted scenario inputs.
 
@@ -245,7 +245,7 @@ TypeScript 7. Remove that compatibility hook when upstream supports TypeScript 7
 mise run --skip-deps web-test
 mise run --skip-deps web-build
 mise run --skip-deps storybook-test
-mise run --skip-deps storybook-test -- ToggleTile.stories.tsx
+mise run --skip-deps storybook-test -- toggle-tile.stories.tsx
 mise run --skip-deps storybook-build
 ```
 

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+
 import { Badge } from "./badge";
 
 const meta = {
@@ -11,6 +12,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
-export const Secondary: Story = { args: { variant: "secondary", children: "Disabled" } };
-export const Destructive: Story = { args: { variant: "destructive", children: "Read failed" } };
-export const Outline: Story = { args: { variant: "outline", children: "Read-only" } };
+export const Secondary: Story = {
+  args: { variant: "secondary", children: "Disabled" },
+};
+export const Destructive: Story = {
+  args: { variant: "destructive", children: "Read failed" },
+};
+export const Outline: Story = {
+  args: { variant: "outline", children: "Read-only" },
+};
