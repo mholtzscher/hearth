@@ -52,7 +52,7 @@ describe("Automation cards and editor", () => {
     render(<AutomationCard document={readAutomationDocument(source)}/>);
     fireEvent.click(screen.getByRole("button", { name: "Steps" }));
     expect(screen.getByRole("button", { name: "Steps" }).getAttribute("aria-pressed")).toBe("true");
-    const opener = screen.getByRole("button", { name: new RegExp(`Inspect .*${childID}`) });
+    const opener = screen.getByRole("button", { name: `Inspect child ${childID}` });
     fireEvent.click(opener);
     expect((await screen.findByRole("alert")).textContent).toContain("Automation not found");
     const arm = opener.closest("details")!; arm.open = false;

@@ -79,7 +79,7 @@ function StepCopy({ ctx, step, path }: { ctx: ReadContext; step: AutomationStep;
 /** Qualifying notes and actions follow the Step's own sentence. */
 function StepAside({ ctx, step }: { ctx: ReadContext; step: AutomationStep }) {
   if (step.kind === "notification") return <small className="automation-step-note">Provider acceptance is not proof of delivery.</small>;
-  if (step.kind === "sub_automation") return <><small className="automation-step-note">{ctx.childMissing(step.automation_id) ? "Automation not found. It may have been removed." : "Waits for child success."}</small><button className="automation-link" aria-label={`Inspect ${ctx.childName(step.automation_id) ?? step.automation_id}`} onClick={event => ctx.inspect(step.automation_id, event.currentTarget)}>Inspect child</button></>;
+  if (step.kind === "sub_automation") return <><small className="automation-step-note">{ctx.childMissing(step.automation_id) ? "Automation not found. It may have been removed." : "Waits for child success."}</small><button className="automation-link" aria-label={`Inspect child ${ctx.childName(step.automation_id) ?? step.automation_id}`} onClick={event => ctx.inspect(step.automation_id, event.currentTarget)}>Inspect child</button></>;
   return null;
 }
 function Branches({ ctx, step, path, mode }: { ctx: ReadContext; step: AutomationStep; path: JsonPath; mode: "sentence" | "steps" }) {
