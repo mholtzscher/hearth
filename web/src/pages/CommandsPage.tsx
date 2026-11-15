@@ -237,6 +237,7 @@ export default function CommandsPage() {
 
       {selectedId && <CommandDetail key={selectedId} commandId={selectedId} />}
 
+      <h2 className="sr-only">Command history</h2>
       <div className="mt-6 flex flex-wrap items-end gap-2">
         <div className="grid gap-1.5">
           <Label htmlFor="cmd-entity-filter">Entity filter</Label>

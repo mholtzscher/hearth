@@ -2,6 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { StrictMode, useEffect, useState, type ComponentProps } from "react";
 import { createMemoryRouter } from "react-router-dom";
 import { expect, waitFor, within } from "storybook/test";
+import { http, HttpResponse } from "msw";
+import type { CommandRecord } from "./api/types";
+import { entityId, fixtureNow } from "../.storybook/fixtures";
 import { createApplicationHandlers, conversationPath, conversationPrompt, conversationReply, dashboardId, dashboardPath, sentReply } from "../.storybook/application-fixtures";
 import { getDashboard } from "./api/dashboards";
 import { expectNoHorizontalOverflow } from "../.storybook/play";
@@ -102,6 +105,33 @@ export const DesktopHome: Story = {
     await expect(canvas.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
     const sidebar = within(canvas.getByRole("complementary", { name: "Hearth navigation" }));
     await expectSidebarNewTreatment(sidebar.getByRole("button", { name: "New conversation" }));
+  },
+};
+
+/** The Commands filter keeps native selection and sends the selected status to Core. */
+export const CommandStatusFilter: Story = {
+  parameters: { appPath: "/commands" },
+  beforeEach({ msw }) {
+    const commands: CommandRecord[] = [
+      { id: "cmd_story_requested", entity_id: entityId(4), operation: "turn_on", parameters: {}, status: "requested", requested_at: fixtureNow, deadline_at: fixtureNow },
+      { id: "cmd_story_rejected", entity_id: entityId(4), operation: "turn_off", parameters: {}, status: "rejected", requested_at: fixtureNow, deadline_at: fixtureNow },
+    ];
+    msw.use(http.get("/v1/commands", ({ request }) => {
+      const status = new URL(request.url).searchParams.get("status");
+      return HttpResponse.json({ items: commands.filter(command => !status || command.status === status) });
+    }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByRole("cell", { name: "turn_on", exact: true })).toBeVisible();
+    await expect(canvas.getByRole("cell", { name: "turn_off", exact: true })).toBeVisible();
+    const filter = canvas.getByRole("combobox", { name: "Status filter" });
+    await userEvent.selectOptions(filter, "rejected");
+    await expect(filter).toHaveValue("rejected");
+    await waitFor(() => expect(canvas.queryByRole("cell", { name: "turn_on", exact: true })).not.toBeInTheDocument());
+    await expect(canvas.getByRole("cell", { name: "turn_off", exact: true })).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Clear", exact: true }));
+    await expect(filter).toHaveValue("");
+    await expect(await canvas.findByRole("cell", { name: "turn_on", exact: true })).toBeVisible();
   },
 };
 
