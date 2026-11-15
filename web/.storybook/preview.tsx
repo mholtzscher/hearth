@@ -6,9 +6,7 @@ import { setupWorker } from "msw/browser";
 import { setBaseUrl } from "../src/api/client";
 import { ViewDataProvider } from "../src/features/views/data/provider";
 import "../src/index.css";
-import "./preview.css";
 import { fixtureNow, createCoreHandlers } from "./msw-handlers";
-import { captureStory, prepareCapture } from "./story-capture";
 
 // Core requests that no handler answered during the current story.
 const unhandledCoreRequests: string[] = [];
@@ -19,7 +17,7 @@ const preview: Preview = {
     (Story, context) => context.parameters.application ? <Story /> : (
       <MemoryRouter key={context.id} initialEntries={[context.parameters.route?.entry ?? "/"]}>
         <ViewDataProvider key={context.id}>
-          <main className="hearth-app hearth-story bg-background text-label text-foreground">
+          <main className="block h-auto min-h-screen translate-none bg-background p-6 text-label text-foreground *:mx-auto *:max-w-[1080px] max-tablet:p-3">
             {context.parameters.route
               ? <Routes><Route path={context.parameters.route.path} element={<Story />} /></Routes>
               : <Story />}
@@ -47,7 +45,6 @@ const preview: Preview = {
   })],
   async beforeEach(context) {
     const { msw } = context;
-    if (import.meta.env.VITE_HEARTH_STORY_SHOTS) await prepareCapture(context);
     document.documentElement.classList.add("dark");
     const previousBase = localStorage.getItem("hearth.baseUrl");
     setBaseUrl("");
@@ -61,9 +58,8 @@ const preview: Preview = {
     };
   },
   // A component can absorb the failed request, so fail the story as well.
-  async afterEach(context) {
+  async afterEach() {
     if (unhandledCoreRequests.length > 0) throw new Error(`Unhandled Core requests: ${unhandledCoreRequests.join(", ")}`);
-    if (import.meta.env.VITE_HEARTH_STORY_SHOTS) await captureStory(context);
   },
   parameters: {
     layout: "fullscreen",

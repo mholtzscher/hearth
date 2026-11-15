@@ -70,9 +70,10 @@ typography:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "12px"
 rounded:
-  editor: "6px"
+  xs: "4px"
+  sm: "6px"
+  editor: "8px"
   control: "8px"
-  shadcn: "0.625rem"
   card: "12px"
   modal: "14px"
 spacing:
@@ -81,6 +82,31 @@ spacing:
   large: "24px"
   card: "18px"
 components:
+  button:
+    sizes: ["default: 32px", "touch: 44px", "icon: 32px", "icon-touch: 44px"]
+    rounded: "{rounded.control}"
+  input:
+    sizes: ["default: 32px", "touch: 44px", "auto: pointer-dependent"]
+    rounded: "{rounded.editor}"
+  textarea:
+    minHeight: "44px"
+    rounded: "{rounded.editor}"
+  native-select:
+    sizes: ["default: 32px", "touch: 44px", "auto: pointer-dependent"]
+    rounded: "{rounded.editor}"
+  switch:
+    sizes: ["default: 32px", "touch: 44px"]
+    track: "44px × 24px"
+  segmented-control:
+    sizes: ["default: 32px minimum", "touch: 44px minimum"]
+    rounded: "{rounded.control}"
+  dialog:
+    rounded: "{rounded.modal}"
+  popover:
+    rounded: "{rounded.card}"
+  notice:
+    rounded: "{rounded.control}"
+    padding: "12px"
   button-primary:
     backgroundColor: "{colors.orange}"
     textColor: "{colors.on-orange}"
@@ -113,7 +139,7 @@ components:
 
 Hearth is a quiet, dark-only household workspace: true black ground, untinted gray structure, and small deliberate signals of voice, action, and freshness. Readings and their evidence lead; ornament stays subordinate to the work.
 
-The household workspace is spacious enough to read at a glance. Development uses the same palette through shadcn variables at a higher information density, not a separate visual identity. Follow [GLOSSARY.md](GLOSSARY.md): State, Entity availability, and Command outcome are distinct facts, not interchangeable status labels.
+The household workspace is spacious enough to read at a glance. Development uses the same tokens and controls at a higher information density. Follow [GLOSSARY.md](GLOSSARY.md): State, Entity availability, and Command outcome are distinct facts, not interchangeable status labels.
 
 **Key Characteristics:**
 - True black ground with a numbered, neutral gray ramp.
@@ -128,7 +154,7 @@ The palette is a neutral night ground with sparing, purposeful color.
 
 ### Primary
 - **Hearth violet** (`--violet`) marks the agent, focus, selection, links, and the selected part of a control (an On switch, a slider's level); the lighter `--violet-text` is used for readable text, including the selected view and unsaved state. `--violet-soft` backs small selected-view marks.
-- **Action orange** (`--orange`, `--orange-hover`, `--on-orange`) highlights Save dashboard, Send, a Development page's main shadcn action, and the afterglow on a changed reading. Hover uses the lighter orange and action text uses the dark on-orange color.
+- **Action orange** (`--orange`, `--orange-hover`, `--on-orange`) highlights Save dashboard, Send, a Development page's primary action, and the afterglow on a changed reading. Hover uses the lighter orange and action text uses the dark on-orange color.
 
 ### Secondary
 - **Status green, amber, red-pink, and dusk blue** (`--ok`, `--warn`, `--error`, `--info`) communicate success, warning, error, and in-progress or informational states (dispatched Commands, running Runs) without borrowing either brand hue. Always accompany color with a meaningful status label.
@@ -146,6 +172,11 @@ The palette is a neutral night ground with sparing, purposeful color.
 ## Typography
 
 Figtree Variable is self-hosted through `@fontsource-variable/figtree`, with sans-serif fallback. It provides a clear, restrained voice throughout; opaque identifiers and raw structured data may use monospace.
+
+The theme's font-size utilities are `text-reading` (40px), `text-reading-narrow`
+(32px), `text-headline` (26px), `text-title` (18px), `text-body` (16px),
+`text-label` (14px), `text-compact-reading` (20px), and `text-caption` (12px).
+These utilities set font size; apply line height, weight, and tracking separately.
 
 ### Hierarchy
 - **Reading:** 40px, weight 350, line-height 1.15, tabular figures; units remain smaller and quieter. Metric, State, and ToggleTile step down to 32px below a 200px content width.
@@ -170,7 +201,7 @@ Surfaces are mostly flat: tonal separation and fine borders establish hierarchy 
 
 ## Shapes
 
-Cards use a soft 12px radius and a 1px neutral border; shared buttons, shared fields, and household navigation use 8px corners. The underlying shadcn radius is 0.625rem, while handwritten editor fields still use 6px and the workspace modal uses 14px. Gradients appear only as one- or two-pixel horizon lines, not as large decorative fills.
+Cards use a 12px radius and a 1px neutral border. Shared buttons, fields, and household navigation use 8px corners; the workspace modal uses 14px. The `rounded-xs` token is 4px, `rounded-sm` is 6px, `rounded-md` is 8px, `rounded-card` is 12px, and `rounded-xl` is 14px. Gradients appear only as one- or two-pixel horizon lines, not as large decorative fills.
 
 ## Components
 
@@ -180,13 +211,13 @@ Both surfaces use `components/ui/Button` with 8px corners and 14px text. The `de
 
 Primary buttons are orange with dark, semibold text. Hover uses solid `orange-hover`; disabled primary buttons use `gray-3` background and border with `gray-7` text at full opacity. Outline buttons use the card surface, a neutral border, and regular-weight foreground text; hover uses `gray-3`. Use outline for filters, paging, and secondary workspace actions. The secondary, ghost, destructive, and link variants remain available. Disabled non-primary buttons use 50% opacity.
 
-Every variant uses a 2px violet focus outline with a 3px offset. The shared Button supplies its own styling, including when `asChild` renders a link. Existing handwritten household controls adopt this component in their migration units.
+Every variant uses a 2px violet focus outline with a 3px offset. The shared Button supplies its own styling, including when `asChild` renders a link.
 
 ### Switches
 
 `components/ui/Switch` uses the household 44×24px pill track and 18px thumb. Its target is 32px high by default or 44px with `size="touch"`. The target has 8px corners and the shared 2px violet focus outline with a 3px offset; the visible track remains pill-shaped.
 
-Off uses a `gray-3` track, `gray-7` border, and `gray-8` thumb. On uses a violet track and a `gray-10` thumb. Disabled shared switches keep those state colours at 50% opacity. This is the approved shared disabled treatment, distinct from the full-opacity gray treatment still used by handwritten household controls until adoption.
+Off uses a `gray-3` track, `gray-7` border, and `gray-8` thumb. On uses a violet track and a `gray-10` thumb. Disabled switches keep those state colors at 50% opacity.
 
 ### Segmented controls
 
@@ -194,15 +225,13 @@ Off uses a `gray-3` track, `gray-7` border, and `gray-8` thumb. On uses a violet
 
 Segments have a 32px minimum height by default or 44px with `size="touch"`. Long labels wrap and increase the height. The frame adds 2px padding and a 1px border on each side. Selected segments use violet-soft, violet-text, and a 1px inset violet line. Shared segments have 8px corners, the shared 2px violet focus outline with a 3px offset, and 50% disabled opacity.
 
-The handwritten purifier still uses 38px segments, 6px inner corners, and a full-opacity gray disabled treatment. Its comparison story records those differences explicitly until adoption.
-
 ### Fields
 
 `components/ui/Input`, `Textarea`, and `NativeSelect` share a card background, a 1px `gray-4` border, 8px corners, and 14px text with a 21px line height. Horizontal padding is 8px. Focus uses a 2px violet outline with a 3px offset; invalid fields use a destructive-colour border, and disabled fields use 50% opacity.
 
 Input and NativeSelect default to 32px high with 4px vertical padding. The `touch` size is 44px with 8px vertical padding; `auto` uses 32px with a fine pointer and 44px with a coarse pointer. These size names replace the native numeric `size` attribute. NativeSelect keeps the browser's selection behavior and arrow.
 
-Textarea has a 44px minimum height and 8px vertical padding. Its native `rows` prop controls the initial multiline height; it does not auto-grow with content. Caller typography overrides remain available for diagnostic JSON and identifiers. Existing household editor fields keep their handwritten 6px corners until their adoption units; comparison stories assert that approved 6px-to-8px change separately.
+Textarea has a 44px minimum height and 8px vertical padding. Its native `rows` prop controls the initial multiline height; it does not auto-grow with content. Caller typography overrides remain available for diagnostic JSON and identifiers. The brightness range and the light color picker's range and exact-value inputs remain specialized native controls rather than shared text fields.
 
 ### Dialogs and popovers
 
@@ -212,13 +241,18 @@ For modal dialogs, Radix owns focus containment, Escape dismissal, and focus ret
 
 Use modal `forceMount` only while an exit transition intentionally retains a blocking modal. It retains the closed portal, content, and overlay, including scroll locking and hiding the rest of the page from assistive technology. Setting `hidden` on the content does not dismiss that overlay or release those effects. End the transition by removing `forceMount` or unmounting the dialog; do not leave a closed modal mounted indefinitely.
 
+The expanded canvas stays in place and retains `useModalFocus`. Moving its editor
+into a Dialog portal remounts the editor and loses invalid, unsaved input.
+Decision dialogs use the shared Dialog; this exception applies only to the
+expanded canvas.
+
 `components/ui/Popover` uses the Source popover's gray-2 surface, 12px corners, 22px padding, and available-height scrolling. Its 10px flex gap serves Development Connection Settings; Source adoption supplies its own inner spacing.
 
 ### Notices
 
 `components/ui/Notice` uses the household error tint: a 45% destructive-colour border, an 8% destructive-colour background, foreground text, 8px corners, and 12px padding. Its text uses the 12px caption step with an 18px line height. Notices grow with their content rather than taking a control height.
 
-Callers choose `role="alert"` for errors or `role="status"` for non-urgent feedback. Recovery actions remain caller-owned shared Buttons. The handwritten workspace notice keeps its 9px corners until its adoption unit; the comparison story checks the approved 9px-to-8px change separately.
+Callers choose `role="alert"` for errors or `role="status"` for non-urgent feedback. Recovery actions remain caller-owned shared Buttons.
 
 ### View cards
 
@@ -270,7 +304,7 @@ words stay `--gray-9`; warn and error words take their tone. The category is a
 reading, never a Status entry, and dims with an unavailable or disabled PM2.5.
 Filter life at or below 10 % adds **Replace the filter soon** in `--warn`.
 Mode is a segmented control: a 1px `--gray-4` frame on the card's `--gray-1` with 2px
-padding and 38px segments, the shown choice in `--violet-soft` with a 1px violet
+padding and 44px minimum segments, the shown choice in `--violet-soft` with a 1px violet
 inset and `--violet-text`. Fan level is a stepper: 44px outline minus and plus
 buttons around the 20px level and one 14 × 6px pip per level, violet up to the
 level. When another mode drives the fan, the pips draw hollow in `--gray-6`
@@ -332,7 +366,9 @@ each with a quiet time, a series-colored dot on a rail, and words such as
 “Front door open for 6 min”. More than three changes of one row in one part of
 the day fold into one line with a count and a pulse strip; text changes pulse as
 ticks. It shows 12 entries and an outline **Show earlier changes** button. Axes
-end with a quiet “Now” label and no marker. Each row carries its own statuses;
+use 13px labels because 14px labels overlap at a 440px width. Labels may still
+overlap at narrower widths. The axis ends with a quiet “Now” label and no marker.
+Each row carries its own statuses;
 the feed lists them in the header. An unavailable or disabled row draws at 60 %
 with a dashed baseline.
 
@@ -383,14 +419,14 @@ shared dashed-gray treatment. Other Metric trends keep their neutral lines.
 
 Forecast cards show modeled predictions, not station readings, and are the
 only cards that draw sky conditions. Daily rows are 44px tall: the day at 14px
-(**Today** first), a 28px condition icon, the precipitation chance at 13px
+(**Today** first), a 28px condition icon, the precipitation chance at 14px
 `--info`, the low at the 20px compact scale in `--gray-8`, a 4px `--gray-3`
 track with a `--gray-9` span from low to high on the shown days' range, and the
 high at 20px in `--gray-10`. Hourly keeps a 216px plot height and draws at its
 container's measured width, so text, icons, and strokes do not scale on desktop.
 Each hour requires at least 22px within a 264px minimum plot; narrower containers
 scroll horizontally. Hourly draws a 2px `--gray-10` temperature line,
-precipitation-chance bars in `--info` at 55 % opacity, icons and 13px
+precipitation-chance bars in `--info` at 55 % opacity, icons and 14px
 temperature labels above the line, hour labels below the axis, and a dashed
 `--gray-5` midnight rule with the weekday beneath it. Chance below 10 % is not
 shown, and its column keeps its space. Condition icons are 1.6px line drawings in
@@ -461,8 +497,7 @@ controls from Entity support; definitions never declare them.
   4px track is `--gray-4`, its level violet, and its 18px thumb `--gray-10`,
   with a 44px-tall target. It runs from 1 to 100 %; only the switch turns a
   light off.
-- Handwritten disabled controls still use `--gray-3` to `--gray-6` at full opacity.
-  Shared switches use the treatment above when adopted. The card's **Disabled**
+- Disabled switches use the shared 50% opacity treatment. The card's **Disabled**
   status says why the control is unavailable.
 - The reading keeps showing observed State. While a Command is pending, the
   control shows the requested value and a line beneath it, with a dusk-blue dot,
@@ -508,7 +543,7 @@ bordered treatment.
 
 ### Inputs and navigation
 
-The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled and sits in its own row below the text, so it never floats between lines. The selected view and any editor note share that row, to the left of Send, rather than adding rows of their own. The selected view or Automation is a chip on the composer's 8px inset, mirroring Send: a 1px violet border, its icon on the text's edge, and the name truncating to one line. The name shows the canvas, on phones by switching to the Canvas tab; its close button closes the view like the canvas's own Close, asking first when there are unsaved changes. Both parts are 36px tall with a fine pointer and 44px with touch. The revision and saved state stay in the canvas header rather than repeating in the chip. Sent messages keep a plain, non-interactive record of the view they carried. Development uses the shared fields described above. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it moves into the drawer, and while the server is not ready the menu button carries a status dot in its tone, with the status in its accessible name and in words inside the drawer. Status chips pair words with their tone.
+The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled and sits in its own row below the text, so it never floats between lines. The selected view and any editor note share that row, to the left of Send, rather than adding rows of their own. The selected view or Automation is a chip on the composer's 8px inset, mirroring Send: a 1px violet border, its icon on the text's edge, and the name truncating to one line. The name shows the canvas, on phones by switching to the Canvas tab; its close button closes the view like the canvas's own Close, asking first when there are unsaved changes. Both parts have 44px touch targets. The revision and saved state stay in the canvas header rather than repeating in the chip. Sent messages keep a plain, non-interactive record of the view they carried. Development uses the shared fields described above. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it moves into the drawer, and while the server is not ready the menu button carries a status dot in its tone, with the status in its accessible name and in words inside the drawer. Status chips pair words with their tone.
 
 ## Do's and Don'ts
 

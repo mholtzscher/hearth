@@ -60,7 +60,7 @@ it("lists state the oldest reading and light a changed older row independently",
   expect(document.querySelector("time")?.getAttribute("datetime")).toBe(old);
   view.rerender(<ReadingList title="Doors" rows={rows(changed, newer, "Open")} />);
   expect(document.querySelectorAll('[data-slot="card-arrival"]')).toHaveLength(1);
-  expect(document.querySelectorAll(".view-row-arrival")).toHaveLength(1);
+  expect(document.querySelectorAll('[data-slot="reading-arrival"]')).toHaveLength(1);
   await act(async () => { vi.advanceTimersByTime(60_001); });
   expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
@@ -99,7 +99,7 @@ it("renders RGB in the light composite without a duplicate color row", () => {
   expect(document.querySelector<HTMLElement>('[data-slot="light-swatch"]')?.style.backgroundColor).toBe("rgb(12, 128, 255)");
   expect(screen.getByText("RGB 12, 128, 255")).toBeTruthy();
   expect(screen.getByText("Good")).toBeTruthy();
-  expect(document.querySelectorAll(".view-row")).toHaveLength(1);
+  expect(document.querySelectorAll('[data-slot="reading-row"]')).toHaveLength(1);
 });
 
 it("Device settings use their selected choice and honor the twelve row cap", () => {
@@ -107,7 +107,7 @@ it("Device settings use their selected choice and honor the twelve row cap", () 
   expect(deviceReading(setting).data).toEqual({ text: "Auto", observed_at: at });
   const device = parseDevice({ id: deviceId, name: "Many", entities: Array.from({ length: 14 }, (_, i) => ({ ...entity("power", true), id: `entity-${i}` })) }, deviceId);
   render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: device }} />, { wrapper: MemoryRouter });
-  expect(document.querySelectorAll(".view-row")).toHaveLength(12);
+  expect(document.querySelectorAll('[data-slot="reading-row"]')).toHaveLength(12);
   expect(screen.getByText(/Showing 12 of 14/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Source" }));
   expect(screen.getAllByRole("link")).toHaveLength(15);

@@ -74,12 +74,11 @@ export function CardSource({ title, observedAt, observedLabel, now, sources, tog
     </section>}
     {children !== undefined && <section className="mt-[22px] grid gap-3 border-t border-gray-4 pt-[18px] text-muted-foreground">{children}</section>}
   </>;
-  const aliases = "[--ink:var(--gray-10)] [--quiet:var(--gray-8)] [--edge:var(--gray-4)]";
   return phone ? <Dialog open={open} onOpenChange={setOpen}>
     <DialogTrigger asChild>{trigger}</DialogTrigger>
-    <DialogContent placement="bottom" data-placement="bottom" className={cn("max-tablet:rounded-t-[14px]", aliases)} aria-modal="true" onClick={closeOnNavigation}>{content}</DialogContent>
+    <DialogContent placement="bottom" data-placement="bottom" className="max-tablet:rounded-t-[14px]" aria-modal="true" onClick={closeOnNavigation}>{content}</DialogContent>
   </Dialog> : <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-    <PopoverContent className={cn("block", aliases)} align="end" sideOffset={8} collisionPadding={12} aria-labelledby={headingId} aria-describedby={descriptionId} onClick={closeOnNavigation}>{content}</PopoverContent>
+    <PopoverContent className="block" align="end" sideOffset={8} collisionPadding={12} aria-labelledby={headingId} aria-describedby={descriptionId} onClick={closeOnNavigation}>{content}</PopoverContent>
   </Popover>;
 }

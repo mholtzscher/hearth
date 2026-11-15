@@ -93,6 +93,13 @@ from args needs no play assertion. A phone story also calls
 `expectNoHorizontalOverflow` from `.storybook/play.ts`. Keep the single
 `CssCheck` story as the production CSS loading check.
 
+Query controls by their accessible role and name, and fields by their label.
+Use `data-slot` when a test must identify a structural part that has no distinct
+accessible role, such as a card body or reading value. Slots are component
+contracts; do not use styling classes as test selectors. For example, use
+`canvas.getByRole("button", { name: "Source" })` for the Source action and
+`canvasElement.querySelector('[data-slot="card-body"]')` for the frame body.
+
 ## Choose a component, editor, or page story
 
 The sidebar includes the catalog's bound cards, their shared frame and Source
@@ -103,6 +110,11 @@ Controls resets that draft; canvas edits do not update Controls. Other card
 editors have no direct stories. ViewEditor mounts Device and OutsideNow editors
 inside collapsed sections, but its stories do not interact with those sections.
 
+The `components/ui` catalog includes stories for Button, Input, Textarea,
+NativeSelect, Switch, SegmentedControl, Dialog, Popover, Notice, Accordion,
+Badge, Card, ChartContainer, Label, Separator, and Table. ChartContainer also
+appears in TimeSeries stories.
+
 The `application/Workspace` group runs the real application shell, conversation,
 and full dashboard canvas together. It includes desktop, tablet, and phone
 navigation, readiness states, conversation history and tool activity, synthetic
@@ -110,7 +122,8 @@ streamed replies, send failure/retry, and dashboard editing, save conflicts,
 discard confirmation, expansion, and phone panel switching. It also covers the
 dashboard library (loaded, empty, deletion, and phone layout), conversation search,
 pending views, selected-view messages, invalid drafts, and reading older messages.
-This group does not add Automations or other Development-page coverage.
+Its Commands story verifies status filtering and clearing the filter on the
+Development page. Automations have their own application group.
 
 The `application/Automations` group covers the Automation library and new-draft
 canvas, including a 390px phone layout. Direct AutomationCard and AutomationEditor
@@ -217,48 +230,3 @@ export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="$(command -v chromium)"
 
 Report unavailable browser checks as unverified. Do not substitute jsdom results
 for browser evidence.
-
-## Compare story screenshots during the design-system migration
-
-This tooling is temporary. It exists to prove that moving the dashboard's
-handwritten CSS to Tailwind utilities keeps every story's pixels, and it is
-deleted with the last handwritten stylesheet. It is not a regression suite and
-CI does not run it.
-
-```sh
-mise run --skip-deps story-shots -- capture /tmp/opencode/hearth-shots/base
-mise run --skip-deps story-shots -- compare /tmp/opencode/hearth-shots/base /tmp/opencode/hearth-shots/branch
-mise run --skip-deps story-shots -- coverage /tmp/opencode/hearth-shots/base
-```
-
-- `capture <dir>` requires a new or empty directory and writes one PNG for each
-  story into it. A story that sets its own viewport is captured at that size. Any
-  other story is captured at 1280×900 and again at 390×844, with the name
-  suffix `--phone`. The capture waits until nothing is marked `aria-busy` and
-  the document has stopped changing, up to three seconds per wait. The image
-  captures the viewport without enlarging it to fit tall content. It also writes
-  `classes.json`, the class names each story rendered, including offscreen content.
-  The command exits 1 if a story fails. Only successful runs write `complete.json`;
-  comparisons and coverage reject incomplete runs.
-- `compare <base-dir> <branch-dir>` exits 0 when both directories have the same
-  images and every pair is byte-identical. Otherwise it exits 1, lists the images
-  that differ, and writes `<branch-dir>/report.html` with both versions of
-  each. Missing images fail the comparison too, so an incomplete capture cannot
-  silently reduce the comparison. Added or removed stories require a new baseline.
-- `coverage <dir>` lists the stylesheet classes that no captured story
-  rendered and exits 1 when there are any outside `UNRENDERED_ALLOWED`. Each
-  exception in that map names its reason. The card render-exception recovery
-  message is covered by a unit test with a throwing component, not a story with
-  synthetic HTTP responses. Coverage checks class names only; it does not show
-  whether a story renders each `data-*` or ARIA state.
-
-To compare a branch with its base, capture the base commit in a second
-worktree, capture the branch, and compare the two directories. Capture both on
-the same machine: the comparison is exact, so a different browser build or font
-renderer changes every image. Keep the output outside the repository. A relative
-directory resolves from the directory where you ran `mise`.
-
-A capture run starts Chromium with `--disable-partial-raster` and with reduced
-motion to avoid timing-dependent pixels. Normal story tests do not use either
-setting. Stories tagged `needs-work` have no capture; the command lists their IDs.
-Before relying on a baseline, capture it twice and confirm that `compare` exits 0.

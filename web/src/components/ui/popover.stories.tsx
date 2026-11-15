@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
-import { CardSource } from "../../features/views/cards/CardSource.tsx";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "./popover";
 
 const meta = {
@@ -29,35 +28,21 @@ export const OpenAndDismiss: Story = {
   },
 };
 
-/** The open state remains visible for visual comparison during migration. */
+/** The open state exposes the shared surface treatment. */
 export const Open: Story = {
   args: { defaultOpen: true },
   play: async ({ canvasElement }) => {
     const body = within(canvasElement.ownerDocument.body);
-    await waitFor(() => expect(body.getByRole("dialog", { name: "Living room reading" })).toBeVisible());
-  },
-};
-
-/** Temporary reference: the actual Source popover and its legacy CSS, until D7. */
-export const HouseholdComparison: Story = {
-  render: () => <>
-    <CardSource title="Living room" observedLabel="Observed" now={0} sources={[]} />
-    <Popover>
-      <PopoverTrigger>Shared details</PopoverTrigger>
-      <PopoverContent aria-label="Shared reading">Living room</PopoverContent>
-    </Popover>
-  </>,
-  play: async ({ canvas, canvasElement, userEvent }) => {
-    const body = within(canvasElement.ownerDocument.body);
-    await userEvent.click(canvas.getByRole("button", { name: "Source" }));
-    const legacy = await body.findByRole("dialog", { name: "Source details" });
-    const properties = ["width", "maxHeight", "backgroundColor", "color", "borderRadius", "padding", "fontFamily", "fontSize", "lineHeight"] as const;
-    const expected = Object.fromEntries(properties.map(property => [property, getComputedStyle(legacy)[property]]));
-    const shadow = getComputedStyle(legacy).boxShadow;
-    await userEvent.click(within(legacy).getByRole("button", { name: "Close details" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Shared details" }));
-    const shared = await body.findByRole("dialog", { name: "Shared reading" });
-    for (const property of properties) await expect(getComputedStyle(shared)[property], property).toBe(expected[property]);
-    await expect(getComputedStyle(shared).boxShadow).toContain(shadow);
+    const dialog = await body.findByRole("dialog", { name: "Living room reading" });
+    await expect(dialog).toBeVisible();
+    const style = getComputedStyle(dialog);
+    await expect(dialog.getBoundingClientRect().width).toBeCloseTo(Math.min(440, window.innerWidth - 24), 1);
+    await expect(parseFloat(style.maxHeight)).toBeLessThanOrEqual(720);
+    for (const [property, value] of Object.entries({
+      backgroundColor: "rgb(21, 21, 21)", color: "rgb(244, 244, 244)", borderRadius: "12px",
+      padding: "22px", fontSize: "14px", lineHeight: "21px",
+    })) await expect(style.getPropertyValue(property.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)), property).toBe(value);
+    await expect(style.fontFamily).toContain("Figtree Variable");
+    await expect(style.boxShadow).toContain("rgba(0, 0, 0, 0.533) 0px 18px 60px 0px");
   },
 };

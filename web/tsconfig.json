@@ -19,5 +19,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "vite.config.ts", "vitest.config.ts", ".storybook", ".storybook/story-capture.ts", "scripts/check-storybook-manifest.ts", "scripts/story-shots.ts"]
+  "include": ["src", "vite.config.ts", "vitest.config.ts", ".storybook", "scripts/check-storybook-manifest.ts"]
 }
