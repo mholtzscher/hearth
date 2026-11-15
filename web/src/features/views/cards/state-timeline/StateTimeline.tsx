@@ -31,7 +31,7 @@ export function StateTimeline({ title, style, window, rows }: { title: string; s
   const first = rows.find(row => row.resource.data?.timeline)?.resource.data?.timeline;
   const method = <><p>{intervalMethod}</p>{first && <p>{new Date(first.from).toLocaleString()} to {new Date(first.to).toLocaleString()}</p>}</>;
   const words = windowNames[window];
-  return <CardFrame className="view-timeline-card" title={title} unit={`Last ${words}`} status={[...header.values()]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
+  return <CardFrame className="@container" title={title} unit={`Last ${words}`} status={[...header.values()]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
     {style === "lanes" ? <TimelineLanes rows={rows} windowWords={words} /> : style === "ledger" ? <TimelineLedger rows={rows} windowWords={words} /> : <TimelineFeed key={JSON.stringify([window, rows.map(row => row.key)])} rows={rows} windowWords={words} />}
   </CardFrame>;
 }

@@ -23,22 +23,24 @@ export function sinceText(row: TimelineRow): string | undefined {
   return last?.kind === "value" && last.from > timeline!.from && current?.text === last.text ? `since ${timeLabel(last.from, { weekday: false })}` : undefined;
 }
 
-export function Axis({ data }: { data?: TimelineData }) {
+export function Axis({ data, className = "" }: { data?: TimelineData; className?: string }) {
   if (!data) return null;
-  return <div data-slot="timeline-axis" className="view-timeline-axis" aria-hidden="true">{timeTicks(data.from, data.to).filter(tick => tick.value > data.from && tick.value < data.to - 0.12 * (data.to - data.from)).map(tick => <span key={tick.value} style={{ left: `${100 * (tick.value - data.from) / (data.to - data.from)}%` }}>{tick.label}</span>)}<span className="view-timeline-axis-end">Now</span></div>;
+  return <div data-slot="timeline-axis" className={`relative h-5 text-[13px] text-muted-foreground tabular-nums ${className}`} aria-hidden="true">{timeTicks(data.from, data.to).filter(tick => tick.value > data.from && tick.value < data.to - 0.12 * (data.to - data.from)).map(tick => <span className="absolute -translate-x-1/2 whitespace-nowrap" key={tick.value} style={{ left: `${100 * (tick.value - data.from) / (data.to - data.from)}%` }}>{tick.label}</span>)}<span className="absolute right-0 whitespace-nowrap">Now</span></div>;
 }
 
-export function Track({ data, color, dimmed, compact = false }: { data?: TimelineData; color: string; dimmed: boolean; compact?: boolean }) {
-  if (!data) return <div data-slot="timeline-track" className="view-timeline-track" data-dimmed={dimmed || undefined} aria-hidden="true" />;
+const trackClass = "group/track relative h-[18px] min-w-0 before:absolute before:inset-x-0 before:top-2 before:h-0.5 before:bg-gray-4 before:content-[''] data-[dimmed]:before:h-0 data-[dimmed]:before:border-t-2 data-[dimmed]:before:border-dashed data-[dimmed]:before:border-gray-5 data-[dimmed]:before:bg-transparent data-[compact]:col-span-full data-[compact]:mt-2 data-[compact]:h-1.5 data-[compact]:rounded-[3px] data-[compact]:bg-gray-3 data-[compact]:before:hidden data-[compact]:data-[dimmed]:border-t-2 data-[compact]:data-[dimmed]:border-dashed data-[compact]:data-[dimmed]:border-gray-5 data-[compact]:data-[dimmed]:bg-transparent";
+
+export function Track({ data, color, dimmed, compact = false, className = "" }: { data?: TimelineData; color: string; dimmed: boolean; compact?: boolean; className?: string }) {
+  if (!data) return <div data-slot="timeline-track" className={`${trackClass} ${className}`} data-dimmed={dimmed || undefined} aria-hidden="true" />;
   const ranked = [...data.totals].filter(total => total.truthy === null).sort((a, b) => b.seconds - a.seconds);
   const ranks = new Map(ranked.map((total, index) => [total.text, index]));
-  return <div data-slot="timeline-track" data-compact={compact || undefined} className={`view-timeline-track${compact ? " view-timeline-track-compact" : ""}`} data-dimmed={dimmed || undefined} style={{ "--timeline-color": color } as CSSProperties} aria-hidden="true">
+  return <div data-slot="timeline-track" data-compact={compact || undefined} className={`${trackClass} ${className}`} data-dimmed={dimmed || undefined} style={{ "--timeline-color": color } as CSSProperties} aria-hidden="true">
     {data.intervals.map((interval, index) => {
       if (interval.kind === "absent" || (interval.kind === "value" && interval.truthy === false)) return null;
       const rank = interval.kind === "value" && interval.truthy === null ? ranks.get(interval.text) ?? 0 : 0;
       const text = interval.kind === "unknown" ? "No history" : interval.text;
-      return <span key={index} data-slot="timeline-segment" className="view-timeline-segment" data-unknown={interval.kind === "unknown" || undefined} data-rank={rank > 1 ? 2 : rank} style={{ left: `${100 * (interval.from - data.from) / (data.to - data.from)}%`, width: `${100 * (interval.to - interval.from) / (data.to - data.from)}%` }}>
-        {!compact && (interval.kind === "unknown" || interval.truthy === null) && <span>{text}</span>}
+      return <span key={index} data-slot="timeline-segment" className="absolute inset-y-0 min-w-0.5 overflow-hidden rounded-[2px] bg-(--timeline-color) data-[rank='1']:bg-[color-mix(in_oklch,var(--timeline-color)_32%,var(--gray-1))] data-[rank='2']:bg-[color-mix(in_oklch,var(--timeline-color)_16%,var(--gray-1))] data-[unknown]:border data-[unknown]:border-dashed data-[unknown]:border-gray-5 data-[unknown]:bg-card group-data-[dimmed]/track:opacity-60" data-unknown={interval.kind === "unknown" || undefined} data-rank={rank > 1 ? 2 : rank} style={{ left: `${100 * (interval.from - data.from) / (data.to - data.from)}%`, width: `${100 * (interval.to - interval.from) / (data.to - data.from)}%` }}>
+        {!compact && (interval.kind === "unknown" || interval.truthy === null) && <span className={`block overflow-hidden whitespace-nowrap px-[5px] text-[13px] ${interval.kind === "unknown" ? "font-normal leading-4 text-gray-7" : `font-medium leading-[18px] ${rank > 0 ? "text-foreground" : "text-background"}`}`}>{text}</span>}
       </span>;
     })}
   </div>;
@@ -51,16 +53,16 @@ export function rowSummary(row: TimelineRow, windowWords: string): string {
 
 export function TimelineLanes({ rows, windowWords }: { rows: TimelineRow[]; windowWords: string }) {
   const first = rows.find(row => row.resource.data?.timeline)?.resource.data?.timeline;
-  return <div className="view-timeline-lanes" role="region" tabIndex={0} aria-label="State timeline">
+  return <div className="grid grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-3 @max-[600px]:grid-cols-[minmax(0,1fr)] @max-[600px]:gap-3.5" role="region" tabIndex={0} aria-label="State timeline">
     <ul className="sr-only">{rows.map(row => <li key={row.key}>{rowSummary(row, windowWords)}</li>)}</ul>
     {rows.map((row, index) => {
       const status = cardStatus(row.resource);
-      return <div className="view-timeline-lane" key={row.key}>
-        <div className="view-timeline-name"><span>{row.label}</span><span data-value={status.value}>{row.resource.data?.current?.text ?? "—"}</span><StatusList className="grid @max-[600px]:flex" separators={false} entries={status.entries} /></div>
-        <Track data={row.resource.data?.timeline} color={`var(--chart-${index % 8 + 1})`} dimmed={status.value === "dimmed"} />
-        <div className="view-timeline-total">{totalsText(row.resource.data?.timeline, row.trueWord)}</div>
+      return <div className="contents @max-[600px]:grid @max-[600px]:grid-cols-[minmax(0,1fr)_auto] @max-[600px]:items-baseline @max-[600px]:gap-x-3 @max-[600px]:gap-y-1.5 @max-[420px]:grid-cols-[minmax(0,1fr)] @max-[420px]:gap-0.5" key={row.key}>
+        <div className="grid min-w-0 leading-[1.35] @max-[600px]:flex @max-[600px]:flex-wrap @max-[600px]:items-baseline @max-[600px]:gap-x-2 @max-[600px]:gap-y-0"><span className="overflow-hidden text-ellipsis whitespace-nowrap">{row.label}</span><span className="text-muted-foreground data-[value=empty]:text-gray-6 data-[value=dimmed]:text-gray-8" data-value={status.value}>{row.resource.data?.current?.text ?? "—"}</span><StatusList className="grid @max-[600px]:flex" separators={false} entries={status.entries} /></div>
+        <Track className="@max-[600px]:col-span-full @max-[420px]:mt-1.5" data={row.resource.data?.timeline} color={`var(--chart-${index % 8 + 1})`} dimmed={status.value === "dimmed"} />
+        <div className="text-right text-muted-foreground tabular-nums @max-[600px]:col-start-2 @max-[600px]:row-start-1 @max-[420px]:col-start-1 @max-[420px]:row-start-2 @max-[420px]:text-left">{totalsText(row.resource.data?.timeline, row.trueWord)}</div>
       </div>;
     })}
-    <div className="view-timeline-axis-spacer" /><Axis data={first} /><div className="view-timeline-axis-spacer" />
+    <div className="@max-[600px]:hidden" /><Axis data={first} /><div className="@max-[600px]:hidden" />
   </div>;
 }
