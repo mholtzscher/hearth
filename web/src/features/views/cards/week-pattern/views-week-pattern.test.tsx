@@ -42,20 +42,20 @@ it.each([
 
 it("glows only when a newer summary changes displayed cells or daily totals", () => {
   const view = render(<WeekPattern label="Door" entityId={id} resource={ready} />, { wrapper: MemoryRouter });
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   const changedCurrent = { ...ready, data: { ...ready.data!, current: { text: "Open", observed_at: new Date(to + 1000).toISOString() } } };
   view.rerender(<WeekPattern label="Door" entityId={id} resource={changedCurrent} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   const later = { ...week, to: to + 60_000, days: week.days.map((day, i) => i === 0 ? { ...day, hours: day.hours.map((cell, j) => j === 0 ? { ...cell, seconds: 60 } : cell) } : day) };
   view.rerender(<WeekPattern label="Door" entityId={id} resource={{ ...changedCurrent, data: { ...changedCurrent.data, week: later } }} />);
-  expect(document.querySelector(".view-card-arrival")).toBeTruthy();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeTruthy();
 });
 
 it("does not glow when a newer summary leaves shading and formatted totals unchanged", () => {
   const view = render(<WeekPattern label="Door" entityId={id} resource={ready} />, { wrapper: MemoryRouter });
   const sameDisplay = { ...week, to: to + 60_000, days: week.days.map((day, i) => i === 0 ? { ...day, hours: day.hours.map((cell, j) => j === 1 ? { ...cell, seconds: 61 } : cell) } : day) };
   view.rerender(<WeekPattern label="Door" entityId={id} resource={{ ...ready, data: { ...ready.data!, week: sameDisplay } }} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
 
 it("does not glow for unavailable changes or replay them on recovery", () => {
@@ -63,9 +63,9 @@ it("does not glow for unavailable changes or replay them on recovery", () => {
   const later = { ...week, to: to + 60_000, days: week.days.map((day, i) => i === 0 ? { ...day, hours: day.hours.map((cell, j) => j === 0 ? { ...cell, seconds: 60 } : cell) } : day) };
   const changed = { ...ready, data: { ...ready.data!, week: later } };
   view.rerender(<WeekPattern label="Door" entityId={id} resource={{ ...changed, metadata: { ...ready.metadata!, availability: "unavailable" } }} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   view.rerender(<WeekPattern label="Door" entityId={id} resource={changed} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
 
 it("edits the label and optional boolean words", () => {

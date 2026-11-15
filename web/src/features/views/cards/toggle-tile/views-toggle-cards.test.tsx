@@ -91,12 +91,12 @@ it("has one whole-tile switch, keeps observed State while pending, and shares th
   await mount(<><BoundToggleTile source={source()} label="Fan" /><BoundToggleList title="Room" rows={[{ source: source(), label: "Fan" }]} /></>);
   const tile = screen.getByRole("article", { name: "Fan" });
   const control = within(tile).getByRole("switch");
-  expect(tile.querySelector(".view-switch")).toBeNull();
+  expect(within(tile).getAllByRole("switch")).toHaveLength(1);
   fireEvent.click(control); await flush();
   expect(api.posts.map(post => post.body)).toEqual([{ operation: "set", parameters: { value: true } }]);
   expect(control.getAttribute("aria-checked")).toBe("false");
   expect(within(tile).getByText("Off")).toBeTruthy();
-  expect(tile.classList.contains("is-on")).toBe(false);
+  expect(tile.hasAttribute("data-on")).toBe(false);
   expect(screen.getAllByText("Turning on…")).toHaveLength(2);
   fireEvent.click(within(screen.getByRole("article", { name: "Room" })).getByRole("switch"));
   expect(api.posts).toHaveLength(1);
@@ -105,6 +105,13 @@ it("has one whole-tile switch, keeps observed State while pending, and shares th
   api.satisfy(api.posts[1]); await flush(); await flush();
   expect(within(tile).getByText("Off")).toBeTruthy();
   expect(screen.queryByText("Turning off…")).toBeNull();
+});
+
+it("marks the tile on only when observed State is on", async () => {
+  core([power(1, true)]);
+  await mount(<BoundToggleTile source={source()} label="Fan" />);
+  expect(screen.getByRole("article", { name: "Fan" }).getAttribute("data-on")).toBe("true");
+  expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
 });
 
 it.each([[502, "Change rejected. Try again."], [504, "No confirmation. It may still change."]])("exposes a %i failure without inventing observed power", async (status, message) => {
@@ -226,7 +233,7 @@ it("keeps an optional detail reading independently bound and states the oldest d
   const api = core([power(), numeric(), energy]);
   await mount(<BoundToggleTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h", detail: { source: metricSource(22), label: "Total energy" } }} />);
   expect(screen.getByText("Total energy")).toBeTruthy();
-  expect(document.querySelector(".view-card-footer time")?.getAttribute("datetime")).toBe(energy.state!.observed_at);
+  expect(screen.getByRole("article", { name: "Plug" }).querySelector('[data-slot="card-footer"] time')?.getAttribute("datetime")).toBe(energy.state!.observed_at);
   expect(document.querySelectorAll(".view-trend")).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Source" }));
   expect(screen.getAllByRole("link")).toHaveLength(3);

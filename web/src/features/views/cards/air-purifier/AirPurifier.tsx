@@ -22,7 +22,7 @@ function NumericRow({ row, hideUnavailable }: { row: Row; hideUnavailable: boole
     {row.key === "pm25" && data && <Category value={data.value} dimmed={row.status.value === "dimmed"} />}
     <span className="view-row-value" data-value={row.status.value}>{data ? <>{data.value.toFixed(data.format.fraction_digits)}<small>{data.format.unit_label}</small></> : "—"}</span>
     {row.key === "filter_life" && data && data.value <= 10 && <span className="view-air-purifier-note">Replace the filter soon</span>}
-    <StatusList entries={hideUnavailable ? row.status.entries.filter(entry => entry.key !== "unavailable") : row.status.entries} />
+    <StatusList className="basis-full" entries={hideUnavailable ? row.status.entries.filter(entry => entry.key !== "unavailable") : row.status.entries} />
   </li>;
 }
 

@@ -13,7 +13,7 @@ const reading = (observed_at: string, availability = "available", value = 21.5):
   status: "ready", metadata: metadata(availability),
   data: { value, observed_at, format: { unit_label: "°C", fraction_digits: 1 } },
 });
-const glowing = () => document.querySelector(".view-card-arrival");
+const glowing = () => document.querySelector('[data-slot="card-arrival"]');
 
 it("glows a reading's top edge when a newer observation changes its value, then clears", () => {
   vi.useFakeTimers();
@@ -54,7 +54,7 @@ it("glows a chart when refreshed history changes a series' latest displayed valu
   rerender(<TimeSeries title="Temperature" series={[{ resource: history("2026-11-05T21:59:45Z", 21.54) }]} />);
   expect(glowing()).toBeNull();
   rerender(<TimeSeries title="Temperature" series={[{ resource: history("2026-11-05T22:00:00Z", 21.8) }]} />);
-  expect(screen.getByRole("article", { name: "Temperature" }).querySelector(".view-card-arrival")).not.toBeNull();
+  expect(screen.getByRole("article", { name: "Temperature" }).querySelector('[data-slot="card-arrival"]')).not.toBeNull();
 });
 
 it("waits for a coherent chart refresh before glowing for a changed sibling series", () => {

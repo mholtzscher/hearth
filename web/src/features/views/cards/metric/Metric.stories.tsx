@@ -46,3 +46,20 @@ export const RangeNotDeclared: Story = {
     await expect(canvas.getByText("Range unavailable.")).toBeVisible();
   },
 };
+
+/** The card's content width, rather than the viewport, controls the compact reading. */
+export const NarrowCard: Story = {
+  args: { trend: undefined, range: undefined },
+  decorators: [Story => <div style={{ width: 236 }}><Story /></div>],
+  play: async ({ canvas }) => {
+    const reading = await canvas.findByText("94.0");
+    const card = canvas.getByRole("article", { name: "Outdoor humidity" });
+    const time = card.querySelector("time")!;
+    const cardStyle = getComputedStyle(card);
+    await expect(card.clientWidth - parseFloat(cardStyle.paddingLeft) - parseFloat(cardStyle.paddingRight)).toBeLessThanOrEqual(200);
+    await expect(getComputedStyle(reading).fontSize).toBe("32px");
+    await expect(time).toHaveAttribute("aria-label", "Observed just now");
+    await expect(time.firstElementChild).not.toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Source" })).toBeVisible();
+  },
+};

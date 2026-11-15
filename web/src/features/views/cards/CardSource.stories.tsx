@@ -57,6 +57,48 @@ export const PhoneSheet: Story = {
     await expect(await body.findByRole("dialog", { name: "Reading details" })).toBeVisible();
     await expectNoHorizontalOverflow(canvasElement);
     await userEvent.click(body.getByRole("button", { name: "Close details" }));
+    await expect(body.queryByRole("dialog", { name: "Reading details" })).not.toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Source" })).toHaveFocus();
+  },
+};
+
+export const DesktopClose: Story = {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: "Source" });
+    await userEvent.click(trigger);
+    const body = within(canvasElement.ownerDocument.body);
+    const panel = await body.findByRole("dialog", { name: "Reading details" });
+    await expect(panel).not.toHaveAttribute("aria-modal", "true");
+    await userEvent.click(within(panel).getByRole("button", { name: "Close details" }));
+    await expect(body.queryByRole("dialog", { name: "Reading details" })).not.toBeInTheDocument();
+    await expect(trigger).toHaveFocus();
+  },
+};
+
+export const DesktopEscape: Story = {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: "Source" });
+    await userEvent.click(trigger);
+    const body = within(canvasElement.ownerDocument.body);
+    await expect(await body.findByRole("dialog", { name: "Reading details" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect(body.queryByRole("dialog", { name: "Reading details" })).not.toBeInTheDocument();
+    await expect(trigger).toHaveFocus();
+  },
+};
+
+export const PhoneEscape: Story = {
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: "Source" });
+    await userEvent.click(trigger);
+    const body = within(canvasElement.ownerDocument.body);
+    const panel = await body.findByRole("dialog", { name: "Reading details" });
+    await expect(panel).toHaveAttribute("aria-modal", "true");
+    await expect(panel.getBoundingClientRect().bottom).toBeCloseTo(canvasElement.ownerDocument.defaultView!.innerHeight, 0);
+    await expectNoHorizontalOverflow(canvasElement);
+    await userEvent.keyboard("{Escape}");
+    await expect(body.queryByRole("dialog", { name: "Reading details" })).not.toBeInTheDocument();
+    await expect(trigger).toHaveFocus();
   },
 };

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode 
 import type { FieldEntity } from "../bindings/entity";
 import { useControl } from "../data/provider";
 import { ControlStatus } from "./ControlStatus";
+import { sliderClasses, sliderLabelClasses } from "./slider-styles";
 
 /** Keyboard steps send once they settle for this long. */
 export const KEYBOARD_SETTLE_MS = 500;
@@ -42,13 +43,13 @@ export function BrightnessSlider({ entity, label, feedback }: { entity: FieldEnt
   }
 
   const position = clamp(shown ?? MIN);
-  return <div className="view-control-slider">
-    <div className="view-slider-label">
+  return <div data-slot="brightness-control" className="mt-3">
+    <div className={sliderLabelClasses}>
       <label htmlFor={id}>Brightness</label>
       {/* aria-valuetext carries the level; an <output> would announce every step of a drag. */}
-      <span className="view-slider-value" aria-hidden="true">{shown === undefined ? "—" : `${shown} %`}</span>
+      <span className="text-gray-9" aria-hidden="true">{shown === undefined ? "—" : `${shown} %`}</span>
     </div>
-    <input id={id} type="range" className="view-slider" min={MIN} max={MAX} step={1} value={position}
+    <input id={id} type="range" className={sliderClasses} min={MIN} max={MAX} step={1} value={position}
       aria-label={label} aria-valuetext={shown === undefined ? "No value" : `${shown} %`}
       aria-busy={working || undefined} disabled={!entity.enabled}
       style={{ "--fill": `${(position - MIN) / (MAX - MIN) * 100}%` } as CSSProperties}

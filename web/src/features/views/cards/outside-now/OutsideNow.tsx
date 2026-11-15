@@ -49,14 +49,14 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
     .map(row => row.key === "wind" && from ? { ...row, nameTreatment: derivedTreatment(reads.current("wind"), reads.current("direction")) } : row);
   const title = label ?? "Outside";
   const digits = history.data?.format.fraction_digits ?? 1;
-  return <CardFrame className="view-weather view-outside-now" title={title} status={status.entries}
+  return <CardFrame className="view-weather view-outside-now" classNames={{ body: "flex flex-col gap-1.5" }} title={title} status={status.entries}
     observedAt={oldestObservation(displayed)} observedLabel={all.length > 1 ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
       <p>Conditions come from measurements only: rain words from the rain rate, wind words from the Beaufort scale.</p>
       <p>High and low use a 24-hour history interval, not since midnight, from 5-minute minimums and maximums. If a refresh fails, the card keeps the last loaded interval.</p>
-      {history.data && <dl className="view-source-facts">
+      {history.data && <dl className="m-0 grid gap-4 tabular-nums">
         {[{ label: "Temperature history from", at: history.data.from }, { label: "Temperature history to", at: history.data.to }].map(({ label, at }) =>
-          <div key={label}><dt>{label}</dt><dd><time dateTime={at}>{new Date(at).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</time></dd></div>)}
+          <div className="grid gap-[3px]" key={label}><dt className="text-label text-gray-8">{label}</dt><dd className="m-0"><time dateTime={at}>{new Date(at).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</time></dd></div>)}
       </dl>}
     </>}>
     <WeatherZones aside={rows.length > 0 && <div className="view-weather-rows"><ReadingRows rows={rows} /></div>}>

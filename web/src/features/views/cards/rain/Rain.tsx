@@ -51,7 +51,7 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
   const displayed = rowStates(all);
   const history = reads.history("rate");
   const word = mmPerHour === undefined ? undefined : rainWord(mmPerHour);
-  return <CardFrame className="view-weather view-rain" title={label ?? "Rain"} status={status.entries}
+  return <CardFrame className="view-weather view-rain" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Rain"} status={status.entries}
     observedAt={oldestObservation(displayed)} observedLabel={all.length > 1 ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
       <p>Rain or Dry comes from the rain rate: light rain is below 2.5 mm/h and heavy rain above 7.6 mm/h. The storm total leads while it is above zero.</p>

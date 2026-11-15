@@ -1,7 +1,9 @@
 import { useControl } from "../../data/provider";
 import { ControlStatus } from "../../controls/ControlStatus";
 import { supportsOperation } from "../../controls/support";
-import { CardFrame, StatusList } from "../CardFrame";
+import { StatusList } from "../CardFrame";
+import { TileFrame, tileActionClass } from "../TileFrame";
+import { Reading } from "../Reading";
 import { listArrivals, oldestObservation } from "../reading-list/ReadingRows";
 import { choiceWords } from "./category";
 import { Category, usePurifier } from "./data";
@@ -16,12 +18,12 @@ export function AirPurifierTile({ props, title }: { props: AirPurifierProps; tit
   const canSet = !!entities.power && supportsOperation(entities.power, "set");
   const value = pm.data && "value" in pm.data ? pm.data : undefined;
   const modeWord = mode?.data && "text" in mode.data ? choiceWords(mode.data.text) : undefined;
-  const body = <span className="view-metric-value" data-value={power.status.value}>{power.data && "text" in power.data ? power.data.text : "—"}{on && modeWord && <small className="view-air-purifier-tile-mode" data-value={mode?.status.value}>{modeWord}</small>}</span>;
+  const body = <Reading as="span" value={power.status.value} className="block @max-[200px]:text-reading-narrow">{power.data && "text" in power.data ? power.data.text : "—"}{on && modeWord && <small className="ms-1.5 text-compact-reading tracking-[-.02em] text-gray-9 data-[value=dimmed]:text-gray-8" data-value={mode?.status.value}>{modeWord}</small>}</Reading>;
   const displayed = rows.filter(row => row.key === "power" || row.key === "pm25" || (on && row.key === "mode"));
-  return <CardFrame title={title} className={`view-toggle-tile view-air-purifier-tile${on && power.status.value === "live" ? " is-on" : ""}${canSet ? " is-interactive" : ""}`} status={status} compactTimeLabel observedAt={oldestObservation(displayed)} observedLabel="Oldest reading" arrivals={listArrivals([pm])} sources={sources} sourceExtra={sourceExtra}>
-    {canSet ? <button type="button" role="switch" className="view-toggle-tile-action" aria-label={`${title} power`} aria-checked={on} aria-busy={working || undefined} disabled={!entities.power!.enabled} onClick={() => request(!(working ? control.requested === true : on))}>{body}</button> : <p>{body}</p>}
-    <div className="view-air-purifier-tile-air"><span data-value={pm.status.value}>PM2.5 {value ? <>{value.value.toFixed(value.format.fraction_digits)} <small>{value.format.unit_label}</small></> : "—"}</span>{value && <Category value={value.value} dimmed={pm.status.value === "dimmed"} />}</div>
+  return <TileFrame title={title} className="view-air-purifier-tile" on={on && power.status.value === "live"} interactive={canSet} status={status} observedAt={oldestObservation(displayed)} observedLabel="Oldest reading" arrivals={listArrivals([pm])} sources={sources} sourceExtra={sourceExtra}>
+    {canSet ? <button type="button" role="switch" data-slot="tile-action" className={tileActionClass} aria-label={`${title} power`} aria-checked={on} aria-busy={working || undefined} disabled={!entities.power!.enabled} onClick={() => request(!(working ? control.requested === true : on))}>{body}</button> : <p>{body}</p>}
+    <div className="view-air-purifier-tile-air"><span className="data-[value=dimmed]:text-gray-8" data-value={pm.status.value}>PM2.5 {value ? <>{value.value.toFixed(value.format.fraction_digits)} <small>{value.format.unit_label}</small></> : "—"}</span>{value && <Category value={value.value} dimmed={pm.status.value === "dimmed"} />}</div>
     {displayed.map(row => row.status.entries.length > 0 && <div key={row.key} className="view-air-purifier-role-status"><span>{row.name}</span><StatusList entries={allUnavailable ? row.status.entries.filter(entry => entry.key !== "unavailable") : row.status.entries} /></div>)}
-    {canSet ? <ControlStatus entityId={props.power.entity_id} subject="power" pending={value => value === true ? "Turning on…" : "Turning off…"} /> : <p className="view-power-idle">{entities.power ? "Read-only" : ""}</p>}
-  </CardFrame>;
+    {canSet ? <ControlStatus className="mt-0 min-h-[21px]" entityId={props.power.entity_id} subject="power" pending={value => value === true ? "Turning on…" : "Turning off…"} /> : <p className="view-power-idle mt-0 min-h-[21px]">{entities.power ? "Read-only" : ""}</p>}
+  </TileFrame>;
 }

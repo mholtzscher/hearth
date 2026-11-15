@@ -1,4 +1,7 @@
 import type { CoverLine } from "./data";
+import { controlStatusClasses, controlStatusLineClasses } from "../../controls/ControlStatus";
+import { StatusDot } from "../../controls/StatusDot";
+import { cn } from "../../../../lib/utils";
 
 /** Position, motion, and what a finished Command does and doesn't establish. */
 export const coverSourceNote = <>
@@ -11,10 +14,10 @@ export function CoverStatus({ line, tile = false }: { line?: CoverLine; tile?: b
   const words = line && (tile
     ? <><span aria-hidden="true" className="view-cover-short">{line.short}</span><span className="sr-only">{line.text}</span></>
     : line.text);
-  return <div className={`view-control-status view-cover-status${tile ? " view-cover-row" : ""}`}>
-    <p role="status" data-tone={line && !line.alert ? line.tone : undefined} title={tile && line && !line.alert ? line.text : undefined}>
-      {line && !line.alert && <><span className="view-status-dot" aria-hidden="true" />{words}</>}
+  return <div className={cn(controlStatusClasses, "view-cover-status", tile && "view-cover-row mt-0 min-h-0")}>
+    <p className={cn(controlStatusLineClasses, "data-[tone=warn]:text-warning")} role="status" data-tone={line && !line.alert ? line.tone : undefined} title={tile && line && !line.alert ? line.text : undefined}>
+      {line && !line.alert && <><StatusDot tone={line.tone} />{words}</>}
     </p>
-    {line?.alert && <p role="alert" data-tone="error" title={tile ? line.text : undefined}><span className="view-status-dot" aria-hidden="true" />{words}</p>}
+    {line?.alert && <p className={controlStatusLineClasses} role="alert" data-tone="error" title={tile ? line.text : undefined}><StatusDot tone="error" />{words}</p>}
   </div>;
 }

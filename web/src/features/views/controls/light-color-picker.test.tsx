@@ -195,7 +195,7 @@ it("uses the established modal phone sheet and omits the trigger without color s
   await mount([temperature()]);
   const picker = open();
   expect(picker.getAttribute("aria-modal")).toBe("true");
-  expect(picker.classList.contains("view-source-sheet")).toBe(true);
+  expect(picker.getAttribute("data-placement")).toBe("bottom");
   expect(within(picker).queryByRole("button", { name: "Color" })).toBeNull();
 });
 
@@ -204,10 +204,10 @@ it("places the wheel beside On, leaves the swatch passive, and shows brightness 
   const article = screen.getByRole("article"), row = article.querySelector(".view-light")!;
   expect(within(row as HTMLElement).getByRole("button", { name: /Adjust/ }).parentElement?.previousElementSibling?.textContent).toBe("On");
   expect(row.querySelector(".view-light-swatch")?.tagName).toBe("SPAN");
-  expect(row.querySelector(".view-color-wheel-icon")).toBeTruthy();
+  expect(row.querySelector('[data-slot="color-wheel-icon"]')).toBeTruthy();
   expect(within(article).getAllByText("64 %")).toHaveLength(1);
-  expect(article.querySelectorAll(".view-control-status")).toHaveLength(2);
-  expect(article.querySelector(".view-control-slider .view-light-feedback")).toBeTruthy();
+  expect(article.querySelectorAll('[data-slot="control-status"]')).toHaveLength(2);
+  expect(article.querySelector('[data-slot="brightness-control"] [data-light-feedback]')).toBeTruthy();
 });
 
 it("retains the observed brightness without a slider and reuses the power feedback row", async () => {
@@ -215,7 +215,7 @@ it("retains the observed brightness without a slider and reuses the power feedba
   const article = screen.getByRole("article");
   expect(within(article).getByText("64 %")).toBeTruthy();
   expect(within(article).queryByRole("slider")).toBeNull();
-  expect(article.querySelectorAll(".view-control-status")).toHaveLength(1);
+  expect(article.querySelectorAll('[data-slot="control-status"]')).toHaveLength(1);
 });
 
 it("summarizes concurrent brightness, white and color requests in one existing row with complete details", async () => {
@@ -235,7 +235,7 @@ it("summarizes concurrent brightness, white and color requests in one existing r
   await core.settle(1, 502);
   expect(screen.getByRole("alert").textContent).toBe("1 failed · 2 pending · Details");
   const article = screen.getByRole("article");
-  expect(article.querySelectorAll(".view-control-status")).toHaveLength(2);
+  expect(article.querySelectorAll('[data-slot="control-status"]')).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "1 failed · 2 pending · Details" }));
   picker = screen.getByRole("dialog", { name: "Light color" });
   expect(within(picker).getByText("Setting brightness to 40 %…")).toBeTruthy();
@@ -271,7 +271,7 @@ it("initializes the active color tab when opening from feedback rather than the 
 
 it("uses a wheel indicator rather than adding a feedback row when only color is writable", async () => {
   const core = await mount([temperature()], 1, false, false);
-  expect(screen.getByRole("article").querySelectorAll(".view-control-status")).toHaveLength(0);
+  expect(screen.getByRole("article").querySelectorAll('[data-slot="control-status"]')).toHaveLength(0);
   const picker = open();
   fireEvent.change(within(picker).getByRole("spinbutton", { name: /Exact value/ }), { target: { value: "250" } });
   fireEvent.submit(within(picker).getByRole("button", { name: "Set white" }).closest("form")!);
@@ -284,6 +284,6 @@ it("uses a wheel indicator rather than adding a feedback row when only color is 
   const trigger = screen.getByRole("button", { name: /Lamp: Adjust/ });
   expect(document.getElementById(trigger.getAttribute("aria-describedby")!)?.textContent).toBe("White rejected");
   expect(trigger.contains(screen.getByRole("alert"))).toBe(false);
-  expect(screen.getByRole("article").querySelectorAll(".view-control-status")).toHaveLength(0);
+  expect(screen.getByRole("article").querySelectorAll('[data-slot="control-status"]')).toHaveLength(0);
   expect(within(open()).getByRole("alert").textContent).toBe("White: The light rejected the change.");
 });

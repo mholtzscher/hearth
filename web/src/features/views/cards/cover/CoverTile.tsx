@@ -1,4 +1,5 @@
-import { CardFrame } from "../CardFrame";
+import { TileFrame, tileActionClass } from "../TileFrame";
+import { Reading } from "../Reading";
 import { coverSourceNote, CoverStatus } from "./CoverStatus";
 import { useCover } from "./data";
 import type { CoverProps } from "./schema";
@@ -22,16 +23,16 @@ export function CoverTile({ props }: { props: CoverProps }) {
   const verbText = verb === "stop" ? "Press to stop" : verb === "open" ? "Press to open" : verb === "close" ? "Press to close" : busy ? "Moving" : cover.entity ? "Read-only" : "";
   const press = () => verb === "stop" ? cover.stop() : verb === "open" ? cover.move(100, "tile") : verb === "close" ? cover.move(0, "tile") : undefined;
   const open = !!data && status.value === "live" && data.position > 0;
-  const reading = <span className="view-metric-value" data-value={status.value}>{word}</span>;
-  return <CardFrame title={title} className={`view-toggle-tile view-cover-tile${open ? " is-on" : ""}${interactive ? " is-interactive" : ""}`} status={status.entries} compactTimeLabel
+  const reading = <Reading as="span" value={status.value} className="block overflow-hidden text-ellipsis whitespace-nowrap @max-[200px]:text-reading-narrow">{word}</Reading>;
+  return <TileFrame title={title} className="view-cover-tile" classNames={{ body: "gap-0.5" }} on={open} interactive={interactive} status={status.entries}
     observedAt={data?.observed_at} arrival={data && { updatedAt: data.observed_at, shown: `${word}|${data.position}`, eligible: status.glows }}
     sources={cover.sources} sourceExtra={coverSourceNote}>
     {interactive
-      ? <button type="button" className="view-toggle-tile-action" aria-label={`${title}, ${word}${position ? `, ${position}` : ""}. ${verbText}`}
+      ? <button type="button" data-slot="tile-action" className={tileActionClass} aria-label={`${title}, ${word}${position ? `, ${position}` : ""}. ${verbText}`}
           aria-busy={busy || undefined} title={cover.line("tile")?.text} disabled={!cover.enabled} onClick={press}>{reading}</button>
       : <p>{reading}</p>}
     <p className="view-cover-row view-cover-position" data-value={status.value}>{position ?? " "}</p>
     <p className="view-cover-row view-cover-verb">{verbText || " "}</p>
     <CoverStatus line={cover.line("tile")} tile />
-  </CardFrame>;
+  </TileFrame>;
 }

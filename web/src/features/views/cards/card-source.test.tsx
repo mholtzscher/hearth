@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
-import { CardFrame } from "./CardFrame";
+import { CardFrame, StatusList } from "./CardFrame";
 
 const observedAt = "2026-11-04T19:40:00Z";
 const sources = [{ entityId: "ent-temperature", label: "Temperature" }];
@@ -33,6 +33,31 @@ it("shows only compact recency on the card and keeps exact dated evidence in Sou
   await waitFor(() => expect(document.activeElement).toBe(trigger));
 });
 
+it("merges caller classes onto the frame and named slots", () => {
+  mount({
+    compactTimeLabel: true,
+    className: "p-6",
+    classNames: { body: "grid", footer: "gap-1", timeLabel: "hidden", sourceToggle: "px-2" },
+  });
+  const card = screen.getByRole("article", { name: "Living room" });
+  expect(card.classList.contains("p-6")).toBe(true);
+  expect(card.classList.contains("p-[18px]")).toBe(false);
+  expect(card.querySelector('[data-slot="card-body"]')?.classList.contains("grid")).toBe(true);
+  expect(card.querySelector('[data-slot="card-footer"]')?.classList.contains("gap-1")).toBe(true);
+  expect(card.querySelector('[data-slot="card-footer"]')?.classList.contains("gap-3")).toBe(false);
+  expect(card.querySelector('[data-slot="card-time-label"]')?.classList.contains("hidden")).toBe(true);
+  expect(within(card).getByRole("button", { name: "Source" }).classList.contains("px-2")).toBe(true);
+});
+
+it("adds caller classes to the status list and resolves display overrides", () => {
+  render(<StatusList entries={[{ key: "unavailable", tone: "warn", text: "Unavailable" }]} className="grid" />);
+  const list = screen.getByRole("list");
+  expect(list.classList.contains("grid")).toBe(true);
+  expect(list.classList.contains("flex")).toBe(false);
+  expect(list.classList.contains("text-gray-9")).toBe(true);
+  expect(within(list).getByRole("listitem").getAttribute("data-tone")).toBe("warn");
+});
+
 it("advances recency while preserving the meaning of an oldest-reading footer", () => {
   mount({ observedAt: "2026-11-06T19:40:00Z", observedLabel: "Oldest reading" }, true);
   expect(screen.getByText("Oldest 2m ago").getAttribute("aria-label")).toBe("Oldest reading 2 minutes ago");
@@ -49,7 +74,7 @@ it("uses a modal sheet on phones and closes before guarded Source navigation", (
   fireEvent.click(trigger);
   const panel = screen.getByRole("dialog", { name: "Reading details" });
   expect(panel.getAttribute("aria-modal")).toBe("true");
-  expect(panel.classList.contains("view-source-sheet")).toBe(true);
+  expect(panel.getAttribute("data-placement")).toBe("bottom");
   expect(within(panel).getByText(/15-minute/)).toBeTruthy();
   fireEvent.click(within(panel).getByRole("link", { name: "Temperature" }));
   expect(screen.queryByRole("dialog")).toBeNull();

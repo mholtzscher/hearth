@@ -120,6 +120,19 @@ export const CompactToggleGrid: Story = {
     await expect(await canvas.findByText("Closed")).toBeVisible();
   },
 };
+export const PhoneMeteredToggleGrid: Story = {
+  ...CompactToggleGrid,
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement }) => {
+    const metered = await canvas.findByRole("article", { name: "Office plug" });
+    await expect(await within(metered).findByText("7.9")).toBeVisible();
+    const cover = await canvas.findByRole("article", { name: "Garage door" });
+    const grid = metered.parentElement!;
+    await expect(metered.getBoundingClientRect().width).toBeCloseTo(grid.getBoundingClientRect().width, 0);
+    await expect(cover.getBoundingClientRect().width).toBeLessThan(metered.getBoundingClientRect().width);
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
 export const Heading: Story = { args: { definition: definitionFor(catalogExamples.Heading) } };
 export const Note: Story = { args: { definition: definitionFor(catalogExamples.Note) } };
 export const Inactive: Story = {

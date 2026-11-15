@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import type { CommandFailure } from "../../../api/commands";
 import { useControl } from "../data/provider";
+import { cn } from "../../../lib/utils";
+import { StatusDot } from "./StatusDot";
+
+export const controlStatusClasses = "mt-2 min-h-[21px] text-label leading-normal text-gray-9";
+export const controlStatusLineClasses = "flex items-baseline gap-1.5 empty:hidden data-[tone=error]:text-destructive";
 
 export const lightFailures: Record<CommandFailure["kind"], string> = {
   disabled: "Couldn't change the light. This Entity is disabled.",
@@ -31,16 +36,16 @@ export const powerFailures: Record<CommandFailure["kind"], string> = {
  * alert. Both pair a tone dot with words, and the failure stays until the next
  * request.
  */
-export function ControlStatus({ entityId, pending, subject = "light", idle }: { entityId: string; pending: (requested: unknown) => string; subject?: "light" | "power"; idle?: ReactNode }) {
+export function ControlStatus({ entityId, pending, subject = "light", idle, className }: { entityId: string; pending: (requested: unknown) => string; subject?: "light" | "power"; idle?: ReactNode; className?: string }) {
   const [state] = useControl({ entityId, operation: "set" });
   const working = state.phase === "pending" || state.phase === "confirming";
-  return <div className="view-control-status">
-    <p role="status" data-tone="info">
-      {working && <><span className="view-status-dot" aria-hidden="true" />{pending(state.requested)}</>}
+  return <div data-slot="control-status" className={cn(controlStatusClasses, className)}>
+    <p role="status" data-tone="info" className={controlStatusLineClasses}>
+      {working && <><StatusDot tone="info" />{pending(state.requested)}</>}
       {state.phase === "idle" && idle}
     </p>
-    {state.phase === "failed" && <p role="alert" data-tone="error">
-      <span className="view-status-dot" aria-hidden="true" />{(subject === "power" ? powerFailures : lightFailures)[state.failure.kind]}
+    {state.phase === "failed" && <p role="alert" data-tone="error" className={controlStatusLineClasses}>
+      <StatusDot tone="error" />{(subject === "power" ? powerFailures : lightFailures)[state.failure.kind]}
     </p>}
   </div>;
 }

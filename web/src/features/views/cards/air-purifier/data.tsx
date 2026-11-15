@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { StatusDot } from "../../controls/StatusDot";
 import { entityStateRequest, readEntity, type FieldEntity } from "../../bindings/entity";
 import { useReadings } from "../../bindings/registry";
 import { useReads } from "../../data/provider";
@@ -11,7 +12,7 @@ const names: Record<AirPurifierRole, string> = { power: "Power", pm25: "PM2.5", 
 
 export function Category({ value, dimmed }: { value: number; dimmed: boolean }) {
   const category = airCategory(value);
-  return <span className="view-air-purifier-category" data-tone={category.tone} data-dimmed={dimmed || undefined}><span className="view-status-dot" aria-hidden="true" />{category.words}</span>;
+  return <span className="view-air-purifier-category" data-tone={category.tone} data-dimmed={dimmed || undefined}><StatusDot tone={dimmed ? "dimmed" : category.tone} />{category.words}</span>;
 }
 
 /** Read each bound role explicitly; support and observed State share the read cache. */
@@ -32,6 +33,6 @@ export function usePurifier(props: AirPurifierProps) {
   const allLoading = states.every(row => row.resource.status === "loading");
   const status = allUnavailable ? [statusEntry("unavailable")] : allLoading ? [statusEntry("loading")] : [];
   const deviceId = entities.power?.device_id;
-  const sourceExtra = <><p>Air category uses EPA 2024 24-hour outdoor PM2.5 bands; applying them to an instant indoor reading is approximate.</p>{deviceId && <p><Link to={`/devices/${deviceId}`}>Device details</Link> <code>{deviceId}</code></p>}</>;
+  const sourceExtra = <><p>Air category uses EPA 2024 24-hour outdoor PM2.5 bands; applying them to an instant indoor reading is approximate.</p>{deviceId && <p><Link className="text-link underline underline-offset-[3px] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring" to={`/devices/${deviceId}`}>Device details</Link> <code className="mt-1 block text-caption text-muted-foreground">{deviceId}</code></p>}</>;
   return { rows: states, entities, sources: sourcesList, status, allUnavailable, sourceExtra };
 }

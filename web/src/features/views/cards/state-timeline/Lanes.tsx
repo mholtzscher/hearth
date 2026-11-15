@@ -56,7 +56,7 @@ export function TimelineLanes({ rows, windowWords }: { rows: TimelineRow[]; wind
     {rows.map((row, index) => {
       const status = cardStatus(row.resource);
       return <div className="view-timeline-lane" key={row.key}>
-        <div className="view-timeline-name"><span>{row.label}</span><span data-value={status.value}>{row.resource.data?.current?.text ?? "—"}</span><StatusList entries={status.entries} /></div>
+        <div className="view-timeline-name"><span>{row.label}</span><span data-value={status.value}>{row.resource.data?.current?.text ?? "—"}</span><StatusList className="grid @max-[600px]:flex" separators={false} entries={status.entries} /></div>
         <Track data={row.resource.data?.timeline} color={`var(--chart-${index % 8 + 1})`} dimmed={status.value === "dimmed"} />
         <div className="view-timeline-total">{totalsText(row.resource.data?.timeline, row.trueWord)}</div>
       </div>;

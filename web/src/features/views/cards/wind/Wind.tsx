@@ -46,7 +46,7 @@ export function BoundWind({ label, speed, gust, direction, max_gust, trend }: Pr
   const displayed = rowStates(all);
   const maxRow = displayed.filter(row => row.key === "max");
   const history = reads.history("speed");
-  return <CardFrame className="view-weather view-wind" title={label ?? "Wind"} status={status.entries}
+  return <CardFrame className="view-weather view-wind" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Wind"} status={status.entries}
     observedAt={oldestObservation(displayed)} observedLabel={all.length > 1 ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
       <p>Words follow the Beaufort scale for the current wind speed.</p>

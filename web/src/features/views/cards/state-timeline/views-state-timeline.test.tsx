@@ -44,7 +44,7 @@ it("draws lanes with unknown spans and dimming, and exposes a text summary", () 
   expect(document.querySelector(".view-timeline-track[data-dimmed]")).toBeTruthy();
   expect(screen.getByText(/Door: Closed since/)).toBeTruthy();
   expect(document.querySelector(".view-timeline-track")?.getAttribute("aria-hidden")).toBe("true");
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
 
 it("ledger omits since when current State disagrees with history", () => {
@@ -76,10 +76,10 @@ it("glows only when a newer timeline changes the latest words", () => {
   const view = render(<StateTimeline title="Doors" window="1h" style="ledger" rows={[row()]} />, { wrapper: MemoryRouter });
   const changedState = { ...ready, data: { ...ready.data!, current: { text: "Open", observed_at: new Date(end + 1000).toISOString() } } };
   view.rerender(<StateTimeline title="Doors" window="1h" style="ledger" rows={[row(changedState)]} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   const newer = { ...timeline, to: end + 60_000, intervals: [...timeline.intervals.slice(0, -1), { kind: "value" as const, from: start + 1_800_000, to: end + 60_000, text: "Open", truthy: true }] };
   view.rerender(<StateTimeline title="Doors" window="1h" style="ledger" rows={[row({ ...changedState, data: { ...changedState.data, timeline: newer } })]} />);
-  expect(document.querySelector(".view-card-arrival")).toBeTruthy();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeTruthy();
 });
 
 it("does not replay a history change seen while an Entity was disabled", () => {
@@ -87,9 +87,9 @@ it("does not replay a history change seen while an Entity was disabled", () => {
   const newer = { ...timeline, to: end + 60_000, intervals: [...timeline.intervals.slice(0, -1), { kind: "value" as const, from: start + 1_800_000, to: end + 60_000, text: "Open", truthy: true }] };
   const changed = { ...ready, data: { ...ready.data!, timeline: newer } };
   view.rerender(<StateTimeline title="Doors" window="1h" style="lanes" rows={[row({ ...changed, metadata: { ...ready.metadata!, enabled: false } })]} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   view.rerender(<StateTimeline title="Doors" window="1h" style="lanes" rows={[row(changed)]} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
 
 it("surfaces a query-limit refusal from the real binding", async () => {

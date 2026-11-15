@@ -58,7 +58,7 @@ export function WeatherZones({ aside, children }: { aside?: ReactNode; children:
 export function SlotStatus({ name, resource }: { name: string; resource?: Resolved<unknown> }) {
   const entries = resource ? cardStatus(resource).entries : [];
   if (entries.length === 0) return null;
-  return <div className="view-weather-slot-status"><span>{name}</span><StatusList entries={entries} /></div>;
+  return <div className="view-weather-slot-status"><span>{name}</span><StatusList className="basis-full" entries={entries} /></div>;
 }
 
 /** A row for each bound slot, in order, so the footer, afterglow, and Source cover every reading the card uses. */
