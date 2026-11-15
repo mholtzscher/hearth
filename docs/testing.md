@@ -116,6 +116,10 @@ GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
   fixtures, not production Core, and are not E2E tests. See
   [dashboard development with Storybook](storybook.md).
 
+The Testcontainers core dependency is pinned to an unreleased commit containing
+the [Ryuk lifecycle fix](https://github.com/testcontainers/testcontainers-go/pull/3868).
+Replace the pseudo-version with a tagged release once it includes that fix.
+
 ## CI Go caches
 
 CI restores separate dependency and build caches. Only successful `main` backend

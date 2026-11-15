@@ -22,7 +22,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
-	github.com/testcontainers/testcontainers-go v0.45.0
+	github.com/testcontainers/testcontainers-go v0.45.1-0.20261109125418-f31e98d4ee9b
 	github.com/testcontainers/testcontainers-go/modules/mosquitto v0.45.0
 	github.com/urfave/cli/v3 v3.14.0
 	go.opentelemetry.io/otel v1.47.0
