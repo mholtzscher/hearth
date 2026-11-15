@@ -12,7 +12,7 @@ const names: Record<AirPurifierRole, string> = { power: "Power", pm25: "PM2.5", 
 
 export function Category({ value, dimmed }: { value: number; dimmed: boolean }) {
   const category = airCategory(value);
-  return <span className="view-air-purifier-category" data-tone={category.tone} data-dimmed={dimmed || undefined}><StatusDot tone={dimmed ? "dimmed" : category.tone} />{category.words}</span>;
+  return <span className="inline-flex items-baseline gap-1.5 text-label text-gray-9 data-[tone=warn]:text-warning data-[tone=error]:text-destructive data-[dimmed]:text-gray-8" data-tone={category.tone} data-dimmed={dimmed || undefined}><StatusDot tone={dimmed ? "dimmed" : category.tone} />{category.words}</span>;
 }
 
 /** Read each bound role explicitly; support and observed State share the read cache. */

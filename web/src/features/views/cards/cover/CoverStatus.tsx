@@ -10,14 +10,14 @@ export const coverSourceNote = <>
 </>;
 
 /** The reserved line beneath a cover's controls. Pending words are a polite status; a failure is an alert. */
-export function CoverStatus({ line, tile = false }: { line?: CoverLine; tile?: boolean }) {
+export function CoverStatus({ line, tile = false, on = false }: { line?: CoverLine; tile?: boolean; on?: boolean }) {
   const words = line && (tile
-    ? <><span data-slot="cover-short" aria-hidden="true" className="view-cover-short">{line.short}</span><span className="sr-only">{line.text}</span></>
+    ? <><span data-slot="cover-short" aria-hidden="true" className="min-w-0 overflow-hidden text-ellipsis">{line.short}</span><span className="sr-only">{line.text}</span></>
     : line.text);
-  return <div data-cover-status data-slot={tile ? "cover-row" : undefined} className={cn(controlStatusClasses, "view-cover-status", tile && "view-cover-row mt-0 min-h-0")}>
-    <p className={cn(controlStatusLineClasses, "data-[tone=warn]:text-warning")} role="status" data-tone={line && !line.alert ? line.tone : undefined} title={tile && line && !line.alert ? line.text : undefined}>
+  return <div data-cover-status data-slot={tile ? "cover-row" : undefined} className={cn(controlStatusClasses, tile && "m-0 h-[21px] min-h-0 overflow-hidden text-ellipsis whitespace-nowrap", on && "text-[color-mix(in_oklch,var(--violet)_14%,var(--gray-9))]")}>
+    <p className={cn(controlStatusLineClasses, "data-[tone=warn]:text-warning", tile && "min-w-0")} role="status" data-tone={line && !line.alert ? line.tone : undefined} title={tile && line && !line.alert ? line.text : undefined}>
       {line && !line.alert && <><StatusDot tone={line.tone} />{words}</>}
     </p>
-    {line?.alert && <p className={controlStatusLineClasses} role="alert" data-tone="error" title={tile ? line.text : undefined}><StatusDot tone="error" />{words}</p>}
+    {line?.alert && <p className={cn(controlStatusLineClasses, tile && "min-w-0")} role="alert" data-tone="error" title={tile ? line.text : undefined}><StatusDot tone="error" />{words}</p>}
   </div>;
 }

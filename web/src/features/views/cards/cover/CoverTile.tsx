@@ -4,6 +4,7 @@ import { coverSourceNote, CoverStatus } from "./CoverStatus";
 import { useCover } from "./data";
 import type { CoverProps } from "./schema";
 import { coverTileWord } from "./words";
+import { cn } from "../../../../lib/utils";
 
 type Verb = "open" | "close" | "stop" | "none";
 
@@ -24,15 +25,17 @@ export function CoverTile({ props }: { props: CoverProps }) {
   const press = () => verb === "stop" ? cover.stop() : verb === "open" ? cover.move(100, "tile") : verb === "close" ? cover.move(0, "tile") : undefined;
   const open = !!data && status.value === "live" && data.position > 0;
   const reading = <Reading as="span" value={status.value} className="block overflow-hidden text-ellipsis whitespace-nowrap @max-[200px]:text-reading-narrow">{word}</Reading>;
-  return <TileFrame title={title} className="view-cover-tile" classNames={{ body: "gap-0.5" }} on={open} interactive={interactive} status={status.entries}
+  const rowClass = "m-0 h-[21px] overflow-hidden text-ellipsis whitespace-nowrap text-label leading-normal";
+  const onColor = open && "text-[color-mix(in_oklch,var(--violet)_14%,var(--gray-9))]";
+  return <TileFrame title={title} classNames={{ body: "gap-0.5" }} on={open} interactive={interactive} status={status.entries}
     observedAt={data?.observed_at} arrival={data && { updatedAt: data.observed_at, shown: `${word}|${data.position}`, eligible: status.glows }}
     sources={cover.sources} sourceExtra={coverSourceNote}>
     {interactive
       ? <button type="button" data-slot="tile-action" className={tileActionClass} aria-label={`${title}, ${word}${position ? `, ${position}` : ""}. ${verbText}`}
           aria-busy={busy || undefined} title={cover.line("tile")?.text} disabled={!cover.enabled} onClick={press}>{reading}</button>
       : <p>{reading}</p>}
-    <p data-slot="cover-row" data-cover-position className="view-cover-row view-cover-position" data-value={status.value}>{position ?? " "}</p>
-    <p data-slot="cover-row" className="view-cover-row view-cover-verb">{verbText || " "}</p>
-    <CoverStatus line={cover.line("tile")} tile />
+    <p data-slot="cover-row" data-cover-position className={cn(rowClass, "text-gray-9 tabular-nums data-[value=dimmed]:text-gray-8", onColor)} data-value={status.value}>{position ?? " "}</p>
+    <p data-slot="cover-row" className={cn(rowClass, "text-gray-8", onColor)}>{verbText || " "}</p>
+    <CoverStatus line={cover.line("tile")} tile on={open} />
   </TileFrame>;
 }
