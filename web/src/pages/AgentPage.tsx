@@ -6,6 +6,7 @@ import { useParams } from "react-router-dom";
 import { usePhoneBarSlot } from "../components/PhoneBarSlot";
 import { Button } from "../components/ui/button";
 import { Notice } from "../components/ui/notice";
+import { SegmentedControl } from "../components/ui/segmented-control";
 import { cn } from "../lib/utils";
 import { Canvas } from "../features/dashboards/Canvas";
 import { useWorkspace } from "../features/dashboards/Workspace";
@@ -138,7 +139,11 @@ export default function AgentPage() {
     return () => cancelAnimationFrame(frame);
   }, [draft]);
   // On phones the switch takes the top bar's center rather than a row of its own.
-  const panels = draft && <div className={phoneBar ? "flex gap-0.5" : "hidden"} role="group" aria-label="Workspace panels"><button className="min-h-11 rounded-md px-3.5 text-label whitespace-nowrap text-muted-foreground aria-pressed:bg-gray-3 aria-pressed:text-foreground" aria-pressed={!mobileCanvas} onClick={() => setMobileCanvas(false)}>Conversation</button><button className="min-h-11 rounded-md px-3.5 text-label whitespace-nowrap text-muted-foreground aria-pressed:bg-gray-3 aria-pressed:text-foreground" aria-pressed={mobileCanvas} onClick={() => setMobileCanvas(true)}>Canvas</button></div>;
+  const panels = draft && <div className={phoneBar ? undefined : "hidden"}><SegmentedControl
+    label="Workspace panels" size="touch" value={mobileCanvas ? "canvas" : "conversation"}
+    options={[{ value: "conversation", label: "Conversation" }, { value: "canvas", label: "Canvas" }]}
+    onValueChange={value => setMobileCanvas(value === "canvas")}
+  /></div>;
   return <div className={`conversation-workspace flex min-h-0 flex-1 flex-col${mobileCanvas ? " show-canvas" : ""}`}>
     <h1 className="sr-only">Home workspace</h1>
     {phoneBar ? createPortal(panels, phoneBar) : panels}
