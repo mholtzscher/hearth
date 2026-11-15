@@ -362,11 +362,11 @@ export const UnsavedNavigation: Story = {
   play: async context => {
     await editTitle(context, "Unfinished changes");
     await context.userEvent.click(context.canvas.getByRole("link", { name: "Home" }));
-    const dialog = within(await context.canvas.findByRole("dialog", { name: "Keep your changes?" }));
+    const dialog = within(await within(context.canvasElement.ownerDocument.body).findByRole("dialog", { name: "Keep your changes?" }));
     await context.userEvent.click(dialog.getByRole("button", { name: "Stay" }));
     await expect(context.canvas.getByRole("textbox", { name: "Dashboard title" })).toHaveValue("Unfinished changes");
     await context.userEvent.click(context.canvas.getByRole("link", { name: "Home" }));
-    const reopened = within(await context.canvas.findByRole("dialog", { name: "Keep your changes?" }));
+    const reopened = within(await within(context.canvasElement.ownerDocument.body).findByRole("dialog", { name: "Keep your changes?" }));
     await expect(reopened.getByRole("button", { name: "Discard" })).toBeVisible();
   },
 };
@@ -376,7 +376,7 @@ export const DiscardUnsavedNavigation: Story = {
   play: async context => {
     await editTitle(context, "Unfinished changes");
     await context.userEvent.click(context.canvas.getByRole("link", { name: "Home" }));
-    const dialog = within(await context.canvas.findByRole("dialog", { name: "Keep your changes?" }));
+    const dialog = within(await within(context.canvasElement.ownerDocument.body).findByRole("dialog", { name: "Keep your changes?" }));
     await context.userEvent.click(dialog.getByRole("button", { name: "Discard" }));
     await expect(await context.canvas.findByRole("heading", { name: "What would make home feel better?" })).toBeVisible();
   },
@@ -390,6 +390,7 @@ export const PhoneCanvas: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Open in canvas" }));
     const view = within(await canvas.findByRole("region", { name: "View canvas" }));
     await waitFor(() => expect(view.getByRole("heading", { name: "Morning overview" })).toBeVisible());
+    await expect(view.queryByRole("button", { name: "Expand" })).not.toBeInTheDocument();
     await expect(await view.findByRole("switch", { name: "Hallway lamp power" })).toHaveAttribute("aria-checked", "true");
     const panels = within(canvas.getByRole("group", { name: "Workspace panels" }));
     await expect(panels.getByRole("button", { name: "Canvas" })).toHaveAttribute("aria-pressed", "true");
@@ -397,6 +398,18 @@ export const PhoneCanvas: Story = {
     await userEvent.click(panels.getByRole("button", { name: "Conversation" }));
     await waitFor(() => expect(canvas.getByText(conversationReply)).toBeVisible());
     await userEvent.click(panels.getByRole("button", { name: "Canvas" }));
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+export const PhoneSavedCanvas: Story = {
+  parameters: { appPath: dashboardPath },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement }) => {
+    const view = within(await canvas.findByRole("region", { name: "View canvas" }));
+    await expect(await view.findByRole("heading", { name: "Morning overview" })).toBeVisible();
+    await expect(view.queryByRole("button", { name: "Expand" })).not.toBeInTheDocument();
+    await expect(view.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
     await expectNoHorizontalOverflow(canvasElement);
   },
 };
@@ -428,15 +441,16 @@ export const PhoneDashboardLibrary: Story = {
 
 export const DeleteDashboard: Story = {
   parameters: { appPath: "/dashboards" },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     const remove = await canvas.findByRole("button", { name: "Delete Morning overview" });
     await userEvent.click(remove);
-    const dialog = within(canvas.getByRole("dialog", { name: "Remove this dashboard?" }));
+    const body = within(canvasElement.ownerDocument.body);
+    const dialog = within(body.getByRole("dialog", { name: "Remove this dashboard?" }));
     await expect(dialog.getByText(/Your home data and conversation remain unchanged/)).toBeVisible();
     await userEvent.click(dialog.getByRole("button", { name: "Cancel" }));
     await expect(remove).toHaveFocus();
     await userEvent.click(remove);
-    await userEvent.click(canvas.getByRole("button", { name: "Delete dashboard" }));
+    await userEvent.click(body.getByRole("button", { name: "Delete dashboard" }));
     await expect(await canvas.findByRole("heading", { name: "Your first dashboard starts with a question." })).toBeVisible();
   },
 };
@@ -446,7 +460,7 @@ export const PhoneDeleteConfirmation: Story = {
   globals: { viewport: { value: "phone", isRotated: false } },
   play: async ({ canvas, canvasElement, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Delete Morning overview" }));
-    const dialog = within(canvas.getByRole("dialog", { name: "Remove this dashboard?" }));
+    const dialog = within(within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Remove this dashboard?" }));
     await expect(dialog.getByRole("button", { name: "Cancel" })).toHaveFocus();
     await expect(dialog.getByText(/Your home data and conversation remain unchanged/)).toBeVisible();
     await expectNoHorizontalOverflow(canvasElement);

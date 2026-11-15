@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, waitFor, within } from "storybook/test";
+import { expect, fn, waitFor } from "storybook/test";
 import { PlusIcon } from "lucide-react";
 import { Button } from "./button.tsx";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
@@ -56,6 +56,10 @@ export const Sizes: Story = {
       <Button size="touch">Touch</Button>
       <Button size="icon" aria-label="Default icon"><PlusIcon /></Button>
       <Button size="icon-touch" aria-label="Touch icon"><PlusIcon /></Button>
+      <Button size="touch" aria-label="Save dashboard ready">Save dashboard</Button>
+      <Button size="touch" variant="outline" aria-label="Discard changes ready">Discard changes</Button>
+      <Button size="touch" disabled aria-label="Save dashboard disabled">Save dashboard</Button>
+      <Button size="touch" variant="outline" disabled aria-label="Discard changes disabled">Discard changes</Button>
     </div>
   ),
   play: async ({ canvas, canvasElement }) => {
@@ -64,6 +68,24 @@ export const Sizes: Story = {
       await expect(getComputedStyle(button).height).toBe(height);
       await expect(getComputedStyle(button).borderRadius).toBe("8px");
       if (name.includes("icon")) await expect(getComputedStyle(button).width).toBe(height);
+    }
+    await canvasElement.ownerDocument.fonts.ready;
+    for (const [name, width, background, color, border, weight, opacity] of [
+      ["Save dashboard ready", 127.359, "rgb(255, 138, 61)", "rgb(31, 13, 0)", "rgb(255, 138, 61)", "600", "1"],
+      ["Discard changes ready", 129.25, "rgb(12, 12, 12)", "rgb(244, 244, 244)", "rgb(31, 31, 31)", "400", "1"],
+      ["Save dashboard disabled", 127.359, "rgb(31, 31, 31)", "rgb(125, 125, 125)", "rgb(31, 31, 31)", "600", "1"],
+      ["Discard changes disabled", 129.25, "rgb(12, 12, 12)", "rgb(244, 244, 244)", "rgb(31, 31, 31)", "400", "0.5"],
+    ] as const) {
+      const button = canvas.getByRole("button", { name });
+      const style = getComputedStyle(button);
+      await expect(button.getBoundingClientRect().width).toBeCloseTo(width, 1);
+      for (const [property, value] of Object.entries({
+        height: "44px", backgroundColor: background, color, borderColor: border,
+        borderWidth: "1px", borderStyle: "solid", borderRadius: "8px", fontSize: "14px",
+        fontWeight: weight, lineHeight: "21px", padding: "10px 12px", opacity,
+      })) await expect(style.getPropertyValue(property.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)), `${name}: ${property}`).toBe(value);
+      await expect(style.fontFamily).toContain("Figtree Variable");
+      if (name.endsWith("disabled")) await expect(button).toBeDisabled();
     }
     await expectNoHorizontalOverflow(canvasElement);
   },
@@ -116,42 +138,4 @@ export const AsChild: Story = {
 
 export const Invalid: Story = {
   args: { variant: "outline", "aria-invalid": true, children: "Choose a destination" },
-};
-
-/** Temporary migration reference. Remove after the household controls adopt Button. */
-export const HouseholdComparison: Story = {
-  render: () => (
-    <div className="grid gap-6">
-      {[false, true].map(disabled => (
-        <section key={String(disabled)} aria-label={disabled ? "Disabled actions" : "Ready actions"} className="grid gap-3">
-          <div className="workspace-actions">
-            <button type="button" className="primary" disabled={disabled} aria-label="Legacy Save dashboard">Save dashboard</button>
-            <button type="button" disabled={disabled} aria-label="Legacy Discard changes">Discard changes</button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="touch" disabled={disabled}>Save dashboard</Button>
-            <Button size="touch" variant="outline" disabled={disabled}>Discard changes</Button>
-          </div>
-        </section>
-      ))}
-    </div>
-  ),
-  play: async ({ canvas, canvasElement }) => {
-    await canvasElement.ownerDocument.fonts.ready;
-    const properties = [
-      "height", "width", "backgroundColor", "color", "borderColor", "borderWidth",
-      "borderStyle", "borderRadius", "fontFamily", "fontSize", "fontWeight", "lineHeight", "padding", "opacity",
-    ] as const;
-    for (const state of ["Ready actions", "Disabled actions"]) {
-      const group = within(canvas.getByRole("region", { name: state }));
-      for (const name of ["Save dashboard", "Discard changes"]) {
-        const legacy = getComputedStyle(group.getByRole("button", { name: `Legacy ${name}` }));
-        const shared = getComputedStyle(group.getByRole("button", { name }));
-        for (const property of properties) {
-          await expect(shared[property], `${state}: ${name} ${property}`).toBe(legacy[property]);
-        }
-      }
-    }
-    await expectNoHorizontalOverflow(canvasElement);
-  },
 };

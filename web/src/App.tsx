@@ -228,7 +228,7 @@ function HouseholdShell() {
         header: nav === "rail" ? "pt-0 pe-0 pb-1 ps-3" : undefined,
         close: nav === "rail" ? "-me-1" : undefined,
       }} />
-      <ServerStatus onChange={setServer} />
+      <ServerStatus onChange={setServer} rail={nav === "rail"} />
     </aside>
     {drawerOpen && <div className="drawer-backdrop" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
     <main className="hearth-main" inert={drawerOpen}>{development ? <DevelopmentShell /> : <Outlet />}</main>
