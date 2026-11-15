@@ -29,7 +29,7 @@ function JumpToLatest() {
 // Its revision and saved state stay in the canvas header, which is beside the composer or one tap away.
 function SelectedContextChip({ kind, title, closeDisabled, onShow, onClose }: { kind: string; title: string; closeDisabled: boolean; onShow: () => void; onClose: () => void }) {
   return <div className="flex max-w-[calc(100%+8px)] min-w-0 justify-self-start -ms-2 rounded-md border border-violet/35 text-label leading-normal text-violet-text" role="group" aria-label={`Selected ${kind}`}>
-    <Button variant="ghost" size="touch" type="button" className="min-w-0 justify-start gap-2 ps-[7px] pe-1 text-left text-violet-text hover:bg-violet-soft" aria-label={`Show selected ${kind}: ${title}`} title={title} onClick={onShow}><PanelsTopLeftIcon aria-hidden="true" /><span className="min-w-0 truncate">{title}</span></Button>
+    <Button variant="ghost" size="touch" type="button" className="min-w-0 shrink justify-start gap-2 ps-[7px] pe-1 text-left text-violet-text hover:bg-violet-soft" aria-label={`Show selected ${kind}: ${title}`} title={title} onClick={onShow}><PanelsTopLeftIcon aria-hidden="true" /><span className="min-w-0 truncate">{title}</span></Button>
     <Button variant="ghost" size="icon-touch" type="button" className="hover:bg-violet-soft" aria-label={`Close selected ${kind}`} title={`Close ${kind}`} disabled={closeDisabled} onClick={onClose}><XIcon aria-hidden="true" /></Button>
   </div>;
 }

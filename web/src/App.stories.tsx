@@ -41,6 +41,8 @@ export default meta;
 type Story = StoryObj<Partial<ComponentProps<typeof App>>>;
 type InteractionContext = Parameters<NonNullable<Story["play"]>>[0];
 
+const longSelectedTitle = "Detailed whole-home climate, lighting and comfort overview for every room";
+
 async function askTemperature({ canvas, userEvent }: InteractionContext) {
   const prompt = await canvas.findByRole("textbox", { name: "Ask Hearth" });
   await waitFor(() => expect(prompt).toBeEnabled());
@@ -57,6 +59,31 @@ async function editTitle({ canvas, userEvent }: InteractionContext, title: strin
   await userEvent.clear(input);
   if (title) await userEvent.paste(title);
   return view;
+}
+
+async function expectSelectedContextFits({ canvas }: InteractionContext) {
+  const selected = within(canvas.getByRole("group", { name: "Selected view" }));
+  const show = selected.getByRole("button", { name: `Show selected view: ${longSelectedTitle}` });
+  const close = selected.getByRole("button", { name: "Close selected view" });
+  const send = canvas.getByRole("button", { name: "Send message" });
+  const group = canvas.getByRole("group", { name: "Selected view" }).getBoundingClientRect();
+  const showRect = show.getBoundingClientRect();
+  const closeRect = close.getBoundingClientRect();
+  const sendRect = send.getBoundingClientRect();
+  await expect(closeRect.right).toBeLessThanOrEqual(group.right + 0.5);
+  await expect(group.right).toBeLessThanOrEqual(sendRect.left + 0.5);
+  await expect(showRect.right).toBeLessThanOrEqual(closeRect.left + 0.5);
+  await expect(closeRect.width).toBe(44);
+  await expect(closeRect.height).toBe(44);
+  await expect(showRect.width).toBeGreaterThanOrEqual(44);
+  await expect(showRect.height).toBe(44);
+  await expect(sendRect.width).toBeGreaterThanOrEqual(44);
+  await expect(sendRect.height).toBe(44);
+  const title = within(show).getByText(longSelectedTitle);
+  await expect(show).toHaveAttribute("title", longSelectedTitle);
+  await expect(title.clientWidth).toBeGreaterThan(0);
+  await expect(title.scrollWidth).toBeGreaterThan(title.clientWidth);
+  await expect(getComputedStyle(title).textOverflow).toBe("ellipsis");
 }
 
 async function expectSidebarNewTreatment(button: HTMLElement) {
@@ -400,7 +427,8 @@ export const DiscardUnsavedNavigation: Story = {
 export const PhoneCanvas: Story = {
   parameters: { appPath: conversationPath },
   globals: { viewport: { value: "phone", isRotated: false } },
-  play: async ({ canvas, canvasElement, userEvent }) => {
+  play: async context => {
+    const { canvas, canvasElement, userEvent } = context;
     await canvas.findByText(conversationReply);
     await userEvent.click(canvas.getByRole("button", { name: "Open in canvas" }));
     const view = within(await canvas.findByRole("region", { name: "View canvas" }));
@@ -411,8 +439,10 @@ export const PhoneCanvas: Story = {
     await expect(panels.getByRole("button", { name: "Canvas" })).toHaveAttribute("aria-pressed", "true");
     await expect(canvasElement.querySelector('[data-slot="phone-bar-title"]')).not.toBeVisible();
     await expectNoHorizontalOverflow(canvasElement);
+    await editTitle(context, longSelectedTitle);
     await userEvent.click(panels.getByRole("button", { name: "Conversation" }));
     await waitFor(() => expect(canvas.getByText(conversationReply)).toBeVisible());
+    await expectSelectedContextFits(context);
     await userEvent.click(panels.getByRole("button", { name: "Canvas" }));
     await expectNoHorizontalOverflow(canvasElement);
   },
@@ -511,12 +541,14 @@ export const SelectedViewMessage: Story = {
   play: async context => {
     await context.canvas.findByText(conversationReply);
     await context.userEvent.click(context.canvas.getByRole("button", { name: "Open in canvas" }));
+    await editTitle(context, longSelectedTitle);
+    await expectSelectedContextFits(context);
     await askTemperature(context);
     // History reconciliation replaces the streamed message after the reply arrives.
     await waitFor(() => {
       expect(context.canvas.getByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
       expect(context.canvas.getByText(sentReply)).toBeVisible();
-      expect(context.canvas.getByText("Selected view: Morning overview")).toBeVisible();
+      expect(context.canvas.getByText(`Selected view: ${longSelectedTitle}`)).toBeVisible();
     });
   },
 };
