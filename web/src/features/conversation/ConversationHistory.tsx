@@ -38,7 +38,7 @@ export function ConversationHistory({ id, open, onNavigate, onClose, classNames 
       <h2 className="text-label leading-5 font-semibold text-muted-foreground" id={`${id}-title`} tabIndex={-1}>Recent</h2>
       {onClose && <Button variant="ghost" size="icon-touch" type="button" className={classNames?.close} aria-label="Close recent conversations" onClick={onClose}><XIcon aria-hidden="true" /></Button>}
     </div>
-    {searchable && <div className="history-search mb-2 flex min-h-11 shrink-0 items-center gap-1">
+    {searchable && <div data-slot="history-search" className="mb-2 flex min-h-11 shrink-0 items-center gap-1">
       <div className="relative min-w-0 flex-1">
         <SearchIcon className="pointer-events-none absolute top-1/2 start-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <Input size="auto" className="ps-9 [&::-webkit-search-cancel-button]:appearance-none" ref={search} type="search" aria-label="Search conversations" placeholder="Search conversations" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => {

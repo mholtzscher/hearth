@@ -34,7 +34,7 @@ function ConnectedServerStatus({ onChange, rail }: { onChange?: (state: ServerSt
   useEffect(() => onChange?.(state), [onChange, state]);
 
   const tone = state === "ready" ? "text-[var(--ok)]" : state === "not-ready" ? "text-[var(--warn)]" : state === "unavailable" ? "text-[var(--error)]" : "text-muted-foreground";
-  return <p data-slot="server-status" className={cn("m-0 flex shrink-0 items-center gap-2 border-t border-border px-3 pt-3 text-[13px] leading-normal text-muted-foreground", rail && "mt-auto flex-col gap-1 px-0 text-center text-caption")} data-state={state} role="status" aria-busy={state === "checking"}>
+  return <p data-slot="server-status" data-hide-on-search className={cn("m-0 flex shrink-0 items-center gap-2 border-t border-border px-3 pt-3 text-[13px] leading-normal text-muted-foreground", rail && "mt-auto flex-col gap-1 px-0 text-center text-caption")} data-state={state} role="status" aria-busy={state === "checking"}>
     <span className={cn("size-1.5 shrink-0 rounded-full bg-current", tone)} aria-hidden="true" />
     <span>Hearth server <strong className={cn("ms-2 font-medium", rail && "ms-0", tone)}>{serverLabels[state]}</strong></span>
   </p>;

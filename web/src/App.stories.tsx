@@ -553,15 +553,23 @@ export const PhoneHistorySearch: Story = {
     const recent = within(canvas.getByRole("region", { name: "Recent" }));
     const search = await recent.findByRole("searchbox", { name: "Search conversations" });
     const navigation = canvas.getByRole("navigation", { name: "Main navigation" });
+    const drawer = within(canvas.getByRole("complementary", { name: "Hearth navigation" }));
+    const newConversation = drawer.getByRole("button", { name: "New conversation" });
+    const serverStatus = canvasElement.querySelector('[data-slot="server-status"]');
     await waitFor(() => expect(navigation).toBeVisible());
+    await expect(newConversation).toBeVisible();
+    await expect(serverStatus).toBeVisible();
     await userEvent.click(search);
     await expect(navigation).not.toBeVisible();
+    await expect(newConversation).not.toBeVisible();
+    await expect(serverStatus).not.toBeVisible();
     await userEvent.type(search, "garden");
     await expect(await recent.findByRole("status")).toHaveTextContent("No conversations match “garden”.");
     await userEvent.click(recent.getByRole("heading", { name: "Recent" }));
     await expect(search).not.toHaveFocus();
     await expect(search).toHaveValue("garden");
     await expect(navigation).not.toBeVisible();
+    await expect(serverStatus).not.toBeVisible();
     await expect(recent.getByText("No conversations match “garden”.")).toBeVisible();
     await expectNoHorizontalOverflow(canvasElement);
   },

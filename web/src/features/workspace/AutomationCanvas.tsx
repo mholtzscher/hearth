@@ -8,9 +8,9 @@ import { SaveDiagnostics } from "./SaveDiagnostics";
 import { Button } from "../../components/ui/button";
 import { Notice } from "../../components/ui/notice";
 import { cn } from "../../lib/utils";
-import { canvasHeader, canvasHeading, canvasSubtitle, canvasTitle, canvasToolbar, canvasToolbarGroup, canvasWindowActions, phoneSaveBar, phoneSaveInset } from "./canvasStyles";
+import { canvasHeader, canvasHeading, canvasInner, canvasSubtitle, canvasTitle, canvasToolbar, canvasToolbarGroup, canvasWindowActions, phoneSaveBar, phoneSaveInset } from "./canvasStyles";
 
-export function AutomationCanvasBody({ expanded, setExpanded, expandButton, onClose, initialEditor = false }: { expanded: boolean; setExpanded: (value: boolean) => void; expandButton: RefObject<HTMLButtonElement | null>; onClose?: () => void; initialEditor?: boolean }) {
+export function AutomationCanvasBody({ wide, expanded, setExpanded, expandButton, onClose, initialEditor = false }: { wide: boolean; expanded: boolean; setExpanded: (value: boolean) => void; expandButton: RefObject<HTMLButtonElement | null>; onClose?: () => void; initialEditor?: boolean }) {
   const workspace = useWorkspace();
   const draft = workspace.automationDraft!;
   const [editor, setEditor] = useState(initialEditor || draft.dirty || draft.mode === "create");
@@ -18,7 +18,7 @@ export function AutomationCanvasBody({ expanded, setExpanded, expandButton, onCl
   const invalid = !workspace.editorValid || !!issues.length;
   const unsaved = draft.mode === "create" || draft.dirty;
   const saving = workspace.saving;
-  return <div className={cn("canvas-inner @container/canvas", (unsaved || invalid) && phoneSaveInset)}>
+  return <div className={cn(canvasInner, wide && "max-w-[1440px]", (unsaved || invalid) && phoneSaveInset)}>
     <header className={canvasHeader}><div className={canvasTitle}><h2 className={canvasHeading}>{draft.document.definition.name}</h2><p className={canvasSubtitle}>{draft.base ? `Automation · revision ${draft.base.revision}` : "New Automation"} <span className={unsaved ? "text-violet-text" : ""}>{unsaved ? "· Unsaved changes" : "· Saved"}</span></p></div>
       <div className={canvasToolbar}><div className={canvasToolbarGroup}><Button className="aria-expanded:bg-card aria-expanded:hover:bg-gray-3" variant="outline" size="touch" disabled={saving || !workspace.editorValid} aria-expanded={editor} onClick={() => setEditor(!editor)}>{editor ? "Done editing" : "Edit"}</Button><Button variant="outline" size="touch" disabled={saving || invalid} onClick={() => { setExpanded(false); workspace.customize(); }}>Ask Hearth to change</Button></div>
         <div className={cn(canvasToolbarGroup, (unsaved || invalid) && phoneSaveBar)}>{(unsaved || invalid) && <Button className="max-tablet:min-w-0 max-tablet:shrink max-tablet:whitespace-normal max-tablet:leading-[1.25]" variant="outline" size="touch" disabled={saving} onClick={() => void workspace.discard()}>Discard changes</Button>}{draft.base && <Button className="max-tablet:min-w-0 max-tablet:shrink max-tablet:whitespace-normal max-tablet:leading-[1.25]" variant="outline" size="touch" disabled={saving || invalid} onClick={() => void workspace.save(true)}>Save as new</Button>}<Button className={cn("max-tablet:min-w-0 max-tablet:shrink max-tablet:whitespace-normal max-tablet:leading-[1.25]", !(unsaved || invalid) && "max-tablet:hidden")} size="touch" disabled={saving || invalid || !unsaved} onClick={() => void workspace.save()}>{saving ? "Saving…" : draft.document.definition.enabled ? "Save and enable" : draft.base ? "Save changes" : "Save Automation"}</Button></div>

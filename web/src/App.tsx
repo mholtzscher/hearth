@@ -137,7 +137,7 @@ function ConnectionSettings() {
 
 function Shell() {
   useVisibleViewport();
-  return <ViewDataProvider><ConversationsProvider><div className="hearth-app"><WorkspaceProvider><HouseholdShell /></WorkspaceProvider></div></ConversationsProvider></ViewDataProvider>;
+  return <ViewDataProvider><ConversationsProvider><WorkspaceProvider><HouseholdShell /></WorkspaceProvider></ConversationsProvider></ViewDataProvider>;
 }
 
 /**
@@ -202,26 +202,33 @@ function HouseholdShell() {
     workspace.startFresh(() => { startNew(); workspace.navigateRetainingDraft("/"); });
   }
   const serverProblem = server === "not-ready" || server === "unavailable";
+  const navLink = cn(
+    "group flex min-h-11 items-center gap-3 rounded-md p-[11px] text-muted-foreground no-underline hover:bg-gray-2 hover:text-foreground aria-[current=page]:bg-gray-2 aria-[current=page]:text-foreground",
+    nav === "rail" && "flex-col justify-center gap-1.5 px-1 py-3 text-caption",
+    nav === "bar" && "hover:bg-gray-3 aria-[current=page]:bg-gray-3",
+  );
+  const navIcon = "size-[18px] shrink-0 group-aria-[current=page]:text-violet";
   return <PhoneBarSlot.Provider value={nav === "bar" ? barSlot : null}>
-    {nav === "bar" && <header className="phone-bar" inert={drawerOpen}>
-      <button ref={menuButton} className="icon-button phone-menu" data-server={serverProblem ? server : undefined} aria-label={serverProblem ? `Open navigation, Hearth server ${serverLabels[server]}` : "Open navigation"} aria-expanded={drawerOpen} aria-controls="hearth-sidebar" onClick={() => setDrawerOpen(true)}><MenuIcon aria-hidden="true" /></button>
-      <div className="phone-bar-center">
-        <span className="phone-bar-title">{home ? "Home" : development ? "Development" : "Dashboards"}</span>
-        <div ref={setBarSlot} className="phone-bar-slot" />
+    <div className={cn("hearth-app grid h-[var(--visible-height,100dvh)] grid-cols-[clamp(218px,22vw,340px)_minmax(0,1fr)] bg-background text-label text-foreground [translate:0_var(--visible-top,0px)]", nav === "rail" && "grid-cols-[104px_minmax(0,1fr)]", nav === "bar" && "grid-cols-[minmax(0,1fr)] grid-rows-[52px_minmax(0,1fr)]")}>
+    {nav === "bar" && <header className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 border-b border-border bg-background px-2 py-1" inert={drawerOpen}>
+      <Button ref={menuButton} variant="ghost" size="icon-touch" className={cn("relative aria-expanded:bg-transparent", serverProblem && "after:absolute after:top-[10px] after:right-[9px] after:size-2 after:rounded-full after:bg-[var(--warn)] after:shadow-[0_0_0_2px_var(--gray-0)] after:content-['']", server === "unavailable" && "after:bg-[var(--error)]")} aria-label={serverProblem ? `Open navigation, Hearth server ${serverLabels[server]}` : "Open navigation"} aria-expanded={drawerOpen} aria-controls="hearth-sidebar" onClick={() => setDrawerOpen(true)}><MenuIcon aria-hidden="true" /></Button>
+      <div className="flex min-w-0 justify-center [&:has([data-slot=phone-bar-slot]:not(:empty))>[data-slot=phone-bar-title]]:hidden">
+        <span data-slot="phone-bar-title" className="truncate text-body font-semibold tracking-[-.01em] text-foreground">{home ? "Home" : development ? "Development" : "Dashboards"}</span>
+        <div ref={setBarSlot} data-slot="phone-bar-slot" />
       </div>
-      <button className="icon-button phone-new" aria-label="New conversation" onClick={newConversation}><PlusIcon aria-hidden="true" /></button>
+      <Button variant="ghost" size="icon-touch" aria-label="New conversation" onClick={newConversation}><PlusIcon className="text-violet" aria-hidden="true" /></Button>
     </header>}
-    <aside id="hearth-sidebar" className={`hearth-sidebar${nav === "bar" && drawerOpen ? " open" : ""}`} data-nav={nav} aria-label="Hearth navigation">
-      <div className="hearth-brand"><span><HouseIcon aria-hidden="true" /></span> hearth<small>A little closer to home.</small></div>
-      {nav === "bar" && <button id="hearth-drawer-close" className="icon-button drawer-close" aria-label="Close navigation" onClick={closeDrawer}><XIcon aria-hidden="true" /></button>}
-      <button className="sidebar-new" aria-label="New conversation" onClick={newConversation}><PlusIcon aria-hidden="true" /><span>New conversation</span></button>
+    <aside id="hearth-sidebar" className={cn("flex min-h-0 flex-col gap-6 border-r border-border bg-background px-4 pt-7 pb-4", nav === "rail" && "gap-4 px-1.5 pt-6", nav === "bar" && "invisible fixed inset-y-0 left-0 z-[60] w-[min(320px,85vw)] -translate-x-3 gap-4 bg-card px-3 pt-4 pb-[max(16px,var(--safe-bottom,env(safe-area-inset-bottom)))] opacity-0 shadow-[12px_0_40px_#0006] [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_.18s] [&:has([data-slot=history-search]:focus-within)>[data-hide-on-search]]:hidden [&:has([data-slot=history-search]_input:not(:placeholder-shown))>[data-hide-on-search]]:hidden", nav === "bar" && drawerOpen && "visible translate-x-0 opacity-100 [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]")} data-nav={nav} aria-label="Hearth navigation">
+      <div data-hide-on-search className={cn("px-2 text-2xl leading-normal font-semibold tracking-[-.03em]", nav === "rail" && "text-center text-[0px]", nav === "bar" && "min-h-11 pt-2 pe-[52px] ps-3 text-xl")}><span className="inline-flex align-middle text-violet"><HouseIcon className={cn("size-6", nav === "bar" && "size-5")} aria-hidden="true" /></span> hearth<small className={cn("mt-1.5 block text-label leading-normal font-normal tracking-normal text-muted-foreground", nav !== "full" && "hidden")}>A little closer to home.</small></div>
+      {nav === "bar" && <Button variant="ghost" size="icon-touch" id="hearth-drawer-close" className="absolute top-4 right-2" aria-label="Close navigation" onClick={closeDrawer}><XIcon aria-hidden="true" /></Button>}
+      <Button data-hide-on-search variant="outline" size="touch" className={cn("justify-start gap-2.5 border-border font-medium hover:border-gray-4 hover:bg-gray-2", nav === "rail" && "justify-center px-0", nav === "bar" && "bg-gray-2")} aria-label="New conversation" onClick={newConversation}><PlusIcon className="size-[18px] text-violet" aria-hidden="true" /><span className={nav === "rail" ? "hidden" : undefined}>New conversation</span></Button>
       {/* Choosing the page already open changes no route, so close the phone drawer on any link. */}
-      <nav className="hearth-main-nav" aria-label="Main navigation" onClick={event => { if ((event.target as Element).closest("a")) setDrawerOpen(false); }}>
-        <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}><HouseIcon aria-hidden="true" /><span>Home</span></Link>
-        <NavLink to="/dashboards" aria-label="Dashboards"><LayoutDashboardIcon aria-hidden="true" /><span>Dashboards</span></NavLink>
-        <NavLink to="/devices" aria-label="Development"><WrenchIcon aria-hidden="true" /><span>Development</span></NavLink>
+      <nav data-hide-on-search className={cn("grid gap-1", nav === "bar" && "gap-0.5")} aria-label="Main navigation" onClick={event => { if ((event.target as Element).closest("a")) setDrawerOpen(false); }}>
+        <Link to="/" aria-label="Home" className={navLink} aria-current={home ? "page" : undefined}><HouseIcon className={navIcon} aria-hidden="true" /><span>Home</span></Link>
+        <NavLink to="/dashboards" aria-label="Dashboards" className={navLink}><LayoutDashboardIcon className={navIcon} aria-hidden="true" /><span>Dashboards</span></NavLink>
+        <NavLink to="/devices" aria-label="Development" className={navLink}><WrenchIcon className={navIcon} aria-hidden="true" /><span>Development</span></NavLink>
       </nav>
-      <button ref={historyButton} className="history-toggle" aria-label="Recent conversation history" aria-expanded={nav === "rail" && drawerOpen} aria-controls="conversation-history" onClick={() => setDrawerOpen(open => !open)}><HistoryIcon aria-hidden="true" /><span>Recent</span></button>
+      {nav === "rail" && <div className={cn("rounded-md py-[11px] hover:bg-gray-2", drawerOpen && "bg-gray-2")}><Button ref={historyButton} variant="ghost" size="touch" className="w-full flex-col gap-1.5 px-1 py-0 text-caption hover:bg-transparent aria-expanded:bg-transparent" aria-label="Recent conversation history" aria-expanded={drawerOpen} aria-controls="conversation-history" onClick={() => setDrawerOpen(open => !open)}><HistoryIcon className="size-[18px]" aria-hidden="true" /><span>Recent</span></Button></div>}
       <ConversationHistory id="conversation-history" open={nav === "rail" && drawerOpen} onNavigate={() => setDrawerOpen(false)} onClose={nav === "rail" ? closeDrawer : undefined} classNames={{
         root: nav === "rail" ? cn("invisible fixed inset-y-0 left-[104px] z-[60] w-[min(320px,85vw)] -translate-x-3 border-t-0 border-r border-border bg-card px-3 pt-3 pb-4 opacity-0 shadow-[12px_0_40px_#0006] [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_.18s] [--history-bg:var(--gray-1)]", drawerOpen && "visible translate-x-0 opacity-100 [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]")
           : nav === "bar" ? "pt-4 [--history-bg:var(--gray-1)] has-[input:focus]:border-t-0 has-[input:focus]:pt-3 has-[input:not(:placeholder-shown)]:border-t-0 has-[input:not(:placeholder-shown)]:pt-3" : undefined,
@@ -230,13 +237,14 @@ function HouseholdShell() {
       }} />
       <ServerStatus onChange={setServer} rail={nav === "rail"} />
     </aside>
-    {drawerOpen && <div className="drawer-backdrop" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
-    <main className="hearth-main" inert={drawerOpen}>{development ? <DevelopmentShell /> : <Outlet />}</main>
+    {drawerOpen && <div className="fixed inset-0 z-[55] bg-[#0008]" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
+    <main className="flex min-h-0 min-w-0 flex-col overflow-hidden" inert={drawerOpen}>{development ? <DevelopmentShell /> : <Outlet />}</main>
+    </div>
   </PhoneBarSlot.Provider>;
 }
 
 function DevelopmentShell() {
-  return <div className="development-workspace">
+  return <div className="flex-1 overflow-auto">
       <header className="sticky top-0 z-40 border-b bg-background">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
           {/* The sidebar already names this area, so the page list needs no visible title. */}

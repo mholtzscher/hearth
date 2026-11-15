@@ -7,7 +7,7 @@ export function DecisionDialog({ title, onClose, children }: { title: string; on
   return <SharedDialog open onOpenChange={open => { if (!open) onClose(); }}>
     <DialogContent aria-describedby={undefined} onPointerDownOutside={event => event.preventDefault()} onCloseAutoFocus={event => { event.preventDefault(); returnFocus?.focus(); }}>
       <DialogTitle>{title}</DialogTitle>
-      <div className="[&>p]:my-[14px] [&>p]:mb-5 [&>p]:text-muted-foreground">{children}</div>
+      {children}
     </DialogContent>
   </SharedDialog>;
 }

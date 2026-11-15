@@ -151,7 +151,7 @@ export const ProgrammaticDecision: Story = {
     return <div className="hearth-app">
       <Button variant="outline" onClick={() => setOpen(true)}>Open decision</Button>
       {open && <DecisionDialog title="Unsaved decision" onClose={() => setOpen(false)}>
-        <p>Unsaved changes will be lost.</p>
+        <p className="mt-[14px] mb-5 text-muted-foreground">Unsaved changes will be lost.</p>
         <Button variant="outline" size="touch" onClick={() => setOpen(false)}>Keep editing</Button>
       </DecisionDialog>}
     </div>;

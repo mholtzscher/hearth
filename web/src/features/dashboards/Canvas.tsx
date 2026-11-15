@@ -11,9 +11,9 @@ import { AutomationCanvasBody } from "../workspace/AutomationCanvas";
 import { Button } from "../../components/ui/button";
 import { Notice } from "../../components/ui/notice";
 import { cn } from "../../lib/utils";
-import { canvasHeader, canvasHeading, canvasSubtitle, canvasTitle, canvasToolbar, canvasToolbarGroup, canvasWindowActions, phoneSaveBar, phoneSaveInset } from "../workspace/canvasStyles";
+import { canvasHeader, canvasHeading, canvasInner, canvasSubtitle, canvasTitle, canvasToolbar, canvasToolbarGroup, canvasWindowActions, phoneSaveBar, phoneSaveInset } from "../workspace/canvasStyles";
 
-export function Canvas({ dashboardPage = false, active = true, automationEditing = false, onClose, ref }: { dashboardPage?: boolean; active?: boolean; automationEditing?: boolean; onClose?: () => void; ref?: Ref<HTMLElement> }) {
+export function Canvas({ dashboardPage = false, active = true, placement = "nested", automationEditing = false, onClose, ref }: { dashboardPage?: boolean; active?: boolean; placement?: "page" | "conversation" | "nested"; automationEditing?: boolean; onClose?: () => void; ref?: Ref<HTMLElement> }) {
   const workspace = useWorkspace();
   const { draft, error, saving } = workspace;
   const { id } = useParams();
@@ -34,9 +34,11 @@ export function Canvas({ dashboardPage = false, active = true, automationEditing
   const blocked = saving || !workspace.editorValid || view?.status !== "supported";
   // A generated view is unsaved until it becomes a dashboard; a dashboard, until its edits are saved.
   const unsaved = !!draft && (!draft.base || draft.dirty);
-  if (workspace.automationDraft) return <section className={`hearth-canvas${expanded ? " expanded" : ""}`} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="Automation canvas" ref={canvas} tabIndex={-1}><AutomationCanvasBody expanded={expanded} setExpanded={setExpanded} expandButton={expandButton} onClose={onClose} initialEditor={automationEditing} /></section>;
-  return <section className={`hearth-canvas${expanded ? " expanded" : ""}`} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="View canvas" ref={canvas} tabIndex={-1}>
-    <div className={cn("canvas-inner @container/canvas", (unsaved || !workspace.editorValid) && phoneSaveInset)}>
+  const wide = expanded || dashboardPage || placement === "page";
+  const surface = cn("min-h-0 min-w-0 overflow-auto bg-background [scrollbar-color:var(--gray-5)_transparent] [scrollbar-width:thin] selection:bg-violet/40 selection:text-foreground max-tablet:h-full", (dashboardPage || placement === "page") && "flex-1", placement === "conversation" && "animate-canvas-in max-tablet:animate-none", placement === "conversation" && !active && "max-tablet:hidden", expanded && "fixed inset-0 z-50");
+  if (workspace.automationDraft) return <section className={surface} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="Automation canvas" ref={canvas} tabIndex={-1}><AutomationCanvasBody wide={wide} expanded={expanded} setExpanded={setExpanded} expandButton={expandButton} onClose={onClose} initialEditor={automationEditing} /></section>;
+  return <section className={surface} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="View canvas" ref={canvas} tabIndex={-1}>
+    <div className={cn(canvasInner, wide && "max-w-[1440px]", (unsaved || !workspace.editorValid) && phoneSaveInset)}>
       {error && <Notice role="alert">{error}{draft?.base && <Button className="m-1.5" variant="outline" size="touch" disabled={saving} onClick={() => void workspace.reload()}>Reload saved version</Button>}{view?.status === "supported" && <Button className="m-1.5" variant="outline" size="touch" disabled={saving || !workspace.editorValid} onClick={() => void workspace.save(true)}>Save as new</Button>}</Notice>}
       {!draft ? dashboardPage && !error && <p className="py-10 text-muted-foreground" role="status">Loading dashboard…</p> : <>
         {/* Title, view actions, then window controls. A wide canvas puts all three on one row. */}
