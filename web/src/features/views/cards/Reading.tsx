@@ -26,15 +26,23 @@ export type ReadingRowProps = {
   value?: ValueTreatment;
   arrival?: number;
   status?: StatusEntry[];
+  /** Additional classes on the row itself. */
+  className?: string;
+  /** Additional content alongside the name and immediately before the value. */
+  beforeValue?: ReactNode;
+  /** Additional content between the value and the status list. */
+  afterValue?: ReactNode;
   children: ReactNode;
 };
 
 /** A compact reading row carries its own status and afterglow. */
-export function ReadingRow({ name, nameValue, value, arrival, status = [], children }: ReadingRowProps) {
-  return <li data-slot="reading-row" className="view-row group/reading-row relative flex flex-wrap items-baseline gap-x-4 gap-y-0.5 py-2.5 tabular-nums not-first:border-t not-first:border-border">
+export function ReadingRow({ name, nameValue, value, arrival, status = [], className, beforeValue, afterValue, children }: ReadingRowProps) {
+  return <li data-slot="reading-row" className={cn("view-row group/reading-row relative flex flex-wrap items-baseline gap-x-4 gap-y-0.5 py-2.5 tabular-nums not-first:border-t not-first:border-border", className)}>
     {arrival !== undefined && <span key={arrival} data-slot="reading-arrival" className="view-row-arrival pointer-events-none absolute inset-x-0 -bottom-px z-[1] h-0.5 animate-arrival bg-orange group-last/reading-row:bottom-0" aria-hidden="true" />}
     <span data-slot="reading-name" className="view-row-name min-w-0 flex-[1_1_9em] text-label leading-normal text-gray-9 [overflow-wrap:anywhere] data-[value=dimmed]:text-gray-8" data-value={nameValue}>{name}</span>
+    {beforeValue}
     <span data-slot="reading-value" className="view-row-value ms-auto max-w-full flex-none text-right text-compact-reading leading-[1.3] font-normal tracking-[-.02em] text-foreground [overflow-wrap:break-word] data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6" data-value={value}>{children}</span>
+    {afterValue}
     <StatusList className="basis-full" entries={status} />
   </li>;
 }
