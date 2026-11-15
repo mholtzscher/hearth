@@ -16,7 +16,7 @@ import { SegmentedControl } from "../../components/ui/segmented-control";
 const paragraph = "my-[5px] text-label text-muted-foreground";
 const heading = "m-0 text-body font-semibold";
 const row = "flex flex-wrap items-center justify-between gap-3";
-const action = "max-w-full max-tablet:h-11";
+const action = "max-w-full";
 
 type Props = { document: AutomationDocument; onEdit?: () => void; children?: ReactNode; automationId?: string; compact?: boolean; entityLabels?: ReadonlyMap<string, string>; headingLevel?: 2 | 3 | 4 };
 type ChildStatus = { status: "loading" } | { status: "missing" } | { status: "error" } | { status: "ready"; name: string };
@@ -45,8 +45,8 @@ function ChildPreview({ id, close, ancestry }: { id: string; close: () => void; 
     return () => controller.abort();
   }, [id, backend]);
   return <section className="mt-4 border-t border-gray-4 pt-4" aria-label="Referenced Automation" onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
-    <div className={row}><div><h3 className={heading}>Referenced Automation</h3><p className={paragraph}>Current definition · read-only</p></div><Button variant="outline" size="default" className={action} autoFocus onClick={close}>Close preview</Button></div>
-    <Link className="text-violet-text" to={`/automations/${encodeURIComponent(id)}`}>Open Automation and history</Link>
+    <div className={row}><div><h3 className={heading}>Referenced Automation</h3><p className={paragraph}>Current definition · read-only</p></div><Button variant="outline" size="touch" className={action} autoFocus onClick={close}>Close preview</Button></div>
+    <Link className="text-violet-text focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-3" to={`/automations/${encodeURIComponent(id)}`}>Open Automation and history</Link>
     {state.status === "loading" && <p className={paragraph} role="status">Loading {id}…</p>}
     {state.status === "error" && <p className={`${paragraph} text-destructive`} role="alert">{state.message}</p>}
     {state.status === "ready" && <><h4 className={heading}>{state.document.definition.name}</h4><p className={paragraph}>{id}</p><CardContent document={state.document} ancestry={[...ancestry, id]}/></>}
@@ -107,8 +107,8 @@ function CardContent({ document, ancestry, entityLabels }: { document: Automatio
     <div className={`${row} mt-4 border-t border-border pt-3 text-caption text-muted-foreground`}><span>{definition.steps.length} root {definition.steps.length === 1 ? "Step" : "Steps"}</span><SegmentedControl label="Read style" value={style} onValueChange={setStyle} disabled={!!child} size="touch" options={[{value: "sentence", label: "Sentence"}, {value: "steps", label: "Steps"}]}/></div>
     <div className="mt-[18px] block text-caption leading-normal text-muted-foreground">Then</div>
     {style === "sentence" ? <SentenceSequence ctx={ctx} steps={definition.steps} path={["steps"]}/> : <StackSequence ctx={ctx} steps={definition.steps} path={["steps"]}/>}
-    <details className="border-t border-border py-1"><summary className="min-h-9 cursor-pointer py-2 marker:text-gray-7">Exact definition</summary><JsonCode source={formatJsonSource(document.source)} block/></details>
-    {child && (ancestry.includes(child) || ancestry.length >= 8 ? <section className="mt-4 border-t border-gray-4 pt-4"><p className={paragraph}>Preview unavailable: recursive or deeply nested reference.</p><Button variant="outline" size="default" className={action} onClick={close}>Close preview</Button></section> : <ChildPreview key={child} id={child} close={close} ancestry={ancestry}/>)}
+    <details className="border-t border-border py-1"><summary className="min-h-9 cursor-pointer py-2 marker:text-gray-7 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-3">Exact definition</summary><JsonCode source={formatJsonSource(document.source)} block/></details>
+    {child && (ancestry.includes(child) || ancestry.length >= 8 ? <section className="mt-4 border-t border-gray-4 pt-4"><p className={paragraph}>Preview unavailable: recursive or deeply nested reference.</p><Button variant="outline" size="touch" className={action} onClick={close}>Close preview</Button></section> : <ChildPreview key={child} id={child} close={close} ancestry={ancestry}/>)}
   </>;
 }
 export function AutomationCard({ document, onEdit, children, automationId, compact = false, entityLabels, headingLevel = 3 }: Props) {
@@ -117,7 +117,7 @@ export function AutomationCard({ document, onEdit, children, automationId, compa
   let message = "Invalid definition";
   try { valid = readAutomationDocument(document.source); } catch (error) { if (error instanceof Error) message = error.message; }
   return <article className={`min-w-0 rounded-card border border-border bg-card text-foreground [overflow-wrap:anywhere] max-tablet:p-3.5 ${compact ? "p-3.5" : "p-[18px]"}`}>
-    {valid ? <><header className={row}><div><Heading className={heading}>{valid.definition.name}</Heading><p className={paragraph}>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}</p></div>{onEdit && <Button size="default" variant="outline" className={action} onClick={onEdit}>Edit Automation</Button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p className={`${paragraph} text-destructive`} role="alert">This Automation cannot be shown: {message}</p>}
+    {valid ? <><header className={row}><div><Heading className={heading}>{valid.definition.name}</Heading><p className={paragraph}>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}</p></div>{onEdit && <Button size="touch" variant="outline" className={action} onClick={onEdit}>Edit Automation</Button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p className={`${paragraph} text-destructive`} role="alert">This Automation cannot be shown: {message}</p>}
     {children}
   </article>;
 }
