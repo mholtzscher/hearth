@@ -22,7 +22,7 @@ const isPhone = () => window.matchMedia?.(phoneQuery).matches ?? false;
 const hintClasses = "mt-3 text-label leading-normal text-gray-8";
 const exactClasses = "mt-4 flex flex-wrap items-center gap-2.5";
 const labelClasses = "flex items-center gap-1.5 text-label text-gray-8";
-const inputClasses = "min-h-11 w-[76px] min-w-0 rounded-[6px] border border-gray-4 bg-gray-3 p-2 font-[inherit] text-gray-10 tabular-nums caret-violet disabled:cursor-not-allowed disabled:text-gray-6 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring";
+const inputClasses = "min-h-11 w-[76px] min-w-0 rounded-sm border border-gray-4 bg-gray-3 p-2 font-[inherit] text-gray-10 tabular-nums caret-violet disabled:cursor-not-allowed disabled:text-gray-6 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring";
 
 function Range({ label, value, valueText, minimum, maximum, step = 1, disabled, pending, spectrum, onBegin, onChange, onEnd, onCancel, onBlur }: {
   label: string; value: number; valueText: string; minimum: number; maximum: number; step?: number;
@@ -159,7 +159,7 @@ export function LightColorPicker({ controls, activeId, name, observed, open, onO
   </button>;
   const body: ReactNode = <>
     <header className={cn("flex items-start justify-between gap-5", phone && "sticky top-[-22px] z-1 bg-gray-2 pt-1.5")}>
-      {phone ? <DialogTitle className="text-[18px] leading-[1.4] font-semibold">Light color</DialogTitle> : <h2 className="text-[18px] leading-[1.4] font-semibold" id={headingId}>Light color</h2>}
+      {phone ? <DialogTitle className="text-title leading-[1.4] font-semibold">Light color</DialogTitle> : <h2 className="text-title leading-[1.4] font-semibold" id={headingId}>Light color</h2>}
       <Button variant="ghost" size="icon-touch" className="-mt-2.5 -mr-2.5" type="button" aria-label="Close color picker" onClick={() => onOpenChange(false)}><XIcon aria-hidden="true" /></Button>
     </header>
     {phone ? <DialogDescription className="mt-1.5 mb-[22px] text-gray-8">{name}</DialogDescription> : <p className="mt-1.5 mb-[22px] text-gray-8" id={descriptionId}>{name}</p>}
