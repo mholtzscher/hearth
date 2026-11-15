@@ -189,6 +189,48 @@ it("hands a delayed creation to the existing owner and waits for its active repl
   expect(within(screen.getByRole("log")).getByText(/First reply/)).toBeTruthy();
 });
 
+it("keeps a queued prompt after the current reply fails until the failed prompt is discarded", async () => {
+  let create!: (value: Response) => void;
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  const sent: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/v1/agent/conversations" && init?.method === "POST") return new Promise<Response>(resolve => { create = resolve; });
+    if (path === "/v1/agent/conversations") return new Response(JSON.stringify({
+      conversations: [{ id: "c-collision", created_at: "", message_count: 0, preview: "" }],
+    }));
+    if (path.endsWith("/messages/stream")) {
+      sent.push(JSON.parse(String(init?.body)).text);
+      if (sent.length === 1) return new Response(new ReadableStream({ start(value) { stream = value; } }));
+      return new Response('data: {"type":"turn.finished","reply":"Queued reply"}\n\n');
+    }
+    return new Response('{"messages":[]}');
+  }));
+  mount("/");
+  fireEvent.click(await screen.findByRole("button", { name: "Show me the temperatures" }));
+  await waitFor(() => expect(create).toBeDefined());
+  fireEvent.click(await screen.findByRole("link", { name: "Empty conversation" }));
+  const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  fireEvent.change(input, { target: { value: "First prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(stream).toBeDefined());
+  await act(async () => create(new Response('{"id":"c-collision"}')));
+  expect(await screen.findByText("Message queued until the current reply finishes.")).toBeTruthy();
+  await act(async () => {
+    stream.enqueue(new TextEncoder().encode('data: {"type":"turn.failed","error":"Model failed"}\n\n'));
+    stream.close();
+  });
+  expect(await screen.findByText("Queued message has not been sent.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Send queued message" })).toHaveProperty("disabled", true);
+  expect(input).toHaveProperty("value", "First prompt");
+  fireEvent.click(screen.getByRole("button", { name: "Discard failed prompt" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send queued message" })).toHaveProperty("disabled", false));
+  fireEvent.click(screen.getByRole("button", { name: "Send queued message" }));
+  await waitFor(() => expect(sent).toEqual(["First prompt", "Show me the temperatures throughout the house."]));
+  await waitFor(() => expect(screen.queryByText("Queued message has not been sent.")).toBeNull());
+});
+
 it("retains failed background activity and the prompt until history recovery succeeds", async () => {
   let stream!: ReadableStreamDefaultController<Uint8Array>;
   let historyUnavailable = false;

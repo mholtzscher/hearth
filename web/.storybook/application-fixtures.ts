@@ -1,8 +1,9 @@
 import { http, HttpResponse } from "msw";
 import { z } from "zod";
-import type { AgentMessage, TurnEvent } from "../src/api/agent";
+import type { AgentMessage, AutomationArtifact, TurnEvent } from "../src/api/agent";
 import { viewContextSchema } from "../src/api/agent";
 import type { Dashboard } from "../src/api/dashboards";
+import { automation, automationHandlers, automationId, definition as automationDefinition } from "./automation-fixtures";
 import { dashboardDefinition, fixtureNow } from "./fixtures";
 
 export const conversationId = "conversation_story_morning";
@@ -14,6 +15,12 @@ export const conversationReply = "Here is your morning overview. The hallway lam
 export const sentReply = "The living room is 21.5 °C.";
 
 const artifact = { kind: "hearth.view" as const, artifact_id: "view_story_morning", definition: dashboardDefinition };
+const automationHeader = { kind: "hearth.automation", schema_version: 1, artifact_id: "aart_01920000-0000-7000-8000-000000000001" } as const;
+const automationArtifacts = {
+  create: { ...automationHeader, mode: "create", definition_json: JSON.stringify(automationDefinition) },
+  replace: { ...automationHeader, mode: "replace", automation_id: automationId, expected_revision: 3, definition_json: JSON.stringify(automationDefinition) },
+  reference: { ...automationHeader, mode: "reference", automation_id: automationId },
+} satisfies Record<string, AutomationArtifact>;
 const loadedMessages: AgentMessage[] = [
   { message_id: 1, role: "user", content: conversationPrompt, created_at: fixtureNow },
   { message_id: 2, role: "assistant", content: "", created_at: fixtureNow,
@@ -25,12 +32,14 @@ const loadedMessages: AgentMessage[] = [
 
 export type ApplicationScenario = {
   server?: "ready" | "not-ready" | "unavailable";
-  turn?: "reply" | "pending" | "pending-view" | "fail-once";
+  turn?: "reply" | "pending" | "pending-view" | "fail-once" | "queue-collision";
+  /** The queued collision stays pending until this story-local barrier releases a failed turn. */
+  queuedTurnFailure?: Promise<void>;
   historyFailure?: boolean;
   saveConflict?: boolean;
   dashboards?: "empty";
   conversations?: "searchable" | "empty" | "error";
-  messages?: "long" | "rich";
+  messages?: "long" | "rich" | "automation-create" | "automation-replace" | "automation-reference" | "automation-missing" | "automation-loading";
 };
 
 /** Each factory owns its history, stream attempts, and saved revision; stories never share writes. */
@@ -62,6 +71,20 @@ export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
       { message_id: 4, role: "assistant", content: "**Room readings**\n\n- Kitchen: 21 °C\n- Bedroom: 20 °C\n\n| Room | Temperature |\n| --- | --- |\n| Kitchen | 21 °C |\n\n```json\n{\"temperature\":21}\n```", created_at: fixtureNow },
     ]);
   }
+  const automationMode = scenario.messages === "automation-create" ? "create"
+    : scenario.messages === "automation-replace" ? "replace"
+      : scenario.messages?.startsWith("automation-") ? "reference" : null;
+  if (automationMode) {
+    // Synthetic tool result using the same definition and saved record as the Automation stories.
+    histories.set(conversationId, [
+      { message_id: 1, role: "user", content: "Show the hallway Automation.", created_at: fixtureNow },
+      { message_id: 2, role: "assistant", content: "", created_at: fixtureNow,
+        calls: [{ id: "automation", name: "present_automation", arguments: "{}" }] },
+      { message_id: 3, role: "tool", content: "Automation prepared.", tool_call_id: "automation", tool_name: "present_automation",
+        artifacts: [automationArtifacts[automationMode]], created_at: fixtureNow },
+      { message_id: 4, role: "assistant", content: "Here is the hallway Automation.", created_at: fixtureNow },
+    ]);
+  }
   const initial: Dashboard = {
     id: dashboardId, revision: 1, definition: structuredClone(dashboardDefinition),
     created_at: fixtureNow, updated_at: fixtureNow,
@@ -71,6 +94,8 @@ export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
   let conflicted = false;
   let attempts = 0;
   let created = 0;
+  let startCanonical!: () => void;
+  const canonicalStarted = new Promise<void>(resolve => { startCanonical = resolve; });
   return [
     http.get("/healthz", () => HttpResponse.json({ status: "ok" })),
     http.get("/readyz", () => {
@@ -86,7 +111,11 @@ export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
           preview: messages.find(message => message.role === "user")?.content ?? "New conversation",
         })),
       })),
-    http.post("/v1/agent/conversations", () => {
+    http.post("/v1/agent/conversations", async () => {
+      if (scenario.turn === "queue-collision") {
+        await canonicalStarted;
+        return HttpResponse.json({ id: conversationId });
+      }
       const id = `conversation_story_new_${++created}`;
       histories.set(id, []);
       return HttpResponse.json({ id });
@@ -103,7 +132,8 @@ export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
       if (scenario.turn === "fail-once" && ++attempts === 1) {
         return HttpResponse.json({ detail: "Synthetic provider unavailable" }, { status: 503 });
       }
-      const pending = scenario.turn === "pending" || scenario.turn === "pending-view";
+      const pending = scenario.turn === "pending" || scenario.turn === "pending-view" || scenario.turn === "queue-collision";
+      if (scenario.turn === "queue-collision") startCanonical();
       const events: TurnEvent[] = [
         { type: "tool.started", call_id: "read-temperature", name: scenario.turn === "pending-view" ? "present_view" : "get_entity", arguments: "{}" },
       ];
@@ -125,11 +155,29 @@ export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           for (const event of events) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          if (scenario.turn === "queue-collision" && scenario.queuedTurnFailure) {
+            void scenario.queuedTurnFailure.then(() => {
+              if (request.signal.aborted) return;
+              controller.enqueue(encoder.encode('data: {"type":"turn.failed","error":"Synthetic provider failed"}\n\n'));
+              controller.close();
+            });
+          }
           if (!pending) controller.close();
         },
       });
       return new HttpResponse(stream, { headers: { "Content-Type": "text/event-stream" } });
     }),
+    ...(automationMode ? [
+      http.get(`/v1/automations/${automationId}`, async ({ request }) => {
+        if (scenario.messages === "automation-missing") return HttpResponse.json({ detail: "Automation not found" }, { status: 404 });
+        if (scenario.messages === "automation-loading") {
+          await new Promise<void>(resolve => request.signal.addEventListener("abort", () => resolve(), { once: true }));
+          return HttpResponse.error();
+        }
+        return HttpResponse.json(automation);
+      }),
+      ...automationHandlers(),
+    ] : []),
     http.get("/v1/dashboards", () => HttpResponse.json({
       items: [...dashboards.values()].map(saved => ({
         id: saved.id, revision: saved.revision, title: z.object({ title: z.string() }).parse(saved.definition).title,
