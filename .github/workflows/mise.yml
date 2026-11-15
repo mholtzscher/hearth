@@ -111,6 +111,8 @@ jobs:
           cache: true
       - name: Run dashboard tests
         run: mise run web-test
+      - name: Check managed Storybook startup
+        run: mise run --skip-deps storybook-start-test
       - name: Install Storybook browser
         run: mise run --skip-deps storybook-browser-install -- --with-deps
       - name: Run story interaction and accessibility checks

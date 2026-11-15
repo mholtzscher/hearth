@@ -50,6 +50,12 @@ proxy = false
 depends = ["simulator"]
 ready_cmd = "curl -fsS http://127.0.0.1:$PORT/ >/dev/null && curl -fsS http://127.0.0.1:$PORT/readyz >/dev/null && curl -fsS http://127.0.0.1:$PORT/nats-monitor/varz >/dev/null"
 
+[daemons.storybook]
+run = "exec node web/scripts/storybook-server.ts serve >> .data/storybook/server.log 2>&1"
+proxy = false
+retry = 0
+ready_cmd = { run = "node web/scripts/storybook-server.ts ready", timeout = "45s" }
+
 [daemons.zwave-adapter]
 run = "mkdir -p .data/simulator-stack && sed 's|^nats_url:.*$|nats_url: nats://127.0.0.1:'\"$SIM_NATS_PORT\"'|' configs/zwavejs.yaml > .data/simulator-stack/zwavejs.yaml && exec go run ./cmd/hearth-adapter-zwavejs -config .data/simulator-stack/zwavejs.yaml"
 depends = ["sim-core"]
@@ -234,6 +240,18 @@ run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NAT
 description = "Run isolated dashboard stories and MCP at http://127.0.0.1:6006"
 run = '''pnpm --dir web run storybook'''
 
+[tasks."storybook-start"]
+description = "Start/reuse managed Storybook; pass --tailscale for private HTTPS"
+run = '''node web/scripts/storybook-server.ts start'''
+
+[tasks."storybook-stop"]
+description = "Stop this worktree's managed Storybook and its owned Tailscale route"
+run = '''node web/scripts/storybook-server.ts stop'''
+
+[tasks."storybook-start-test"]
+description = "Test Storybook startup decisions and readiness protocol"
+run = '''node --test web/scripts/storybook-server*.test.ts'''
+
 [tasks."storybook-build"]
 description = "Typecheck and build the standalone Storybook"
 depends = ["web-install"]
@@ -264,4 +282,4 @@ depends = [
 
 [tasks."validate"]
 description = "Run all validation"
-depends = ["validate-backend", "web-test", "web-build", "storybook-test", "storybook-build"]
+depends = ["validate-backend", "web-test", "web-build", "storybook-test", "storybook-build", "storybook-start-test"]

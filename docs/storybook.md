@@ -5,32 +5,69 @@ synthetic Core HTTP responses. Core, NATS, model credentials, and physical devic
 are not needed. These stories verify browser component behavior, not backend
 semantics or device compatibility.
 
-## Start the development loop
-
-From the repository root:
+## Set up once
 
 ```sh
 mise run web-install
-mise run storybook-browser-install
-mise run storybook
 ```
 
-Open <http://127.0.0.1:6006>. Stop the foreground server with Ctrl+C. The server
-binds loopback, does not open a browser automatically, and fails if port 6006 is
-occupied instead of silently selecting another project's MCP endpoint.
-
-For parallel worktrees, choose a free port:
+For browser tests, also install Chromium once:
 
 ```sh
-mise run storybook -- --port 6016
+mise run storybook-browser-install
+```
+
+On NixOS, managed Storybook uses system `chromium` from `PATH` for MCP browser
+tests, or honors `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.
+
+## Start and stop
+
+```sh
+mise run storybook-start
+mise run storybook-stop
+```
+
+Start uses worktree-local mise/pitchfork supervision and waits up to 45 seconds
+for a nonempty story index. It prints the local URL, MCP URL, and log path.
+Repeating the same command reuses the daemon. No installation or tests run
+during startup. The default URL is <http://127.0.0.1:6006>.
+
+For live updates from another device, connect Tailscale, enable tailnet HTTPS,
+then run:
+
+```sh
+mise run storybook-start -- --tailscale
+```
+
+Storybook binds loopback on port 6006; Tailscale serves HTTPS on port 6606.
+Separate ports avoid restart collisions. Exact host validation stays enabled,
+and HMR uses HTTPS. This also exposes unauthenticated Storybook MCP to devices
+allowed by your tailnet policy.
+
+For parallel worktrees or occupied ports, choose distinct free ports:
+
+```sh
+mise run storybook-start -- --tailscale --port 6016 --https-port 6616
 opencode mcp add hearth-storybook --url http://127.0.0.1:6016/mcp
 ```
 
-Keep the project-local MCP URL aligned with that worktree's running server.
-OpenCode watches configuration changes. Its checked-in default is
-<http://127.0.0.1:6006/mcp>; `opencode mcp list` verifies the connection. Other MCP
-clients can connect to the same Streamable HTTP endpoint without credentials.
-Storybook's MCP and component manifest features are upstream preview features.
+Keep the project-local MCP URL aligned with the printed endpoint. OpenCode
+watches configuration changes; `opencode mcp list` verifies the connection.
+The checked-in default is <http://127.0.0.1:6006/mcp>. Storybook's MCP and
+component manifest features are upstream preview features.
+
+Occupied ports fail without replacing services or stopping unrelated processes.
+Run `storybook-stop` before changing options. Stop removes only this worktree's
+unchanged Tailscale mapping; an externally changed mapping is left untouched.
+
+Logs and configuration live in ignored `.data/storybook/`.
+Use `mise daemons status storybook` to inspect the daemon. To restart with the
+HTTPS mapping retained, run `mise daemons stop storybook`, then repeat the start
+command.
+
+Foreground usage remains `mise run storybook`, stopped with Ctrl+C.
+Run lifecycle tests with `mise run storybook-start-test`; use the existing
+Storybook tools and browser workflow below for component verification.
 
 ## Work as an agent
 
