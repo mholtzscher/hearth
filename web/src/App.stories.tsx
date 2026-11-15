@@ -543,9 +543,9 @@ export const TabletConversationCanvas: Story = {
 };
 
 async function queueDuringReply({ canvas, userEvent }: InteractionContext) {
-  await expect(await canvas.findByRole("link", { name: conversationPrompt })).toBeVisible();
+  await expect(await canvas.findByRole("button", { name: "Show me the temperatures" })).toBeEnabled();
   await userEvent.click(canvas.getByRole("button", { name: "Show me the temperatures" }));
-  await userEvent.click(canvas.getByRole("link", { name: conversationPrompt }));
+  await userEvent.click(await canvas.findByRole("link", { name: "Empty conversation" }));
   const prompt = await canvas.findByRole("textbox", { name: "Ask Hearth" });
   await waitFor(() => expect(prompt).toBeEnabled());
   await userEvent.type(prompt, "Check the hallway.");
@@ -580,7 +580,7 @@ export const QueuedAfterFailedReply: Story = {
   play: async context => {
     await queueDuringReply(context);
     context.parameters.releaseQueuedTurn();
-    await expect(await context.canvas.findByRole("alert")).toHaveTextContent("Synthetic provider failed");
+    await expect(await context.canvas.findByRole("alert")).toHaveTextContent("agent turn failed");
     await expect(await context.canvas.findByText("Queued message has not been sent.")).toBeVisible();
     await expect(context.canvas.getByRole("button", { name: "Send queued message" })).toBeDisabled();
     await expect(context.canvas.getByRole("button", { name: "Discard failed prompt" })).toBeEnabled();
