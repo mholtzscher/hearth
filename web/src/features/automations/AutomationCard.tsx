@@ -10,7 +10,6 @@ import { ConditionText, entityLabelText, InitialVariables, SentenceSequence, Sta
 import { JsonCode } from "./AutomationCode";
 import { collection } from "./resources";
 import { automationEntityIds, describeAutomationSteps } from "./definition-tree";
-import "./automations.css";
 
 type Props = { document: AutomationDocument; onEdit?: () => void; children?: ReactNode; automationId?: string; compact?: boolean; entityLabels?: ReadonlyMap<string, string>; headingLevel?: 2 | 3 | 4 };
 type ChildStatus = { status: "loading" } | { status: "missing" } | { status: "error" } | { status: "ready"; name: string };

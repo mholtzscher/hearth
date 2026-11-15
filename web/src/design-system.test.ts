@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 const CLASS_SELECTORS: Record<string, number> = {
   ".storybook/preview.css": 3,
   "src/features/automations/automations.css": 102,
-  "src/index.css": 874,
+  "src/legacy.css": 874,
 };
 
 /** Raw <select>, <textarea>, and <input> elements outside components/ui, by directory. */
