@@ -188,6 +188,14 @@ Every variant uses a 2px violet focus outline with a 3px offset. The shared Butt
 
 Off uses a `gray-3` track, `gray-7` border, and `gray-8` thumb. On uses a violet track and a `gray-10` thumb. Disabled shared switches keep those state colours at 50% opacity. This is the approved shared disabled treatment, distinct from the full-opacity gray treatment still used by handwritten household controls until adoption.
 
+### Segmented controls
+
+`components/ui/SegmentedControl` renders native `aria-pressed` buttons in an accessibly named group. The caller supplies the current value; a value that matches no option leaves every segment unselected. Each enabled segment remains in the Tab order.
+
+Segments have a 32px minimum height by default or 44px with `size="touch"`. Long labels wrap and increase the height. The frame adds 2px padding and a 1px border on each side. Selected segments use violet-soft, violet-text, and a 1px inset violet line. Shared segments have 8px corners, the shared 2px violet focus outline with a 3px offset, and 50% disabled opacity.
+
+The handwritten purifier still uses 38px segments, 6px inner corners, and a full-opacity gray disabled treatment. Its comparison story records those differences explicitly until adoption.
+
 ### Fields
 
 `components/ui/Input`, `Textarea`, and `NativeSelect` share a card background, a 1px `gray-4` border, 8px corners, and 14px text with a 21px line height. Horizontal padding is 8px. Focus uses a 2px violet outline with a 3px offset; invalid fields use a destructive-colour border, and disabled fields use 50% opacity.
