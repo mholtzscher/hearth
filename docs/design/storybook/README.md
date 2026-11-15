@@ -59,3 +59,17 @@ reorganization. The story imports, args, and play functions are unchanged from
 | --- | --- |
 | `catalog-cards.png` | Storybook manager at 1440×1000 over Tailscale HTTPS. Components/Cards contains AutomationCard alongside the other cards. The Sentence story renders the synthetic Household data. |
 | `catalog-editors.png` | Same viewport and server. Components/Editors contains AutomationEditor alongside the other editors. Its EditName play function changes Name to "Hallway light at dusk routine". |
+
+## Managed startup
+
+`managed-startup.png` captures the new CLI on 2026-11-15 from the uncommitted
+`feat/storybook-managed-startup` snapshot based on `fa425ab`. Its demonstrated
+source is unchanged in the delivered commit. There is no before capture because
+the base has no managed startup command.
+
+The real terminal is 132 columns by 20 rows. It shows two runs of
+`mise run storybook-start -- --tailscale --port 6216 --https-port 6616`,
+including the local, HTTPS, and MCP URLs and log path. A separate supervisor
+state comparison confirmed that the second command retained the same process.
+The PNG was inspected without edits or redactions. All temporary services from
+this verification were stopped without changing unrelated Tailscale mappings.

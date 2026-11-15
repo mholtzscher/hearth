@@ -5,32 +5,100 @@ synthetic Core HTTP responses. Core, NATS, model credentials, and physical devic
 are not needed. These stories verify browser component behavior, not backend
 semantics or device compatibility.
 
-## Start the development loop
+## One-time setup
 
-From the repository root:
+Install web dependencies from the repository root, or after the lockfile changes:
 
 ```sh
 mise run web-install
-mise run storybook-browser-install
-mise run storybook
 ```
 
-Open <http://127.0.0.1:6006>. Stop the foreground server with Ctrl+C. The server
-binds loopback, does not open a browser automatically, and fails if port 6006 is
-occupied instead of silently selecting another project's MCP endpoint.
-
-For parallel worktrees, choose a free port:
+For browser checks, install Chromium once:
 
 ```sh
-mise run storybook -- --port 6016
+mise run storybook-browser-install
+```
+
+On NixOS, the managed commands use `chromium` or `chromium-browser` from `PATH`.
+They also honor `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. Browser installation is
+not a startup prerequisite when a system browser is available.
+
+## Start the development loop
+
+```sh
+mise run storybook-start
+```
+
+The command starts a worktree-owned mise/pitchfork daemon, waits up to 45 seconds
+for a nonempty story index, and prints the local URL, MCP URL, and log path.
+Repeating the same command reuses the running daemon without restarting it.
+No install, browser launch, or component test runs during startup.
+
+Open <http://127.0.0.1:6006>. Stop the managed server with:
+
+```sh
+mise run storybook-stop
+```
+
+To develop live from another device on your tailnet:
+
+```sh
+mise run storybook-start -- --tailscale
+```
+
+Connect Tailscale and enable tailnet HTTPS first. The command discovers this
+machine's exact DNS name and prints a private HTTPS URL on port 6606.
+Storybook still binds loopback on port 6006. The separate ports avoid a conflict
+between Tailscale's listener and Storybook's exact-port check during restart.
+Host validation stays enabled in both Storybook and Vite, and HMR uses the HTTPS
+endpoint. The HTTPS endpoint also exposes Storybook's unauthenticated MCP
+endpoint to devices allowed by your tailnet policy.
+
+For parallel worktrees or occupied ports, choose distinct free ports:
+
+```sh
+mise run storybook-start -- --tailscale --port 6016 --https-port 6616
 opencode mcp add hearth-storybook --url http://127.0.0.1:6016/mcp
 ```
 
-Keep the project-local MCP URL aligned with that worktree's running server.
-OpenCode watches configuration changes. Its checked-in default is
-<http://127.0.0.1:6006/mcp>; `opencode mcp list` verifies the connection. Other MCP
-clients can connect to the same Streamable HTTP endpoint without credentials.
-Storybook's MCP and component manifest features are upstream preview features.
+Keep the project-local MCP URL aligned with the printed endpoint. OpenCode watches
+configuration changes; `opencode mcp list` verifies the connection. The checked-in
+default is <http://127.0.0.1:6006/mcp>. Other MCP clients can use the same
+Streamable HTTP endpoint without credentials. Storybook's MCP and component
+manifest features are upstream preview features.
+
+Start fails rather than replacing an existing Tailscale service, killing a
+process on the requested port, or silently choosing a different port. Run
+`storybook-stop` before changing startup options. Stop removes only the unchanged
+Tailscale listener that this worktree created. If another command changed that
+listener, stop leaves it untouched and reports the ownership record to inspect.
+
+Logs and runtime configuration stay in ignored `.data/storybook/`. To inspect
+supervisor state, use `mise daemons status storybook`. To restart while keeping
+the existing HTTPS mapping, use `mise daemons stop storybook`, then repeat your
+`storybook-start` command.
+
+For a foreground server instead, use `mise run storybook` and stop it with
+Ctrl+C. The managed stop command does not stop a foreground server.
+
+## Check a rendered story
+
+Run browser verification separately from startup:
+
+```sh
+mise run storybook-check -- --story components-button--primary
+```
+
+The check opens the managed HTTPS URL when configured, otherwise the local URL.
+It waits for rendering, loaders, play, and `afterEach`. It fails on Storybook's
+reported errors, including caught play failures, or an uncaught page error.
+Without `--story`, it uses the first story in the index.
+Use `--url http://127.0.0.1:6016` to check a foreground server or another endpoint.
+This smoke check does not replace the interaction and accessibility suite below.
+
+Run the startup decision and readiness-protocol tests with
+`mise run storybook-start-test`. These tests do not need Tailscale, Chromium,
+or a running Storybook.
 
 ## Work as an agent
 
