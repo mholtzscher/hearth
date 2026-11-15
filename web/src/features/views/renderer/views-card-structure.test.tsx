@@ -46,7 +46,7 @@ it("dims an unavailable reading, leads with its status, and links Source to the 
   const card = await screen.findByRole("article", { name: "Garage temperature" });
   const status = await within(card).findByText("Unavailable");
   expect(status.closest("li")?.getAttribute("data-tone")).toBe("warn");
-  expect(card.querySelector(".view-metric-value")?.getAttribute("data-value")).toBe("dimmed");
+  expect(within(card).getByText("20.0").getAttribute("data-value")).toBe("dimmed");
   expect(card.querySelector('[data-slot="card-arrival"]')).toBeNull();
   const toggle = within(card).getByRole("button", { name: "Source" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");

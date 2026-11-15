@@ -276,7 +276,7 @@ it("keeps speed, gusts, Beaufort words, and direction in reading order", async (
   const order = ["6.3m/s", "Gusts 11.2 m/s", "Moderate breeze", "From SE"].map(reading => text.indexOf(reading));
   expect(order.every(index => index >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((a, b) => a - b));
-  expect(card("Wind").querySelector(".view-trend")).toBeNull();
+  expect(card("Wind").querySelector('[data-slot="trend"]')).toBeNull();
   expect(api.requests.some(url => url.includes("/state/history"))).toBe(false);
 });
 
@@ -285,10 +285,10 @@ it.each(["metric", "us"] as const)("shows household Wind speed history with gaps
   await mount(<BoundWind speed={source(103, "hearth.speed/v1")} gust={source(111, "hearth.speed/v1")} direction={source(104, "hearth.numericsensor/v1")} trend="24h" />);
   const wind = card("Wind");
   expect(within(wind).getByText(system === "us" ? "24 h range 14.1–21.0 mi/h" : "24 h range 6.3–9.4 m/s")).toBeTruthy();
-  expect(wind.querySelector(".view-trend-mean")!.getAttribute("d")!.match(/M/g)).toHaveLength(2);
-  expect(wind.querySelector(".view-trend-band")).toBeTruthy();
+  expect(wind.querySelector('[data-slot="trend-mean"]')!.getAttribute("d")!.match(/M/g)).toHaveLength(2);
+  expect(wind.querySelector('[data-slot="trend-band"]')).toBeTruthy();
   expect(wind.querySelector(".view-weather-main .view-weather-wind")).toBeTruthy();
-  expect(wind.querySelector(".view-weather-aside .view-trend")).toBeTruthy();
+  expect(wind.querySelector('.view-weather-aside [data-slot="trend"]')).toBeTruthy();
   const histories = api.requests.filter(url => url.includes("/state/history"));
   expect(histories.length).toBeGreaterThan(0);
   expect(histories.every(url => url === `/v1/entities/${id(103)}/state/history`)).toBe(true);
@@ -305,7 +305,7 @@ it.each(["empty", "failed"] as const)("keeps current Wind readings when history 
   expect(card("Wind").querySelector(".view-metric-value")!.textContent).toBe("6.3m/s");
   expect(within(card("Wind")).getByText("Moderate breeze")).toBeTruthy();
   expect(within(card("Wind")).getByText(state === "empty" ? "No history in the last 24 h." : "Couldn't load history.")).toBeTruthy();
-  expect(card("Wind").querySelector(".view-trend-mean")).toBeNull();
+  expect(card("Wind").querySelector('[data-slot="trend-mean"]')).toBeNull();
 });
 
 it("retains Wind history through refresh failure and restores it without hiding current State", async () => {
@@ -363,8 +363,8 @@ it.each([
   else failed.enabled = false;
   await mount(<BoundWind speed={speed} direction={direction} trend="24h" />);
 
-  expect(card("Wind").querySelector(".view-trend")!.getAttribute("data-value")).toBe(slot === "speed" ? "dimmed" : "live");
-  expect(!!card("Wind").querySelector(".view-trend-band")).toBe(slot !== "speed");
+  expect(card("Wind").querySelector('[data-slot="trend"]')!.getAttribute("data-value")).toBe(slot === "speed" ? "dimmed" : "live");
+  expect(!!card("Wind").querySelector('[data-slot="trend-band"]')).toBe(slot !== "speed");
   expect(within(card("Wind")).getByText("Moderate breeze").getAttribute("data-value")).toBe(slot === "speed" ? "dimmed" : "live");
   expect(within(card("Wind")).getByText(/From SE · 135°/).getAttribute("data-value")).toBe("dimmed");
   expect(within(card("Wind")).getByText(state === "unavailable" ? "Unavailable" : "Disabled")).toBeTruthy();
@@ -373,8 +373,8 @@ it.each([
   failed.availability = { status: "available" };
   failed.enabled = true;
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(card("Wind").querySelector(".view-trend")!.getAttribute("data-value")).toBe("live");
-  expect(card("Wind").querySelector(".view-trend-band")).toBeTruthy();
+  expect(card("Wind").querySelector('[data-slot="trend"]')!.getAttribute("data-value")).toBe("live");
+  expect(card("Wind").querySelector('[data-slot="trend-band"]')).toBeTruthy();
   expect(within(card("Wind")).getByText("Moderate breeze").getAttribute("data-value")).toBe("live");
   expect(within(card("Wind")).getByText(/From SE · 135°/).getAttribute("data-value")).toBe("live");
   expect(within(card("Wind")).queryByText(state === "unavailable" ? "Unavailable" : "Disabled")).toBeNull();
@@ -392,7 +392,7 @@ it("words the three-hour pressure tendency, and never guesses without a reading 
   core(station(), { 113: minutes => minutes > 150 ? null : 1003.2 });
   await mount(<BoundPressure source={pressure} trend="24h" />);
   expect(within(card("Pressure")).getByText("Tendency unavailable · no recent or 3 h reading")).toBeTruthy();
-  expect(card("Pressure").querySelector(".view-trend")).toBeTruthy();
+  expect(card("Pressure").querySelector('[data-slot="trend"]')).toBeTruthy();
   cleanup(); vi.restoreAllMocks();
 
   // A change that ended an hour ago is not the current tendency.
