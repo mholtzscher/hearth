@@ -4,6 +4,7 @@ import type { Resolved, TextData, TimelineData } from "../../bindings/types";
 import { StatusList } from "../CardFrame";
 import { cardStatus } from "../status";
 import { timeLabel, timeTicks } from "../time-series/scale";
+import { cn } from "../../../../lib/utils";
 
 export type TimelineRow = { key: string; label: string; entityId: string; trueWord?: string; resource: Resolved<{ current?: TextData; timeline?: TimelineData }> };
 
@@ -23,18 +24,18 @@ export function sinceText(row: TimelineRow): string | undefined {
   return last?.kind === "value" && last.from > timeline!.from && current?.text === last.text ? `since ${timeLabel(last.from, { weekday: false })}` : undefined;
 }
 
-export function Axis({ data, className = "" }: { data?: TimelineData; className?: string }) {
+export function Axis({ data, className }: { data?: TimelineData; className?: string }) {
   if (!data) return null;
-  return <div data-slot="timeline-axis" className={`relative h-5 text-[13px] text-muted-foreground tabular-nums ${className}`} aria-hidden="true">{timeTicks(data.from, data.to).filter(tick => tick.value > data.from && tick.value < data.to - 0.12 * (data.to - data.from)).map(tick => <span className="absolute -translate-x-1/2 whitespace-nowrap" key={tick.value} style={{ left: `${100 * (tick.value - data.from) / (data.to - data.from)}%` }}>{tick.label}</span>)}<span className="absolute right-0 whitespace-nowrap">Now</span></div>;
+  return <div data-slot="timeline-axis" className={cn("relative h-5 text-[13px] text-muted-foreground tabular-nums", className)} aria-hidden="true">{timeTicks(data.from, data.to).filter(tick => tick.value > data.from && tick.value < data.to - 0.12 * (data.to - data.from)).map(tick => <span className="absolute -translate-x-1/2 whitespace-nowrap" key={tick.value} style={{ left: `${100 * (tick.value - data.from) / (data.to - data.from)}%` }}>{tick.label}</span>)}<span className="absolute right-0 whitespace-nowrap">Now</span></div>;
 }
 
 const trackClass = "group/track relative h-[18px] min-w-0 before:absolute before:inset-x-0 before:top-2 before:h-0.5 before:bg-gray-4 before:content-[''] data-[dimmed]:before:h-0 data-[dimmed]:before:border-t-2 data-[dimmed]:before:border-dashed data-[dimmed]:before:border-gray-5 data-[dimmed]:before:bg-transparent data-[compact]:col-span-full data-[compact]:mt-2 data-[compact]:h-1.5 data-[compact]:rounded-[3px] data-[compact]:bg-gray-3 data-[compact]:before:hidden data-[compact]:data-[dimmed]:border-t-2 data-[compact]:data-[dimmed]:border-dashed data-[compact]:data-[dimmed]:border-gray-5 data-[compact]:data-[dimmed]:bg-transparent";
 
-export function Track({ data, color, dimmed, compact = false, className = "" }: { data?: TimelineData; color: string; dimmed: boolean; compact?: boolean; className?: string }) {
-  if (!data) return <div data-slot="timeline-track" className={`${trackClass} ${className}`} data-dimmed={dimmed || undefined} aria-hidden="true" />;
+export function Track({ data, color, dimmed, compact = false, className }: { data?: TimelineData; color: string; dimmed: boolean; compact?: boolean; className?: string }) {
+  if (!data) return <div data-slot="timeline-track" className={cn(trackClass, className)} data-dimmed={dimmed || undefined} aria-hidden="true" />;
   const ranked = [...data.totals].filter(total => total.truthy === null).sort((a, b) => b.seconds - a.seconds);
   const ranks = new Map(ranked.map((total, index) => [total.text, index]));
-  return <div data-slot="timeline-track" data-compact={compact || undefined} className={`${trackClass} ${className}`} data-dimmed={dimmed || undefined} style={{ "--timeline-color": color } as CSSProperties} aria-hidden="true">
+  return <div data-slot="timeline-track" data-compact={compact || undefined} className={cn(trackClass, className)} data-dimmed={dimmed || undefined} style={{ "--timeline-color": color } as CSSProperties} aria-hidden="true">
     {data.intervals.map((interval, index) => {
       if (interval.kind === "absent" || (interval.kind === "value" && interval.truthy === false)) return null;
       const rank = interval.kind === "value" && interval.truthy === null ? ranks.get(interval.text) ?? 0 : 0;
