@@ -4,7 +4,7 @@ import { ApiError } from "../../../../api/client";
 import { useRead } from "../../data/provider";
 import { deviceReading, deviceRequest, lightEntities, lightReading, MAX_DEVICE_ROWS, type FieldDevice, type LightReading } from "../../bindings/device";
 import type { Resolved } from "../../bindings/types";
-import { CardFrame, StatusList } from "../CardFrame";
+import { DataCard, StatusList } from "../DataCard";
 import { Reading, ReadingUnit } from "../Reading";
 import { statusEntry } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates, type ReadingRow } from "../reading-list/ReadingRows";
@@ -97,7 +97,7 @@ export function DeviceCard({ deviceId, label, resource, canonical, canonicalErro
   }
   const title = label ?? device?.name ?? "Device";
   const status = device ? [...(resource.refreshFailed ? [statusEntry("refresh-failed")] : []), ...(canonicalError ? [statusEntry("error", `Couldn't load canonical light State: ${canonicalError}`)] : [])] : [statusEntry(resource.status === "missing" ? "device-missing" : resource.status === "loading" ? "loading" : "error", resource.error)];
-  return <CardFrame title={title} status={status}
+  return <DataCard title={title} status={status}
     observedAt={oldestObservation(displayed)} observedLabel="Oldest reading" arrivals={arrivals} sources={rowSources(allRows)}
     sourceExtra={<p><Link className="text-link underline underline-offset-[3px] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring" to={`/devices/${deviceId}`}>Device details</Link> <code className="mt-1 block text-caption text-muted-foreground">{deviceId}</code></p>}>
     {light && device && <Light light={light} rows={compositeStates} name={title} entities={device.entities} />}
@@ -105,7 +105,7 @@ export function DeviceCard({ deviceId, label, resource, canonical, canonicalErro
     {device && !light && shown.length === 0 && <p className="py-6 text-label leading-normal text-muted-foreground">No readable Entities on this Device.</p>}
     {additional.length > MAX_DEVICE_ROWS && <p className="mb-2 text-label leading-normal text-muted-foreground">Showing {MAX_DEVICE_ROWS} of {additional.length} readings. Open Source for every Entity.</p>}
     {!device && <Reading value="empty">—</Reading>}
-  </CardFrame>;
+  </DataCard>;
 }
 
 export function BoundDevice({ device, label }: { device: { kind: "device"; device_id: string }; label?: string }) {

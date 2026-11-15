@@ -1,7 +1,7 @@
 import { useControl } from "../../data/provider";
 import { ControlStatus } from "../../controls/ControlStatus";
 import { supportsOperation } from "../../controls/support";
-import { StatusList } from "../CardFrame";
+import { StatusList } from "../DataCard";
 import { TileFrame, tileActionClass } from "../TileFrame";
 import { Reading } from "../Reading";
 import { listArrivals, oldestObservation } from "../reading-list/ReadingRows";

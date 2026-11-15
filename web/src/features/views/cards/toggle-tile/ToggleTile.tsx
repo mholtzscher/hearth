@@ -5,7 +5,7 @@ import { useControl } from "../../data/provider";
 import { supportsOperation } from "../../controls/support";
 import { ControlStatus } from "../../controls/ControlStatus";
 import type { MetricData, Resolved, SeriesData } from "../../bindings/types";
-import { StatusList } from "../CardFrame";
+import { StatusList } from "../DataCard";
 import { TileFrame, tileActionClass } from "../TileFrame";
 import { Reading } from "../Reading";
 import { cardStatus } from "../status";

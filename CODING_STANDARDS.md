@@ -762,7 +762,7 @@ Bad:
 Good:
 
 ```tsx
-<CardFrame classNames={{ body: "gap-0.5" }} />
+<DataCard classNames={{ body: "gap-0.5" }} />
 ```
 
 ### Name a component's parts with `data-slot`
@@ -906,8 +906,8 @@ look similar but serve different purposes stay separate.
 Bad:
 
 ```text
-The Development Card and the view CardFrame are merged because both draw a
-bordered surface, although only CardFrame carries status, age, and Source.
+The Development Card and the view DataCard are merged because both draw a
+bordered surface, although only DataCard carries status, age, and Source.
 ```
 
 Good:

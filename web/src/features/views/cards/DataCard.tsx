@@ -26,7 +26,7 @@ export function StatusList({ entries, className, separators = true }: { entries:
 
 /** The parts of a card that a caller may adjust. */
 export type CardSlot = "body" | "footer" | "timeLabel" | "sourceToggle";
-export type CardFrameProps = {
+export type DataCardProps = {
   title: string;
   /** A chart's unit, shown beside its title. */
   unit?: string;
@@ -54,7 +54,7 @@ export type CardFrameProps = {
  * title and status, the body, and a footer with compact age and Source details.
  * Newer changed readings light the top edge and fade over ten seconds.
  */
-export function CardFrame({ title, unit, status, observedAt, observedLabel = "Observed", compactTimeLabel = false, arrival, arrivals, sources, sourceExtra, className, classNames, children, "data-on": on }: CardFrameProps) {
+export function DataCard({ title, unit, status, observedAt, observedLabel = "Observed", compactTimeLabel = false, arrival, arrivals, sources, sourceExtra, className, classNames, children, "data-on": on }: DataCardProps) {
   const level = useContext(HeadingLevel) + 1;
   const Title = `h${level}` as "h4";
   const titleId = useId();

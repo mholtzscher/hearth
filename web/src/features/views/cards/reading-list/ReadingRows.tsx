@@ -2,7 +2,7 @@ import type { Reading } from "../../bindings/registry";
 import type { Resolved } from "../../bindings/types";
 import type { Arrival } from "../observation";
 import { useArrival } from "../observation";
-import type { SourceItem } from "../CardFrame";
+import type { SourceItem } from "../DataCard";
 import { cardStatus, type CardStatus } from "../status";
 import { cn } from "../../../../lib/utils";
 import { ReadingRow as SharedReadingRow, ReadingUnit } from "../Reading";

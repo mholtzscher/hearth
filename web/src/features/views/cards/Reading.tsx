@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "../../../lib/utils";
 import type { ValueTreatment } from "./status";
 import type { StatusEntry } from "./status";
-import { StatusList } from "./CardFrame";
+import { StatusList } from "./DataCard";
 
 export type ReadingProps = {
   as?: "p" | "span";

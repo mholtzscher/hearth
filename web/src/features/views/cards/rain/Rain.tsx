@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { MetricData, Resolved } from "../../bindings/types";
-import { CardFrame } from "../CardFrame";
+import { DataCard } from "../DataCard";
 import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, rowSources, rowStates } from "../reading-list/ReadingRows";
 import { Trend, trendMethod } from "../metric/Trend";
@@ -51,7 +51,7 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
   const displayed = rowStates(all);
   const history = reads.history("rate");
   const word = mmPerHour === undefined ? undefined : rainWord(mmPerHour);
-  return <CardFrame className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Rain"} status={status.entries}
+  return <DataCard className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Rain"} status={status.entries}
     observedAt={oldestObservation(displayed)} observedLabel={all.length > 1 ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
       <p>Rain or Dry comes from the rain rate: light rain is below 2.5 mm/h and heavy rain above 7.6 mm/h. The storm total leads while it is above zero.</p>
@@ -77,5 +77,5 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
     </p>}
     <SlotStatus name={stormLeads ? "Rain rate" : "This storm"} resource={stormLeads ? rateReading : stormReading} />
     <TotalsStatus totals={shownTotals} />
-  </CardFrame>;
+  </DataCard>;
 }

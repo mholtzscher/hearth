@@ -1,4 +1,4 @@
-import { StatusList } from "../CardFrame";
+import { StatusList } from "../DataCard";
 import { cardStatus } from "../status";
 import { Axis, rowSummary, sinceText, totalsText, Track, type TimelineRow } from "./Lanes";
 

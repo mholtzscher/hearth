@@ -3,7 +3,7 @@ import { useTimelines } from "../../bindings/registry";
 import { textField } from "../../bindings/state-fields";
 import { stateWords } from "../../bindings/words";
 import type { SeriesWindow } from "../../bindings/types";
-import { CardFrame, type SourceItem } from "../CardFrame";
+import { DataCard, type SourceItem } from "../DataCard";
 import { cardStatus, type StatusEntry } from "../status";
 import { TimelineFeed } from "./Feed";
 import { TimelineLanes, type TimelineRow } from "./Lanes";
@@ -31,9 +31,9 @@ export function StateTimeline({ title, style, window, rows }: { title: string; s
   const first = rows.find(row => row.resource.data?.timeline)?.resource.data?.timeline;
   const method = <><p>{intervalMethod}</p>{first && <p>{new Date(first.from).toLocaleString()} to {new Date(first.to).toLocaleString()}</p>}</>;
   const words = windowNames[window];
-  return <CardFrame className="@container" title={title} unit={`Last ${words}`} status={[...header.values()]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
+  return <DataCard className="@container" title={title} unit={`Last ${words}`} status={[...header.values()]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
     {style === "lanes" ? <TimelineLanes rows={rows} windowWords={words} /> : style === "ledger" ? <TimelineLedger rows={rows} windowWords={words} /> : <TimelineFeed key={JSON.stringify([window, rows.map(row => row.key)])} rows={rows} windowWords={words} />}
-  </CardFrame>;
+  </DataCard>;
 }
 
 export function BoundStateTimeline({ title, style, window, rows }: z.infer<typeof stateTimelineSchema>) {

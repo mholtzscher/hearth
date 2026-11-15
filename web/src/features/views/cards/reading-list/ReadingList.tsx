@@ -1,6 +1,6 @@
 import { useReadings } from "../../bindings/registry";
 import type { EntitySource, Words } from "../../bindings/types";
-import { CardFrame } from "../CardFrame";
+import { DataCard } from "../DataCard";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates, type ReadingRow } from "./ReadingRows";
 
 /**
@@ -10,10 +10,10 @@ import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates, ty
  */
 export function ReadingList({ title, rows }: { title: string; rows: ReadingRow[] }) {
   const states = rowStates(rows);
-  return <CardFrame title={title} status={[]} observedAt={oldestObservation(states)} observedLabel="Oldest reading"
+  return <DataCard title={title} status={[]} observedAt={oldestObservation(states)} observedLabel="Oldest reading"
     arrivals={listArrivals(states)} sources={rowSources(rows)}>
     <ReadingRows rows={states} />
-  </CardFrame>;
+  </DataCard>;
 }
 
 export function BoundReadingList({ title, rows }: { title: string; rows: Array<{ source: EntitySource; label?: string; words?: Words }> }) {

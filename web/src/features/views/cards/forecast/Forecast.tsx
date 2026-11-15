@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { z } from "zod";
 import type { Quantity } from "../../bindings/quantity";
 import { useForecast, type DailyPeriod, type HourlyPeriod } from "../../bindings/forecast";
-import { CardFrame } from "../CardFrame";
+import { DataCard } from "../DataCard";
 import { Reading } from "../Reading";
 import { useMinuteClock } from "../observation";
 import { cardStatus } from "../status";
@@ -123,7 +123,7 @@ export function BoundForecast({ label, source, periods }: Props) {
   const title = label ?? `Next ${count} ${source.entity_type === forecastTypes.hourly ? "hours" : "days"}`;
   const metadata = resource.metadata;
   const partial = data?.kind === "daily" && days.length > 0 && data.periods.some(p => p.date < localDate(now)) && metadata?.availability === "unavailable";
-  return <CardFrame title={title} status={status.entries} observedAt={data?.observed_at}
+  return <DataCard title={title} status={status.entries} observedAt={data?.observed_at}
     arrival={data ? { updatedAt: data.observed_at, shown: JSON.stringify(shown), eligible: status.glows } : undefined}
     sources={metadata ? [{ entityId: metadata.id, label: metadata.label, availability: metadata.availability, enabled: metadata.enabled }] : []}
     sourceExtra={<p>Modeled forecast from the bound Entity's Adapter; periods that have ended are hidden.</p>}>
@@ -132,5 +132,5 @@ export function BoundForecast({ label, source, periods }: Props) {
         hours.length ? <Hourly periods={hours} count={count} /> : <p>Every hour in the last forecast has passed.</p> :
         days.length ? <>{partial && <p className="mb-2 text-muted-foreground">Showing the remaining days of a forecast from {weekday(new Date(data.observed_at))}.</p>}<Daily periods={days} now={now} /></> : <p>Every day in the last forecast has passed.</p>}
     </div>
-  </CardFrame>;
+  </DataCard>;
 }

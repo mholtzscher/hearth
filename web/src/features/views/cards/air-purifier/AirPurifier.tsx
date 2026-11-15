@@ -2,7 +2,7 @@ import { useControls } from "../../data/provider";
 import { PowerSwitch } from "../../controls/PowerSwitch";
 import { SharedControlStatus, type StatusControl } from "../../controls/SharedControlStatus";
 import { supportsOperation } from "../../controls/support";
-import { CardFrame, StatusList } from "../CardFrame";
+import { DataCard, StatusList } from "../DataCard";
 import { Reading, ReadingRow, ReadingUnit } from "../Reading";
 import { useArrival } from "../observation";
 import { listArrivals, oldestObservation, shownReading } from "../reading-list/ReadingRows";
@@ -53,7 +53,7 @@ export function AirPurifierCard({ props, title }: { props: AirPurifierProps; tit
     (item.key === "mode" && observedMode !== undefined) ||
     (item.key === "fan_level" && (controllable("fan_level") || observedMode === "manual")) ||
     ((item.key === "display" || item.key === "child_lock") && controllable(item.key)));
-  return <CardFrame title={title} className="@container" status={status} observedAt={oldestObservation(shown)} observedLabel="Oldest reading" arrivals={listArrivals(numeric)} sources={sources} sourceExtra={sourceExtra}>
+  return <DataCard title={title} className="@container" status={status} observedAt={oldestObservation(shown)} observedLabel="Oldest reading" arrivals={listArrivals(numeric)} sources={sources} sourceExtra={sourceExtra}>
     <div className="flex items-center gap-3.5 pb-3"><div className="min-w-0 flex-1"><Reading value={power?.status.value}>{power?.data && "text" in power.data ? power.data.text : "—"}</Reading>
       {observedMode && <p data-slot="purifier-detail" className="text-gray-9 tabular-nums data-[value=dimmed]:text-gray-8" data-value={mode?.status.value}>{choiceWords(observedMode)}{observedMode === "manual" && observedFan && ` · fan ${observedFan}`}</p>}</div>
       {controllable("power") && <PowerSwitch entity={entities.power!} label={`${title} power`} />}
@@ -66,7 +66,7 @@ export function AirPurifierCard({ props, title }: { props: AirPurifierProps; tit
     {(controllable("display") || controllable("child_lock")) && <div className="grid grid-cols-2 gap-x-5 gap-y-1 border-t border-border pt-3 pb-0.5 @max-[260px]:grid-cols-1">{(["display", "child_lock"] as const).map(role => controllable(role) && <div className="flex min-h-11 items-center justify-between gap-2.5 text-gray-9" key={role}><span>{role === "display" ? "Display" : "Child lock"}</span><PowerSwitch entity={entities[role]!} label={role === "display" ? "Display" : "Child lock"} /></div>)}</div>}
     {(["display", "child_lock"] as const).map(role => { const item = row(role); return item && <RoleStatus key={role} row={item} hideUnavailable={allUnavailable} />; })}
     <SharedControlStatus controls={controls} />
-  </CardFrame>;
+  </DataCard>;
 }
 
 export function BoundAirPurifier(props: AirPurifierProps) {

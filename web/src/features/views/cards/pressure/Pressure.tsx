@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import { ArrowDownRightIcon, ArrowRightIcon, ArrowUpRightIcon } from "lucide-react";
 import type { MetricData, Resolved, SeriesData } from "../../bindings/types";
-import { CardFrame, StatusList } from "../CardFrame";
+import { DataCard, StatusList } from "../DataCard";
 import { useMinuteClock } from "../observation";
 import { cardStatus, type CardStatus } from "../status";
 import { Trend, trendMethod } from "../metric/Trend";
@@ -51,7 +51,7 @@ export function BoundPressure({ label, source, trend }: Props) {
   const recent = reads.history("pressure")!, canonical = reads.history("canonical")!;
   const history = trend === "6h" ? recent : reads.history("trend");
   const metadata = reading.metadata;
-  return <CardFrame className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Pressure"} status={status.entries}
+  return <DataCard className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Pressure"} status={status.entries}
     observedAt={data?.observed_at} arrival={data ? { updatedAt: data.observed_at, shown: `${data.value.toFixed(data.format.fraction_digits)} ${data.format.unit_label}`, eligible: status.glows } : undefined}
     sources={metadata ? [{ entityId: metadata.id, label: metadata.label, availability: metadata.availability, enabled: metadata.enabled }] : []}
     sourceExtra={<>
@@ -63,5 +63,5 @@ export function BoundPressure({ label, source, trend }: Props) {
       <TendencyLine data={data} history={recent} canonical={canonical} status={status} />
       {(recent.refreshFailed || canonical.refreshFailed) && <StatusList entries={[{ key: "refresh-failed", tone: "warn", text: "Couldn't refresh pressure history" }]} />}
     </WeatherZones>
-  </CardFrame>;
+  </DataCard>;
 }

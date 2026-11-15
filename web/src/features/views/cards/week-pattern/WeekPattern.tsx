@@ -2,7 +2,7 @@ import type { z } from "zod";
 import { durationWords } from "../../bindings/changes";
 import { useWeekPattern } from "../../bindings/registry";
 import type { Resolved, TextData, WeekPatternData } from "../../bindings/types";
-import { CardFrame } from "../CardFrame";
+import { DataCard } from "../DataCard";
 import { cardStatus } from "../status";
 import { intervalMethod } from "../state-timeline/StateTimeline";
 import { weekPatternSchema } from "./schema";
@@ -21,7 +21,7 @@ function dayTotals(day: WeekPatternData["days"][number]) {
 export function WeekPattern({ label, entityId, resource, trueWord = "On" }: { label: string; entityId: string; resource: Resolved<{ current?: TextData; week?: WeekPatternData }>; trueWord?: string }) {
   const status = cardStatus(resource), week = resource.data?.week, metadata = resource.metadata;
   const signature = week && JSON.stringify(week.days.map(day => { const total = dayTotals(day); return { cells: day.hours.map(cell => cell.future ? "future" : level(cell.seconds)), count: total.known ? total.count : null, total: total.known ? durationWords(total.seconds) : "No history" }; }));
-  return <CardFrame className="@container" title={label} unit="Last 7 days" status={status.entries} sources={[{ entityId, label: metadata?.label ?? label, enabled: metadata?.enabled, availability: metadata?.availability }]}
+  return <DataCard className="@container" title={label} unit="Last 7 days" status={status.entries} sources={[{ entityId, label: metadata?.label ?? label, enabled: metadata?.enabled, availability: metadata?.availability }]}
     arrivals={week && signature ? [{ key: entityId, updatedAt: new Date(week.to).toISOString(), shown: signature, eligible: status.glows }] : []}
     sourceExtra={<><p>{intervalMethod}</p>{week && <p>{new Date(week.from).toLocaleString()} to {new Date(week.to).toLocaleString()}</p>}</>}>
     {week ? <>
@@ -37,7 +37,7 @@ export function WeekPattern({ label, entityId, resource, trueWord = "On" }: { la
       </div>
       <div className="mt-3.5 flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-label text-muted-foreground"><span>Minutes {trueWord.toLowerCase()} per hour</span><ol className="flex list-none flex-wrap gap-x-[9px] gap-y-[3px]">{["0", "1–5", "6–15", "16–30", "30+"].map((name, index) => <li className="flex items-center gap-[5px]" key={name}><span className={`${cellClass} aspect-square w-3`} data-level={index} aria-hidden="true" />{name}</li>)}</ol></div>
     </> : <p className="py-6 text-label leading-normal text-muted-foreground">Historical readings will appear here.</p>}
-  </CardFrame>;
+  </DataCard>;
 }
 
 export function BoundWeekPattern({ source, label, words }: z.infer<typeof weekPatternSchema>) {
