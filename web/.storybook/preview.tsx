@@ -8,6 +8,7 @@ import { ViewDataProvider } from "../src/features/views/data/provider";
 import "../src/index.css";
 import "./preview.css";
 import { fixtureNow, createCoreHandlers } from "./msw-handlers";
+import { captureStory, prepareCapture } from "./story-capture";
 
 // Core requests that no handler answered during the current story.
 const unhandledCoreRequests: string[] = [];
@@ -44,7 +45,9 @@ const preview: Preview = {
     });
     return worker;
   })],
-  beforeEach({ msw }) {
+  async beforeEach(context) {
+    const { msw } = context;
+    if (import.meta.env.VITE_HEARTH_STORY_SHOTS) await prepareCapture(context);
     document.documentElement.classList.add("dark");
     const previousBase = localStorage.getItem("hearth.baseUrl");
     setBaseUrl("");
@@ -58,8 +61,9 @@ const preview: Preview = {
     };
   },
   // A component can absorb the failed request, so fail the story as well.
-  afterEach() {
+  async afterEach(context) {
     if (unhandledCoreRequests.length > 0) throw new Error(`Unhandled Core requests: ${unhandledCoreRequests.join(", ")}`);
+    if (import.meta.env.VITE_HEARTH_STORY_SHOTS) await captureStory(context);
   },
   parameters: {
     layout: "fullscreen",
