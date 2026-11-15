@@ -15,15 +15,16 @@ type DialogContentProps = React.ComponentProps<typeof DialogPrimitive.Content> &
   placement?: "center" | "bottom";
 };
 
-function DialogContent({ className, placement = "center", ...props }: DialogContentProps) {
+function DialogContent({ className, placement = "center", forceMount, ...props }: DialogContentProps) {
   return (
-    <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay data-slot="dialog-overlay" className={cn(
+    <DialogPrimitive.Portal forceMount={forceMount}>
+      <DialogPrimitive.Overlay forceMount={forceMount} data-slot="dialog-overlay" className={cn(
         "fixed inset-0 z-[100] bg-background/[.667]",
         placement === "bottom" && "max-tablet:bg-background/60",
       )} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        forceMount={forceMount}
         className={cn(
           "fixed top-1/2 left-1/2 z-[101] w-[min(460px,calc(100vw-40px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-gray-4 bg-gray-2 p-6 text-label leading-normal text-foreground shadow-[0_18px_60px_#0008] outline-none",
           placement === "center" ? "short:max-h-[calc(100dvh-40px)] short:overflow-y-auto" : "tablet:short:max-h-[calc(100dvh-40px)] tablet:short:overflow-y-auto",

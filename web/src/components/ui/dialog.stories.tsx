@@ -49,6 +49,33 @@ export const Keyboard: Story = {
   },
 };
 
+/** forceMount keeps the closed portal, overlay, and content available to the caller. */
+export const ClosedForceMount: Story = {
+  render: () => <>
+    <Dialog open={false}>
+      <DialogContent forceMount hidden>
+        <DialogTitle>Retained decision</DialogTitle>
+        <DialogDescription>Retained while closed.</DialogDescription>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={false}>
+      <DialogContent>
+        <DialogTitle>Normally unmounted</DialogTitle>
+      </DialogContent>
+    </Dialog>
+  </>,
+  play: async ({ canvasElement }) => {
+    const body = canvasElement.ownerDocument.body;
+    const content = body.querySelector('[data-slot="dialog-content"]');
+    const overlay = body.querySelector('[data-slot="dialog-overlay"]');
+    await expect(content).toHaveAttribute("data-state", "closed");
+    await expect(content).toHaveAttribute("hidden");
+    await expect(within(body).getByText("Retained decision")).toBeInTheDocument();
+    await expect(overlay).toHaveAttribute("data-state", "closed");
+    await expect(within(body).queryByText("Normally unmounted")).not.toBeInTheDocument();
+  },
+};
+
 export const Centered: Story = {
   args: { children: <>
     <DialogTrigger asChild><Button variant="outline">Discard changes</Button></DialogTrigger>
