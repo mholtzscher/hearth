@@ -80,36 +80,54 @@ export const Sizes: Story = {
   },
 };
 
-/** Temporary migration reference. Remove when PowerSwitch adopts the shared switch. */
+/** Temporary migration reference; the air-purifier context preserves its legacy disabled opacity. Remove when PowerSwitch adopts Switch. */
 export const HouseholdComparison: Story = {
   render: () => (
-    <div className="grid gap-6">
-      {[false, true].map(checked => (
-        <section key={String(checked)} aria-label={checked ? "On" : "Off"} className="flex items-center gap-6">
-          <button type="button" role="switch" aria-label="Legacy power" aria-checked={checked} className="view-switch">
+    <div className="view-air-purifier grid gap-6">
+      {[false, true].flatMap(disabled => [false, true].map(checked => (
+        <section key={`${disabled}-${checked}`} aria-label={`${disabled ? "Disabled" : "Ready"} ${checked ? "On" : "Off"}`} className="flex items-center gap-6">
+          <button type="button" role="switch" aria-label="Legacy power" aria-checked={checked} disabled={disabled} className="view-switch">
             <span data-slot="legacy-switch-thumb" className="view-switch-thumb" aria-hidden="true" />
           </button>
-          <Switch size="touch" aria-label="Shared power" defaultChecked={checked} />
+          <Switch size="touch" aria-label="Shared power" defaultChecked={checked} disabled={disabled} />
         </section>
-      ))}
+      )))}
     </div>
   ),
   play: async ({ canvas }) => {
-    for (const state of ["Off", "On"]) {
+    for (const state of ["Ready Off", "Ready On", "Disabled Off", "Disabled On"]) {
       const group = within(canvas.getByRole("region", { name: state }));
-      const checked = state === "On" ? "true" : "false";
+      const checked = state.endsWith("On");
+      const disabled = state.startsWith("Disabled");
       const legacy = group.getByRole("switch", { name: "Legacy power" });
       const shared = group.getByRole("switch", { name: "Shared power" });
-      await expect(legacy).toHaveAttribute("aria-checked", checked);
-      await expect(shared).toHaveAttribute("aria-checked", checked);
+      await expect(legacy).toHaveAttribute("aria-checked", String(checked));
+      await expect(shared).toHaveAttribute("aria-checked", String(checked));
       const track = shared.querySelector('[data-slot="switch-track"]')!;
       const legacyThumb = legacy.querySelector('[data-slot="legacy-switch-thumb"]')!;
       const sharedThumb = shared.querySelector('[data-slot="switch-thumb"]')!;
-      for (const property of ["width", "height", "backgroundColor", "borderColor", "borderWidth", "borderStyle", "borderRadius", "fontFamily", "fontSize", "fontWeight", "lineHeight"] as const) {
+      for (const property of ["width", "height", "borderWidth", "borderStyle", "borderRadius", "fontFamily", "fontSize", "fontWeight", "lineHeight"] as const) {
         await expect(getComputedStyle(track)[property], `${state} track ${property}`).toBe(getComputedStyle(legacy)[property]);
       }
-      for (const property of ["width", "height", "backgroundColor"] as const) {
+      for (const property of ["width", "height"] as const) {
         await expect(getComputedStyle(sharedThumb)[property], `${state} thumb ${property}`).toBe(getComputedStyle(legacyThumb)[property]);
+      }
+      if (disabled) {
+        await expect(legacy).toBeDisabled();
+        await expect(shared).toBeDisabled();
+        await expect(getComputedStyle(legacy).opacity).toBe("1");
+        await expect(getComputedStyle(shared).opacity).toBe("0.5");
+        await expect(getComputedStyle(legacy).backgroundColor).toBe("rgb(31, 31, 31)");
+        await expect(getComputedStyle(legacy).borderColor).toBe("rgb(44, 44, 44)");
+        await expect(getComputedStyle(legacyThumb).backgroundColor).toBe("rgb(87, 87, 87)");
+        await expect(getComputedStyle(track).backgroundColor).toBe(checked ? "rgb(167, 123, 255)" : "rgb(31, 31, 31)");
+        await expect(getComputedStyle(track).borderColor).toBe(checked ? "rgb(167, 123, 255)" : "rgb(125, 125, 125)");
+        await expect(getComputedStyle(sharedThumb).backgroundColor).toBe(checked ? "rgb(244, 244, 244)" : "rgb(166, 166, 166)");
+      } else {
+        for (const property of ["backgroundColor", "borderColor"] as const) {
+          await expect(getComputedStyle(track)[property], `${state} track ${property}`).toBe(getComputedStyle(legacy)[property]);
+        }
+        await expect(getComputedStyle(sharedThumb).backgroundColor, `${state} thumb color`).toBe(getComputedStyle(legacyThumb).backgroundColor);
       }
       await waitFor(() => {
         const legacyOffset = legacyThumb.getBoundingClientRect().left - legacy.getBoundingClientRect().left;
