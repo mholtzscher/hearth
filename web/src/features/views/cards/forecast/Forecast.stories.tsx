@@ -1,8 +1,15 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
-import { entityId, fixtureEntity } from "../../../../../.storybook/fixtures";
+import { expect, within } from "storybook/test";
+import { entityId, fixtureEntity, fixtureNow } from "../../../../../.storybook/fixtures";
 import { createCoreHandlers, entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundForecast } from "./Forecast";
+import { localDate } from "./upcoming";
+
+function nextMidnight() {
+  const midnight = new Date(fixtureNow);
+  midnight.setHours(24, 0, 0, 0);
+  return midnight;
+}
 
 const meta = {
   component: BoundForecast,
@@ -33,13 +40,21 @@ export const CrossingMidnight: Story = {
   beforeEach: ({ msw }) => {
     const forecast = fixtureEntity(201);
     const value = forecast.state!.value as { periods: { starts_at: string }[] };
+    const currentHour = new Date(fixtureNow);
+    currentHour.setMinutes(0, 0, 0);
+    const start = Math.max(currentHour.getTime(), nextMidnight().getTime() - 6 * 3_600_000);
     value.periods.forEach((period, index) => {
-      period.starts_at = new Date(Date.parse("2026-11-09T20:00:00Z") + index * 3_600_000).toISOString();
+      period.starts_at = new Date(start + index * 3_600_000).toISOString();
     });
     msw.use(...createCoreHandlers([forecast]));
   },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByRole("img", { name: /Next 12 hours/ })).toBeVisible();
+    const chart = await canvas.findByRole("img", { name: /Next 12 hours/ });
+    const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(nextMidnight());
+    const label = within(chart).getByText(weekday);
+    await expect(label.previousElementSibling?.tagName.toLowerCase()).toBe("line");
+    await expect(label.previousElementSibling).toHaveAttribute("y1", "10");
+    await expect(label.previousElementSibling).toHaveAttribute("y2", "176");
   },
 };
 export const PartialUnavailableForecast: Story = {
@@ -47,7 +62,9 @@ export const PartialUnavailableForecast: Story = {
   beforeEach: ({ msw }) => {
     const forecast = fixtureEntity(202);
     const value = forecast.state!.value as { periods: { date: string }[] };
-    value.periods[0].date = "2026-11-08";
+    const yesterday = new Date(fixtureNow);
+    yesterday.setDate(yesterday.getDate() - 1);
+    value.periods[0].date = localDate(yesterday.getTime());
     forecast.availability.status = "unavailable";
     msw.use(...createCoreHandlers([forecast]));
   },

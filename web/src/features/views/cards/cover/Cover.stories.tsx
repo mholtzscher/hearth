@@ -12,7 +12,7 @@ const meta = {
     layout: "card", label: "Garage door",
     source: { kind: "entity-state", entity_id: entityId(401), entity_type: "hearth.cover/v1" },
   },
-  parameters: { docs: { description: { component: "Reported cover position and motion. These read-only fixtures do not model cover Commands or physical motion." } } },
+  parameters: { docs: { description: { component: "Reported cover position and motion. Interactive fixtures simulate Command rejection or a pending request, not physical motion." } } },
 } satisfies Meta<typeof BoundCover>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -38,10 +38,18 @@ const writableCover = () => {
 
 export const ConfirmOpening: Story = {
   args: { layout: "tile" },
-  beforeEach: ({ msw }) => { msw.use(...createCoreHandlers([writableCover()])); },
+  beforeEach: ({ msw }) => {
+    msw.use(
+      http.post(`/v1/entities/${entityId(401)}/commands`, () => HttpResponse.json({ detail: "Rejected" }, { status: 502 })),
+      ...createCoreHandlers([writableCover()]),
+    );
+  },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: /Garage door/ }));
     await expect(await canvas.findByText("Press again within 4 s to open.")).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: /Garage door/ }));
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("Change rejected. Try again.");
+    await expect(canvas.getByText("Rejected.")).toBeVisible();
   },
 };
 export const RequestedPosition: Story = {

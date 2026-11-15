@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, fn, within } from "storybook/test";
+import { http, HttpResponse } from "msw";
 import { entityId, fixtureEntity } from "../../../../.storybook/fixtures";
 import { expectNoHorizontalOverflow } from "../../../../.storybook/play";
 import { createCoreHandlers } from "../../../../.storybook/msw-handlers";
@@ -110,7 +111,21 @@ export const WhiteAndColor: Story = {
 };
 export const InlineFeedback: Story = {
   args: { inlineFeedback: true },
-  play: async ({ canvas }) => {
-    await expect(canvas.getByRole("button", { name: /Adjust color/ })).toBeVisible();
+  beforeEach: ({ msw }) => {
+    msw.use(http.post(`/v1/entities/${entityId(12)}/commands`, () => HttpResponse.json({ detail: "Rejected" }, { status: 502 })));
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: /Adjust color/ });
+    await userEvent.click(trigger);
+    const body = within(canvasElement.ownerDocument.body);
+    const hex = await body.findByRole("textbox", { name: "Hex" });
+    await userEvent.clear(hex);
+    await userEvent.type(hex, "#ff0000");
+    await userEvent.click(body.getByRole("button", { name: "Set hex" }));
+    await expect(await body.findByRole("alert")).toHaveTextContent("Color: The light rejected the change.");
+    await userEvent.click(body.getByRole("button", { name: "Close color picker" }));
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("Color rejected");
+    await expect(canvas.getByText("Failed")).toBeVisible();
+    await expect(trigger).toHaveAccessibleDescription("Color rejected");
   },
 };
