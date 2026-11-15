@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn } from "storybook/test";
+import { expect, fn, within } from "storybook/test";
 import { http, HttpResponse } from "msw";
 import { dashboardDefinition } from "../../../../.storybook/fixtures";
 import { ViewEditor } from "./ViewEditor";
@@ -28,6 +28,18 @@ export const InvalidTitle: Story = {
     await expect(canvas.getByRole("textbox", { name: "Dashboard title" })).toHaveAttribute("aria-invalid", "true");
     await expect(args.onValidityChange).toHaveBeenLastCalledWith(false);
     await expect(canvas.getByText("Use 1–80 characters for the dashboard title.")).toBeVisible();
+  },
+};
+export const InvalidHeading: Story = {
+  play: async ({ canvas, userEvent, args }) => {
+    const summary = canvas.getByText("Heading · heading");
+    const section = summary.closest("details");
+    if (!section) throw new Error("The heading editor did not render");
+    await userEvent.click(summary);
+    await userEvent.clear(within(section).getByRole("textbox", { name: "Text" }));
+    await expect(canvas.getByText(/Fix invalid fields/)).toBeVisible();
+    await expect(canvas.getByText("Use 1–120 characters for this heading.")).toBeVisible();
+    await expect(args.onValidityChange).toHaveBeenLastCalledWith(false);
   },
 };
 export const ChoicesUnavailable: Story = {

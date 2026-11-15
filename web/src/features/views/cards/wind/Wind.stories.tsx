@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
-import { entityId } from "../../../../../.storybook/fixtures";
+import { entityId, fixtureEntity } from "../../../../../.storybook/fixtures";
 import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
+import { createCoreHandlers } from "../../../../../.storybook/msw-handlers";
 import { BoundWind } from "./Wind";
 
 const meta = {
@@ -33,5 +34,15 @@ export const Phone: Story = {
   play: async ({ canvas, canvasElement }) => {
     await canvas.findByText("6.3");
     await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+export const Calm: Story = {
+  beforeEach: ({ msw }) => {
+    const speed = fixtureEntity(103);
+    msw.use(...createCoreHandlers([{ ...speed, state: { ...speed.state!, value: 0 } }]));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Calm")).toBeVisible();
+    await expect(canvas.getByText("0.0")).toBeVisible();
   },
 };

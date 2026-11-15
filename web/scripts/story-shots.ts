@@ -19,7 +19,9 @@ import { userOrAutoTitleFromSpecifier } from "storybook/preview-api";
 const web = path.resolve(import.meta.dirname, "..");
 
 /** Stylesheet classes that no story needs to render, each with its reason. */
-const UNRENDERED_ALLOWED: Record<string, string> = {};
+const UNRENDERED_ALLOWED: Record<string, string> = {
+  "view-card-recovery": "ViewRenderer's CardBoundary renders this only after a child throws during render, not for API errors. Exercised by views-card-failure.test.tsx with a throwing component double; no known contract-shaped HTTP fixture triggers it.",
+};
 
 /** pnpm runs this script from web/, so resolve a relative directory from where the caller started. */
 const resolve = (directory: string) => path.resolve(process.env.INIT_CWD ?? process.cwd(), directory);

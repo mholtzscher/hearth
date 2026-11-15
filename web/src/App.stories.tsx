@@ -353,3 +353,115 @@ export const PhoneCanvas: Story = {
     await expectNoHorizontalOverflow(canvasElement);
   },
 };
+
+export const DashboardLibrary: Story = {
+  parameters: { appPath: "/dashboards" },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("heading", { name: "Morning overview" })).toBeVisible();
+    await expect(canvas.getByRole("link", { name: "Open dashboard →" })).toHaveAttribute("href", dashboardPath);
+  },
+};
+
+export const EmptyDashboardLibrary: Story = {
+  parameters: { appPath: "/dashboards", applicationScenario: { dashboards: "empty" } },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("heading", { name: "Your first dashboard starts with a question." })).toBeVisible();
+    await expect(canvas.getByRole("link", { name: "Start a conversation →" })).toHaveAttribute("href", "/");
+  },
+};
+
+export const PhoneDashboardLibrary: Story = {
+  parameters: { appPath: "/dashboards" },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async context => {
+    await DashboardLibrary.play!(context);
+    await expectNoHorizontalOverflow(context.canvasElement);
+  },
+};
+
+export const DeleteDashboard: Story = {
+  parameters: { appPath: "/dashboards" },
+  play: async ({ canvas, userEvent }) => {
+    const remove = await canvas.findByRole("button", { name: "Delete Morning overview" });
+    await userEvent.click(remove);
+    const dialog = within(canvas.getByRole("dialog", { name: "Remove this dashboard?" }));
+    await expect(dialog.getByText(/Your home data and conversation remain unchanged/)).toBeVisible();
+    await userEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+    await expect(remove).toHaveFocus();
+    await userEvent.click(remove);
+    await userEvent.click(canvas.getByRole("button", { name: "Delete dashboard" }));
+    await expect(await canvas.findByRole("heading", { name: "Your first dashboard starts with a question." })).toBeVisible();
+  },
+};
+
+export const PhoneDeleteConfirmation: Story = {
+  parameters: { appPath: "/dashboards" },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Delete Morning overview" }));
+    const dialog = within(canvas.getByRole("dialog", { name: "Remove this dashboard?" }));
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await expect(dialog.getByText(/Your home data and conversation remain unchanged/)).toBeVisible();
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+export const SearchConversations: Story = {
+  parameters: { applicationScenario: { conversations: "searchable" } },
+  play: async ({ canvas, userEvent }) => {
+    const search = await canvas.findByRole("searchbox", { name: "Search conversations" });
+    await userEvent.type(search, "garden");
+    await expect(await canvas.findByText("No conversations match “garden”.")).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Clear search" }));
+    await expect(search).toHaveFocus();
+    await expect(canvas.getByRole("link", { name: conversationPrompt })).toBeVisible();
+    await userEvent.type(search, "garden");
+    await expect(within(canvas.getByRole("region", { name: "Recent" })).getByRole("status")).toHaveTextContent("No conversations match “garden”.");
+  },
+};
+
+export const PendingView: Story = {
+  parameters: { applicationScenario: { turn: "pending-view" } },
+  play: async context => {
+    await askTemperature(context);
+    await expect(await context.canvas.findByRole("heading", { name: "Preparing a view" })).toBeVisible();
+    await expect(context.canvas.getByRole("textbox", { name: "Ask Hearth" })).toBeDisabled();
+  },
+};
+
+export const SelectedViewMessage: Story = {
+  parameters: { appPath: conversationPath },
+  play: async context => {
+    await context.canvas.findByText(conversationReply);
+    await context.userEvent.click(context.canvas.getByRole("button", { name: "Open in canvas" }));
+    await askTemperature(context);
+    // History reconciliation replaces the streamed message after the reply arrives.
+    await waitFor(() => {
+      expect(context.canvas.getByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
+      expect(context.canvas.getByText(sentReply)).toBeVisible();
+      expect(context.canvas.getByText("Selected view: Morning overview")).toBeVisible();
+    });
+  },
+};
+
+export const InvalidConversationDraft: Story = {
+  parameters: { appPath: conversationPath },
+  play: async context => {
+    await context.canvas.findByText(conversationReply);
+    await context.userEvent.click(context.canvas.getByRole("button", { name: "Open in canvas" }));
+    await editTitle(context, "");
+    await expect(context.canvas.getByText("Fix or discard invalid draft edits before sending")).toBeVisible();
+    await expect(context.canvas.getByRole("button", { name: "Send message" })).toBeDisabled();
+  },
+};
+
+export const ReadingOlderMessages: Story = {
+  parameters: { appPath: conversationPath, applicationScenario: { messages: "long" } },
+  play: async ({ canvas }) => {
+    await canvas.findByText("Room 15 is comfortable. The temperature is 21.5 °C and the lamp is on.");
+    const log = canvas.getByRole("log");
+    await waitFor(() => expect(log.scrollTop).toBeGreaterThan(0));
+    log.scrollTo({ top: 0, behavior: "instant" });
+    await expect(await canvas.findByRole("button", { name: "Jump to latest" })).toBeVisible();
+  },
+};

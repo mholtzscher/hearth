@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, fn, within } from "storybook/test";
+import { http, HttpResponse } from "msw";
 import { entityId, fixtureEntity } from "../../../../.storybook/fixtures";
 import { expectNoHorizontalOverflow } from "../../../../.storybook/play";
 import { createCoreHandlers } from "../../../../.storybook/msw-handlers";
@@ -87,5 +88,44 @@ export const PhoneSheet: Story = {
     await userEvent.click(canvas.getByRole("button", { name: /Adjust color/ }));
     await expect(await within(canvasElement.ownerDocument.body).findByRole("dialog", { name: "Light color" })).toBeVisible();
     await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+export const WhiteAndColor: Story = {
+  args: {
+    controls: lightColorControls([
+      fixtureEntity(12),
+      fixtureEntity(12, {
+        id: entityId(16), type: "hearth.colortemp/v1", name: "Lamp white",
+        support: { state: { minimum: 153, maximum: 499 }, operations: { set: { step: 5 } } },
+        state: { ...fixtureEntity(12).state!, value: { active: false, value: 370 } },
+      }),
+    ]),
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /Adjust white or color/ }));
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await body.findByRole("button", { name: "White" }));
+    await expect(body.getByText(/Warm ·/)).toBeVisible();
+    await expect(body.getByText(/Cool ·/)).toBeVisible();
+  },
+};
+export const InlineFeedback: Story = {
+  args: { inlineFeedback: true },
+  beforeEach: ({ msw }) => {
+    msw.use(http.post(`/v1/entities/${entityId(12)}/commands`, () => HttpResponse.json({ detail: "Rejected" }, { status: 502 })));
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: /Adjust color/ });
+    await userEvent.click(trigger);
+    const body = within(canvasElement.ownerDocument.body);
+    const hex = await body.findByRole("textbox", { name: "Hex" });
+    await userEvent.clear(hex);
+    await userEvent.type(hex, "#ff0000");
+    await userEvent.click(body.getByRole("button", { name: "Set hex" }));
+    await expect(await body.findByRole("alert")).toHaveTextContent("Color: The light rejected the change.");
+    await userEvent.click(body.getByRole("button", { name: "Close color picker" }));
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("Color rejected");
+    await expect(canvas.getByText("Failed")).toBeVisible();
+    await expect(trigger).toHaveAccessibleDescription("Color rejected");
   },
 };

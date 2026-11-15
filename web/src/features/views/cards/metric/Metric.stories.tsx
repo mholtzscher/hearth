@@ -39,3 +39,10 @@ export const ReadFailed: Story = {
   beforeEach: ({ msw }) => { msw.use(entityScenario(102, "error")); },
   play: async ({ canvas }) => { await expect(await canvas.findByText(/Couldn't load this reading/)).toBeVisible(); },
 };
+export const RangeNotDeclared: Story = {
+  args: { label: "Outdoor temperature", source: { entity_id: entityId(101), entity_type: "hearth.temperature/v1" }, trend: undefined },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("9.4")).toBeVisible();
+    await expect(canvas.getByText("Range unavailable.")).toBeVisible();
+  },
+};

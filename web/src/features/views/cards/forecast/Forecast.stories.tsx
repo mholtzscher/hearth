@@ -1,8 +1,16 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
-import { entityId } from "../../../../../.storybook/fixtures";
-import { entityScenario } from "../../../../../.storybook/msw-handlers";
+import MockDate from "mockdate";
+import { expect, within } from "storybook/test";
+import { entityId, fixtureEntity, fixtureNow } from "../../../../../.storybook/fixtures";
+import { createCoreHandlers, entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundForecast } from "./Forecast";
+import { localDate } from "./upcoming";
+
+function nextMidnight() {
+  const midnight = new Date(fixtureNow);
+  midnight.setHours(24, 0, 0, 0);
+  return midnight;
+}
 
 const meta = {
   component: BoundForecast,
@@ -28,4 +36,45 @@ export const Daily: Story = {
 export const NeverObserved: Story = {
   beforeEach: ({ msw }) => { msw.use(entityScenario(201, "unobserved")); },
   play: async ({ canvas }) => { await expect(await canvas.findByText("Never observed")).toBeVisible(); },
+};
+export const CrossingMidnight: Story = {
+  beforeEach: ({ msw }) => {
+    const now = nextMidnight().getTime() - 2 * 3_600_000 + 30_000;
+    MockDate.set(now);
+    const forecast = fixtureEntity(201);
+    forecast.state!.observed_at = new Date(now).toISOString();
+    forecast.state!.adapter_received_at = new Date(now).toISOString();
+    const value = forecast.state!.value as { periods: { starts_at: string }[] };
+    // Forecast periods start on the UTC hour, even in fractional-offset zones.
+    const start = Math.floor(now / 3_600_000) * 3_600_000;
+    value.periods.forEach((period, index) => {
+      period.starts_at = new Date(start + index * 3_600_000).toISOString();
+    });
+    msw.use(...createCoreHandlers([forecast]));
+    return () => MockDate.set(fixtureNow);
+  },
+  play: async ({ canvas }) => {
+    const chart = await canvas.findByRole("img", { name: /Next 12 hours/ });
+    const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(nextMidnight());
+    const label = await within(chart).findByText(weekday);
+    await expect(label.previousElementSibling?.tagName.toLowerCase()).toBe("line");
+    await expect(label.previousElementSibling).toHaveAttribute("y1", "10");
+    await expect(label.previousElementSibling).toHaveAttribute("y2", "176");
+  },
+};
+export const PartialUnavailableForecast: Story = {
+  args: Daily.args,
+  beforeEach: ({ msw }) => {
+    const forecast = fixtureEntity(202);
+    const value = forecast.state!.value as { periods: { date: string }[] };
+    const yesterday = new Date(fixtureNow);
+    yesterday.setDate(yesterday.getDate() - 1);
+    value.periods[0].date = localDate(yesterday.getTime());
+    forecast.availability.status = "unavailable";
+    msw.use(...createCoreHandlers([forecast]));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText(/Showing the remaining days of a forecast/)).toBeVisible();
+    await expect(canvas.getAllByRole("listitem", { name: /low/ })).toHaveLength(6);
+  },
 };

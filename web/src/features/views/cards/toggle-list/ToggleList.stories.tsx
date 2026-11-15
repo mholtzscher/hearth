@@ -40,3 +40,11 @@ export const OneTargetUnavailable: Story = {
   beforeEach: ({ msw }) => { msw.use(entityScenario(3, "unavailable")); },
   play: async ({ canvas }) => { await expect(await canvas.findByText("Unavailable")).toBeVisible(); },
 };
+export const ReadOnlyRow: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(3, "read-only")); },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Read-only")).toBeVisible();
+    await expect(canvas.queryByRole("switch", { name: /Fan/ })).not.toBeInTheDocument();
+    await expect(await canvas.findByRole("switch", { name: /Plug/ })).toBeVisible();
+  },
+};

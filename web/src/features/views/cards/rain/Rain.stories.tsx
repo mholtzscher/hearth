@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { entityId } from "../../../../../.storybook/fixtures";
 import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
+import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundRain } from "./Rain";
 
 const meta = {
@@ -37,5 +38,12 @@ export const Phone: Story = {
   play: async ({ canvas, canvasElement }) => {
     await canvas.findByText("18.6");
     await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+export const RateUnavailable: Story = {
+  beforeEach: ({ msw }) => { msw.use(entityScenario(105, "unavailable")); },
+  play: async ({ canvas }) => {
+    await canvas.findByText("18.6");
+    await expect(await canvas.findByText("Unavailable")).toBeVisible();
   },
 };
