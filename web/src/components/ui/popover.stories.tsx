@@ -5,7 +5,6 @@ import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigg
 
 const meta = {
   component: Popover,
-  tags: ["ai-generated"],
   args: {
     children: <>
       <PopoverTrigger>Reading details</PopoverTrigger>
@@ -24,7 +23,6 @@ export const OpenAndDismiss: Story = {
     const trigger = canvas.getByRole("button", { name: "Reading details" });
     await userEvent.click(trigger);
     const body = within(canvasElement.ownerDocument.body);
-    // The portal exists before its fade-in makes it visible.
     await waitFor(() => expect(body.getByRole("dialog", { name: "Living room reading" })).toBeVisible());
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(trigger).toHaveFocus());

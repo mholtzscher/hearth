@@ -190,6 +190,16 @@ Input and NativeSelect default to 32px high with 4px vertical padding. The `touc
 
 Textarea has a 44px minimum height and 8px vertical padding. Its native `rows` prop controls the initial multiline height; it does not auto-grow with content. Caller typography overrides remain available for diagnostic JSON and identifiers. Existing household editor fields keep their handwritten 6px corners until their adoption units; comparison stories assert that approved 6px-to-8px change separately.
 
+### Dialogs and popovers
+
+`components/ui/Dialog` uses the household gray-2 surface, 14px corners, dim backdrop, and centered decision layout. `placement="bottom"` becomes a viewport-bounded sheet at 720px and below, with 14px top corners, square bottom corners, and safe-area padding. Short desktop viewports allow the dialog body to scroll.
+
+For modal dialogs, Radix owns focus containment, Escape dismissal, and focus return to a registered trigger. Programmatically opened adopters must preserve their own return-focus target. Non-modal dialogs do not trap focus or render an overlay.
+
+Use modal `forceMount` only while an exit transition intentionally retains a blocking modal. It retains the closed portal, content, and overlay, including scroll locking and hiding the rest of the page from assistive technology. Setting `hidden` on the content does not dismiss that overlay or release those effects. End the transition by removing `forceMount` or unmounting the dialog; do not leave a closed modal mounted indefinitely.
+
+`components/ui/Popover` uses the Source popover's gray-2 surface, 12px corners, 22px padding, and available-height scrolling. Its 10px flex gap serves Development Connection Settings; Source adoption supplies its own inner spacing.
+
 ### Notices
 
 `components/ui/Notice` uses the household error tint: a 45% destructive-colour border, an 8% destructive-colour background, foreground text, 8px corners, and 12px padding. Its text uses the 12px caption step with an 18px line height. Notices grow with their content rather than taking a control height.

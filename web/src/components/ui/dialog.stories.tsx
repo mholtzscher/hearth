@@ -49,30 +49,43 @@ export const Keyboard: Story = {
   },
 };
 
-/** forceMount keeps the closed portal, overlay, and content available to the caller. */
+/** A retained modal blocks the page until its caller finishes the exit and unmounts it. */
 export const ClosedForceMount: Story = {
-  render: () => <>
-    <Dialog open={false}>
-      <DialogContent forceMount hidden>
-        <DialogTitle>Retained decision</DialogTitle>
-        <DialogDescription>Retained while closed.</DialogDescription>
-      </DialogContent>
-    </Dialog>
-    <Dialog open={false}>
-      <DialogContent>
-        <DialogTitle>Normally unmounted</DialogTitle>
-      </DialogContent>
-    </Dialog>
-  </>,
-  play: async ({ canvasElement }) => {
+  render: function RetainedModal() {
+    const [retained, setRetained] = useState(true);
+    return <>
+      <Dialog open={false}>
+        <DialogTrigger asChild><Button variant="outline">Outside control</Button></DialogTrigger>
+        <DialogContent forceMount={retained ? true : undefined}>
+          <DialogTitle>Retained decision</DialogTitle>
+          <DialogDescription>The exit transition still blocks the page until this content unmounts.</DialogDescription>
+          <Button onClick={() => setRetained(false)}>Finish exit</Button>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={false}>
+        <DialogContent>
+          <DialogTitle>Normally unmounted</DialogTitle>
+        </DialogContent>
+      </Dialog>
+    </>;
+  },
+  play: async ({ canvasElement, userEvent }) => {
     const body = canvasElement.ownerDocument.body;
     const content = body.querySelector('[data-slot="dialog-content"]');
     const overlay = body.querySelector('[data-slot="dialog-overlay"]');
     await expect(content).toHaveAttribute("data-state", "closed");
-    await expect(content).toHaveAttribute("hidden");
+    await expect(content).toBeVisible();
     await expect(within(body).getByText("Retained decision")).toBeInTheDocument();
     await expect(overlay).toHaveAttribute("data-state", "closed");
+    await expect(overlay).toBeVisible();
     await expect(within(body).queryByText("Normally unmounted")).not.toBeInTheDocument();
+    await expect(within(body).queryByRole("button", { name: "Outside control" })).not.toBeInTheDocument();
+    await userEvent.click(within(body).getByRole("button", { name: "Finish exit" }));
+    await waitFor(() => expect(body.querySelector('[data-slot="dialog-content"]')).not.toBeInTheDocument());
+    await expect(body.querySelector('[data-slot="dialog-overlay"]')).not.toBeInTheDocument();
+    const outside = within(body).getByRole("button", { name: "Outside control" });
+    await expect(outside).toBeVisible();
+    await waitFor(() => expect(outside).toHaveFocus());
   },
 };
 
