@@ -29,3 +29,12 @@ export const OpenAndDismiss: Story = {
     await waitFor(() => expect(trigger).toHaveFocus());
   },
 };
+
+/** The open state remains visible for visual comparison during migration. */
+export const Open: Story = {
+  args: { defaultOpen: true },
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    await waitFor(() => expect(body.getByRole("dialog", { name: "Living room reading" })).toBeVisible());
+  },
+};
