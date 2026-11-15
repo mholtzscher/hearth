@@ -17,6 +17,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+async function expectSelected(button: HTMLElement) {
+  const reference = button.ownerDocument.createElement("span");
+  reference.style.backgroundColor = "color-mix(in oklch, rgb(167, 123, 255) 16%, transparent)";
+  button.ownerDocument.body.append(reference);
+  const expectedBackground = getComputedStyle(reference).backgroundColor;
+  reference.remove();
+  const style = getComputedStyle(button);
+  await expect(style.backgroundColor).toBe(expectedBackground);
+  await expect(style.color).toBe("rgb(196, 168, 255)");
+  await expect(style.boxShadow).toContain("rgb(167, 123, 255) 0px 0px 0px 1px inset");
+}
+
 export const Default: Story = {
   play: async ({ canvas, userEvent, args }) => {
     const group = within(canvas.getByRole("group", { name: "Purifier mode" }));
@@ -24,6 +36,9 @@ export const Default: Story = {
     await expect(group.getByRole("button", { name: "Sleep" })).toHaveAttribute("aria-pressed", "false");
     await expect(group.getByRole("button", { name: "Manual" })).toBeDisabled();
     await expect(getComputedStyle(group.getByRole("button", { name: "Auto" })).height).toBe("32px");
+    await expectSelected(group.getByRole("button", { name: "Auto" }));
+    await expect(getComputedStyle(group.getByRole("button", { name: "Sleep" })).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    await expect(getComputedStyle(group.getByRole("button", { name: "Manual" })).opacity).toBe("0.5");
     await userEvent.click(group.getByRole("button", { name: "Sleep" }));
     await expect(args.onValueChange).toHaveBeenCalledWith("sleep");
     await expect(group.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
@@ -64,6 +79,8 @@ export const Controlled: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Sleep" }));
     await expect(canvas.getByRole("button", { name: "Sleep" })).toHaveAttribute("aria-pressed", "true");
     await expect(canvas.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "false");
+    await expectSelected(canvas.getByRole("button", { name: "Sleep" }));
+    await expect(getComputedStyle(canvas.getByRole("button", { name: "Auto" })).backgroundColor).toBe("rgba(0, 0, 0, 0)");
     await expect(args.onValueChange).not.toHaveBeenCalled();
   },
 };
@@ -117,56 +134,12 @@ export const Disabled: Story = {
   play: async ({ canvas, userEvent, args }) => {
     const buttons = canvas.getAllByRole("button");
     for (const button of buttons) await expect(button).toBeDisabled();
+    const selected = canvas.getByRole("button", { name: "Auto" });
+    await expect(selected).toHaveAttribute("aria-pressed", "true");
+    await expectSelected(selected);
+    await expect(getComputedStyle(selected).opacity).toBe("0.5");
+    await expect(getComputedStyle(canvas.getByRole("button", { name: "Sleep" })).opacity).toBe("0.5");
     await userEvent.click(buttons[1]);
     await expect(args.onValueChange).not.toHaveBeenCalled();
-  },
-};
-
-/** Temporary migration reference. Remove after the air-purifier control adopts the shared component. */
-export const HouseholdComparison: Story = {
-  render: args => <div className="grid gap-4">
-    <SegmentedControl {...args} label="Shared mode" />
-    <div role="group" aria-label="Legacy mode" className="view-air-purifier-segmented">
-      {options.map(option => <button key={option.value} type="button" aria-pressed={args.value === option.value}
-        disabled={option.disabled}>{option.label}</button>)}
-    </div>
-    <SegmentedControl {...args} label="Disabled shared mode" disabled />
-    <div role="group" aria-label="Disabled legacy mode" className="view-air-purifier-segmented">
-      {options.map(option => <button key={option.value} type="button" aria-pressed={args.value === option.value}
-        disabled>{option.label}</button>)}
-    </div>
-  </div>,
-  play: async ({ canvas, canvasElement }) => {
-    await canvasElement.ownerDocument.fonts.ready;
-    const shared = within(canvas.getByRole("group", { name: "Shared mode" }));
-    const legacy = within(canvas.getByRole("group", { name: "Legacy mode" }));
-    const sharedFrame = getComputedStyle(canvas.getByRole("group", { name: "Shared mode" }));
-    const legacyFrame = getComputedStyle(canvas.getByRole("group", { name: "Legacy mode" }));
-    for (const property of ["backgroundColor", "borderColor", "borderWidth", "borderStyle", "borderRadius", "padding", "gap"] as const) {
-      await expect(sharedFrame[property], `frame: ${property}`).toBe(legacyFrame[property]);
-    }
-    for (const name of ["Auto", "Sleep"]) {
-      const a = getComputedStyle(shared.getByRole("button", { name }));
-      const b = getComputedStyle(legacy.getByRole("button", { name }));
-      for (const property of ["backgroundColor", "color", "fontFamily", "fontSize", "fontWeight", "lineHeight"] as const) {
-        await expect(a[property], `${name}: ${property}`).toBe(b[property]);
-      }
-      if (name === "Auto") await expect(a.boxShadow).toContain(b.boxShadow);
-      await expect(a.height).toBe("32px");
-      await expect(b.height).toBe("38px");
-      await expect(a.borderRadius).toBe("8px");
-      await expect(b.borderRadius).toBe("6px");
-    }
-    const enabledSelected = getComputedStyle(shared.getByRole("button", { name: "Auto" }));
-    const disabledShared = getComputedStyle(within(canvas.getByRole("group", { name: "Disabled shared mode" })).getByRole("button", { name: "Auto" }));
-    const disabledLegacy = getComputedStyle(within(canvas.getByRole("group", { name: "Disabled legacy mode" })).getByRole("button", { name: "Auto" }));
-    await expect(disabledShared.backgroundColor).toBe(enabledSelected.backgroundColor);
-    await expect(disabledShared.color).toBe(enabledSelected.color);
-    await expect(disabledShared.boxShadow).toBe(enabledSelected.boxShadow);
-    await expect(disabledShared.opacity).toBe("0.5");
-    await expect(disabledLegacy.backgroundColor).toBe("rgb(31, 31, 31)");
-    await expect(disabledLegacy.color).toBe("rgb(125, 125, 125)");
-    await expect(disabledLegacy.boxShadow).toContain("rgb(61, 61, 61)");
-    await expect(disabledLegacy.opacity).toBe("1");
   },
 };
