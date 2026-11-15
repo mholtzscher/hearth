@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn } from "storybook/test";
+import { expect, fn, waitFor, within } from "storybook/test";
 import { PlusIcon } from "lucide-react";
 import { Button } from "./button.tsx";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
@@ -52,17 +52,21 @@ export const Variants: Story = {
 export const Sizes: Story = {
   render: () => (
     <div className="flex flex-wrap items-center gap-3">
-      <Button size="xs">Extra small</Button>
-      <Button size="sm">Small</Button>
       <Button>Default</Button>
-      <Button size="lg">Large</Button>
-      <Button size="icon-xs" aria-label="Extra small icon"><PlusIcon /></Button>
-      <Button size="icon-sm" aria-label="Small icon"><PlusIcon /></Button>
+      <Button size="touch">Touch</Button>
       <Button size="icon" aria-label="Default icon"><PlusIcon /></Button>
-      <Button size="icon-lg" aria-label="Large icon"><PlusIcon /></Button>
+      <Button size="icon-touch" aria-label="Touch icon"><PlusIcon /></Button>
     </div>
   ),
-  play: async ({ canvasElement }) => expectNoHorizontalOverflow(canvasElement),
+  play: async ({ canvas, canvasElement }) => {
+    for (const [name, height] of [["Default", "32px"], ["Touch", "44px"], ["Default icon", "32px"], ["Touch icon", "44px"]]) {
+      const button = canvas.getByRole("button", { name });
+      await expect(getComputedStyle(button).height).toBe(height);
+      await expect(getComputedStyle(button).borderRadius).toBe("8px");
+      if (name.includes("icon")) await expect(getComputedStyle(button).width).toBe(height);
+    }
+    await expectNoHorizontalOverflow(canvasElement);
+  },
 };
 
 export const DisabledVariants: Story = {
@@ -82,10 +86,18 @@ export const DisabledVariants: Story = {
 };
 
 export const KeyboardActivation: Story = {
-  args: { onClick: fn() },
+  args: { size: "touch", onClick: fn() },
   play: async ({ canvas, userEvent, args }) => {
     await userEvent.tab();
-    await expect(canvas.getByRole("button", { name: "Save dashboard" })).toHaveFocus();
+    const button = canvas.getByRole("button", { name: "Save dashboard" });
+    await expect(button).toHaveFocus();
+    const style = getComputedStyle(button);
+    await expect(style.height).toBe("44px");
+    await expect(style.borderRadius).toBe("8px");
+    await expect(style.outlineWidth).toBe("2px");
+    await expect(style.outlineStyle).toBe("solid");
+    await expect(style.outlineOffset).toBe("3px");
+    await waitFor(() => expect(getComputedStyle(button).outlineColor).toBe("rgb(167, 123, 255)"));
     await userEvent.keyboard("{Enter}");
     await userEvent.keyboard(" ");
     await expect(args.onClick).toHaveBeenCalledTimes(2);
@@ -117,12 +129,29 @@ export const HouseholdComparison: Story = {
             <button type="button" disabled={disabled} aria-label="Legacy Discard changes">Discard changes</button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button disabled={disabled}>Save dashboard</Button>
-            <Button variant="outline" disabled={disabled}>Discard changes</Button>
+            <Button size="touch" disabled={disabled}>Save dashboard</Button>
+            <Button size="touch" variant="outline" disabled={disabled}>Discard changes</Button>
           </div>
         </section>
       ))}
     </div>
   ),
-  play: async ({ canvasElement }) => expectNoHorizontalOverflow(canvasElement),
+  play: async ({ canvas, canvasElement }) => {
+    await canvasElement.ownerDocument.fonts.ready;
+    const properties = [
+      "height", "width", "backgroundColor", "color", "borderColor", "borderWidth",
+      "borderStyle", "borderRadius", "fontFamily", "fontSize", "fontWeight", "lineHeight", "padding", "opacity",
+    ] as const;
+    for (const state of ["Ready actions", "Disabled actions"]) {
+      const group = within(canvas.getByRole("region", { name: state }));
+      for (const name of ["Save dashboard", "Discard changes"]) {
+        const legacy = getComputedStyle(group.getByRole("button", { name: `Legacy ${name}` }));
+        const shared = getComputedStyle(group.getByRole("button", { name }));
+        for (const property of properties) {
+          await expect(shared[property], `${state}: ${name} ${property}`).toBe(legacy[property]);
+        }
+      }
+    }
+    await expectNoHorizontalOverflow(canvasElement);
+  },
 };

@@ -35,7 +35,7 @@ export default function EntityEventHistory({
   const scopeKey = `${entityId}|${baseVersion}|${nonce}`;
   return (
     <div>
-      <Button size="sm" variant="outline" onClick={() => setNonce((n) => n + 1)}>
+      <Button size="default" variant="outline" onClick={() => setNonce((n) => n + 1)}>
         Latest / Refresh history
       </Button>
       <p className="mt-1.5 text-xs text-muted-foreground">
@@ -121,7 +121,7 @@ function EventHistoryScope({
           )}
           {data.next_cursor && (
             <Button
-              size="sm"
+              size="default"
               variant="outline"
               className="mt-2"
               onClick={() => setCursor(data.next_cursor)}

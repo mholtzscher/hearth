@@ -312,7 +312,7 @@ function CommandHistory({ entityId }: { entityId: string }) {
   return (
     <div>
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+        <Button size="default" variant="outline" onClick={() => void refresh()}>
           Refresh history
         </Button>
         {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
@@ -350,7 +350,7 @@ function CommandHistory({ entityId }: { entityId: string }) {
             </TableBody>
           </Table>
           {data.next_cursor && (
-            <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+            <Button size="default" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
               Next page
             </Button>
           )}
@@ -404,7 +404,7 @@ function AvailabilityHistory({ entityId }: { entityId: string }) {
         </TableBody>
       </Table>
       {data?.next_cursor && (
-        <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+        <Button size="default" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
           Next page
         </Button>
       )}
@@ -519,7 +519,7 @@ export default function EntityDetailPage() {
             status={data.enabled ? "ok" : "disabled"}
           />
         )}
-        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+        <Button size="default" variant="outline" onClick={() => void refresh()}>
           Refresh
         </Button>
         {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
@@ -590,7 +590,7 @@ export default function EntityDetailPage() {
                       {presetsFor(data?.type, data?.support).map((p) => (
                         <Button
                           key={p.label}
-                          size="xs"
+                          size="default"
                           variant="outline"
                           onClick={() => { setParamsText(p.params); setParamsTouched(true); }}
                         >
@@ -625,7 +625,7 @@ export default function EntityDetailPage() {
                     </div>
                   </div>
                   <div>
-                    <Button size="sm" disabled={sending} onClick={() => void sendCommand()}>
+                    <Button size="default" disabled={sending} onClick={() => void sendCommand()}>
                       {sending ? "Sending…" : "Send command"}
                     </Button>
                   </div>

@@ -68,7 +68,7 @@ function AdapterHealthHistory({ adapterId }: { adapterId: string }) {
         </TableBody>
       </Table>
       {data?.next_cursor && (
-        <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+        <Button size="default" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
           Next page
         </Button>
       )}
@@ -85,7 +85,7 @@ function AdapterDetail({ adapterId }: { adapterId: string }) {
     return (
       <>
         <ErrorBox error={error} />
-        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+        <Button size="default" variant="outline" onClick={() => void refresh()}>
           Retry
         </Button>
       </>
@@ -151,11 +151,11 @@ export default function AdaptersPage() {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
-        <Button size="sm" variant="outline" onClick={() => { void refresh(); setDetailNonce((n) => n + 1); }}>
+        <Button size="default" variant="outline" onClick={() => { void refresh(); setDetailNonce((n) => n + 1); }}>
           Refresh
         </Button>
         <Button
-          size="sm"
+          size="default"
           variant="ghost"
           onClick={() => {
             setSelected("");
@@ -202,7 +202,7 @@ export default function AdaptersPage() {
             </TableBody>
           </Table>
           {data.next_cursor && (
-            <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+            <Button size="default" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
               Next page
             </Button>
           )}

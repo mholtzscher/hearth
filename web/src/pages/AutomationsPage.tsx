@@ -49,9 +49,9 @@ export default function AutomationsPage() {
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-2 text-lg font-semibold">Automations</h1>
-        {workspace ? <Button size="sm" onClick={workspace.newAutomation}>New Automation</Button> : <Button size="sm" asChild><RouterLink to="/automations/new">New Automation</RouterLink></Button>}
-        <div role="group" aria-label="Library layout"><Button size="sm" variant="outline" aria-pressed={layout === "cards"} onClick={() => setLayout("cards")}>Cards</Button><Button size="sm" variant="outline" aria-pressed={layout === "table"} onClick={() => setLayout("table")}>Table</Button></div>
-        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+        {workspace ? <Button size="default" onClick={workspace.newAutomation}>New Automation</Button> : <Button size="default" asChild><RouterLink to="/automations/new">New Automation</RouterLink></Button>}
+        <div role="group" aria-label="Library layout"><Button size="default" variant="outline" aria-pressed={layout === "cards"} onClick={() => setLayout("cards")}>Cards</Button><Button size="default" variant="outline" aria-pressed={layout === "table"} onClick={() => setLayout("table")}>Table</Button></div>
+        <Button size="default" variant="outline" onClick={() => void refresh()}>
           Refresh
         </Button>
         {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
@@ -119,7 +119,7 @@ export default function AutomationsPage() {
           </Table>}
           {data.next_cursor && (
             <Button
-              size="sm"
+              size="default"
               variant="outline"
               className="mt-2"
               onClick={() => setCursor(data.next_cursor)}

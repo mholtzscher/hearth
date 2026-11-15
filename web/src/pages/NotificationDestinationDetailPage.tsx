@@ -33,7 +33,7 @@ function DestinationDetail({ id }: { id: string }) {
     <Link className={linkClass} to="/notification-destinations">All destinations</Link>
     <h1 className="mt-3 text-lg font-semibold">{data?.name ?? "Notification destination"}</h1>
     <p className="font-mono text-xs">{id}</p>
-    <Button className="mt-2" variant="outline" size="sm" onClick={() => void refresh()}>Refresh destination</Button>
+    <Button className="mt-2" variant="outline" size="default" onClick={() => void refresh()}>Refresh destination</Button>
     {loading && <p>Loading…</p>}
     {error && <ErrorBox error={error} />}
     {data && <>

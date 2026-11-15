@@ -450,7 +450,7 @@ export default function EntityStateHistory({
           {FILTERS.map((option) => (
             <Button
               key={option.value}
-              size="sm"
+              size="default"
               variant={filter === option.value ? "default" : "outline"}
               aria-pressed={filter === option.value}
               onClick={() => setFilter(option.value)}
@@ -459,7 +459,7 @@ export default function EntityStateHistory({
             </Button>
           ))}
         </div>
-        <Button size="sm" variant="outline" onClick={() => setNonce((n) => n + 1)}>
+        <Button size="default" variant="outline" onClick={() => setNonce((n) => n + 1)}>
           Latest / Refresh history
         </Button>
       </div>
@@ -571,7 +571,7 @@ function HistoryScope({
           )}
           {data.next_cursor && (
             <Button
-              size="sm"
+              size="default"
               variant="outline"
               className="mt-2"
               onClick={() => setCursor(data.next_cursor)}
