@@ -53,5 +53,5 @@ function Row({ row }: { row: ReturnType<typeof rowStates>[number] }) {
 
 /** Name and reading rows, each carrying its own status. */
 export function ReadingRows({ rows, className }: { rows: ReturnType<typeof rowStates>; className?: string }) {
-  return <ul className={cn("view-rows", className)}>{rows.map(row => <Row key={row.key} row={row} />)}</ul>;
+  return <ul className={cn("-my-1 grid list-none", className)}>{rows.map(row => <Row key={row.key} row={row} />)}</ul>;
 }

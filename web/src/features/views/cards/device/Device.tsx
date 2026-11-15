@@ -5,6 +5,7 @@ import { useRead } from "../../data/provider";
 import { deviceReading, deviceRequest, lightEntities, lightReading, MAX_DEVICE_ROWS, type FieldDevice, type LightReading } from "../../bindings/device";
 import type { Resolved } from "../../bindings/types";
 import { CardFrame, StatusList } from "../CardFrame";
+import { Reading, ReadingUnit } from "../Reading";
 import { statusEntry } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates, type ReadingRow } from "../reading-list/ReadingRows";
 import { BrightnessSlider } from "../../controls/BrightnessSlider";
@@ -43,11 +44,11 @@ function Light({ light, rows, name, entities }: { light: LightReading; rows: Ret
   // The slider states the level, so the detail line doesn't repeat it.
   const detailLevel = !light.on && level !== undefined && !dimmable;
   return <>
-    <div data-slot="light" className="view-light">
-      <span data-slot="light-swatch" className="view-light-swatch" aria-hidden="true" data-off={!light.on || empty || undefined} data-dimmed={dimmed || colorDimmed || undefined} style={{ backgroundColor: light.on && !empty ? light.swatch : undefined }} />
-      <p className="view-metric-value" data-value={empty ? "empty" : dimmed ? "dimmed" : "live"}>
-        {empty ? "—" : light.on ? <>On{!dimmable && level !== undefined && <small>{level} %</small>}</> : "Off"}
-      </p>
+    <div data-slot="light" className="flex items-center gap-3.5">
+      <span data-slot="light-swatch" className="size-8 shrink-0 rounded-full border border-gray-5 bg-gray-9 data-[off]:bg-transparent data-[dimmed]:opacity-45" aria-hidden="true" data-off={!light.on || empty || undefined} data-dimmed={dimmed || colorDimmed || undefined} style={{ backgroundColor: light.on && !empty ? light.swatch : undefined }} />
+      <Reading value={empty ? "empty" : dimmed ? "dimmed" : "live"}>
+        {empty ? "—" : light.on ? <>On{!dimmable && level !== undefined && <ReadingUnit>{level} %</ReadingUnit>}</> : "Off"}
+      </Reading>
       <LightColorPicker controls={controls} activeId={light.color?.id} name={name} observed={light.colorText}
         open={colorOpen} onOpenChange={setColorOpen} brightnessId={dimmable ? light.brightness.id : undefined}
         powerId={switchable ? light.power.id : undefined}
@@ -55,13 +56,13 @@ function Light({ light, rows, name, entities }: { light: LightReading; rows: Ret
       {switchable && <PowerSwitch entity={light.power} label={`${name} power`} />}
     </div>
     {switchable && ((!dimmable ? feedback : powerFeedback) ?? <ControlStatus entityId={light.power.id} pending={requested => requested === true ? "Turning on…" : "Turning off…"} />)}
-    {!empty && (detailLevel || light.colorText) && <p data-slot="light-detail" className="view-light-detail">
-      {detailLevel && <span data-dimmed={brightness.status.value === "dimmed" || undefined}>Brightness {level} %{light.colorText ? " · " : ""}</span>}
-      <span data-dimmed={colorDimmed || undefined}>{light.colorText}</span>
+    {!empty && (detailLevel || light.colorText) && <p data-slot="light-detail" className="mt-2 text-label leading-normal text-gray-9 tabular-nums">
+      {detailLevel && <span className="data-[dimmed]:text-gray-8" data-dimmed={brightness.status.value === "dimmed" || undefined}>Brightness {level} %{light.colorText ? " · " : ""}</span>}
+      <span className="data-[dimmed]:text-gray-8" data-dimmed={colorDimmed || undefined}>{light.colorText}</span>
     </p>}
-    {light.colorPreviewUnavailable && <p className="view-chart-note">Color preview unavailable; canonical reading is missing or out of date.</p>}
+    {light.colorPreviewUnavailable && <p className="mb-2 text-label leading-normal text-muted-foreground">Color preview unavailable; canonical reading is missing or out of date.</p>}
     {dimmable && <BrightnessSlider key={light.brightness.id} entity={light.brightness} label={`${name} brightness`} feedback={feedback} />}
-    {rows.filter(row => row.status.entries.length).map(row => <div data-slot="light-status" className="view-light-status" key={row.key}>
+    {rows.filter(row => row.status.entries.length).map(row => <div data-slot="light-status" className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-muted-foreground" key={row.key}>
       <span>{row.name}</span><StatusList entries={row.status.entries} />
     </div>)}
   </>;
@@ -96,14 +97,14 @@ export function DeviceCard({ deviceId, label, resource, canonical, canonicalErro
   }
   const title = label ?? device?.name ?? "Device";
   const status = device ? [...(resource.refreshFailed ? [statusEntry("refresh-failed")] : []), ...(canonicalError ? [statusEntry("error", `Couldn't load canonical light State: ${canonicalError}`)] : [])] : [statusEntry(resource.status === "missing" ? "device-missing" : resource.status === "loading" ? "loading" : "error", resource.error)];
-  return <CardFrame title={title} className="view-device" status={status}
+  return <CardFrame title={title} status={status}
     observedAt={oldestObservation(displayed)} observedLabel="Oldest reading" arrivals={arrivals} sources={rowSources(allRows)}
     sourceExtra={<p><Link className="text-link underline underline-offset-[3px] focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring" to={`/devices/${deviceId}`}>Device details</Link> <code className="mt-1 block text-caption text-muted-foreground">{deviceId}</code></p>}>
     {light && device && <Light light={light} rows={compositeStates} name={title} entities={device.entities} />}
-    {shown.length > 0 && <ReadingRows rows={states} />}
-    {device && !light && shown.length === 0 && <p className="view-empty">No readable Entities on this Device.</p>}
-    {additional.length > MAX_DEVICE_ROWS && <p className="view-chart-note">Showing {MAX_DEVICE_ROWS} of {additional.length} readings. Open Source for every Entity.</p>}
-    {!device && <p className="view-metric-value" data-value="empty">—</p>}
+    {shown.length > 0 && <ReadingRows className={light && device ? "mt-3" : undefined} rows={states} />}
+    {device && !light && shown.length === 0 && <p className="py-6 text-label leading-normal text-muted-foreground">No readable Entities on this Device.</p>}
+    {additional.length > MAX_DEVICE_ROWS && <p className="mb-2 text-label leading-normal text-muted-foreground">Showing {MAX_DEVICE_ROWS} of {additional.length} readings. Open Source for every Entity.</p>}
+    {!device && <Reading value="empty">—</Reading>}
   </CardFrame>;
 }
 

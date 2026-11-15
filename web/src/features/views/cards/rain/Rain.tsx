@@ -6,7 +6,7 @@ import { listArrivals, oldestObservation, rowSources, rowStates } from "../readi
 import { Trend, trendMethod } from "../metric/Trend";
 import { rainWord } from "../weather/formulas";
 import { canonicalValue, derivedTreatment, formatReading, shownData } from "../weather/readings";
-import { SlotStatus, slotRows, useWeatherReads, WeatherReading, WeatherZones, type WeatherRead } from "../weather/WeatherParts";
+import { SlotStatus, slotRows, useWeatherReads, WeatherReading, WeatherZones, weatherTrendParts, type WeatherRead } from "../weather/WeatherParts";
 import { rainPeriods, rainSchema, type RainPeriod } from "./schema";
 
 type Props = z.infer<typeof rainSchema>;
@@ -58,7 +58,7 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
       <p>Totals are the station's own counters, which it resets for each storm, day, week, month and year.</p>
       {trend && trendMethod(trend)}
     </>}>
-    <WeatherZones aside={trend && history && rateStatus.value !== "empty" && <Trend window={trend} resource={history} dimmed={rateStatus.value === "dimmed"} />}>
+    <WeatherZones aside={trend && history && rateStatus.value !== "empty" && <Trend window={trend} resource={history} dimmed={rateStatus.value === "dimmed"} className="@min-[460px]:mt-0" bandClassName="fill-chart-4" classNames={{ ...weatherTrendParts, mean: rateStatus.value !== "dimmed" ? "stroke-[color:color-mix(in_oklch,var(--chart-4)_50%,var(--gray-9))]" : undefined }} />}>
       {stormLeads ? <>
         <WeatherReading data={stormData} status={status} />
         <p className="view-weather-conditions" data-value={derivedTreatment(stormReading, rateReading)}>This storm{!rateData ? "" : mmPerHour === undefined ? ` · Rate ${formatReading(rateData)}` : word ? ` · ${word} now, ${formatReading(rateData)}` : " · Stopped for now"}</p>

@@ -2,6 +2,7 @@ import { useReadings } from "../../bindings/registry";
 import type { EntitySource, Resolved, TextData, Words } from "../../bindings/types";
 import { CardFrame } from "../CardFrame";
 import { cardStatus } from "../status";
+import { Reading } from "../Reading";
 
 /**
  * A yes/no or text State field in words at the reading scale, such as Open,
@@ -11,10 +12,10 @@ import { cardStatus } from "../status";
 export function StateCard({ label, resource }: { label?: string; resource: Resolved<TextData> }) {
   const status = cardStatus(resource);
   const data = status.value === "empty" ? undefined : resource.data;
-  return <CardFrame className="view-state" classNames={{ timeLabel: "@max-[200px]:hidden", footer: "@max-[200px]:gap-2", sourceToggle: "@max-[200px]:-me-1 @max-[200px]:px-1" }} compactTimeLabel title={label ?? resource.metadata?.label ?? "State"} status={status.entries} observedAt={data?.observed_at}
+  return <CardFrame className="@container" classNames={{ timeLabel: "@max-[200px]:hidden", footer: "@max-[200px]:gap-2", sourceToggle: "@max-[200px]:-me-1 @max-[200px]:px-1" }} compactTimeLabel title={label ?? resource.metadata?.label ?? "State"} status={status.entries} observedAt={data?.observed_at}
     arrival={data ? { updatedAt: data.observed_at, shown: data.text, eligible: status.glows } : undefined}
     sources={resource.metadata ? [{ entityId: resource.metadata.id, label: resource.metadata.label, availability: resource.metadata.availability, enabled: resource.metadata.enabled }] : []}>
-    <p className="view-metric-value view-state-value" data-value={status.value}>{data ? data.text : "—"}</p>
+    <Reading value={status.value} className="text-balance [overflow-wrap:anywhere] @max-[200px]:text-reading-narrow">{data ? data.text : "—"}</Reading>
   </CardFrame>;
 }
 

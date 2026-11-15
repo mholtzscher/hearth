@@ -7,7 +7,7 @@ import { cardStatus, type CardStatus } from "../status";
 import { Trend, trendMethod } from "../metric/Trend";
 import { pressureTendency } from "../weather/formulas";
 import { shownData, threeHourChange } from "../weather/readings";
-import { useWeatherReads, WeatherReading, WeatherZones } from "../weather/WeatherParts";
+import { useWeatherReads, WeatherReading, WeatherZones, weatherTrendParts } from "../weather/WeatherParts";
 import { pressureSchema } from "./schema";
 
 type Props = z.infer<typeof pressureSchema>;
@@ -58,7 +58,7 @@ export function BoundPressure({ label, source, trend }: Props) {
       <p>The tendency compares the latest minute with the minute nearest three hours earlier, using Met Office thresholds: steady below 0.1 hPa, slowly to 1.5 hPa, quickly above 3.5 hPa and very rapidly above 6 hPa. With no reading within ten minutes of three hours ago, there is no tendency.</p>
       {trend && trendMethod(trend)}
     </>}>
-    <WeatherZones aside={trend && history && status.value !== "empty" && <Trend window={trend} resource={history} dimmed={status.value === "dimmed"} />}>
+    <WeatherZones aside={trend && history && status.value !== "empty" && <Trend window={trend} resource={history} dimmed={status.value === "dimmed"} className="@min-[460px]:mt-0" bandClassName="fill-chart-5" classNames={{ ...weatherTrendParts, mean: status.value !== "dimmed" ? "stroke-[color:color-mix(in_oklch,var(--chart-5)_50%,var(--gray-9))]" : undefined }} />}>
       <WeatherReading data={data} status={status} />
       <TendencyLine data={data} history={recent} canonical={canonical} status={status} />
       {(recent.refreshFailed || canonical.refreshFailed) && <StatusList entries={[{ key: "refresh-failed", tone: "warn", text: "Couldn't refresh pressure history" }]} />}

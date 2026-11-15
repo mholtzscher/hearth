@@ -16,15 +16,18 @@ export function trendMethod(window: SeriesWindow) {
  * gaps preserved. The range sentence is its text equivalent; the drawing is
  * hidden from assistive technology.
  */
-export function Trend({ window, resource, dimmed, className, bandClassName }: { window: SeriesWindow; resource: Resolved<SeriesData>; dimmed: boolean; className?: string; bandClassName?: string }) {
+export function Trend({ window, resource, dimmed, className, bandClassName, classNames }: { window: SeriesWindow; resource: Resolved<SeriesData>; dimmed: boolean; className?: string; bandClassName?: string; classNames?: Partial<Record<"plot" | "drawing" | "mean", string>> }) {
   const data = resource.data;
+  const rootClass = cn("mt-3 grid gap-1", className);
+  const plotClass = cn("relative h-11", classNames?.plot);
+  const textClass = "text-label leading-normal text-muted-foreground tabular-nums";
   if (!data) {
     const words = resource.status === "loading" ? "Loading history…" : resource.status === "error" ? (resource.error === tooMuchHistory ? tooMuchHistory : "Couldn't load history.") : `No history in the last ${windowWords[window]}.`;
-    return <div data-slot="trend" className={cn("view-trend", className)} data-value={dimmed ? "dimmed" : "live"}><div className="view-trend-plot" /><p>{words}</p></div>;
+    return <div data-slot="trend" className={rootClass} data-value={dimmed ? "dimmed" : "live"}><div className={plotClass} /><p className={textClass}>{words}</p></div>;
   }
   const sampled = data.buckets.filter(bucket => bucket.mean !== null);
   if (sampled.length === 0) {
-    return <div data-slot="trend" className={cn("view-trend", className)} data-value={dimmed ? "dimmed" : "live"}><div className="view-trend-plot" /><p>No history in the last {windowWords[window]}.</p>{resource.refreshFailed && <p>Couldn't refresh history. Showing the last interval.</p>}</div>;
+    return <div data-slot="trend" className={rootClass} data-value={dimmed ? "dimmed" : "live"}><div className={plotClass} /><p className={textClass}>No history in the last {windowWords[window]}.</p>{resource.refreshFailed && <p className={textClass}>Couldn't refresh history. Showing the last interval.</p>}</div>;
   }
   const lows = sampled.map(bucket => bucket.min ?? bucket.mean!), highs = sampled.map(bucket => bucket.max ?? bucket.mean!);
   const low = Math.min(...lows), high = Math.max(...highs);
@@ -48,14 +51,14 @@ export function Trend({ window, resource, dimmed, className, bandClassName }: { 
   }).join("");
   const digits = data.format.fraction_digits;
   const unit = data.format.unit_label ? ` ${data.format.unit_label}` : "";
-  return <div data-slot="trend" className={cn("view-trend", className)} data-value={dimmed ? "dimmed" : "live"}>
-    <div className="view-trend-plot" aria-hidden="true">
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" focusable="false">
-        {!dimmed && <path data-slot="trend-band" className={cn("view-trend-band", bandClassName)} d={band} />}
-        <path data-slot="trend-mean" className="view-trend-mean" d={mean} />
+  return <div data-slot="trend" className={rootClass} data-value={dimmed ? "dimmed" : "live"}>
+    <div className={plotClass} aria-hidden="true">
+      <svg className={cn("block h-11 w-full overflow-visible", classNames?.drawing)} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" focusable="false">
+        {!dimmed && <path data-slot="trend-band" className={cn("fill-gray-10 [fill-opacity:.08]", bandClassName)} d={band} />}
+        <path data-slot="trend-mean" className={cn("fill-none [stroke-width:1.5] [stroke-linejoin:round] [stroke-linecap:round] [vector-effect:non-scaling-stroke]", dimmed ? "stroke-gray-7 [stroke-dasharray:4_3] opacity-60" : "stroke-gray-9", classNames?.mean)} d={mean} />
       </svg>
     </div>
-    <p>{windowWords[window]} range {low.toFixed(digits)}–{high.toFixed(digits)}{unit}</p>
-    {resource.refreshFailed && <p>Couldn't refresh history. Showing the last interval.</p>}
+    <p className={textClass}>{windowWords[window]} range {low.toFixed(digits)}–{high.toFixed(digits)}{unit}</p>
+    {resource.refreshFailed && <p className={textClass}>Couldn't refresh history. Showing the last interval.</p>}
   </div>;
 }

@@ -5,7 +5,7 @@ import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates } from "../reading-list/ReadingRows";
 import { beaufort, beaufortNames, compassPoint } from "../weather/formulas";
 import { canonicalValue, derivedTreatment, formatReading, shownData } from "../weather/readings";
-import { SlotStatus, slotRows, useWeatherReads, WeatherReading, WeatherZones } from "../weather/WeatherParts";
+import { SlotStatus, slotRows, useWeatherReads, WeatherReading, WeatherZones, weatherTrendParts } from "../weather/WeatherParts";
 import { windSchema } from "./schema";
 
 type Props = z.infer<typeof windSchema>;
@@ -53,7 +53,7 @@ export function BoundWind({ label, speed, gust, direction, max_gust, trend }: Pr
       <p>Direction is where the wind comes from; the arrow points where it blows. There is no direction history, because averaging compass bearings gives wrong answers.</p>
       {trend && <><p>The trend shows sustained wind speed, not gusts or direction.</p>{trendMethod(trend)}</>}
     </>}>
-    <WeatherZones aside={trend && history && status.value !== "empty" && <Trend window={trend} resource={history} dimmed={status.value === "dimmed"} />}>
+    <WeatherZones aside={trend && history && status.value !== "empty" && <Trend window={trend} resource={history} dimmed={status.value === "dimmed"} className="@min-[460px]:mt-0" classNames={weatherTrendParts} />}>
       <div className="view-weather-wind">
         {direction && <Compass bearing={bearing} calm={calm} dimmed={directionReading !== undefined && cardStatus(directionReading).value === "dimmed"} />}
         <div className="view-weather-wind-reading">
@@ -62,7 +62,7 @@ export function BoundWind({ label, speed, gust, direction, max_gust, trend }: Pr
         {gustReading && <p className="view-weather-detail view-weather-wind-gust" data-value={cardStatus(gustReading).value}>Gusts {gustData ? formatReading(gustData) : "—"}</p>}
         {force !== undefined && <p className="view-weather-conditions view-weather-wind-force" data-value={status.value}>{beaufortNames[force]}</p>}
         {from && !calm && <p className="view-weather-detail view-weather-wind-direction" data-value={derivedTreatment(reading, directionReading)}>From {from.short} · {Math.round(bearing!)}°<span className="sr-only">, from the {from.words}</span></p>}
-        {maxRow.length > 0 && <div className="view-weather-rows view-weather-wind-rows"><ReadingRows rows={maxRow} /></div>}
+        {maxRow.length > 0 && <div className="view-weather-rows view-weather-wind-rows"><ReadingRows className="mt-0" rows={maxRow} /></div>}
       </div>
     </WeatherZones>
     <SlotStatus name="Gusts" resource={gustReading} />

@@ -12,6 +12,9 @@ export type WeatherReads<K extends string> = {
   history: (slot: K) => Resolved<SeriesData> | undefined;
 };
 
+/** A trend in the wide weather aside uses a taller plot. */
+export const weatherTrendParts = { plot: "@min-[460px]:h-[72px]", drawing: "@min-[460px]:h-[72px]" };
+
 /**
  * Current readings, plus history where a window is given, for a card's named
  * slots. An unbound slot reads nothing and resolves to undefined.
