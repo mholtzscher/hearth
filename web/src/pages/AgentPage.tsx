@@ -139,7 +139,7 @@ export default function AgentPage() {
     return () => cancelAnimationFrame(frame);
   }, [draft]);
   // On phones the switch takes the top bar's center rather than a row of its own.
-  const panels = draft && <div className={phoneBar ? undefined : "hidden"}><SegmentedControl
+  const panels = draft && <div className={phoneBar ? "-translate-y-0.5" : "hidden"}><SegmentedControl
     label="Workspace panels" size="touch" value={mobileCanvas ? "canvas" : "conversation"}
     options={[{ value: "conversation", label: "Conversation" }, { value: "canvas", label: "Canvas" }]}
     onValueChange={value => setMobileCanvas(value === "canvas")}
