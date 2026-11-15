@@ -35,7 +35,7 @@ export function ConversationHistory({ id, open, onNavigate, onClose, classNames 
   const searchable = conversations.length > SEARCH_THRESHOLD || query !== "";
   return <section id={id} className={cn("conversation-history flex min-h-0 flex-1 flex-col border-t border-border pt-5 [--history-bg:var(--gray-0)] [--history-field:var(--gray-1)]", classNames?.root)} aria-labelledby={`${id}-title`}>
     <div className={cn("flex min-h-5 items-center justify-between gap-2 px-3 pb-2", classNames?.header)}>
-      <h2 className="text-[13px] leading-5 font-semibold text-muted-foreground" id={`${id}-title`} tabIndex={-1}>Recent</h2>
+      <h2 className="text-label leading-5 font-semibold text-muted-foreground" id={`${id}-title`} tabIndex={-1}>Recent</h2>
       {onClose && <Button variant="ghost" size="icon-touch" type="button" className={classNames?.close} aria-label="Close recent conversations" onClick={onClose}><XIcon aria-hidden="true" /></Button>}
     </div>
     {searchable && <div className="history-search mb-2 flex min-h-9 shrink-0 items-center gap-2 rounded-md border border-border bg-[var(--history-field)] ps-3 pe-1 text-muted-foreground focus-within:border-ring pointer-coarse:min-h-11">
@@ -49,9 +49,9 @@ export function ConversationHistory({ id, open, onNavigate, onClose, classNames 
       }} />
       {query && <Button variant="ghost" size="icon" className="pointer-coarse:size-11" type="button" aria-label="Clear search" onClick={() => { setQuery(""); search.current?.focus(); }}><XIcon aria-hidden="true" /></Button>}
     </div>}
-    {error ? <p className="px-3 text-[13px] leading-normal text-muted-foreground" role="alert">Could not load conversations. <Button variant="link" onClick={refresh}>Retry</Button></p>
-      : !loading && conversations.length === 0 ? <p className="px-3 text-[13px] leading-normal text-muted-foreground">Conversations you start appear here.</p>
-      : needle && groups.length === 0 ? <p className="px-3 text-[13px] leading-normal text-muted-foreground" role="status">No conversations match “{query.trim()}”.</p> : null}
+    {error ? <p className="px-3 text-label leading-normal text-muted-foreground" role="alert">Could not load conversations. <Button variant="link" onClick={refresh}>Retry</Button></p>
+      : !loading && conversations.length === 0 ? <p className="px-3 text-label leading-normal text-muted-foreground">Conversations you start appear here.</p>
+      : needle && groups.length === 0 ? <p className="px-3 text-label leading-normal text-muted-foreground" role="status">No conversations match “{query.trim()}”.</p> : null}
     {groups.length > 0 && <div ref={list} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-color:var(--gray-5)_transparent] [scrollbar-width:thin]">{groups.map(group => <div key={group.label} className="not-first:mt-3">
       <h3 className="sticky top-0 z-1 bg-[var(--history-bg)] px-3 pt-1.5 pb-1 text-caption leading-[18px] font-medium text-gray-7">{group.label}</h3>
       <ul className="grid list-none grid-cols-[minmax(0,1fr)] gap-0.5">{group.items.map(conversation => <li key={conversation.id}>
