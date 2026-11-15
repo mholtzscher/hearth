@@ -52,7 +52,7 @@ export function BoundToggleList({ title, rows, all_off }: z.infer<typeof toggleL
     sourceExtra={<><p>Each switch uses its Entity's current support. Turn all off requests separate Commands for enabled, supported rows that are not already observed Off.</p><p>Group feedback counts observed Off readings; it is not an atomic multi-Device outcome.</p>{powers.filter(power => power.historyError).map(power => <p key={power.source.entity_id}>{power.resource.metadata?.label ?? "Power"}: since time unavailable.</p>)}</>}>
     <ul className="-my-1 grid list-none">{powers.map((power, index) => <SwitchRow key={power.source.entity_id} power={power} label={readingRows[index].name} />)}</ul>
     {all_off && canGroup && <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-3.5">
-      <Button variant="outline" size="touch" className="border-gray-4 hover:border-gray-6 hover:bg-card" type="button" disabled={working || eligible.length === 0} onClick={() => {
+      <Button variant="outline" size="touch" type="button" disabled={working || eligible.length === 0} onClick={() => {
         setAttempted(eligible.map(index => powers[index].source.entity_id));
         eligible.forEach(index => request(targets[index], false));
       }}>Turn all off</Button>
