@@ -19,7 +19,7 @@ const preview: Preview = {
     (Story, context) => context.parameters.application ? <Story /> : (
       <MemoryRouter key={context.id} initialEntries={[context.parameters.route?.entry ?? "/"]}>
         <ViewDataProvider key={context.id}>
-          <main className="hearth-app hearth-story">
+          <main className="hearth-app hearth-story bg-background text-label text-foreground">
             {context.parameters.route
               ? <Routes><Route path={context.parameters.route.path} element={<Story />} /></Routes>
               : <Story />}

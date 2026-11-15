@@ -15,6 +15,7 @@ beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve(
 afterEach(() => { cleanup(); router?.dispose(); router = undefined; vi.unstubAllGlobals(); localStorage.clear(); window.location.hash = ""; });
 
 it("keeps connection setup in Development, not the household workspace", async () => {
+  stubWidth(900);
   vi.stubGlobal("fetch", vi.fn(async input => {
     const path = String(input);
     const body = path === "/readyz" ? { status: "ready" }
@@ -26,7 +27,7 @@ it("keeps connection setup in Development, not the household workspace", async (
   }));
   renderApp();
   expect(await screen.findByRole("heading", { name: "Home workspace" })).toBeTruthy();
-  expect(screen.getByRole("navigation", { name: "Main navigation" }).nextElementSibling).toBe(screen.getByRole("button", { name: "Recent conversation history" }));
+  expect(screen.getByRole("navigation", { name: "Main navigation" }).nextElementSibling?.contains(screen.getByRole("button", { name: "Recent conversation history" }))).toBe(true);
   expect(screen.queryByRole("button", { name: "Connection settings" })).toBeNull();
   expect(await screen.findByText("Ready", { exact: true })).toBeTruthy();
   expect(within(screen.getByRole("complementary", { name: "Hearth navigation" })).getByRole("status").textContent).toBe("Hearth server Ready");
@@ -87,6 +88,7 @@ it("narrows the sidebar to a rail beside a canvas below 1280px", async () => {
 });
 
 it("lists recent conversations in the sidebar, marks the open one, and starts a new conversation", async () => {
+  stubWidth(900);
   vi.stubGlobal("fetch", vi.fn(async input => {
     const path = String(input);
     const body = path === "/readyz" ? { status: "ready" }

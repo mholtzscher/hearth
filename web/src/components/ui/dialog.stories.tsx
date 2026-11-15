@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
-import { Dialog as HouseholdDialog } from "../../features/dashboards/Dialog.tsx";
+import { DecisionDialog } from "../DecisionDialog.tsx";
 import { CardSource } from "../../features/views/cards/CardSource.tsx";
 import { Button } from "./button.tsx";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from "./dialog.tsx";
@@ -103,7 +103,16 @@ export const Centered: Story = {
   </> },
   play: async ({ canvas, canvasElement, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Discard changes" }));
-    await expect(await within(canvasElement.ownerDocument.body).findByRole("dialog", { name: "Discard changes?" })).toBeVisible();
+    const dialog = await within(canvasElement.ownerDocument.body).findByRole("dialog", { name: "Discard changes?" });
+    await expect(dialog).toBeVisible();
+    const style = getComputedStyle(dialog);
+    await expect(dialog.getBoundingClientRect().width).toBeCloseTo(Math.min(460, window.innerWidth - 40), 1);
+    for (const [property, value] of Object.entries({
+      backgroundColor: "rgb(21, 21, 21)", borderColor: "rgb(44, 44, 44)", borderWidth: "1px",
+      borderStyle: "solid", borderRadius: "14px", padding: "24px", fontSize: "14px",
+    })) await expect(style.getPropertyValue(property.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)), property).toBe(value);
+    await expect(style.fontFamily).toContain("Figtree Variable");
+    await expect(style.boxShadow).toContain("rgba(0, 0, 0, 0.533) 0px 18px 60px 0px");
   },
 };
 
@@ -135,31 +144,28 @@ export const PhoneSheet: Story = {
   },
 };
 
-/** Temporary reference: the actual dashboard dialog and its legacy CSS, until D10. */
-export const HouseholdComparison: Story = {
+/** Programmatic decisions restore focus without a registered DialogTrigger. */
+export const ProgrammaticDecision: Story = {
   render: function Comparison() {
     const [open, setOpen] = useState(false);
     return <div className="hearth-app">
-      <Button variant="outline" onClick={() => setOpen(true)}>Legacy dialog</Button>
-      {open && <HouseholdDialog title="Legacy decision" onClose={() => setOpen(false)}>
-        <p>Unsaved changes will be lost.</p>
-        <div className="workspace-actions"><button type="button" onClick={() => setOpen(false)}>Keep editing</button></div>
-      </HouseholdDialog>}
-      <Decision />
+      <Button variant="outline" onClick={() => setOpen(true)}>Open decision</Button>
+      {open && <DecisionDialog title="Unsaved decision" onClose={() => setOpen(false)}>
+        <p className="mt-[14px] mb-5 text-muted-foreground">Unsaved changes will be lost.</p>
+        <Button variant="outline" size="touch" onClick={() => setOpen(false)}>Keep editing</Button>
+      </DecisionDialog>}
     </div>;
   },
   play: async ({ canvas, canvasElement, userEvent }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Legacy dialog" }));
+    const trigger = canvas.getByRole("button", { name: "Open decision" });
+    await userEvent.click(trigger);
     const body = within(canvasElement.ownerDocument.body);
-    const legacy = await body.findByRole("dialog", { name: "Legacy decision" });
-    const properties = ["width", "backgroundColor", "borderColor", "borderWidth", "borderStyle", "borderRadius", "padding", "fontFamily", "fontSize"] as const;
-    const expected = Object.fromEntries(properties.map(property => [property, getComputedStyle(legacy)[property]]));
-    const shadow = getComputedStyle(legacy).boxShadow;
-    await userEvent.click(within(legacy).getByRole("button", { name: "Keep editing" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Discard changes" }));
-    const shared = await body.findByRole("dialog", { name: "Discard changes?" });
-    for (const property of properties) await expect(getComputedStyle(shared)[property], property).toBe(expected[property]);
-    await expect(getComputedStyle(shared).boxShadow).toContain(shadow);
+    await expect(await body.findByRole("dialog", { name: "Unsaved decision" })).toBeVisible();
+    await userEvent.click(canvasElement.ownerDocument.querySelector<HTMLElement>('[data-slot="dialog-overlay"]')!);
+    await expect(body.getByRole("dialog", { name: "Unsaved decision" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect(body.queryByRole("dialog", { name: "Unsaved decision" })).not.toBeInTheDocument();
+    await expect(trigger).toHaveFocus();
   },
 };
 

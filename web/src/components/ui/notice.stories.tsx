@@ -14,7 +14,36 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Alert: Story = {};
+export const Alert: Story = {
+  play: async ({ canvas, canvasElement }) => {
+    await canvasElement.ownerDocument.fonts.ready;
+    const notice = canvas.getByRole("alert");
+    const style = getComputedStyle(notice);
+    for (const [property, value] of Object.entries({
+      color: "rgb(244, 244, 244)", fontSize: "12px", fontWeight: "400",
+      lineHeight: "18px", padding: "12px", marginTop: "12px", marginBottom: "12px",
+      borderWidth: "1px", borderStyle: "solid", borderRadius: "8px",
+    })) await expect(style.getPropertyValue(property.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)), property).toBe(value);
+    await expect(style.fontFamily).toContain("Figtree Variable");
+    const text = canvasElement.ownerDocument.createRange();
+    text.selectNodeContents(notice);
+    await expect(notice.getBoundingClientRect().height).toBe(26 + 18 * text.getClientRects().length);
+    const parent = notice.parentElement!;
+    const parentStyle = getComputedStyle(parent);
+    const availableWidth = parent.clientWidth - parseFloat(parentStyle.paddingLeft) - parseFloat(parentStyle.paddingRight);
+    await expect(notice.getBoundingClientRect().width).toBeCloseTo(Math.min(1080, availableWidth), 1);
+    const context = canvasElement.ownerDocument.createElement("canvas").getContext("2d")!;
+    const rgba = (color: string) => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return [...context.getImageData(0, 0, 1, 1).data];
+    };
+    await expect(rgba(style.backgroundColor)).toEqual([255, 89, 128, 20]);
+    await expect(rgba(style.borderColor)).toEqual([255, 91, 122, 115]);
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
 
 export const Status: Story = {
   args: { role: "status", children: "Fix or discard the invalid editor values before saving." },
@@ -50,33 +79,4 @@ export const Multiline: Story = {
     </>,
   },
   play: async ({ canvasElement }) => expectNoHorizontalOverflow(canvasElement),
-};
-
-/** Temporary reference; remove when the workspace adopts Notice. */
-export const HouseholdComparison: Story = {
-  render: (args) => (
-    <div className="grid gap-4">
-      <div className="workspace-notice" role="alert">{args.children}</div>
-      <Notice {...args} />
-    </div>
-  ),
-  play: async ({ canvas, canvasElement }) => {
-    const [legacy, shared] = canvas.getAllByRole("alert").map(element => getComputedStyle(element));
-    for (const property of ["height", "width", "color", "fontFamily", "fontSize", "fontWeight", "lineHeight", "padding", "margin", "borderWidth", "borderStyle"] as const) {
-      await expect(shared[property], property).toBe(legacy[property]);
-    }
-    // Tailwind mixes in oklab; legacy CSS uses oklch. Compare their displayed RGBA values.
-    const context = canvasElement.ownerDocument.createElement("canvas").getContext("2d")!;
-    const rgba = (color: string) => {
-      context.clearRect(0, 0, 1, 1);
-      context.fillStyle = color;
-      context.fillRect(0, 0, 1, 1);
-      return [...context.getImageData(0, 0, 1, 1).data];
-    };
-    await expect(rgba(shared.backgroundColor)).toEqual(rgba(legacy.backgroundColor));
-    await expect(rgba(shared.borderColor)).toEqual(rgba(legacy.borderColor));
-    await expect(legacy.borderRadius).toBe("9px");
-    await expect(shared.borderRadius).toBe("8px");
-    await expectNoHorizontalOverflow(canvasElement);
-  },
 };

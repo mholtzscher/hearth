@@ -41,6 +41,8 @@ export default meta;
 type Story = StoryObj<Partial<ComponentProps<typeof App>>>;
 type InteractionContext = Parameters<NonNullable<Story["play"]>>[0];
 
+const longSelectedTitle = "Detailed whole-home climate, lighting and comfort overview for every room";
+
 async function askTemperature({ canvas, userEvent }: InteractionContext) {
   const prompt = await canvas.findByRole("textbox", { name: "Ask Hearth" });
   await waitFor(() => expect(prompt).toBeEnabled());
@@ -59,12 +61,47 @@ async function editTitle({ canvas, userEvent }: InteractionContext, title: strin
   return view;
 }
 
+async function expectSelectedContextFits({ canvas }: InteractionContext) {
+  const selected = within(canvas.getByRole("group", { name: "Selected view" }));
+  const show = selected.getByRole("button", { name: `Show selected view: ${longSelectedTitle}` });
+  const close = selected.getByRole("button", { name: "Close selected view" });
+  const send = canvas.getByRole("button", { name: "Send message" });
+  const group = canvas.getByRole("group", { name: "Selected view" }).getBoundingClientRect();
+  const showRect = show.getBoundingClientRect();
+  const closeRect = close.getBoundingClientRect();
+  const sendRect = send.getBoundingClientRect();
+  await expect(closeRect.right).toBeLessThanOrEqual(group.right + 0.5);
+  await expect(group.right).toBeLessThanOrEqual(sendRect.left + 0.5);
+  await expect(showRect.right).toBeLessThanOrEqual(closeRect.left + 0.5);
+  await expect(closeRect.width).toBe(44);
+  await expect(closeRect.height).toBe(44);
+  await expect(showRect.width).toBeGreaterThanOrEqual(44);
+  await expect(showRect.height).toBe(44);
+  await expect(sendRect.width).toBeGreaterThanOrEqual(44);
+  await expect(sendRect.height).toBe(44);
+  const title = within(show).getByText(longSelectedTitle);
+  await expect(show).toHaveAttribute("title", longSelectedTitle);
+  await expect(title.clientWidth).toBeGreaterThan(0);
+  await expect(title.scrollWidth).toBeGreaterThan(title.clientWidth);
+  await expect(getComputedStyle(title).textOverflow).toBe("ellipsis");
+}
+
+async function expectSidebarNewTreatment(button: HTMLElement) {
+  const style = getComputedStyle(button);
+  await expect(style.height).toBe("44px");
+  await expect(style.borderRadius).toBe("8px");
+  await expect(style.backgroundColor).toBe("rgb(12, 12, 12)");
+  await expect(style.borderColor).toBe("rgb(31, 31, 31)");
+}
+
 export const DesktopHome: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("Ready", { exact: true })).toBeVisible();
     await expect(canvas.getByRole("heading", { name: "What would make home feel better?" })).toBeVisible();
     await expect(canvas.getByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
     await expect(canvas.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+    const sidebar = within(canvas.getByRole("complementary", { name: "Hearth navigation" }));
+    await expectSidebarNewTreatment(sidebar.getByRole("button", { name: "New conversation" }));
   },
 };
 
@@ -72,10 +109,15 @@ export const PhoneNavigation: Story = {
   globals: { viewport: { value: "phone", isRotated: false } },
   play: async ({ canvas, canvasElement, userEvent }) => {
     const menu = await canvas.findByRole("button", { name: "Open navigation" });
+    const title = canvasElement.querySelector('[data-slot="phone-bar-title"]');
+    await expect(title).toBeVisible();
+    await expect(title).toHaveTextContent("Home");
     await userEvent.click(menu);
     const close = canvas.getByRole("button", { name: "Close navigation" });
     await expect(close).toHaveFocus();
     await waitFor(() => expect(canvas.getByRole("complementary", { name: "Hearth navigation" })).toBeVisible());
+    const sidebar = within(canvas.getByRole("complementary", { name: "Hearth navigation" }));
+    await expectSidebarNewTreatment(sidebar.getByRole("button", { name: "New conversation" }));
     await userEvent.keyboard("{Escape}");
     await expect(menu).toHaveFocus();
     await expect(menu).toHaveAttribute("aria-expanded", "false");
@@ -310,16 +352,63 @@ export const ExpandedCanvas: Story = {
   },
 };
 
+/** Invalid editor input lives locally until corrected; expanding must not remount it. */
+export const ExpandedCanvasRetainsInvalidInput: Story = {
+  parameters: { appPath: dashboardPath },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("heading", { name: "Morning overview" });
+    await userEvent.click(canvas.getByRole("button", { name: "Edit" }));
+    const title = canvas.getByRole("textbox", { name: "Dashboard title" });
+    await userEvent.clear(title);
+    await expect(title).toHaveAttribute("aria-invalid", "true");
+    const expand = canvas.getByRole("button", { name: "Expand" });
+    await userEvent.click(expand);
+    const expanded = canvas.getByRole("dialog", { name: "View canvas" });
+    await expect(expanded).toHaveFocus();
+    await expect(within(expanded).getByRole("textbox", { name: "Dashboard title" })).toBe(title);
+    await expect(title).toHaveValue("");
+    await expect(title).toHaveAttribute("aria-invalid", "true");
+    await userEvent.keyboard("{Escape}");
+    await expect(expand).toHaveFocus();
+    await expect(canvas.getByRole("textbox", { name: "Dashboard title" })).toBe(title);
+    await expect(title).toHaveValue("");
+    await expect(title).toHaveAttribute("aria-invalid", "true");
+  },
+};
+
+/** Escape closes a nested Source before closing the expanded canvas. */
+export const ExpandedCanvasNestedSource: Story = {
+  parameters: { appPath: dashboardPath },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await canvas.findByRole("heading", { name: "Morning overview" });
+    const expand = canvas.getByRole("button", { name: "Expand" });
+    await userEvent.click(expand);
+    const expanded = canvas.getByRole("dialog", { name: "View canvas" });
+    await expect(expanded).toHaveFocus();
+    const source = within(expanded).getAllByRole("button", { name: "Source" })[0];
+    await userEvent.click(source);
+    const body = within(canvasElement.ownerDocument.body);
+    await expect(await body.findByRole("heading", { name: "Reading details" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(body.queryByRole("heading", { name: "Reading details" })).not.toBeInTheDocument());
+    await expect(canvas.getByRole("dialog", { name: "View canvas" })).toBeVisible();
+    await expect(source).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    await expect(expand).toHaveFocus();
+    await expect(canvas.getByRole("region", { name: "View canvas" })).toBeVisible();
+  },
+};
+
 export const UnsavedNavigation: Story = {
   parameters: { appPath: dashboardPath },
   play: async context => {
     await editTitle(context, "Unfinished changes");
     await context.userEvent.click(context.canvas.getByRole("link", { name: "Home" }));
-    const dialog = within(await context.canvas.findByRole("dialog", { name: "Keep your changes?" }));
+    const dialog = within(await within(context.canvasElement.ownerDocument.body).findByRole("dialog", { name: "Keep your changes?" }));
     await context.userEvent.click(dialog.getByRole("button", { name: "Stay" }));
     await expect(context.canvas.getByRole("textbox", { name: "Dashboard title" })).toHaveValue("Unfinished changes");
     await context.userEvent.click(context.canvas.getByRole("link", { name: "Home" }));
-    const reopened = within(await context.canvas.findByRole("dialog", { name: "Keep your changes?" }));
+    const reopened = within(await within(context.canvasElement.ownerDocument.body).findByRole("dialog", { name: "Keep your changes?" }));
     await expect(reopened.getByRole("button", { name: "Discard" })).toBeVisible();
   },
 };
@@ -329,7 +418,7 @@ export const DiscardUnsavedNavigation: Story = {
   play: async context => {
     await editTitle(context, "Unfinished changes");
     await context.userEvent.click(context.canvas.getByRole("link", { name: "Home" }));
-    const dialog = within(await context.canvas.findByRole("dialog", { name: "Keep your changes?" }));
+    const dialog = within(await within(context.canvasElement.ownerDocument.body).findByRole("dialog", { name: "Keep your changes?" }));
     await context.userEvent.click(dialog.getByRole("button", { name: "Discard" }));
     await expect(await context.canvas.findByRole("heading", { name: "What would make home feel better?" })).toBeVisible();
   },
@@ -338,18 +427,35 @@ export const DiscardUnsavedNavigation: Story = {
 export const PhoneCanvas: Story = {
   parameters: { appPath: conversationPath },
   globals: { viewport: { value: "phone", isRotated: false } },
-  play: async ({ canvas, canvasElement, userEvent }) => {
+  play: async context => {
+    const { canvas, canvasElement, userEvent } = context;
     await canvas.findByText(conversationReply);
     await userEvent.click(canvas.getByRole("button", { name: "Open in canvas" }));
     const view = within(await canvas.findByRole("region", { name: "View canvas" }));
     await waitFor(() => expect(view.getByRole("heading", { name: "Morning overview" })).toBeVisible());
+    await expect(view.queryByRole("button", { name: "Expand" })).not.toBeInTheDocument();
     await expect(await view.findByRole("switch", { name: "Hallway lamp power" })).toHaveAttribute("aria-checked", "true");
     const panels = within(canvas.getByRole("group", { name: "Workspace panels" }));
     await expect(panels.getByRole("button", { name: "Canvas" })).toHaveAttribute("aria-pressed", "true");
+    await expect(canvasElement.querySelector('[data-slot="phone-bar-title"]')).not.toBeVisible();
     await expectNoHorizontalOverflow(canvasElement);
+    await editTitle(context, longSelectedTitle);
     await userEvent.click(panels.getByRole("button", { name: "Conversation" }));
     await waitFor(() => expect(canvas.getByText(conversationReply)).toBeVisible());
+    await expectSelectedContextFits(context);
     await userEvent.click(panels.getByRole("button", { name: "Canvas" }));
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+export const PhoneSavedCanvas: Story = {
+  parameters: { appPath: dashboardPath },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement }) => {
+    const view = within(await canvas.findByRole("region", { name: "View canvas" }));
+    await expect(await view.findByRole("heading", { name: "Morning overview" })).toBeVisible();
+    await expect(view.queryByRole("button", { name: "Expand" })).not.toBeInTheDocument();
+    await expect(view.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
     await expectNoHorizontalOverflow(canvasElement);
   },
 };
@@ -381,15 +487,16 @@ export const PhoneDashboardLibrary: Story = {
 
 export const DeleteDashboard: Story = {
   parameters: { appPath: "/dashboards" },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     const remove = await canvas.findByRole("button", { name: "Delete Morning overview" });
     await userEvent.click(remove);
-    const dialog = within(canvas.getByRole("dialog", { name: "Remove this dashboard?" }));
+    const body = within(canvasElement.ownerDocument.body);
+    const dialog = within(body.getByRole("dialog", { name: "Remove this dashboard?" }));
     await expect(dialog.getByText(/Your home data and conversation remain unchanged/)).toBeVisible();
     await userEvent.click(dialog.getByRole("button", { name: "Cancel" }));
     await expect(remove).toHaveFocus();
     await userEvent.click(remove);
-    await userEvent.click(canvas.getByRole("button", { name: "Delete dashboard" }));
+    await userEvent.click(body.getByRole("button", { name: "Delete dashboard" }));
     await expect(await canvas.findByRole("heading", { name: "Your first dashboard starts with a question." })).toBeVisible();
   },
 };
@@ -399,7 +506,7 @@ export const PhoneDeleteConfirmation: Story = {
   globals: { viewport: { value: "phone", isRotated: false } },
   play: async ({ canvas, canvasElement, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Delete Morning overview" }));
-    const dialog = within(canvas.getByRole("dialog", { name: "Remove this dashboard?" }));
+    const dialog = within(within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "Remove this dashboard?" }));
     await expect(dialog.getByRole("button", { name: "Cancel" })).toHaveFocus();
     await expect(dialog.getByText(/Your home data and conversation remain unchanged/)).toBeVisible();
     await expectNoHorizontalOverflow(canvasElement);
@@ -434,12 +541,14 @@ export const SelectedViewMessage: Story = {
   play: async context => {
     await context.canvas.findByText(conversationReply);
     await context.userEvent.click(context.canvas.getByRole("button", { name: "Open in canvas" }));
+    await editTitle(context, longSelectedTitle);
+    await expectSelectedContextFits(context);
     await askTemperature(context);
     // History reconciliation replaces the streamed message after the reply arrives.
     await waitFor(() => {
       expect(context.canvas.getByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
       expect(context.canvas.getByText(sentReply)).toBeVisible();
-      expect(context.canvas.getByText("Selected view: Morning overview")).toBeVisible();
+      expect(context.canvas.getByText(`Selected view: ${longSelectedTitle}`)).toBeVisible();
     });
   },
 };
@@ -462,6 +571,225 @@ export const ReadingOlderMessages: Story = {
     const log = canvas.getByRole("log");
     await waitFor(() => expect(log.scrollTop).toBeGreaterThan(0));
     log.scrollTo({ top: 0, behavior: "instant" });
-    await expect(await canvas.findByRole("button", { name: "Jump to latest" })).toBeVisible();
+    const jump = await canvas.findByRole("button", { name: "Jump to latest" });
+    await expect(jump).toBeVisible();
+    await expect(getComputedStyle(jump).backgroundColor).toBe("rgb(12, 12, 12)");
+  },
+};
+
+export const EmptyRecent: Story = {
+  parameters: { applicationScenario: { conversations: "empty" } },
+  play: async ({ canvas }) => {
+    const recent = within(await canvas.findByRole("region", { name: "Recent" }));
+    await expect(await recent.findByText("Conversations you start appear here.")).toBeVisible();
+    await expect(canvas.getByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
+  },
+};
+
+export const RecentListFailure: Story = {
+  parameters: { applicationScenario: { conversations: "error" } },
+  play: async ({ canvas }) => {
+    const recent = within(await canvas.findByRole("region", { name: "Recent" }));
+    await expect(await recent.findByRole("alert")).toHaveTextContent("Could not load conversations.");
+    const retry = recent.getByRole("button", { name: "Retry" });
+    await expect(retry).toBeEnabled();
+    await expect(getComputedStyle(retry).height).toBe("44px");
+  },
+};
+
+export const PhoneHistorySearch: Story = {
+  parameters: { applicationScenario: { conversations: "searchable" } },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Open navigation" }));
+    const recent = within(canvas.getByRole("region", { name: "Recent" }));
+    const search = await recent.findByRole("searchbox", { name: "Search conversations" });
+    const navigation = canvas.getByRole("navigation", { name: "Main navigation" });
+    const drawer = within(canvas.getByRole("complementary", { name: "Hearth navigation" }));
+    const newConversation = drawer.getByRole("button", { name: "New conversation" });
+    const serverStatus = canvasElement.querySelector('[data-slot="server-status"]');
+    const brand = canvasElement.querySelector('[data-slot="sidebar-brand"]');
+    await waitFor(() => expect(navigation).toBeVisible());
+    await expect(newConversation).toBeVisible();
+    await expect(serverStatus).toBeVisible();
+    await expect(brand).toBeVisible();
+    await userEvent.click(search);
+    await expect(navigation).not.toBeVisible();
+    await expect(newConversation).not.toBeVisible();
+    await expect(serverStatus).not.toBeVisible();
+    await expect(brand).not.toBeVisible();
+    await userEvent.type(search, "garden");
+    await expect(await recent.findByRole("status")).toHaveTextContent("No conversations match “garden”.");
+    await userEvent.click(recent.getByRole("heading", { name: "Recent" }));
+    await expect(search).not.toHaveFocus();
+    await expect(search).toHaveValue("garden");
+    await expect(navigation).not.toBeVisible();
+    await expect(serverStatus).not.toBeVisible();
+    await expect(brand).not.toBeVisible();
+    await expect(recent.getByText("No conversations match “garden”.")).toBeVisible();
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+export const RichConversation: Story = {
+  parameters: { appPath: conversationPath, applicationScenario: { messages: "rich" } },
+  play: async ({ canvas, userEvent }) => {
+    const log = within(await canvas.findByRole("log"));
+    await expect(await log.findByText("Room readings")).toBeVisible();
+    await expect(log.getByRole("table")).toBeVisible();
+    await expect(log.getByText('{"temperature":21}')).toBeVisible();
+    await expect(log.getByText("Kitchen: 21 °C")).toBeVisible();
+    await expect(log.getByText("This artifact cannot be shown in this Hearth version. The original tool result is retained.")).toBeVisible();
+    await userEvent.click(log.getByText("Original artifact"));
+    await expect(log.getByText(/hearth.future/)).toBeVisible();
+  },
+};
+
+export const StarterQuestion: Story = {
+  play: async context => {
+    await expect(await context.canvas.findByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
+    await context.userEvent.click(context.canvas.getByRole("button", { name: "Show me the temperatures" }));
+    await expect(await context.canvas.findByText(sentReply)).toBeVisible();
+    await expect(within(context.canvas.getByRole("log")).getByText("Show me the temperatures throughout the house.")).toBeVisible();
+  },
+};
+
+export const TabletConversationCanvas: Story = {
+  parameters: { appPath: conversationPath },
+  globals: { viewport: { value: "tablet", isRotated: false } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await expect(await canvas.findByText(conversationReply)).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Open in canvas" }));
+    const view = within(await canvas.findByRole("region", { name: "View canvas" }));
+    await expect(await view.findByRole("heading", { name: "Morning overview" })).toBeVisible();
+    await expect(await view.findByRole("switch", { name: "Hallway lamp power" })).toHaveAttribute("aria-checked", "true");
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+async function queueDuringReply({ canvas, userEvent }: InteractionContext) {
+  await expect(await canvas.findByRole("button", { name: "Show me the temperatures" })).toBeEnabled();
+  await userEvent.click(canvas.getByRole("button", { name: "Show me the temperatures" }));
+  await userEvent.click(await canvas.findByRole("link", { name: "Empty conversation" }));
+  const prompt = await canvas.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(prompt).toBeEnabled());
+  await userEvent.type(prompt, "Check the hallway.");
+  await userEvent.click(canvas.getByRole("button", { name: "Send message" }));
+  await expect(await canvas.findByText("Message queued until the current reply finishes.")).toBeVisible();
+  await expect(canvas.getByRole("button", { name: "Cancel queued message" })).toBeEnabled();
+}
+
+export const QueuedDuringReply: Story = {
+  parameters: { applicationScenario: { turn: "queue-collision" } },
+  play: queueDuringReply,
+};
+
+export const CancelQueuedMessage: Story = {
+  parameters: { applicationScenario: { turn: "queue-collision" } },
+  play: async context => {
+    await queueDuringReply(context);
+    await context.userEvent.click(context.canvas.getByRole("button", { name: "Cancel queued message" }));
+    await waitFor(() => expect(context.canvas.queryByText("Message queued until the current reply finishes.")).not.toBeInTheDocument());
+    await expect(context.canvas.getByText("Looking through your home…")).toBeVisible();
+  },
+};
+
+export const QueuedAfterFailedReply: Story = {
+  beforeEach({ msw, parameters }) {
+    let release!: () => void;
+    const queuedTurnFailure = new Promise<void>(resolve => { release = resolve; });
+    parameters.releaseQueuedTurn = release;
+    msw.use(...createApplicationHandlers({ turn: "queue-collision", queuedTurnFailure }));
+    return () => { delete parameters.releaseQueuedTurn; };
+  },
+  play: async context => {
+    await queueDuringReply(context);
+    context.parameters.releaseQueuedTurn();
+    await expect(await context.canvas.findByRole("alert")).toHaveTextContent("agent turn failed");
+    await expect(await context.canvas.findByText("Queued message has not been sent.")).toBeVisible();
+    await expect(await context.canvas.findByText("Used 1 tool · 1 pending or unknown")).toBeVisible();
+    await expect(context.canvas.getByRole("button", { name: "Send queued message" })).toBeDisabled();
+    await expect(context.canvas.getByRole("button", { name: "Discard failed prompt" })).toBeEnabled();
+    await expect(context.canvas.getByRole("button", { name: "Cancel queued message" })).toBeEnabled();
+    await expect(context.canvas.getByRole("textbox", { name: "Ask Hearth" })).toHaveValue("Check the hallway.");
+  },
+};
+
+export const AutomationCreatePreview: Story = {
+  parameters: { appPath: conversationPath, applicationScenario: { messages: "automation-create" } },
+  play: async ({ canvas }) => {
+    const log = within(await canvas.findByRole("log"));
+    await expect(await log.findByText("Unsaved proposal · not created")).toBeVisible();
+    await expect(await log.findByRole("heading", { name: "Hallway light at dusk", level: 4 })).toBeVisible();
+    await expect(await log.findByText("Household")).toBeVisible();
+    await expect((await log.findAllByRole("link", { name: "Office plug (Office plug)" })).length).toBeGreaterThan(0);
+    await expect(log.getByRole("button", { name: "Open in canvas" })).toBeEnabled();
+  },
+};
+
+export const AutomationShowingInCanvas: Story = {
+  parameters: { appPath: conversationPath, applicationScenario: { messages: "automation-create" } },
+  play: async ({ canvas, userEvent }) => {
+    const log = within(await canvas.findByRole("log"));
+    await expect(await log.findByRole("heading", { name: "Hallway light at dusk", level: 4 })).toBeVisible();
+    await expect(await log.findByText("Household")).toBeVisible();
+    await expect((await log.findAllByRole("link", { name: "Office plug (Office plug)" })).length).toBeGreaterThan(0);
+    await userEvent.click(log.getByRole("button", { name: "Open in canvas" }));
+    await expect(await log.findByRole("button", { name: "Showing in canvas" })).toBeVisible();
+    await expect(await canvas.findByRole("region", { name: "Automation canvas" })).toBeVisible();
+  },
+};
+
+export const AutomationReplacePreview: Story = {
+  parameters: { appPath: conversationPath, applicationScenario: { messages: "automation-replace" } },
+  play: async ({ canvas }) => {
+    const log = within(await canvas.findByRole("log"));
+    await expect(await log.findByText("Replacement proposal · based on revision 3")).toBeVisible();
+    await expect(await log.findByRole("heading", { name: "Hallway light at dusk", level: 4 })).toBeVisible();
+    await expect(await log.findByText("Household")).toBeVisible();
+    await expect((await log.findAllByRole("link", { name: "Office plug (Office plug)" })).length).toBeGreaterThan(0);
+  },
+};
+
+export const AutomationReferencePreview: Story = {
+  parameters: { appPath: conversationPath, applicationScenario: { messages: "automation-reference" } },
+  play: async ({ canvas }) => {
+    const log = within(await canvas.findByRole("log"));
+    await expect(await log.findByText("Saved reference · current definition")).toBeVisible();
+    await expect(await log.findByRole("heading", { name: "Hallway light at dusk", level: 4 })).toBeVisible();
+    await expect(await log.findByText("Household")).toBeVisible();
+    await expect((await log.findAllByRole("link", { name: "Office plug (Office plug)" })).length).toBeGreaterThan(0);
+  },
+};
+
+export const AutomationMissingPreview: Story = {
+  parameters: { appPath: conversationPath, applicationScenario: { messages: "automation-missing" } },
+  play: async ({ canvas }) => {
+    const log = within(await canvas.findByRole("log"));
+    await expect(await log.findByRole("alert")).toHaveTextContent("This Automation no longer exists. Its earlier tool result is retained below.");
+    await expect(log.getByRole("button", { name: "Open in canvas" })).toBeEnabled();
+  },
+};
+
+export const AutomationLoadingPreview: Story = {
+  parameters: { appPath: conversationPath, applicationScenario: { messages: "automation-loading" } },
+  play: async ({ canvas }) => {
+    const log = within(await canvas.findByRole("log"));
+    await expect(await log.findByText("Loading Automation…")).toBeVisible();
+    await expect(log.getByText("Saved reference · current definition")).toBeVisible();
+  },
+};
+
+export const ShortPhoneConversation: Story = {
+  parameters: {
+    appPath: conversationPath,
+    viewport: { options: { shortPhone: { name: "Short phone", styles: { width: "390px", height: "540px" } } } },
+  },
+  globals: { viewport: { value: "shortPhone", isRotated: false } },
+  play: async ({ canvas, canvasElement }) => {
+    await expect(await canvas.findByText(conversationReply)).toBeVisible();
+    await expect(canvas.getByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
+    await expect(window.innerHeight).toBe(540);
+    await expectNoHorizontalOverflow(canvasElement);
   },
 };

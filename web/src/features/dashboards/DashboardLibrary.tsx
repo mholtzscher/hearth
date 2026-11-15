@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { deleteDashboard, listDashboards, type DashboardSummary } from "../../api/dashboards";
 import { useBaseUrlVersion } from "../../api/client";
-import { Dialog } from "./Dialog";
+import { Button } from "../../components/ui/button";
+import { Notice } from "../../components/ui/notice";
+import { DecisionDialog } from "../../components/DecisionDialog";
 
 export function DashboardLibrary() {
   const backendVersion = useBaseUrlVersion();
@@ -26,11 +28,11 @@ function ConnectedLibrary() {
     try { await deleteDashboard(item.id, item.revision); setConfirming(null); await load(); }
     catch (err) { setError(err instanceof Error ? `${err.message} Reload the library before trying again.` : "Could not delete dashboard."); setConfirming(null); }
   }
-  return <section className="library"><p className="eyebrow">Your dashboards</p><h1>Made for you. Here to stay.</h1><p>Useful views, kept close and connected to your home.</p>
-    {error && <div className="workspace-notice" role="alert">{error} <button onClick={() => void load()}>Reload</button></div>}
-    {!loading && items.length === 0 && <div className="library-empty"><h2>Your first dashboard starts with a question.</h2><p>Generate a view in conversation, customize it, and save it here.</p><Link to="/">Start a conversation →</Link></div>}
-    <div className="library-grid">{items.map(item => <article className="library-card" key={item.id}><span className="artifact-icon">◫</span><h2>{item.title}</h2><p>Revision {item.revision} · Updated {new Date(item.updated_at).toLocaleDateString()}</p><div className="workspace-actions"><Link to={`/dashboards/${encodeURIComponent(item.id)}`}>Open dashboard →</Link><button aria-label={`Delete ${item.title}`} onClick={() => setConfirming(item)}>Delete</button></div></article>)}</div>
-    {cursor && <button disabled={loading} onClick={() => void load(cursor)}>Load more</button>}{loading && <p role="status">Loading dashboards…</p>}
-    {confirming && <Dialog title="Remove this dashboard?" onClose={() => setConfirming(null)}><p>{confirming.title} will be deleted. Your home data and conversation remain unchanged.</p><div className="workspace-actions"><button onClick={() => setConfirming(null)}>Cancel</button><button className="primary" onClick={() => void remove(confirming)}>Delete dashboard</button></div></Dialog>}
+  return <section className="flex-1 overflow-auto p-[34px] max-tablet:px-5 max-tablet:py-6"><p className="text-[10px] font-[650] tracking-[.13em] uppercase text-muted-foreground">Your dashboards</p><h1 className="text-headline leading-[1.3] font-medium tracking-[-.03em] text-balance [overflow-wrap:anywhere]">Made for you. Here to stay.</h1><p className="mt-2 mb-[25px] text-muted-foreground">Useful views, kept close and connected to your home.</p>
+    {error && <Notice role="alert">{error} <Button variant="outline" size="touch" className="m-1.5" onClick={() => void load()}>Reload</Button></Notice>}
+    {!loading && items.length === 0 && <div className="rounded-card border border-border bg-card p-5"><h2 className="mt-3.5 mb-1 text-label">Your first dashboard starts with a question.</h2><p className="mb-4 text-caption text-muted-foreground">Generate a view in conversation, customize it, and save it here.</p><Link className="text-link" to="/">Start a conversation →</Link></div>}
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3.5">{items.map(item => <article className="rounded-card border border-border bg-card p-5" key={item.id}><span aria-hidden="true">◫</span><h2 className="mt-3.5 mb-1 text-label">{item.title}</h2><p className="mb-4 text-caption text-muted-foreground">Revision {item.revision} · Updated {new Date(item.updated_at).toLocaleDateString()}</p><div className="flex flex-wrap items-center gap-2"><Button asChild variant="outline" size="touch"><Link to={`/dashboards/${encodeURIComponent(item.id)}`}>Open dashboard →</Link></Button><Button variant="outline" size="touch" aria-label={`Delete ${item.title}`} onClick={() => setConfirming(item)}>Delete</Button></div></article>)}</div>
+    {cursor && <Button variant="outline" size="touch" disabled={loading} onClick={() => void load(cursor)}>Load more</Button>}{loading && <p role="status">Loading dashboards…</p>}
+    {confirming && <DecisionDialog title="Remove this dashboard?" onClose={() => setConfirming(null)}><p className="mt-[14px] mb-5 text-muted-foreground">{confirming.title} will be deleted. Your home data and conversation remain unchanged.</p><div className="flex flex-wrap justify-end gap-2"><Button variant="outline" size="touch" onClick={() => setConfirming(null)}>Cancel</Button><Button size="touch" onClick={() => void remove(confirming)}>Delete dashboard</Button></div></DecisionDialog>}
   </section>;
 }

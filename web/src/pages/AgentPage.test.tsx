@@ -189,6 +189,48 @@ it("hands a delayed creation to the existing owner and waits for its active repl
   expect(within(screen.getByRole("log")).getByText(/First reply/)).toBeTruthy();
 });
 
+it("keeps a queued prompt after the current reply fails until the failed prompt is discarded", async () => {
+  let create!: (value: Response) => void;
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  const sent: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/v1/agent/conversations" && init?.method === "POST") return new Promise<Response>(resolve => { create = resolve; });
+    if (path === "/v1/agent/conversations") return new Response(JSON.stringify({
+      conversations: [{ id: "c-collision", created_at: "", message_count: 0, preview: "" }],
+    }));
+    if (path.endsWith("/messages/stream")) {
+      sent.push(JSON.parse(String(init?.body)).text);
+      if (sent.length === 1) return new Response(new ReadableStream({ start(value) { stream = value; } }));
+      return new Response('data: {"type":"turn.finished","reply":"Queued reply"}\n\n');
+    }
+    return new Response('{"messages":[]}');
+  }));
+  mount("/");
+  fireEvent.click(await screen.findByRole("button", { name: "Show me the temperatures" }));
+  await waitFor(() => expect(create).toBeDefined());
+  fireEvent.click(await screen.findByRole("link", { name: "Empty conversation" }));
+  const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  fireEvent.change(input, { target: { value: "First prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(stream).toBeDefined());
+  await act(async () => create(new Response('{"id":"c-collision"}')));
+  expect(await screen.findByText("Message queued until the current reply finishes.")).toBeTruthy();
+  await act(async () => {
+    stream.enqueue(new TextEncoder().encode('data: {"type":"turn.failed","error":"Model failed"}\n\n'));
+    stream.close();
+  });
+  expect(await screen.findByText("Queued message has not been sent.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Send queued message" })).toHaveProperty("disabled", true);
+  expect(input).toHaveProperty("value", "First prompt");
+  fireEvent.click(screen.getByRole("button", { name: "Discard failed prompt" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send queued message" })).toHaveProperty("disabled", false));
+  fireEvent.click(screen.getByRole("button", { name: "Send queued message" }));
+  await waitFor(() => expect(sent).toEqual(["First prompt", "Show me the temperatures throughout the house."]));
+  await waitFor(() => expect(screen.queryByText("Queued message has not been sent.")).toBeNull());
+});
+
 it("retains failed background activity and the prompt until history recovery succeeds", async () => {
   let stream!: ReadableStreamDefaultController<Uint8Array>;
   let historyUnavailable = false;
@@ -348,7 +390,7 @@ it.each([
   expect(log.getAllByText("Hearth")).toHaveLength(1);
   expect(log.queryByText("Hidden tool narration")).toBeNull();
   if (reply) expect(log.getAllByText(reply)).toHaveLength(1);
-  else expect(screen.getByRole("log").querySelectorAll(".message-markdown")).toHaveLength(0);
+  else expect(screen.getByRole("log").querySelectorAll('[data-slot="message-markdown"]')).toHaveLength(0);
   expect(fetcher.mock.calls.filter(([path]) => String(path).endsWith("/messages/stream"))).toHaveLength(1);
 });
 
@@ -356,13 +398,15 @@ it("renders views in the reply, opens the canvas on demand, and closes an unedit
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith("/messages") ? historyWithView : { conversations: [] }))));
   mount("/conversations/conv-1");
   const open = await screen.findByRole("button", { name: "Open in canvas" });
-  expect(open.closest(".artifact-preview")?.classList.contains("artifact-view")).toBe(true);
-  expect(open.querySelector(".artifact-open-detail")?.textContent).toBe(" in canvas");
+  expect(open.closest('[data-slot="artifact-preview"]')?.getAttribute("data-kind")).toBe("view");
+  expect(open.querySelector('[data-slot="artifact-open-detail"]')?.textContent).toBe(" in canvas");
   expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
   expect(screen.queryByRole("group", { name: "Workspace panels" })).toBeNull();
   expect(within(screen.getByRole("log")).getByText("Hello home")).toBeTruthy();
   fireEvent.click(open);
   const canvas = await screen.findByRole("region", { name: "View canvas" });
+  expect(screen.getByRole("button", { name: "Show selected view: Warm house" }).getAttribute("data-size")).toBe("touch");
+  expect(screen.getByRole("button", { name: "Close selected view" }).getAttribute("data-size")).toBe("icon-touch");
   expect(within(canvas).getByText("Hello home")).toBeTruthy();
   // The open view is drawn once, in the canvas.
   expect(within(screen.getByRole("log")).queryByText("Hello home")).toBeNull();
@@ -403,7 +447,7 @@ it("switches a view card's readings a screen away from view and keeps its height
   act(() => resizes.forEach(callback => callback([], {} as ResizeObserver)));
   act(() => latest().notify(false));
   const summary = within(log).getByText("Open view to load live readings");
-  expect(summary.closest<HTMLElement>(".artifact-body")?.style.minHeight).toBe("868px");
+  expect(summary.closest<HTMLElement>('[data-slot="artifact-body"]')?.style.minHeight).toBe("868px");
 });
 
 it("asks before closing a view with manual edits", async () => {
@@ -526,13 +570,15 @@ it("renders assistant Markdown and copies its original text with native copied f
   mount("/conversations/conv-1");
   const log = within(screen.getByRole("log"));
   expect((await log.findByText("Room readings")).tagName).toBe("STRONG");
-  const markdown = within(log.getByText("Room readings").closest(".message-markdown")!);
+  const markdown = within(log.getByText("Room readings").closest('[data-slot="message-markdown"]')!);
   expect(markdown.getAllByRole("listitem")).toHaveLength(2);
   expect(log.getByRole("table")).toBeTruthy();
   expect(log.getByRole("link", { name: "Details" }).getAttribute("href")).toBe("https://example.com");
   expect(log.getByText('{"temperature":21}').closest("pre")).toBeTruthy();
   expect(log.queryByText("unsafe()")).toBeNull();
-  fireEvent.click(log.getByRole("button", { name: "Copy response" }));
+  const copy = log.getByRole("button", { name: "Copy response" });
+  expect(copy.getAttribute("data-size")).toBe("touch");
+  fireEvent.click(copy);
   await waitFor(() => expect(writeText).toHaveBeenCalledWith(text));
   expect(await log.findByText("Copied")).toBeTruthy();
   expect(log.getByRole("button", { name: "Response copied" })).toBeTruthy();
