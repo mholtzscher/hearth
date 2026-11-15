@@ -7,7 +7,6 @@ import { automationDocumentIssues, documentValue, editAutomationDocument, newDoc
 import { collection, discoverFunctions, type AdapterFunction } from "./resources";
 import { getOperationParametersSchema } from "./operation-parameters";
 import { Condition, Field, Select, StateGuide, conditionSource, entityOptions, firstEntity, q, type Context, type Resources } from "./ConditionEditor";
-import "./automations.css";
 
 type EditorProps = { document: AutomationDocument; onChange: (document: AutomationDocument) => void; onValidityChange?: (valid: boolean) => void };
 
