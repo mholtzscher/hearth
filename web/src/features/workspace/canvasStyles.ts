@@ -1,7 +1,7 @@
 /** Shared layout for View and Automation canvas headers. */
 export const canvasHeader = "mb-5 grid grid-cols-[minmax(0,1fr)_auto] [grid-template-areas:'title_window'_'actions_actions'] items-start gap-x-4 gap-y-3 border-b border-border pb-4 @min-[1000px]/canvas:grid-cols-[minmax(0,1fr)_auto_auto] @min-[1000px]/canvas:[grid-template-areas:'title_actions_window']";
 export const canvasTitle = "min-w-0 [grid-area:title]";
-export const canvasHeading = "text-[26px] leading-[1.3] font-medium tracking-[-.03em] text-balance [overflow-wrap:anywhere] max-tablet:text-[22px]";
+export const canvasHeading = "text-headline leading-[1.3] font-medium tracking-[-.03em] text-balance [overflow-wrap:anywhere] max-tablet:text-[22px]";
 export const canvasSubtitle = "mt-1 text-label leading-normal text-muted-foreground";
 export const canvasToolbar = "flex flex-wrap justify-between gap-x-4 gap-y-2 [grid-area:actions] @min-[1000px]/canvas:self-center";
 export const canvasToolbarGroup = "flex flex-wrap items-center gap-2";

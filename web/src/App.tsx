@@ -211,7 +211,7 @@ function HouseholdShell() {
   return <PhoneBarSlot.Provider value={nav === "bar" ? barSlot : null}>
     <div className={cn("hearth-app grid h-[var(--visible-height,100dvh)] grid-cols-[clamp(218px,22vw,340px)_minmax(0,1fr)] bg-background text-label text-foreground [translate:0_var(--visible-top,0px)]", nav === "rail" && "grid-cols-[104px_minmax(0,1fr)]", nav === "bar" && "grid-cols-[minmax(0,1fr)] grid-rows-[52px_minmax(0,1fr)]")}>
     {nav === "bar" && <header className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 border-b border-border bg-background px-2 py-1" inert={drawerOpen}>
-      <Button ref={menuButton} variant="ghost" size="icon-touch" className={cn("relative aria-expanded:bg-transparent", serverProblem && "after:absolute after:top-[10px] after:right-[9px] after:size-2 after:rounded-full after:bg-[var(--warn)] after:shadow-[0_0_0_2px_var(--gray-0)] after:content-['']", server === "unavailable" && "after:bg-[var(--error)]")} aria-label={serverProblem ? `Open navigation, Hearth server ${serverLabels[server]}` : "Open navigation"} aria-expanded={drawerOpen} aria-controls="hearth-sidebar" onClick={() => setDrawerOpen(true)}><MenuIcon aria-hidden="true" /></Button>
+      <Button ref={menuButton} variant="ghost" size="icon-touch" className={cn("relative aria-expanded:bg-transparent", serverProblem && "after:absolute after:top-[10px] after:right-[9px] after:size-2 after:rounded-full after:bg-warning after:shadow-[0_0_0_2px_var(--background)] after:content-['']", server === "unavailable" && "after:bg-destructive")} aria-label={serverProblem ? `Open navigation, Hearth server ${serverLabels[server]}` : "Open navigation"} aria-expanded={drawerOpen} aria-controls="hearth-sidebar" onClick={() => setDrawerOpen(true)}><MenuIcon aria-hidden="true" /></Button>
       <div className="flex min-w-0 justify-center [&:has([data-slot=phone-bar-slot]:not(:empty))>[data-slot=phone-bar-title]]:hidden">
         <span data-slot="phone-bar-title" className="truncate text-body font-semibold tracking-[-.01em] text-foreground">{home ? "Home" : development ? "Development" : "Dashboards"}</span>
         <div ref={setBarSlot} data-slot="phone-bar-slot" />
@@ -237,7 +237,7 @@ function HouseholdShell() {
       }} />
       <ServerStatus onChange={setServer} rail={nav === "rail"} />
     </aside>
-    {drawerOpen && <div className="fixed inset-0 z-[55] bg-[#0008]" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
+    {drawerOpen && <div className="fixed inset-0 z-[55] bg-background/[.533333]" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
     <main className="flex min-h-0 min-w-0 flex-col overflow-hidden" inert={drawerOpen}>{development ? <DevelopmentShell /> : <Outlet />}</main>
     </div>
   </PhoneBarSlot.Provider>;
