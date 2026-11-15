@@ -22,7 +22,7 @@ export function SharedControlStatus({ controls }: { controls: StatusControl[] })
     if (states[index].phase !== "idle" && current.order > order) { selected = index; order = current.order; }
   });
   const state = states[selected], control = controls[selected];
-  return <div className="view-control-status">
+  return <div data-slot="control-status" className="view-control-status">
     <p role="status" data-tone="info">{state && (state.phase === "pending" || state.phase === "confirming") && <><span className="view-status-dot" aria-hidden="true" />{control.pending(state.requested)}</>}</p>
     {state?.phase === "failed" && <p role="alert" data-tone="error"><span className="view-status-dot" aria-hidden="true" />{control.name}: {powerFailures[state.failure.kind]}</p>}
   </div>;

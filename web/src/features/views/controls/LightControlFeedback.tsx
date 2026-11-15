@@ -29,7 +29,7 @@ export function LightControlFeedback({ controls, brightnessId, powerId, detailed
   const failed = active.filter(entry => entry.state.phase === "failed");
   const pending = active.length - failed.length;
   if (detailed) return <div className="view-color-feedback">
-    {active.map(({ id, name, pending, state }) => <div className="view-control-status" key={id}>
+    {active.map(({ id, name, pending, state }) => <div data-slot="control-status" className="view-control-status" key={id}>
       <p role={state.phase === "failed" ? "alert" : "status"} data-tone={state.phase === "failed" ? "error" : "info"}>
         <span className="view-status-dot" aria-hidden="true" />
         {state.phase === "failed" ? `${name}: ${lightFailures[state.failure.kind]}` : pending(state.requested)}
@@ -45,7 +45,7 @@ export function LightControlFeedback({ controls, brightnessId, powerId, detailed
     <span id={descriptionId} className="sr-only" role={failed.length ? "alert" : "status"}>{summary}</span>
     {summary && <span aria-hidden="true">{failed.length ? "Failed" : "Pending"}</span>}
   </span>;
-  return <div className="view-control-status view-light-feedback" aria-hidden={hidden || undefined} inert={hidden || undefined}>
+  return <div data-slot="control-status" data-light-feedback className="view-control-status view-light-feedback" aria-hidden={hidden || undefined} inert={hidden || undefined}>
     <p role={failed.length ? "alert" : "status"} data-tone={failed.length ? "error" : "info"}>
       {summary && <button type="button" onClick={onDetails}>
         <span className="view-status-dot" aria-hidden="true" /><span>{summary} · Details</span>

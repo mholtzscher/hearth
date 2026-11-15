@@ -184,7 +184,7 @@ it("lets a drag replace keyboard steps that haven't settled", async () => {
 it("keeps each control's status row in place while a Command comes and goes", async () => {
   const core = fakeCore({ on: false, level: 64, observedAt: "2026-11-06T10:00:00Z" });
   await renderLight();
-  const rows = () => [...document.querySelectorAll(".view-control-status")];
+  const rows = () => [...document.querySelectorAll('[data-slot="control-status"]')];
   const unchanged = () => rows().forEach((row, i) => expect(row).toBe(idle[i]));
   const idle = rows();
   expect(idle).toHaveLength(2);

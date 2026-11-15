@@ -42,7 +42,7 @@ export function BrightnessSlider({ entity, label, feedback }: { entity: FieldEnt
   }
 
   const position = clamp(shown ?? MIN);
-  return <div className="view-control-slider">
+  return <div data-slot="brightness-control" className="view-control-slider">
     <div className="view-slider-label">
       <label htmlFor={id}>Brightness</label>
       {/* aria-valuetext carries the level; an <output> would announce every step of a drag. */}

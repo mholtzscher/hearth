@@ -95,9 +95,21 @@ it("sends mode and fan strings and shows requested controls without changing obs
   expect(document.querySelector(".view-air-purifier-detail")?.textContent).toBe("Sleep");
 });
 
+it("leaves every mode unselected when no mode has been observed", async () => {
+  const values = fixture();
+  delete values[3].state;
+  const api = core(values);
+  await mount(<BoundAirPurifier {...props} />);
+  const mode = screen.getByRole("group", { name: "Mode" });
+  expect(within(mode).getAllByRole("button").map(button => button.getAttribute("aria-pressed"))).toEqual(["false", "false", "false"]);
+  expect(api.posts).toHaveLength(0);
+  fireEvent.click(within(mode).getByRole("button", { name: "Sleep" })); await flush();
+  expect(api.posts[0].body.parameters).toEqual({ value: "sleep" });
+});
+
 it("keeps the most recent failure until that control is requested again", async () => {
   const api = core(fixture()); await mount(<BoundAirPurifier {...props} />);
-  expect(document.querySelector(".view-air-purifier .view-control-status")).toBeTruthy();
+  expect(screen.getByRole("article").querySelector('[data-slot="control-status"]')).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Raise fan level" })); await flush();
   api.fail(api.posts[0]); await flush();
   expect(screen.getByRole("alert").textContent).toBe("Fan level: Change rejected. Try again.");

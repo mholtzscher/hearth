@@ -91,7 +91,7 @@ it("has one whole-tile switch, keeps observed State while pending, and shares th
   await mount(<><BoundToggleTile source={source()} label="Fan" /><BoundToggleList title="Room" rows={[{ source: source(), label: "Fan" }]} /></>);
   const tile = screen.getByRole("article", { name: "Fan" });
   const control = within(tile).getByRole("switch");
-  expect(tile.querySelector(".view-switch")).toBeNull();
+  expect(within(tile).getAllByRole("switch")).toHaveLength(1);
   fireEvent.click(control); await flush();
   expect(api.posts.map(post => post.body)).toEqual([{ operation: "set", parameters: { value: true } }]);
   expect(control.getAttribute("aria-checked")).toBe("false");

@@ -146,7 +146,7 @@ export function LightColorPicker({ controls, activeId, name, observed, open, onO
   const triggerText = both ? "Adjust white or color" : controls.temperature ? "Adjust white" : "Adjust color";
   const trigger = <button type="button" className="view-color-trigger" aria-label={`${name}: ${triggerText}`} title={triggerText} aria-expanded={open}
     aria-describedby={inlineFeedback ? feedbackId : undefined}>
-    <span className="view-color-wheel-icon" aria-hidden="true" />
+    <span data-slot="color-wheel-icon" className="view-color-wheel-icon" aria-hidden="true" />
   </button>;
   const body: ReactNode = <>
     <header className="view-source-header">
@@ -167,7 +167,7 @@ export function LightColorPicker({ controls, activeId, name, observed, open, onO
     {phone ? <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
       <Dialog.Portal><Dialog.Overlay className="view-source-backdrop" />
-        <Dialog.Content className="view-source view-source-sheet view-color-picker" aria-modal="true">{body}</Dialog.Content>
+        <Dialog.Content data-placement="bottom" className="view-source view-source-sheet view-color-picker" aria-modal="true">{body}</Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root> : <Popover.Root open={open} onOpenChange={onOpenChange}>
       <Popover.Trigger asChild>{trigger}</Popover.Trigger>

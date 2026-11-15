@@ -90,6 +90,28 @@ export const PhoneSheet: Story = {
     await expectNoHorizontalOverflow(canvasElement);
   },
 };
+export const DesktopDismissal: Story = {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const trigger = canvas.getByRole("button", { name: /Adjust color/ });
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(trigger);
+    await expect(await body.findByRole("dialog", { name: "Light color" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect(body.queryByRole("dialog", { name: "Light color" })).not.toBeInTheDocument();
+    await expect(trigger).toHaveFocus();
+    await userEvent.click(trigger);
+    await userEvent.click(await body.findByRole("button", { name: "Close color picker" }));
+    await expect(trigger).toHaveFocus();
+  },
+};
+export const PhoneDismissal: Story = {
+  ...DesktopDismissal,
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async context => {
+    await DesktopDismissal.play!(context);
+    await expectNoHorizontalOverflow(context.canvasElement);
+  },
+};
 export const WhiteAndColor: Story = {
   args: {
     controls: lightColorControls([

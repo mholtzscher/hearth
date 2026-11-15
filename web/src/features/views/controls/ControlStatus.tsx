@@ -35,7 +35,7 @@ export const powerFailures: Record<CommandFailure["kind"], string> = {
 export function ControlStatus({ entityId, pending, subject = "light", idle, className }: { entityId: string; pending: (requested: unknown) => string; subject?: "light" | "power"; idle?: ReactNode; className?: string }) {
   const [state] = useControl({ entityId, operation: "set" });
   const working = state.phase === "pending" || state.phase === "confirming";
-  return <div className={cn("view-control-status", className)}>
+  return <div data-slot="control-status" className={cn("view-control-status", className)}>
     <p role="status" data-tone="info">
       {working && <><span className="view-status-dot" aria-hidden="true" />{pending(state.requested)}</>}
       {state.phase === "idle" && idle}
