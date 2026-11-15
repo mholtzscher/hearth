@@ -6,7 +6,7 @@ import { useControls } from "../../data/provider";
 import { supportsOperation } from "../../controls/support";
 import { PowerSwitch } from "../../controls/PowerSwitch";
 import { ControlStatus } from "../../controls/ControlStatus";
-import { CardFrame, StatusList } from "../CardFrame";
+import { DataCard, StatusList } from "../DataCard";
 import { cardStatus } from "../status";
 import { useArrival } from "../observation";
 import { listArrivals, oldestObservation, rowSources, rowStates, type ReadingRow } from "../reading-list/ReadingRows";
@@ -47,7 +47,7 @@ export function BoundToggleList({ title, rows, all_off }: z.infer<typeof toggleL
   const inProgress = members.some(index => controls[index].phase === "pending" || controls[index].phase === "confirming");
   const off = members.filter(index => powers[index].resource.status === "ready" && powers[index].resource.data?.on === false).length;
   const failed = members.filter(index => controls[index].phase === "failed").length;
-  return <CardFrame title={title} status={[]} sources={sources}
+  return <DataCard title={title} status={[]} sources={sources}
     arrivals={listArrivals(displayed)} observedAt={oldestObservation(displayed)} observedLabel="Oldest reading"
     sourceExtra={<><p>Each switch uses its Entity's current support. Turn all off requests separate Commands for enabled, supported rows that are not already observed Off.</p><p>Group feedback counts observed Off readings; it is not an atomic multi-Device outcome.</p>{powers.filter(power => power.historyError).map(power => <p key={power.source.entity_id}>{power.resource.metadata?.label ?? "Power"}: since time unavailable.</p>)}</>}>
     <ul className="-my-1 grid list-none">{powers.map((power, index) => <SwitchRow key={power.source.entity_id} power={power} label={readingRows[index].name} />)}</ul>
@@ -58,5 +58,5 @@ export function BoundToggleList({ title, rows, all_off }: z.infer<typeof toggleL
       }}>Turn all off</Button>
       <p className="flex-[1_1_9em] text-label leading-normal text-muted-foreground data-[failed]:text-destructive" role="status" data-failed={failed > 0 || undefined}>{members.length > 0 && (inProgress ? `Updating ${members.length} switches…` : `${off} of ${members.length} Off${failed ? ` · ${failed} failed` : off < members.length ? " · check rows" : ""}`)}</p>
     </div>}
-  </CardFrame>;
+  </DataCard>;
 }

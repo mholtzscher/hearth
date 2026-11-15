@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "../../../../lib/utils";
 import { useNumericReads } from "../../bindings/registry";
 import type { MetricData, NumericSource, ReadUnits, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
-import { StatusList } from "../CardFrame";
+import { StatusList } from "../DataCard";
 import { Reading, ReadingUnit } from "../Reading";
 import { cardStatus, type CardStatus } from "../status";
 import type { ReadingRow } from "../reading-list/ReadingRows";

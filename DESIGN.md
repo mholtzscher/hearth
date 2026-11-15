@@ -201,7 +201,7 @@ Surfaces are mostly flat: tonal separation and fine borders establish hierarchy 
 
 ## Shapes
 
-Cards use a 12px radius and a 1px neutral border. Shared buttons, fields, and household navigation use 8px corners; the workspace modal uses 14px. The `rounded-xs` token is 4px, `rounded-sm` is 6px, `rounded-md` is 8px, `rounded-card` is 12px, and `rounded-xl` is 14px. Gradients appear only as one- or two-pixel horizon lines, not as large decorative fills.
+Cards use a 12px radius, a 1px neutral border, the `--gray-1` card surface, and 18px padding. Development pages use the compact card, with 12px padding and 14px `label` text. Shared buttons, fields, and household navigation use 8px corners; the workspace modal uses 14px. The `rounded-xs` token is 4px, `rounded-sm` is 6px, `rounded-md` is 8px, `rounded-card` is 12px, and `rounded-xl` is 14px. Gradients appear only as one- or two-pixel horizon lines, not as large decorative fills.
 
 ## Components
 

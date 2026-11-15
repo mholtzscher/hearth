@@ -8,6 +8,7 @@ import { readAutomationDocument, type AutomationDocument } from "../automations/
 import { AutomationCard } from "../automations/AutomationCard";
 import { cn } from "../../lib/utils";
 import { Button } from "../../components/button";
+import { Card } from "../../components/card";
 import { Notice } from "../../components/notice";
 import { artifactAction, artifactFrame, artifactHeader, artifactIcon, artifactSummary, artifactTitle } from "./artifactStyles";
 
@@ -28,10 +29,10 @@ export function AutomationArtifactPreview({ artifact, open, active, onSelect }: 
     }
     return () => controller.abort();
   }, [artifact, version, active]);
-  return <div className={cn(artifactFrame, open && "border-violet/45")}>
+  return <Card className={cn(artifactFrame, open && "border-violet/45")}>
     <div className={artifactHeader}><span className={artifactIcon}><WorkflowIcon className="size-5" aria-hidden="true" /></span><div><h3 className={artifactTitle}>{document?.definition.name ?? "Automation"}</h3><p className={artifactSummary}>{artifact.mode === "reference" ? "Saved reference · current definition" : artifact.mode === "replace" ? `Replacement proposal · based on revision ${artifact.expected_revision}` : "Unsaved proposal · not created"}</p></div><Button variant={open ? "ghost" : "outline"} size="touch" className={artifactAction(open)} onClick={onSelect}>{open ? <><CheckIcon className="size-4 shrink-0" aria-hidden="true" />Showing in canvas</> : <>Open in canvas<ArrowRightIcon className="size-4 shrink-0" aria-hidden="true" /></>}</Button></div>
     {error && <Notice role="alert">{error}</Notice>}
     {!open && document && <AutomationCard document={document} compact headingLevel={4} />}
     {!document && !error && active && <p role="status">Loading Automation…</p>}
-  </div>;
+  </Card>;
 }

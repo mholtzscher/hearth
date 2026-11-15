@@ -16,7 +16,7 @@ import { Button } from "../components/button.tsx";
 import NameEditor from "../features/naming/NameEditor.tsx";
 import EntityEventHistory from "../features/entities/entity-event-history.tsx";
 import EntityStateHistory from "../features/entities/entity-state-history.tsx";
-import { Card, CardContent } from "../components/card.tsx";
+import { Card } from "../components/card.tsx";
 import { Input } from "../components/input.tsx";
 import { Label } from "../components/label.tsx";
 import { Switch } from "../components/switch.tsx";
@@ -534,146 +534,138 @@ export default function EntityDetailPage() {
             void refresh();
           }} />
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
-            <Card size="sm">
-              <CardContent>
-                <Facts
-                  rows={[
-                    ["Type", data.type],
-                    ["Device", data.device_id],
-                    ["Adapter", data.adapter_id],
-                    [
-                      "Availability",
-                      `${data.availability.source} since ${data.availability.since}${data.availability.reason ? ` (${data.availability.reason.code})` : ""}`,
-                    ],
-                    [
-                      "State",
-                      data.state
-                        ? `${stateCellText(data.type, data.state.value)} obs=${data.state.observation_id} at ${data.state.observed_at}`
-                        : "null (never observed)",
-                    ],
-                    ...(stateSummary !== null
-                      ? ([["State summary", stateSummary]] as [string, string][])
-                      : []),
-                  ]}
+            <Card size="compact">
+              <Facts
+                rows={[
+                  ["Type", data.type],
+                  ["Device", data.device_id],
+                  ["Adapter", data.adapter_id],
+                  [
+                    "Availability",
+                    `${data.availability.source} since ${data.availability.since}${data.availability.reason ? ` (${data.availability.reason.code})` : ""}`,
+                  ],
+                  [
+                    "State",
+                    data.state
+                      ? `${stateCellText(data.type, data.state.value)} obs=${data.state.observation_id} at ${data.state.observed_at}`
+                      : "null (never observed)",
+                  ],
+                  ...(stateSummary !== null
+                    ? ([["State summary", stateSummary]] as [string, string][])
+                    : []),
+                ]}
+              />
+              <div className="mt-3 flex items-center gap-2">
+                <Switch
+                  id="entity-enabled"
+                  checked={data.enabled}
+                  disabled={toggling}
+                  onCheckedChange={(checked) => void setEnabled(checked)}
                 />
-                <div className="mt-3 flex items-center gap-2">
-                  <Switch
-                    id="entity-enabled"
-                    checked={data.enabled}
-                    disabled={toggling}
-                    onCheckedChange={(checked) => void setEnabled(checked)}
-                  />
-                  <Label htmlFor="entity-enabled" className="text-sm">
-                    Enabled
-                  </Label>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    PATCH /v1/entities/{"{id}"}
-                  </span>
-                </div>
-              </CardContent>
+                <Label htmlFor="entity-enabled" className="text-sm">
+                  Enabled
+                </Label>
+                <span className="font-mono text-xs text-muted-foreground">
+                  PATCH /v1/entities/{"{id}"}
+                </span>
+              </div>
             </Card>
 
             {commandable ? (
-            <Card size="sm">
-              <CardContent>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">Send command</span>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    POST /v1/entities/{"{id}"}/commands
-                  </span>
-                </div>
-                <div className="mt-3 flex flex-col gap-3">
-                  {presetsFor(data?.type, data?.support).length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {presetsFor(data?.type, data?.support).map((p) => (
-                        <Button
-                          key={p.label}
-                          size="default"
-                          variant="outline"
-                          onClick={() => { setParamsText(p.params); setParamsTouched(true); }}
-                        >
-                          {p.label}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
-                    <div className="grid content-start gap-1.5">
-                      <Label htmlFor="cmd-operation">operation</Label>
-                      <Input
-                        id="cmd-operation"
-                        className="font-mono text-xs"
-                        value={operation}
-                        onChange={(e) => { setOperation(e.target.value); setOperationTouched(true); }}
-                      />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="cmd-params">parameters (JSON)</Label>
-                      <Textarea
-                        id="cmd-params"
-                        className="font-mono text-xs"
-                        value={paramsText}
-                        rows={2}
-                        aria-invalid={!!paramsError}
-                        onChange={(e) => { setParamsText(e.target.value); setParamsTouched(true); }}
-                      />
-                      <p className={`text-xs ${paramsError ? "text-destructive" : "text-muted-foreground"}`}>
-                        {paramsError ?? `e.g. ${exampleParams(data?.type, data?.support)}${data ? ` for ${data.type} ${defaultOperation(data.type)}` : ""}`}
-                      </p>
-                    </div>
+            <Card size="compact">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Send command</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  POST /v1/entities/{"{id}"}/commands
+                </span>
+              </div>
+              <div className="mt-3 flex flex-col gap-3">
+                {presetsFor(data?.type, data?.support).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {presetsFor(data?.type, data?.support).map((p) => (
+                      <Button
+                        key={p.label}
+                        size="default"
+                        variant="outline"
+                        onClick={() => { setParamsText(p.params); setParamsTouched(true); }}
+                      >
+                        {p.label}
+                      </Button>
+                    ))}
                   </div>
+                )}
+                <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
+                  <div className="grid content-start gap-1.5">
+                    <Label htmlFor="cmd-operation">operation</Label>
+                    <Input
+                      id="cmd-operation"
+                      className="font-mono text-xs"
+                      value={operation}
+                      onChange={(e) => { setOperation(e.target.value); setOperationTouched(true); }}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="cmd-params">parameters (JSON)</Label>
+                    <Textarea
+                      id="cmd-params"
+                      className="font-mono text-xs"
+                      value={paramsText}
+                      rows={2}
+                      aria-invalid={!!paramsError}
+                      onChange={(e) => { setParamsText(e.target.value); setParamsTouched(true); }}
+                    />
+                    <p className={`text-xs ${paramsError ? "text-destructive" : "text-muted-foreground"}`}>
+                      {paramsError ?? `e.g. ${exampleParams(data?.type, data?.support)}${data ? ` for ${data.type} ${defaultOperation(data.type)}` : ""}`}
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <Button size="default" disabled={sending} onClick={() => void sendCommand()}>
+                    {sending ? "Sending…" : "Send command"}
+                  </Button>
+                </div>
+                {sendError && (
+                  <ErrorBox error={sendError instanceof ApiError ? sendError : sendError} />
+                )}
+                {result && (
                   <div>
-                    <Button size="default" disabled={sending} onClick={() => void sendCommand()}>
-                      {sending ? "Sending…" : "Send command"}
-                    </Button>
-                  </div>
-                  {sendError && (
-                    <ErrorBox error={sendError instanceof ApiError ? sendError : sendError} />
-                  )}
-                  {result && (
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <StatusChip status={result.status} />
-                        {result.status === "satisfied" ? (
-                          <span className="font-mono text-xs text-muted-foreground">
-                            obs={result.observation_id} value={JSON.stringify(result.value)}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            dispatched — accepted with no observation; the effect was not verified.
-                          </span>
-                        )}
-                      </div>
-                      <RawJson value={result} title="Command result JSON" />
+                    <div className="flex items-center gap-2">
+                      <StatusChip status={result.status} />
+                      {result.status === "satisfied" ? (
+                        <span className="font-mono text-xs text-muted-foreground">
+                          obs={result.observation_id} value={JSON.stringify(result.value)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          dispatched — accepted with no observation; the effect was not verified.
+                        </span>
+                      )}
                     </div>
-                  )}
-                </div>
-              </CardContent>
+                    <RawJson value={result} title="Command result JSON" />
+                  </div>
+                )}
+              </div>
             </Card>
             ) : eventSource ? (
-            <Card size="sm">
-              <CardContent>
-                <span className="text-sm font-medium">Event source</span>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {`This ${data.type} entity sources Entity Events and declares no command operations. Supported event names:`}
-                </p>
-                <ul className="mt-1.5 flex flex-wrap gap-1.5">
-                  {eventNames.map((name, index) => (
-                    <li key={`${index}-${name}`} className="rounded-md border px-1.5 py-0.5 font-mono text-xs">
-                      {name}
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
+            <Card size="compact">
+              <span className="text-sm font-medium">Event source</span>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {`This ${data.type} entity sources Entity Events and declares no command operations. Supported event names:`}
+              </p>
+              <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                {eventNames.map((name, index) => (
+                  <li key={`${index}-${name}`} className="rounded-md border px-1.5 py-0.5 font-mono text-xs">
+                    {name}
+                  </li>
+                ))}
+              </ul>
             </Card>
             ) : (
-            <Card size="sm">
-              <CardContent>
-                <span className="text-sm font-medium">Read-only entity</span>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {`This ${data.type} entity declares no command operations.`}
-                </p>
-              </CardContent>
+            <Card size="compact">
+              <span className="text-sm font-medium">Read-only entity</span>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {`This ${data.type} entity declares no command operations.`}
+              </p>
             </Card>
             )}
           </div>

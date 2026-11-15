@@ -11,6 +11,8 @@ import { JsonCode } from "./AutomationCode";
 import { collection } from "./resources";
 import { automationEntityIds, describeAutomationSteps } from "./definition-tree";
 import { Button } from "../../components/button";
+import { Card } from "../../components/card";
+import { cn } from "../../lib/utils";
 import { SegmentedControl } from "../../components/segmented-control";
 
 const paragraph = "my-[5px] text-label text-muted-foreground";
@@ -116,8 +118,8 @@ export function AutomationCard({ document, onEdit, children, automationId, compa
   let valid: AutomationDocument | undefined;
   let message = "Invalid definition";
   try { valid = readAutomationDocument(document.source); } catch (error) { if (error instanceof Error) message = error.message; }
-  return <article className={`min-w-0 rounded-card border border-border bg-card text-foreground [overflow-wrap:anywhere] max-tablet:p-3.5 ${compact ? "p-3.5" : "p-[18px]"}`}>
+  return <Card asChild className={cn("[overflow-wrap:anywhere] max-tablet:p-3.5", compact && "p-3.5")}><article>
     {valid ? <><header className={row}><div><Heading className={heading}>{valid.definition.name}</Heading><p className={paragraph}>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}</p></div>{onEdit && <Button size="touch" variant="outline" className={action} onClick={onEdit}>Edit Automation</Button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p className={`${paragraph} text-destructive`} role="alert">This Automation cannot be shown: {message}</p>}
     {children}
-  </article>;
+  </article></Card>;
 }

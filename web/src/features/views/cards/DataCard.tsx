@@ -3,6 +3,7 @@ import { observationAge, useArrivals, useMinuteClock, type Arrival } from "./obs
 import { CardSource, type SourceItem } from "./CardSource";
 import type { StatusEntry } from "./status";
 import { cn } from "../../../lib/utils";
+import { Card } from "../../../components/card";
 import { StatusDot } from "../controls/StatusDot";
 
 export type { SourceItem } from "./CardSource";
@@ -26,7 +27,7 @@ export function StatusList({ entries, className, separators = true }: { entries:
 
 /** The parts of a card that a caller may adjust. */
 export type CardSlot = "body" | "footer" | "timeLabel" | "sourceToggle";
-export type CardFrameProps = {
+export type DataCardProps = {
   title: string;
   /** A chart's unit, shown beside its title. */
   unit?: string;
@@ -50,11 +51,12 @@ export type CardFrameProps = {
 };
 
 /**
- * The one frame every data card uses (DESIGN.md, View cards): a header with the
- * title and status, the body, and a footer with compact age and Source details.
+ * The one frame every data card uses (DESIGN.md, View cards), drawn on the shared
+ * Card surface: a header with the title and status, the body, and a footer with
+ * compact age and Source details.
  * Newer changed readings light the top edge and fade over ten seconds.
  */
-export function CardFrame({ title, unit, status, observedAt, observedLabel = "Observed", compactTimeLabel = false, arrival, arrivals, sources, sourceExtra, className, classNames, children, "data-on": on }: CardFrameProps) {
+export function DataCard({ title, unit, status, observedAt, observedLabel = "Observed", compactTimeLabel = false, arrival, arrivals, sources, sourceExtra, className, classNames, children, "data-on": on }: DataCardProps) {
   const level = useContext(HeadingLevel) + 1;
   const Title = `h${level}` as "h4";
   const titleId = useId();
@@ -64,7 +66,7 @@ export function CardFrame({ title, unit, status, observedAt, observedLabel = "Ob
   const shortLabel = observedLabel === "Oldest reading" ? "Oldest" : observedLabel;
   const glow = useArrivals(arrivals ?? (arrival ? [{ ...arrival, key: "reading" }] : []));
   const hasSource = sources.length > 0 || sourceExtra !== undefined;
-  return <article data-slot="card" data-on={on || undefined} className={cn("relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-card border border-border bg-card p-[18px]", className)} aria-labelledby={titleId}>
+  return <Card asChild className={cn("relative flex flex-col gap-3 overflow-hidden", className)}><article data-on={on || undefined} aria-labelledby={titleId}>
     {/* A new key restarts the fade for each arrival. */}
     {glow !== undefined && <span key={glow} data-slot="card-arrival" className="pointer-events-none absolute inset-x-0 top-0 h-0.5 animate-arrival bg-orange" aria-hidden="true" />}
     <header data-slot="card-header" className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -77,5 +79,5 @@ export function CardFrame({ title, unit, status, observedAt, observedLabel = "Ob
       {observedAt && (age ? <time className="min-w-0 whitespace-nowrap" dateTime={observedAt} aria-label={`${observedLabel} ${ageWords}`}>{compactTimeLabel ? <><span data-slot="card-time-label" className={classNames?.timeLabel}>{shortLabel} </span>{age}</> : `${shortLabel} ${age}`}</time> : <span>Observation time unavailable</span>)}
       {hasSource && <CardSource title={title} observedAt={observedAt} observedLabel={observedLabel} now={now} sources={sources} toggleClassName={classNames?.sourceToggle}>{sourceExtra}</CardSource>}
     </footer>}
-  </article>;
+  </article></Card>;
 }

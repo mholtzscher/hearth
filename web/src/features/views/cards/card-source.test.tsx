@@ -1,17 +1,17 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
-import { CardFrame, StatusList } from "./CardFrame";
+import { DataCard, StatusList } from "./DataCard";
 
 const observedAt = "2026-11-04T19:40:00Z";
 const sources = [{ entityId: "ent-temperature", label: "Temperature" }];
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-function mount(extra: Partial<Parameters<typeof CardFrame>[0]> = {}, fakeIntervals = false) {
+function mount(extra: Partial<Parameters<typeof DataCard>[0]> = {}, fakeIntervals = false) {
   vi.useFakeTimers({ toFake: fakeIntervals ? ["Date", "setInterval", "clearInterval"] : ["Date"] });
   vi.setSystemTime(new Date("2026-11-06T19:42:00Z"));
-  return render(<CardFrame title="Living room" status={[]} observedAt={observedAt} sources={sources} {...extra}>21.6 °C</CardFrame>, { wrapper: MemoryRouter });
+  return render(<DataCard title="Living room" status={[]} observedAt={observedAt} sources={sources} {...extra}>21.6 °C</DataCard>, { wrapper: MemoryRouter });
 }
 
 it("shows only compact recency on the card and keeps exact dated evidence in Source", async () => {

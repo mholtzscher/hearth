@@ -1,5 +1,5 @@
 import { ArrowDownToLineIcon, ArrowUpToLineIcon, SquareIcon } from "lucide-react";
-import { CardFrame } from "../CardFrame";
+import { DataCard } from "../DataCard";
 import { Reading } from "../Reading";
 import { Button } from "../../../../components/button";
 import { CoverDiagram } from "./CoverDiagram";
@@ -15,7 +15,7 @@ export function CoverCard({ props }: { props: CoverProps }) {
   const word = data ? coverWord(data.position, data.motion) : "—";
   const confirming = cover.confirm?.from === "button" && cover.confirm.target === 100;
   const disabled = !cover.enabled;
-  return <CardFrame title={title} className="@container" status={status.entries} observedAt={data?.observed_at}
+  return <DataCard title={title} className="@container" status={status.entries} observedAt={data?.observed_at}
     arrival={data && { updatedAt: data.observed_at, shown: `${word}|${data.position}`, eligible: status.glows }}
     sources={cover.sources} sourceExtra={coverSourceNote}>
     <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-4 pb-4 @max-[250px]:grid-cols-[64px_minmax(0,1fr)] @max-[250px]:gap-3">
@@ -41,7 +41,7 @@ export function CoverCard({ props }: { props: CoverProps }) {
       </div>
       <CoverStatus line={cover.line("button")} />
     </>}
-  </CardFrame>;
+  </DataCard>;
 }
 
 export function BoundCover(props: CoverProps) {

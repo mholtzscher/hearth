@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { automationContextSchema, viewContextSchema } from "../../api/agent";
 import { cn } from "../../lib/utils";
 import { Button } from "../../components/button";
+import { Card } from "../../components/card";
 import { Notice } from "../../components/notice";
 import { readAutomationDocument } from "../automations/document";
 import { AutomationArtifactPreview } from "./AutomationArtifactPreview";
@@ -77,7 +78,7 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
   // The canvas already shows the open view, so its card stays compact.
   const open = openId === data.artifact.artifact_id;
   // An inline view's cards are the frame; a narrow column keeps "Open" on the title row and names the action in full.
-  return <div ref={ref} data-slot="artifact-preview" data-kind="view" data-open={open || undefined} className={cn(artifactFrame, open ? "border-violet/45" : "mt-3 rounded-none border-0 bg-transparent p-0")}>
+  return <Card ref={ref} data-slot="artifact-preview" data-kind="view" data-open={open || undefined} className={cn(artifactFrame, open ? "border-violet/45" : "mt-3 rounded-none border-0 bg-transparent p-0")}>
     <div className={artifactHeader}>
       <span className={artifactIcon}><PanelsTopLeftIcon className="size-5" aria-hidden="true" /></span>
       <div><h3 className={artifactTitle}>{title}</h3><p className={artifactSummary}>{summary}</p></div>
@@ -86,18 +87,18 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
         : <Button variant="outline" size="touch" className={artifactAction(false, true)} onClick={() => select(data)} aria-label="Open in canvas"><span>Open<span data-slot="artifact-open-detail" className="@max-[440px]:hidden"> in canvas</span></span><ArrowRightIcon className="size-4 shrink-0" aria-hidden="true" /></Button>}
     </div>
     {!open && <ArtifactBody definition={data.artifact.definition} live={visible && near} />}
-  </div>;
+  </Card>;
 }
 
 /** Hold a presentation's place while the model writes it and Core checks it. */
 function PendingArtifactPart({ data }: DataMessagePartProps<{ kind?: string } | null>) {
-  return <div className={artifactFrame} role="status">
+  return <Card className={artifactFrame} role="status">
     <div className={artifactHeader}>
       <span className={artifactIcon}><PanelsTopLeftIcon className="size-5" aria-hidden="true" /></span>
       <div><h3 className={artifactTitle}>{data?.kind === "automation" ? "Preparing an Automation" : "Preparing a view"}</h3><p className={artifactSummary}>Putting it together…</p></div>
     </div>
-    <div className="mt-4 grid min-w-0 grid-cols-2 gap-3 overflow-x-auto border-t border-border pt-4" aria-hidden="true"><span className="h-[157px] animate-pending rounded-card border border-border bg-card" /><span className="h-[157px] animate-pending rounded-card border border-border bg-card [animation-delay:.2s]" /></div>
-  </div>;
+    <div className="mt-4 grid min-w-0 grid-cols-2 gap-3 overflow-x-auto border-t border-border pt-4" aria-hidden="true"><Card asChild className="h-[157px] animate-pending"><span /></Card><Card asChild className="h-[157px] animate-pending [animation-delay:.2s]"><span /></Card></div>
+  </Card>;
 }
 
 function ContextPart({ data }: DataMessagePartProps<unknown>) {

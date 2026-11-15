@@ -712,8 +712,8 @@ Apply this section to new and changed code under `web/`. The dashboard is moving
 to one styling system, one component library, and one token list. Code that
 predates a rule is a migration candidate, not a finding against an unrelated
 change. [`design-system.test.ts`](web/src/design-system.test.ts) holds the
-remaining counts of class selectors, raw form controls, and direct `radix-ui`
-imports, and fails when one grows.
+remaining counts of class selectors, raw form controls, hand-rolled card
+surfaces, and direct `radix-ui` imports, and fails when one grows.
 
 ### Style elements with utilities, not class selectors
 
@@ -762,7 +762,7 @@ Bad:
 Good:
 
 ```tsx
-<CardFrame classNames={{ body: "gap-0.5" }} />
+<DataCard classNames={{ body: "gap-0.5" }} />
 ```
 
 ### Name a component's parts with `data-slot`
@@ -867,6 +867,30 @@ Good:
 <Button onClick={save}>Save dashboard</Button>
 ```
 
+### Draw a card with `Card`
+
+Render a card-shaped surface with [`Card`](web/src/components/card.tsx). Use
+`size="compact"` on Development pages and `asChild` to keep an `article` or
+`section`. A view data card uses `DataCard`, which draws its surface with `Card`.
+
+**Why:** A card's radius, border, and surface copied into a feature drift from
+[`DESIGN.md`](DESIGN.md) and from each other.
+**Applies to:** New and changed code under `web/src`. The composer, sent
+messages, and unsupported view content are not cards.
+**Source:** stated
+
+Bad:
+
+```tsx
+<article className="rounded-card border border-border bg-card p-5">{summary}</article>
+```
+
+Good:
+
+```tsx
+<Card asChild><article>{summary}</article></Card>
+```
+
 ### Import Radix only in low-level component wrappers
 
 Wrap each Radix primitive once in `web/src/components` and import the wrapper
@@ -906,8 +930,8 @@ look similar but serve different purposes stay separate.
 Bad:
 
 ```text
-The Development Card and the view CardFrame are merged because both draw a
-bordered surface, although only CardFrame carries status, age, and Source.
+Card gains status, age, and Source props because DataCard draws its surface with
+Card, although only view data cards show those facts.
 ```
 
 Good:

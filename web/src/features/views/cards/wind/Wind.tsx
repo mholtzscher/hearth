@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { cn } from "../../../../lib/utils";
-import { CardFrame } from "../CardFrame";
+import { DataCard } from "../DataCard";
 import { Trend, trendMethod } from "../metric/Trend";
 import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates } from "../reading-list/ReadingRows";
@@ -48,7 +48,7 @@ export function BoundWind({ label, speed, gust, direction, max_gust, trend }: Pr
   const maxRow = displayed.filter(row => row.key === "max");
   const history = reads.history("speed");
   const hasTrend = !!(trend && history && status.value !== "empty");
-  return <CardFrame className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Wind"} status={status.entries}
+  return <DataCard className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Wind"} status={status.entries}
     observedAt={oldestObservation(displayed)} observedLabel={all.length > 1 ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
       <p>Words follow the Beaufort scale for the current wind speed.</p>
@@ -76,5 +76,5 @@ export function BoundWind({ label, speed, gust, direction, max_gust, trend }: Pr
     </WeatherZones>
     <SlotStatus name="Gusts" resource={gustReading} />
     <SlotStatus name="Wind direction" resource={directionReading} />
-  </CardFrame>;
+  </DataCard>;
 }

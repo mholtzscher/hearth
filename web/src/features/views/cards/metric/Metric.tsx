@@ -1,6 +1,6 @@
 import { useNumericReads } from "../../bindings/registry";
 import type { NumericSource, Resolved, MetricData, SeriesData, SeriesWindow } from "../../bindings/types";
-import { CardFrame } from "../CardFrame";
+import { DataCard } from "../DataCard";
 import { cardStatus } from "../status";
 import { Reading, ReadingUnit } from "../Reading";
 import { RangeTrack } from "./RangeTrack";
@@ -18,7 +18,7 @@ export function Metric({ label, resource, trend, range = false }: {
   const data = status.value === "empty" ? undefined : resource.data;
   const title = label ?? resource.metadata?.label ?? "Reading";
   const dimmed = status.value === "dimmed";
-  return <CardFrame className="@container" classNames={{ timeLabel: "@max-[200px]:hidden", footer: "@max-[200px]:gap-2", sourceToggle: "@max-[200px]:-me-1 @max-[200px]:px-1" }} title={title} status={status.entries} observedAt={data?.observed_at} compactTimeLabel
+  return <DataCard className="@container" classNames={{ timeLabel: "@max-[200px]:hidden", footer: "@max-[200px]:gap-2", sourceToggle: "@max-[200px]:-me-1 @max-[200px]:px-1" }} title={title} status={status.entries} observedAt={data?.observed_at} compactTimeLabel
     arrival={data ? { updatedAt: data.observed_at, shown: `${data.value.toFixed(data.format.fraction_digits)} ${data.format.unit_label}`, eligible: status.glows } : undefined}
     sources={resource.metadata ? [{ entityId: resource.metadata.id, label: resource.metadata.label, availability: resource.metadata.availability, enabled: resource.metadata.enabled }] : []}
     sourceExtra={trend ? trendMethod(trend.window) : undefined}>
@@ -29,7 +29,7 @@ export function Metric({ label, resource, trend, range = false }: {
     {range && data?.range && <RangeTrack data={{ ...data, range: data.range }} dimmed={dimmed} />}
     {range && data && !data.range && <p className="text-label leading-normal text-gray-9">Range unavailable.</p>}
     {trend && status.value !== "empty" && <Trend window={trend.window} resource={trend.resource} dimmed={dimmed} />}
-  </CardFrame>;
+  </DataCard>;
 }
 export function BoundMetric({ source, label, trend, range }: { source: NumericSource; label?: string; trend?: SeriesWindow; range?: true }) {
   const [current, history] = useNumericReads(trend ? [{ source }, { source, window: trend }] : [{ source }]);

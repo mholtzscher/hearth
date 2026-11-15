@@ -9,6 +9,7 @@ import { useWorkspace } from "./Workspace";
 import { useModalFocus } from "./useModalFocus";
 import { AutomationCanvasBody } from "../workspace/AutomationCanvas";
 import { Button } from "../../components/button";
+import { Card } from "../../components/card";
 import { Notice } from "../../components/notice";
 import { cn } from "../../lib/utils";
 import { canvasHeader, canvasHeading, canvasInner, canvasSubtitle, canvasTitle, canvasToolbar, canvasToolbarGroup, canvasWindowActions, phoneSaveBar, phoneSaveInset } from "../workspace/canvasStyles";
@@ -62,7 +63,7 @@ export function Canvas({ dashboardPage = false, active = true, placement = "nest
           </div>
         </header>
         {!workspace.editorValid && <Notice role="status">Fix or discard the invalid editor values before saving or asking Hearth to change this view.</Notice>}
-        {editor && view?.status === "supported" && <fieldset disabled={saving} className="mb-5 rounded-lg border border-border bg-card p-4"><ViewEditor key={`${workspace.editorEpoch}:${draft.origin_artifact_id ?? ""}:${draft.base?.dashboard_id ?? ""}`} definition={view.definition} onChange={workspace.edit} onValidityChange={workspace.setEditorValid} /></fieldset>}
+        {editor && view?.status === "supported" && <Card asChild className="mb-5"><fieldset disabled={saving}><ViewEditor key={`${workspace.editorEpoch}:${draft.origin_artifact_id ?? ""}:${draft.base?.dashboard_id ?? ""}`} definition={view.definition} onChange={workspace.edit} onValidityChange={workspace.setEditorValid} /></fieldset></Card>}
         <ViewRenderer definition={draft.definition} active={active || expanded} headingLevel={3} />
       </>}
     </div>

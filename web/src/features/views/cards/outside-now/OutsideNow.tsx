@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { CardFrame, StatusList } from "../CardFrame";
+import { DataCard, StatusList } from "../DataCard";
 import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates } from "../reading-list/ReadingRows";
 import { beaufort, compassPoint, rainWord, windWord } from "../weather/formulas";
@@ -49,7 +49,7 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
     .map(row => row.key === "wind" && from ? { ...row, nameTreatment: derivedTreatment(reads.current("wind"), reads.current("direction")) } : row);
   const title = label ?? "Outside";
   const digits = history.data?.format.fraction_digits ?? 1;
-  return <CardFrame className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={title} status={status.entries}
+  return <DataCard className="@container" classNames={{ body: "flex flex-col gap-1.5" }} title={title} status={status.entries}
     observedAt={oldestObservation(displayed)} observedLabel={all.length > 1 ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
       <p>Conditions come from measurements only: rain words from the rain rate, wind words from the Beaufort scale.</p>
@@ -69,5 +69,5 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
     </WeatherZones>
     {!directionRow && <SlotStatus name="Wind direction" resource={reads.current("direction")} />}
     {!rateRow && <SlotStatus name="Rain rate" resource={reads.current("rate")} />}
-  </CardFrame>;
+  </DataCard>;
 }

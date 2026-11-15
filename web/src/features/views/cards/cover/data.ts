@@ -7,7 +7,7 @@ import { supportsOperation } from "../../controls/support";
 import type { ControlState } from "../../controls/queue";
 import { useControl, useFastRefresh, useForgetControl, useRead } from "../../data/provider";
 import { cardStatus, type CardStatus } from "../status";
-import type { SourceItem } from "../CardFrame";
+import type { SourceItem } from "../DataCard";
 import { confirmsOpen, type CoverProps } from "./schema";
 import { coverFailures, pendingWords, type CoverMotion } from "./words";
 

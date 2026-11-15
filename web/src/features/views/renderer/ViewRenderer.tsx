@@ -2,7 +2,7 @@ import { Component, useContext, type CSSProperties, type ReactNode } from "react
 import { Button } from "../../../components/button";
 import type { ViewElement } from "../catalog";
 import { readDefinition } from "../catalog/compatibility";
-import { CardFrame, HeadingLevel } from "../cards/CardFrame";
+import { DataCard, HeadingLevel } from "../cards/DataCard";
 import { BoundMetric } from "../cards/metric/Metric";
 import { BoundTimeSeries } from "../cards/time-series/TimeSeries";
 import { BoundState } from "../cards/state/State";
@@ -51,9 +51,9 @@ class CardBoundary extends Component<{ resetKey: string; title: string; children
   }
   render() {
     if (!this.state.failed) return this.props.children;
-    return <CardFrame title={this.props.title} status={[{ key: "error", tone: "error", text: "This card couldn't be shown" }]} sources={[]}>
+    return <DataCard title={this.props.title} status={[{ key: "error", tone: "error", text: "This card couldn't be shown" }]} sources={[]}>
       <p className="text-label leading-normal text-muted-foreground">Edit the view or ask Hearth to change it.</p>
-    </CardFrame>;
+    </DataCard>;
   }
 }
 

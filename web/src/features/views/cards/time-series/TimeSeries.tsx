@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChartContainer } from "../../../../components/chart";
 import { useNumericReads } from "../../bindings/registry";
 import type { NumericSource, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
-import { CardFrame, StatusList, type SourceItem } from "../CardFrame";
+import { DataCard, StatusList, type SourceItem } from "../DataCard";
 import { cardStatus } from "../status";
 import { coverageStart, niceTicks, sameDay, timeLabel, timeTicks } from "./scale";
 
@@ -94,7 +94,7 @@ export function TimeSeries({ title, series: inputs }: { title: string; series: A
     <p>Each point averages the samples in a {bucketMinutes >= 1 ? `${Number(bucketMinutes.toFixed(1))}-minute` : `${Math.round(bucketMinutes * 60)}-second`} interval; the shaded band spans their minimum and maximum. Gaps mean no samples or a reported absent field.</p>
     {first && <p>{new Date(from).toLocaleString()} to {new Date(to).toLocaleString()}</p>}
   </>;
-  return <CardFrame title={title} unit={label} status={[]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
+  return <DataCard title={title} unit={label} status={[]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
     <ul className="mb-2 flex list-none flex-wrap gap-x-4 gap-y-1 text-label leading-normal">{items.map((item, i) => <li className="group/series inline-flex flex-wrap items-center gap-x-2 gap-y-0 data-[dimmed]:text-muted-foreground" key={i} data-dimmed={item.dimmed || undefined}>
       <span className="inline-block size-2.5 shrink-0 rounded-[2px] align-[-1px] group-data-[dimmed]/series:opacity-60" aria-hidden="true" style={{ background: item.color }} />{item.label}
       <StatusList entries={item.status.entries} />
@@ -129,7 +129,7 @@ export function TimeSeries({ title, series: inputs }: { title: string; series: A
         </ComposedChart>
       </ChartContainer>
     </div> : <p className="py-6 text-label leading-normal text-muted-foreground">{aligned ? "Historical readings will appear here." : "Synchronizing series intervals…"}</p>}
-  </CardFrame>;
+  </DataCard>;
 }
 export function BoundTimeSeries({ title, series }: { title: string; series: Array<{ source: NumericSource & { window: SeriesWindow }; label?: string }> }) {
   const results = useNumericReads(series.map(item => ({ source: item.source, window: item.source.window })));

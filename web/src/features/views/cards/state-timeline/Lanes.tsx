@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { durationWords } from "../../bindings/changes";
 import type { Resolved, TextData, TimelineData } from "../../bindings/types";
-import { StatusList } from "../CardFrame";
+import { StatusList } from "../DataCard";
 import { cardStatus } from "../status";
 import { timeLabel, timeTicks } from "../time-series/scale";
 import { cn } from "../../../../lib/utils";

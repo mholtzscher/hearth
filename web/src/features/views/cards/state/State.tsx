@@ -1,6 +1,6 @@
 import { useReadings } from "../../bindings/registry";
 import type { EntitySource, Resolved, TextData, Words } from "../../bindings/types";
-import { CardFrame } from "../CardFrame";
+import { DataCard } from "../DataCard";
 import { cardStatus } from "../status";
 import { Reading } from "../Reading";
 
@@ -12,11 +12,11 @@ import { Reading } from "../Reading";
 export function StateCard({ label, resource }: { label?: string; resource: Resolved<TextData> }) {
   const status = cardStatus(resource);
   const data = status.value === "empty" ? undefined : resource.data;
-  return <CardFrame className="@container" classNames={{ timeLabel: "@max-[200px]:hidden", footer: "@max-[200px]:gap-2", sourceToggle: "@max-[200px]:-me-1 @max-[200px]:px-1" }} compactTimeLabel title={label ?? resource.metadata?.label ?? "State"} status={status.entries} observedAt={data?.observed_at}
+  return <DataCard className="@container" classNames={{ timeLabel: "@max-[200px]:hidden", footer: "@max-[200px]:gap-2", sourceToggle: "@max-[200px]:-me-1 @max-[200px]:px-1" }} compactTimeLabel title={label ?? resource.metadata?.label ?? "State"} status={status.entries} observedAt={data?.observed_at}
     arrival={data ? { updatedAt: data.observed_at, shown: data.text, eligible: status.glows } : undefined}
     sources={resource.metadata ? [{ entityId: resource.metadata.id, label: resource.metadata.label, availability: resource.metadata.availability, enabled: resource.metadata.enabled }] : []}>
     <Reading value={status.value} className="text-balance [overflow-wrap:anywhere] @max-[200px]:text-reading-narrow">{data ? data.text : "—"}</Reading>
-  </CardFrame>;
+  </DataCard>;
 }
 
 export function BoundState({ source, label, words }: { source: EntitySource; label?: string; words?: Words }) {

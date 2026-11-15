@@ -1,7 +1,7 @@
 import { cn } from "../../../lib/utils";
-import { CardFrame, type CardFrameProps } from "./CardFrame";
+import { DataCard, type DataCardProps } from "./DataCard";
 
-export type TileFrameProps = Omit<CardFrameProps, "compactTimeLabel"> & {
+export type TileFrameProps = Omit<DataCardProps, "compactTimeLabel"> & {
   on: boolean;
   interactive: boolean;
   metered?: boolean;
@@ -9,7 +9,7 @@ export type TileFrameProps = Omit<CardFrameProps, "compactTimeLabel"> & {
 
 /** The whole-card press layout shared by power, cover, and purifier tiles. */
 export function TileFrame({ on, interactive, metered, className, classNames, ...props }: TileFrameProps) {
-  return <CardFrame {...props} compactTimeLabel data-on={on || undefined} className={cn(
+  return <DataCard {...props} compactTimeLabel data-on={on || undefined} className={cn(
     "@container transition-[background-color,border-color] duration-[180ms] ease-out-expo has-[[data-slot=tile-action]:focus-visible]:outline-2 has-[[data-slot=tile-action]:focus-visible]:outline-offset-3 has-[[data-slot=tile-action]:focus-visible]:outline-ring data-[on=true]:bg-[color-mix(in_oklch,var(--violet)_11%,var(--gray-1))] data-[on=true]:border-[color-mix(in_oklch,var(--violet)_38%,var(--gray-3))]",
     interactive && "hover:border-gray-6 data-[on=true]:hover:border-gray-6",
     metered && "max-tablet:col-span-full max-tablet:gap-2 max-tablet:p-4",
