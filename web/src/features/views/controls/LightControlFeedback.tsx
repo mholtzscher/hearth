@@ -42,7 +42,7 @@ export function LightControlFeedback({ controls, brightnessId, powerId, detailed
     ? [failed.length ? `${failed.length} failed` : "", pending ? `${pending} pending` : ""].filter(Boolean).join(" · ")
     : single?.state.phase === "failed" ? `${single.name} ${shortFailures[single.state.failure.kind]}`
     : single ? single.name === "Power" ? single.pending(single.state.requested) : `Setting ${single.name.toLowerCase()}…` : "";
-  if (inline) return <span data-slot="color-feedback-indicator" className="whitespace-nowrap text-[13px] text-info data-[tone=error]:text-destructive" aria-hidden={hidden || undefined} data-tone={failed.length ? "error" : "info"}>
+  if (inline) return <span data-slot="color-feedback-indicator" className="whitespace-nowrap text-label text-info data-[tone=error]:text-destructive" aria-hidden={hidden || undefined} data-tone={failed.length ? "error" : "info"}>
     <span id={descriptionId} className="sr-only" role={failed.length ? "alert" : "status"}>{summary}</span>
     {summary && <span aria-hidden="true">{failed.length ? "Failed" : "Pending"}</span>}
   </span>;

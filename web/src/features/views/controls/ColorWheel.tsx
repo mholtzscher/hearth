@@ -43,6 +43,6 @@ export function ColorWheel({ value, disabled, pending, onBegin, onChange, onEnd,
       }} onBlur={onBlur}>
       <span className="pointer-events-none absolute size-[18px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#fff] shadow-[0_1px_4px_#000]" style={position} />
     </div>
-    <p id={hintId} className="mt-3 text-[13px] leading-normal text-gray-8">Left/right: hue. Up/down: saturation. Shift for larger steps.</p>
+    <p id={hintId} className="mt-3 text-label leading-normal text-gray-8">Left/right: hue. Up/down: saturation. Shift for larger steps.</p>
   </>;
 }

@@ -56,7 +56,7 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
       <p>High and low use a 24-hour history interval, not since midnight, from 5-minute minimums and maximums. If a refresh fails, the card keeps the last loaded interval.</p>
       {history.data && <dl className="m-0 grid gap-4 tabular-nums">
         {[{ label: "Temperature history from", at: history.data.from }, { label: "Temperature history to", at: history.data.to }].map(({ label, at }) =>
-          <div className="grid gap-[3px]" key={label}><dt className="text-[13px] text-gray-8">{label}</dt><dd className="m-0"><time dateTime={at}>{new Date(at).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</time></dd></div>)}
+          <div className="grid gap-[3px]" key={label}><dt className="text-label text-gray-8">{label}</dt><dd className="m-0"><time dateTime={at}>{new Date(at).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</time></dd></div>)}
       </dl>}
     </>}>
     <WeatherZones aside={rows.length > 0 && <div className="view-weather-rows"><ReadingRows rows={rows} /></div>}>

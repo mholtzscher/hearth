@@ -19,9 +19,9 @@ function subscribePhone(change: () => void) {
   return () => media?.removeEventListener("change", change);
 }
 const isPhone = () => window.matchMedia?.(phoneQuery).matches ?? false;
-const hintClasses = "mt-3 text-[13px] leading-normal text-gray-8";
+const hintClasses = "mt-3 text-label leading-normal text-gray-8";
 const exactClasses = "mt-4 flex flex-wrap items-center gap-2.5";
-const labelClasses = "flex items-center gap-1.5 text-[13px] text-gray-8";
+const labelClasses = "flex items-center gap-1.5 text-label text-gray-8";
 const inputClasses = "min-h-11 w-[76px] min-w-0 rounded-[6px] border border-gray-4 bg-gray-3 p-2 font-[inherit] text-gray-10 tabular-nums caret-violet disabled:cursor-not-allowed disabled:text-gray-6 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring";
 
 function Range({ label, value, valueText, minimum, maximum, step = 1, disabled, pending, spectrum, onBegin, onChange, onEnd, onCancel, onBlur }: {
@@ -59,7 +59,7 @@ function Temperature({ control }: { control: TemperatureControl }) {
       minimum={-maximum} maximum={-minimum} step={step} disabled={!entity.enabled} pending={setting.pending}
       spectrum="linear-gradient(90deg,#ff9f43,#fff1de,#a8c8ff)"
       onBegin={setting.begin} onChange={value => setting.change(-value)} onEnd={value => setting.end(-value)} onCancel={setting.cancel} onBlur={setting.blur} />
-    <div className="flex justify-between gap-3 text-[13px] text-gray-8"><span>Warm · {Math.round(1_000_000 / maximum).toLocaleString()} K</span><span>Cool · {Math.round(1_000_000 / minimum).toLocaleString()} K</span></div>
+    <div className="flex justify-between gap-3 text-label text-gray-8"><span>Warm · {Math.round(1_000_000 / maximum).toLocaleString()} K</span><span>Cool · {Math.round(1_000_000 / minimum).toLocaleString()} K</span></div>
     <form className={exactClasses} onSubmit={event => {
       event.preventDefault();
       if (event.currentTarget.reportValidity()) setting.commit(Number(exact));
@@ -166,7 +166,7 @@ export function LightColorPicker({ controls, activeId, name, observed, open, onO
     {both && <div className="mb-5"><SegmentedControl label="Light color mode" size="touch" value={selected} onValueChange={setMode} options={[{ value: "white", label: "White" }, { value: "color", label: "Color" }]} /></div>}
     {selected === "white" && controls.temperature && <Temperature key={controls.temperature.entity.id} control={controls.temperature} />}
     {selected === "color" && controls.color && <Color key={controls.color.entity.id} control={controls.color} />}
-    <div className="mt-5 flex flex-wrap justify-between gap-x-4 gap-y-2 border-t border-gray-4 pt-4 text-[13px] text-gray-8"><span>Observed</span><span className="text-gray-10 tabular-nums">{observed ?? "No color observed"}</span></div>
+    <div className="mt-5 flex flex-wrap justify-between gap-x-4 gap-y-2 border-t border-gray-4 pt-4 text-label text-gray-8"><span>Observed</span><span className="text-gray-10 tabular-nums">{observed ?? "No color observed"}</span></div>
     <LightControlFeedback controls={controls} brightnessId={brightnessId} powerId={powerId} detailed />
   </>;
   return <span className={cn("relative -ms-1.5 h-7 w-7 shrink-0", inlineFeedback && "inline-flex w-auto items-center gap-1")}>
