@@ -112,6 +112,11 @@ dashboard library (loaded, empty, deletion, and phone layout), conversation sear
 pending views, selected-view messages, invalid drafts, and reading older messages.
 This group does not add Automations or other Development-page coverage.
 
+The `application/Automations` group covers the Automation library and new-draft
+canvas, including a 390px phone layout. Direct AutomationCard and AutomationEditor
+stories cover prose, step stacks, exact definitions, referenced-child inspection,
+editing, and invalid input. These fixtures do not execute Automations.
+
 Application stories set `parameters: { application: true }` to bypass the shared
 component router and theme wrapper. The application supplies its own production
 shell and providers. Each story owns an isolated memory router over `appRoutes`
@@ -241,8 +246,11 @@ mise run --skip-deps story-shots -- coverage /tmp/opencode/hearth-shots/base
   each. Missing images fail the comparison too, so an incomplete capture cannot
   silently reduce the comparison. Added or removed stories require a new baseline.
 - `coverage <dir>` lists the stylesheet classes that no captured story
-  rendered and exits 1 when there are any. It checks class names only. It does
-  not show whether a story renders each `data-*` or ARIA state.
+  rendered and exits 1 when there are any outside `UNRENDERED_ALLOWED`. Each
+  exception in that map names its reason. The card render-exception recovery
+  message is covered by a unit test with a throwing component, not a story with
+  synthetic HTTP responses. Coverage checks class names only; it does not show
+  whether a story renders each `data-*` or ARIA state.
 
 To compare a branch with its base, capture the base commit in a second
 worktree, capture the branch, and compare the two directories. Capture both on
