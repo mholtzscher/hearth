@@ -107,8 +107,10 @@ The `application/Workspace` group runs the real application shell, conversation,
 and full dashboard canvas together. It includes desktop, tablet, and phone
 navigation, readiness states, conversation history and tool activity, synthetic
 streamed replies, send failure/retry, and dashboard editing, save conflicts,
-discard confirmation, expansion, and phone panel switching. This group does not
-add Automations, dashboard-library, or other Development-page coverage.
+discard confirmation, expansion, and phone panel switching. It also covers the
+dashboard library (loaded, empty, deletion, and phone layout), conversation search,
+pending views, selected-view messages, invalid drafts, and reading older messages.
+This group does not add Automations or other Development-page coverage.
 
 Application stories set `parameters: { application: true }` to bypass the shared
 component router and theme wrapper. The application supplies its own production
