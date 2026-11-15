@@ -1,22 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { ReactNode } from "react";
-import { expect, fn, within } from "storybook/test";
+import { useState } from "react";
+import { expect, fn, waitFor, within } from "storybook/test";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
-
-// Temporary baseline using the household air-purifier treatment.
-function SegmentedControl({ label, value, onValueChange, options, disabled }: {
-  label: string;
-  value: string;
-  onValueChange: (value: string) => void;
-  options: Array<{ value: string; label: ReactNode; disabled?: boolean }>;
-  size?: "default" | "touch";
-  disabled?: boolean;
-}) {
-  return <div role="group" aria-label={label} className="view-air-purifier-segmented">
-    {options.map(option => <button key={option.value} type="button" aria-pressed={value === option.value}
-      disabled={disabled || option.disabled} onClick={() => onValueChange(option.value)}>{option.label}</button>)}
-  </div>;
-}
+import { SegmentedControl } from "./segmented-control.tsx";
 
 const options = [
   { value: "auto", label: "Auto" },
@@ -37,6 +23,7 @@ export const Default: Story = {
     await expect(group.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
     await expect(group.getByRole("button", { name: "Sleep" })).toHaveAttribute("aria-pressed", "false");
     await expect(group.getByRole("button", { name: "Manual" })).toBeDisabled();
+    await expect(getComputedStyle(group.getByRole("button", { name: "Auto" })).height).toBe("32px");
     await userEvent.click(group.getByRole("button", { name: "Sleep" }));
     await expect(args.onValueChange).toHaveBeenCalledWith("sleep");
     await expect(group.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
@@ -49,6 +36,13 @@ export const Touch: Story = {
     await userEvent.tab();
     const auto = canvas.getByRole("button", { name: "Auto" });
     await expect(auto).toHaveFocus();
+    const style = getComputedStyle(auto);
+    await expect(style.height).toBe("44px");
+    await expect(style.borderRadius).toBe("8px");
+    await expect(style.outlineWidth).toBe("2px");
+    await expect(style.outlineStyle).toBe("solid");
+    await expect(style.outlineOffset).toBe("3px");
+    await waitFor(() => expect(getComputedStyle(auto).outlineColor).toBe("rgb(167, 123, 255)"));
     await userEvent.keyboard("{Enter}");
     await expect(args.onValueChange).toHaveBeenCalledWith("auto");
     await userEvent.tab();
@@ -56,6 +50,21 @@ export const Touch: Story = {
     await userEvent.keyboard(" ");
     await expect(args.onValueChange).toHaveBeenCalledWith("sleep");
     await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+export const Controlled: Story = {
+  render: function Controlled(args) {
+    const [value, setValue] = useState(args.value);
+    return <form onSubmit={event => { event.preventDefault(); args.onValueChange("submitted"); }}>
+      <SegmentedControl {...args} value={value} onValueChange={setValue} />
+    </form>;
+  },
+  play: async ({ canvas, userEvent, args }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Sleep" }));
+    await expect(canvas.getByRole("button", { name: "Sleep" })).toHaveAttribute("aria-pressed", "true");
+    await expect(canvas.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "false");
+    await expect(args.onValueChange).not.toHaveBeenCalled();
   },
 };
 
@@ -82,12 +91,22 @@ export const HouseholdComparison: Story = {
     await canvasElement.ownerDocument.fonts.ready;
     const shared = within(canvas.getByRole("group", { name: "Shared mode" }));
     const legacy = within(canvas.getByRole("group", { name: "Legacy mode" }));
+    const sharedFrame = getComputedStyle(canvas.getByRole("group", { name: "Shared mode" }));
+    const legacyFrame = getComputedStyle(canvas.getByRole("group", { name: "Legacy mode" }));
+    for (const property of ["backgroundColor", "borderColor", "borderWidth", "borderStyle", "borderRadius", "padding", "gap"] as const) {
+      await expect(sharedFrame[property], `frame: ${property}`).toBe(legacyFrame[property]);
+    }
     for (const name of ["Auto", "Sleep"]) {
       const a = getComputedStyle(shared.getByRole("button", { name }));
       const b = getComputedStyle(legacy.getByRole("button", { name }));
-      for (const property of ["backgroundColor", "color", "boxShadow", "fontFamily", "fontSize", "fontWeight", "lineHeight"] as const) {
+      for (const property of ["backgroundColor", "color", "fontFamily", "fontSize", "fontWeight", "lineHeight"] as const) {
         await expect(a[property], `${name}: ${property}`).toBe(b[property]);
       }
+      if (name === "Auto") await expect(a.boxShadow).toContain(b.boxShadow);
+      await expect(a.height).toBe("32px");
+      await expect(b.height).toBe("38px");
+      await expect(a.borderRadius).toBe("8px");
+      await expect(b.borderRadius).toBe("6px");
     }
   },
 };
