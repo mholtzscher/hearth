@@ -43,11 +43,10 @@ const config: StorybookConfig = {
   },
   core: { disableTelemetry: true, disableWhatsNewNotifications: true },
   viteFinal(config) {
-    // Page stories add this CJS dependency after the card-only runner has warmed.
-    // Prebundle it up front so a late optimization cannot reload an active test.
+    // Prebundle shared dependencies so late discovery cannot reload an active test.
     config.optimizeDeps = {
       ...config.optimizeDeps,
-      include: [...(config.optimizeDeps?.include ?? []), "prism-react-renderer"],
+      include: [...(config.optimizeDeps?.include ?? []), "prism-react-renderer", "cn/config"],
     };
     config.publicDir = path.resolve(import.meta.dirname, "public");
     config.plugins = [...(config.plugins ?? []), tailwindcss()];
