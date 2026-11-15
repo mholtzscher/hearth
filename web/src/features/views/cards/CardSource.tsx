@@ -24,8 +24,8 @@ const isPhone = () => window.matchMedia?.(phoneQuery).matches ?? false;
 
 function EntityFacts({ source }: { source: SourceItem }) {
   return <>
-    {source.availability !== undefined && <div className="grid gap-[3px]"><dt className="text-[13px] text-muted-foreground">Entity availability</dt><dd>{source.availability === "available" ? "Available" : source.availability === "unavailable" ? "Unavailable" : "Unknown"}</dd></div>}
-    {source.enabled !== undefined && <div className="grid gap-[3px]"><dt className="text-[13px] text-muted-foreground">Entity enablement</dt><dd>{source.enabled ? "Enabled" : "Disabled"}</dd></div>}
+    {source.availability !== undefined && <div className="grid gap-[3px]"><dt className="text-label text-muted-foreground">Entity availability</dt><dd>{source.availability === "available" ? "Available" : source.availability === "unavailable" ? "Unavailable" : "Unknown"}</dd></div>}
+    {source.enabled !== undefined && <div className="grid gap-[3px]"><dt className="text-label text-muted-foreground">Entity enablement</dt><dd>{source.enabled ? "Enabled" : "Disabled"}</dd></div>}
   </>;
 }
 
@@ -60,8 +60,8 @@ export function CardSource({ title, observedAt, observedLabel, now, sources, tog
     </header>
     {phone ? <DialogDescription className={descriptionClass}>{title}</DialogDescription> : description}
     {(observedAt || single?.availability !== undefined || single?.enabled !== undefined) && <dl className="m-0 grid gap-4 tabular-nums">
-      {observedAt && <div className="grid gap-[3px]"><dt className="text-[13px] text-muted-foreground">{observedLabel === "Observed" ? "Observed at" : `${observedLabel} observed at`}</dt><dd>{Number.isFinite(Date.parse(observedAt)) ? <time dateTime={observedAt}>{new Date(observedAt).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</time> : "Unavailable"}</dd></div>}
-      {age && <div className="grid gap-[3px]"><dt className="text-[13px] text-muted-foreground">Observation age</dt><dd>{age}</dd></div>}
+      {observedAt && <div className="grid gap-[3px]"><dt className="text-label text-muted-foreground">{observedLabel === "Observed" ? "Observed at" : `${observedLabel} observed at`}</dt><dd>{Number.isFinite(Date.parse(observedAt)) ? <time dateTime={observedAt}>{new Date(observedAt).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</time> : "Unavailable"}</dd></div>}
+      {age && <div className="grid gap-[3px]"><dt className="text-label text-muted-foreground">Observation age</dt><dd>{age}</dd></div>}
       {single && <EntityFacts source={single} />}
     </dl>}
     {sources.length > 0 && <section className="mt-[22px] border-t border-gray-4 pt-[18px]">
