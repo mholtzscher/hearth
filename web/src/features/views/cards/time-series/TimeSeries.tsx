@@ -1,6 +1,6 @@
 import { Area, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
 import { useEffect, useMemo, useState } from "react";
-import { ChartContainer } from "../../../../components/ui/chart";
+import { ChartContainer } from "../../../../components/chart";
 import { useNumericReads } from "../../bindings/registry";
 import type { NumericSource, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
 import { CardFrame, StatusList, type SourceItem } from "../CardFrame";

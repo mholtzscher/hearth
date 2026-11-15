@@ -6,7 +6,7 @@ import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
 import { BoundWeekPattern } from "./WeekPattern";
 
 const meta = {
-  title: "features/views/cards/WeekPattern",
+  title: "Components/Cards/WeekPattern",
   component: BoundWeekPattern,
   tags: ["ai-generated"],
   args: {

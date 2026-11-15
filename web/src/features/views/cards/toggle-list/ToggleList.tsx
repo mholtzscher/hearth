@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button } from "../../../../components/ui/button";
+import { Button } from "../../../../components/button";
 import type { z } from "zod";
 import { usePowerReadings, type PowerReading } from "../../bindings/power";
 import { useControls } from "../../data/provider";

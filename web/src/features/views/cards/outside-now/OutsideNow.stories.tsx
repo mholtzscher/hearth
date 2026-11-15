@@ -5,7 +5,7 @@ import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundOutsideNow } from "./OutsideNow";
 
 const meta = {
-  title: "features/views/cards/OutsideNow",
+  title: "Components/Cards/OutsideNow",
   component: BoundOutsideNow,
   tags: ["ai-generated"],
   args: {

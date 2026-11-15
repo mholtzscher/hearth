@@ -8,8 +8,8 @@ import { ViewRenderer } from "../views/renderer/ViewRenderer";
 import { useWorkspace } from "./Workspace";
 import { useModalFocus } from "./useModalFocus";
 import { AutomationCanvasBody } from "../workspace/AutomationCanvas";
-import { Button } from "../../components/ui/button";
-import { Notice } from "../../components/ui/notice";
+import { Button } from "../../components/button";
+import { Notice } from "../../components/notice";
 import { cn } from "../../lib/utils";
 import { canvasHeader, canvasHeading, canvasInner, canvasSubtitle, canvasTitle, canvasToolbar, canvasToolbarGroup, canvasWindowActions, phoneSaveBar, phoneSaveInset } from "../workspace/canvasStyles";
 

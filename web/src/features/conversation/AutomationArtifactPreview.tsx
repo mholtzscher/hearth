@@ -7,8 +7,8 @@ import { ApiError, useBaseUrlVersion } from "../../api/client";
 import { readAutomationDocument, type AutomationDocument } from "../automations/document";
 import { AutomationCard } from "../automations/AutomationCard";
 import { cn } from "../../lib/utils";
-import { Button } from "../../components/ui/button";
-import { Notice } from "../../components/ui/notice";
+import { Button } from "../../components/button";
+import { Notice } from "../../components/notice";
 import { artifactAction, artifactFrame, artifactHeader, artifactIcon, artifactSummary, artifactTitle } from "./artifactStyles";
 
 export function AutomationArtifactPreview({ artifact, open, active, onSelect }: { artifact: AutomationArtifact; open: boolean; active: boolean; onSelect: () => void }) {

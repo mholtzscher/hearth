@@ -5,7 +5,7 @@ import { createEntities, entityId } from "../../../../../.storybook/fixtures";
 import { AirPurifierEditor } from "./Editor";
 
 const meta = {
-  title: "features/views/cards/AirPurifierEditor",
+  title: "Components/Editors/AirPurifierEditor",
   component: AirPurifierEditor,
   tags: ["ai-generated"],
   decorators: [Story => <div className="grid gap-3 text-label leading-normal"><Story /></div>],

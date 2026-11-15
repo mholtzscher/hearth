@@ -6,6 +6,7 @@ import { entityScenario } from "../../.storybook/msw-handlers";
 import EntityDetailPage from "./EntityDetailPage";
 
 const meta = {
+  title: "Pages/EntityDetailPage",
   component: EntityDetailPage,
   tags: ["ai-generated"],
   parameters: {

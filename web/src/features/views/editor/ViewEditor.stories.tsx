@@ -5,6 +5,7 @@ import { dashboardDefinition } from "../../../../.storybook/fixtures";
 import { ViewEditor } from "./ViewEditor";
 
 const meta = {
+  title: "Components/Editors/ViewEditor",
   component: ViewEditor,
   tags: ["ai-generated"],
   args: { definition: dashboardDefinition, onChange: fn(), onValidityChange: fn() },

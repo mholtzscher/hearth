@@ -6,7 +6,7 @@ import { TimeSeries } from "./TimeSeries";
 import type { SeriesData } from "../../bindings/types";
 
 // jsdom has no layout; give the actual Recharts plot a deterministic viewport.
-vi.mock("../../../../components/ui/chart", () => ({ ChartContainer: ({ children }: { children: ReactElement<{ width: number; height: number }> }) => cloneElement(children, { width: 600, height: 240 }) }));
+vi.mock("../../../../components/chart", () => ({ ChartContainer: ({ children }: { children: ReactElement<{ width: number; height: number }> }) => cloneElement(children, { width: 600, height: 240 }) }));
 afterEach(cleanup);
 const data = (hour: number, value: number): SeriesData => ({
   from: `2026-11-01T0${hour}:00:00Z`, to: `2026-11-01T${hour + 6}:00:00Z`,

@@ -2,8 +2,8 @@ import type { z } from "zod";
 import { TextField } from "../../editor/TextField";
 import type { SensorChoice } from "../time-series/Editor";
 import { forecastSchema, forecastTypes } from "./schema";
-import { Input } from "../../../../components/ui/input";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { Input } from "../../../../components/input";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 type Value = z.infer<typeof forecastSchema>;

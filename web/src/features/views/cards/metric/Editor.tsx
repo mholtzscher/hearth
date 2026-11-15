@@ -5,8 +5,8 @@ import { FieldSelect } from "../../editor/FieldSelect";
 import { quantityField } from "../../bindings/state-fields";
 import { seriesWindows } from "../../bindings/schema";
 import type { SeriesWindow } from "../../bindings/types";
-import { Input } from "../../../../components/ui/input";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { Input } from "../../../../components/input";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 export function MetricEditor({ value, onChange }: { value: z.infer<typeof metricSchema>; onChange: (value: z.infer<typeof metricSchema>) => void }) {

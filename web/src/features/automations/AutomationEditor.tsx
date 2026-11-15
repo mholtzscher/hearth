@@ -7,9 +7,9 @@ import { automationDocumentIssues, documentValue, editAutomationDocument, newDoc
 import { collection, discoverFunctions, type AdapterFunction } from "./resources";
 import { getOperationParametersSchema } from "./operation-parameters";
 import { Condition, Field, Select, StateGuide, conditionSource, entityOptions, firstEntity, q, type Context, type Resources } from "./ConditionEditor";
-import { Button } from "../../components/ui/button";
-import { NativeSelect } from "../../components/ui/native-select";
-import { Switch } from "../../components/ui/switch";
+import { Button } from "../../components/button";
+import { NativeSelect } from "../../components/native-select";
+import { Switch } from "../../components/switch";
 
 const field = "grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 text-label";
 const fields = "grid grid-cols-[minmax(0,1fr)] gap-2.5";

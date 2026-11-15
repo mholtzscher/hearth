@@ -22,13 +22,18 @@ import { useApi } from "../api/hooks.ts";
 import type { Collection, Device, Entity } from "../api/types.ts";
 import { acquireNatsConnection } from "../api/nats.ts";
 import type { NatsConnectionLease } from "../api/nats.ts";
-import { ErrorBox, Facts, JsonCode, RawJson, Section, StatusChip } from "../components/common.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { Input } from "../components/ui/input.tsx";
-import { NativeSelect } from "../components/ui/native-select.tsx";
-import { SegmentedControl } from "../components/ui/segmented-control.tsx";
-import { Label } from "../components/ui/label.tsx";
-import { Switch } from "../components/ui/switch.tsx";
+import { ErrorBox } from "../components/error-box.tsx";
+import { Facts } from "../components/facts.tsx";
+import { JsonCode } from "../components/json-code.tsx";
+import { RawJson } from "../components/raw-json.tsx";
+import { Section } from "../components/section.tsx";
+import { StatusChip } from "../components/status-chip.tsx";
+import { Button } from "../components/button.tsx";
+import { Input } from "../components/input.tsx";
+import { NativeSelect } from "../components/native-select.tsx";
+import { SegmentedControl } from "../components/segmented-control.tsx";
+import { Label } from "../components/label.tsx";
+import { Switch } from "../components/switch.tsx";
 import {
   Table,
   TableBody,
@@ -36,7 +41,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../components/ui/table.tsx";
+} from "../components/table.tsx";
 
 /** Newest live deliveries kept in the page buffer; the retained snapshot has its own cap. */
 const LIVE_BUFFER_LIMIT = 200;

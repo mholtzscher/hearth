@@ -1,6 +1,6 @@
 import { isQuantityField, isTextField, stateFields } from "../bindings/state-fields";
 import type { NumericSource } from "../bindings/types";
-import { NativeSelect } from "../../../components/ui/native-select";
+import { NativeSelect } from "../../../components/native-select";
 import { EditorLabel } from "./EditorLabel";
 
 export function FieldSelect({ source, onChange, kind = "numeric" }: { source: NumericSource; onChange: (field: string) => void; kind?: "numeric" | "text" | "all" }) {

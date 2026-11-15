@@ -5,7 +5,7 @@ import { createEntities, entityId } from "../../../../../.storybook/fixtures";
 import { TimeSeriesEditor } from "./Editor";
 
 const meta = {
-  title: "features/views/cards/TimeSeriesEditor",
+  title: "Components/Editors/TimeSeriesEditor",
   component: TimeSeriesEditor,
   tags: ["ai-generated"],
   decorators: [Story => <div className="grid gap-3 text-label leading-normal"><Story /></div>],

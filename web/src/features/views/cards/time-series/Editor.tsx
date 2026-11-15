@@ -5,8 +5,8 @@ import type { SeriesWindow } from "../../bindings/types";
 import { quantityAxis } from "../../bindings/state-fields";
 import type { Quantity } from "../../bindings/quantity";
 import { FieldSelect } from "../../editor/FieldSelect";
-import { Button } from "../../../../components/ui/button";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { Button } from "../../../../components/button";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 const windows: Array<[SeriesWindow, string]> = [["1h", "Last hour"], ["6h", "Last 6 hours"], ["24h", "Last 24 hours"], ["7d", "Last 7 days"]];

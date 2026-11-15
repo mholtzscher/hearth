@@ -3,11 +3,13 @@ import { Link, useParams } from "react-router-dom";
 import { useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import { notificationsApi, type NotificationAttempt } from "../api/notifications.ts";
-import { ErrorBox, StatusChip, linkClass } from "../components/common.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { Input } from "../components/ui/input.tsx";
-import { Label } from "../components/ui/label.tsx";
-import { Textarea } from "../components/ui/textarea.tsx";
+import { ErrorBox } from "../components/error-box.tsx";
+import { StatusChip } from "../components/status-chip.tsx";
+import { linkClass } from "../components/link-styles.ts";
+import { Button } from "../components/button.tsx";
+import { Input } from "../components/input.tsx";
+import { Label } from "../components/label.tsx";
+import { Textarea } from "../components/textarea.tsx";
 
 function DestinationDetail({ id }: { id: string }) {
   const { data, error, loading, refresh } = useApi(`notification-destination-${id}`, () => notificationsApi.destination(id));

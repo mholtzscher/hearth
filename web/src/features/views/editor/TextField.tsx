@@ -1,7 +1,7 @@
 import { useId, type ChangeEvent } from "react";
 import type { z } from "zod";
-import { Input } from "../../../components/ui/input";
-import { Textarea } from "../../../components/ui/textarea";
+import { Input } from "../../../components/input";
+import { Textarea } from "../../../components/textarea";
 import { EditorLabel } from "./EditorLabel";
 
 /** Validate text with its catalog schema while retaining intermediate edits. */

@@ -5,7 +5,7 @@ import { entityId } from "../../../../../.storybook/fixtures";
 import { BoundStateTimeline } from "./StateTimeline";
 
 const meta = {
-  title: "features/views/cards/StateTimeline",
+  title: "Components/Cards/StateTimeline",
   component: BoundStateTimeline,
   tags: ["ai-generated"],
   args: {

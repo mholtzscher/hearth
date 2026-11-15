@@ -6,6 +6,7 @@ import { createCoreHandlers, entityScenario } from "../../../../../.storybook/ms
 import { BoundCover } from "./Cover";
 
 const meta = {
+  title: "Components/Cards/Cover",
   component: BoundCover,
   tags: ["ai-generated"],
   args: {

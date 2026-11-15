@@ -7,6 +7,7 @@ import { PowerSwitch } from "./PowerSwitch";
 import { useObservedEntity } from "../../../../.storybook/use-observed-entity";
 
 const meta = {
+  title: "Components/Controls/ControlStatus",
   component: ControlStatus,
   tags: ["ai-generated"],
   args: {

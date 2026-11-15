@@ -78,11 +78,12 @@ fails its story. The preview's Vite configuration has no live backend proxies.
 Keep assertions about observed State distinct from Command outcomes.
 
 Use `Meta<typeof Component>` and `StoryObj<typeof meta>`, real component imports,
-and object-literal args so the manifest can extract complete snippets. Card
-stories use the title `features/views/cards/<Component>`. Storybook omits a
-folder from the generated title only when the folder name matches the file name,
-so set `title` explicitly for a card in a kebab-case folder such as
-`toggle-tile/ToggleTile.stories.tsx`. Prefer
+and object-literal args so the manifest can extract complete snippets. Set an
+explicit `title` for the catalog category, independent of the source folder:
+`Components/<Component>` for shared UI and compositions,
+`Components/Cards/<Component>` for cards, `Components/Controls/<Component>` for
+feature controls, and `Components/Editors/<Component>` for editors. Keep the
+story colocated with its source owner. Prefer
 direct component stories for discoverable props, with
 renderer/composition stories for catalog layouts. Add a play function when it
 proves async data arrival, a meaningful interaction, or a portal contract. A
@@ -110,12 +111,24 @@ Controls resets that draft; canvas edits do not update Controls. Other card
 editors have no direct stories. ViewEditor mounts Device and OutsideNow editors
 inside collapsed sections, but its stories do not interact with those sections.
 
-The `components/ui` catalog includes stories for Button, Input, Textarea,
+The `Components` catalog includes colocated stories for Button, Input, Textarea,
 NativeSelect, Switch, SegmentedControl, Dialog, Popover, Notice, Accordion,
 Badge, Card, ChartContainer, Label, Separator, and Table. ChartContainer also
 appears in TimeSeries stories.
 
-The `application/Workspace` group runs the real application shell, conversation,
+Shared controls and compositions live in `src/components` and do not import
+features. Feature-specific stories and tests live alongside their owning feature.
+Shared status and error UI may use common Hearth vocabulary without becoming
+feature-owned.
+
+The sidebar groups reusable cards under `Components/Cards`, feature controls
+under `Components/Controls`, and editors under `Components/Editors`.
+AutomationCard appears with the other cards and AutomationEditor with the other
+editors. Components has no Features, Views, or Automations subgroup.
+ViewRenderer is a composition directly under `Components`. `Pages` and
+`Application` hold screen and whole-application scenarios.
+
+The `Application/Workspace` group runs the real application shell, conversation,
 and full dashboard canvas together. It includes desktop, tablet, and phone
 navigation, readiness states, conversation history and tool activity, synthetic
 streamed replies, send failure/retry, and dashboard editing, save conflicts,
@@ -125,7 +138,7 @@ pending views, selected-view messages, invalid drafts, and reading older message
 Its Commands story verifies status filtering and clearing the filter on the
 Development page. Automations have their own application group.
 
-The `application/Automations` group covers the Automation library and new-draft
+The `Application/Automations` group covers the Automation library and new-draft
 canvas, including a 390px phone layout. Direct AutomationCard and AutomationEditor
 stories cover prose, step stacks, exact definitions, referenced-child inspection,
 editing, and invalid input. These fixtures do not execute Automations.
@@ -152,7 +165,7 @@ story and the shared setup in `src/App.stories.tsx`, together with
 `.storybook/application-fixtures.ts`. The manifest check verifies snippet
 presence and extraction errors; it cannot verify those omitted scenario inputs.
 
-The `pages` group runs EntitiesPage, DevicesPage, and EntityDetailPage against the
+The `Pages` group runs EntitiesPage, DevicesPage, and EntityDetailPage against the
 same synthetic household. Use its loaded, empty, and failed-read stories to
 inspect the page without Core. The Entity detail's `NeverObserved` story also
 empties retained history. Device selection and Entity filtering have interaction

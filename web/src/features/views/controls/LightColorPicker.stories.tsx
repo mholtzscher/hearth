@@ -10,6 +10,7 @@ import { LightColorPicker } from "./LightColorPicker";
 import { colorHex, lightColorControls, readColor } from "./light-color";
 
 const meta = {
+  title: "Components/Controls/LightColorPicker",
   component: LightColorPicker,
   tags: ["ai-generated"],
   args: {

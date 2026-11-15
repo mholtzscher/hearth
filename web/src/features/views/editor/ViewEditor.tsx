@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { Button } from "../../../components/ui/button";
-import { NativeSelect } from "../../../components/ui/native-select";
+import { Button } from "../../../components/button";
+import { NativeSelect } from "../../../components/native-select";
 import { apiFetch, useBaseUrlVersion } from "../../../api/client";
 import { definitionSchema, type ViewDefinition, type ViewElement } from "../catalog";
 import { parseDefinition } from "../catalog/compatibility";

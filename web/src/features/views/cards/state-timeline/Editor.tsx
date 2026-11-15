@@ -6,8 +6,8 @@ import { TextField } from "../../editor/TextField";
 import { WordsEditor } from "../state/Editor";
 import type { SensorChoice } from "../time-series/Editor";
 import { MAX_TIMELINE_ROWS, stateTimelineSchema, timelineStyles } from "./schema";
-import { Button } from "../../../../components/ui/button";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { Button } from "../../../../components/button";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 export function StateTimelineEditor({ value, choices, onChange }: { value: z.infer<typeof stateTimelineSchema>; choices: SensorChoice[]; onChange: (value: z.infer<typeof stateTimelineSchema>) => void }) {

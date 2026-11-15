@@ -11,7 +11,7 @@ import { automationDraftContext, editAutomationDraft, fromAutomationArtifact, is
 import type { PresentedArtifact } from "../conversation/runtime";
 import type { ViewDefinition } from "../views/catalog";
 import { DecisionDialog } from "../../components/DecisionDialog";
-import { Button } from "../../components/ui/button";
+import { Button } from "../../components/button";
 import { SaveDiagnostics } from "./SaveDiagnostics";
 
 type WorkspaceValue = {

@@ -7,6 +7,7 @@ import { AutomationEditor } from "./AutomationEditor";
 import { readAutomationDocument } from "./document";
 
 const meta = {
+  title: "Components/Editors/AutomationEditor",
   component: AutomationEditor,
   tags: ["ai-generated"],
   args: { document: readAutomationDocument(JSON.stringify(definition)), onChange: fn() },

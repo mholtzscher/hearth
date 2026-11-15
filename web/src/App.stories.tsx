@@ -11,7 +11,7 @@ import { expectNoHorizontalOverflow } from "../.storybook/play";
 import App, { appRoutes } from "./App";
 
 const meta = {
-  title: "application/Workspace",
+  title: "Application/Workspace",
   component: App,
   tags: ["ai-generated", "!autodocs"],
   decorators: [Story => <StrictMode><Story /></StrictMode>],

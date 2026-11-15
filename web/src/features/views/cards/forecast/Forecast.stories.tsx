@@ -13,6 +13,7 @@ function nextMidnight() {
 }
 
 const meta = {
+  title: "Components/Cards/Forecast",
   component: BoundForecast,
   tags: ["ai-generated"],
   args: {

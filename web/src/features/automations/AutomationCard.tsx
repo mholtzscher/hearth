@@ -10,8 +10,8 @@ import { ConditionText, entityLabelText, InitialVariables, SentenceSequence, Sta
 import { JsonCode } from "./AutomationCode";
 import { collection } from "./resources";
 import { automationEntityIds, describeAutomationSteps } from "./definition-tree";
-import { Button } from "../../components/ui/button";
-import { SegmentedControl } from "../../components/ui/segmented-control";
+import { Button } from "../../components/button";
+import { SegmentedControl } from "../../components/segmented-control";
 
 const paragraph = "my-[5px] text-label text-muted-foreground";
 const heading = "m-0 text-body font-semibold";

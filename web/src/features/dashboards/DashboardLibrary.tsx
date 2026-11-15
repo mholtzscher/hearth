@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { deleteDashboard, listDashboards, type DashboardSummary } from "../../api/dashboards";
 import { useBaseUrlVersion } from "../../api/client";
-import { Button } from "../../components/ui/button";
-import { Notice } from "../../components/ui/notice";
+import { Button } from "../../components/button";
+import { Notice } from "../../components/notice";
 import { DecisionDialog } from "../../components/DecisionDialog";
 
 export function DashboardLibrary() {

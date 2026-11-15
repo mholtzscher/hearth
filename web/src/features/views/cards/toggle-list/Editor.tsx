@@ -3,9 +3,9 @@ import { toggleListSchema, MAX_TOGGLE_ROWS } from "./schema";
 import { powerBindingSchema } from "../../bindings/schema";
 import { TextField } from "../../editor/TextField";
 import type { SensorChoice } from "../time-series/Editor";
-import { Button } from "../../../../components/ui/button";
-import { Input } from "../../../../components/ui/input";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { Button } from "../../../../components/button";
+import { Input } from "../../../../components/input";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 type Value = z.infer<typeof toggleListSchema>;

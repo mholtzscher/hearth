@@ -1,7 +1,7 @@
 import { useId, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
 import { ArrowUpRightIcon, XIcon } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "../../../components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "../../../components/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "../../../components/popover";
 import { cn } from "../../../lib/utils";
 import { Link } from "react-router-dom";
 import type { ResourceMetadata } from "../bindings/types";

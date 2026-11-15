@@ -6,6 +6,7 @@ import { useObservedEntity } from "../../../../.storybook/use-observed-entity";
 import { PowerSwitch } from "./PowerSwitch";
 
 const meta = {
+  title: "Components/Controls/PowerSwitch",
   component: PowerSwitch,
   tags: ["ai-generated"],
   args: { entity: fixtureEntity(4), label: "Office plug power" },

@@ -3,12 +3,18 @@ import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Collection, CommandRecord } from "../api/types.ts";
-import { EmptyRow, ErrorBox, Facts, MonoId, RawJson, StatusChip, linkClass } from "../components/common.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { Card, CardContent } from "../components/ui/card.tsx";
-import { Input } from "../components/ui/input.tsx";
-import { Label } from "../components/ui/label.tsx";
-import { NativeSelect } from "../components/ui/native-select.tsx";
+import { EmptyRow } from "../components/empty-row.tsx";
+import { ErrorBox } from "../components/error-box.tsx";
+import { Facts } from "../components/facts.tsx";
+import { MonoId } from "../components/mono-id.tsx";
+import { RawJson } from "../components/raw-json.tsx";
+import { StatusChip } from "../components/status-chip.tsx";
+import { linkClass } from "../components/link-styles.ts";
+import { Button } from "../components/button.tsx";
+import { Card, CardContent } from "../components/card.tsx";
+import { Input } from "../components/input.tsx";
+import { Label } from "../components/label.tsx";
+import { NativeSelect } from "../components/native-select.tsx";
 import {
   Table,
   TableBody,
@@ -16,7 +22,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../components/ui/table.tsx";
+} from "../components/table.tsx";
 
 const RECENT_KEY = "hearth.recentCommands";
 const RECENT_LIMIT = 10;

@@ -3,7 +3,7 @@ import { stateFields } from "../../bindings/state-fields";
 import { TextField } from "../../editor/TextField";
 import { WordsEditor } from "../state/Editor";
 import { weekPatternSchema } from "./schema";
-import { NativeSelect } from "../../../../components/ui/native-select";
+import { NativeSelect } from "../../../../components/native-select";
 import { EditorLabel } from "../../editor/EditorLabel";
 
 export function WeekPatternEditor({ value, onChange }: { value: z.infer<typeof weekPatternSchema>; onChange: (value: z.infer<typeof weekPatternSchema>) => void }) {
