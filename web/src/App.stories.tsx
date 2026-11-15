@@ -310,6 +310,53 @@ export const ExpandedCanvas: Story = {
   },
 };
 
+/** Invalid editor input lives locally until corrected; expanding must not remount it. */
+export const ExpandedCanvasRetainsInvalidInput: Story = {
+  parameters: { appPath: dashboardPath },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("heading", { name: "Morning overview" });
+    await userEvent.click(canvas.getByRole("button", { name: "Edit" }));
+    const title = canvas.getByRole("textbox", { name: "Dashboard title" });
+    await userEvent.clear(title);
+    await expect(title).toHaveAttribute("aria-invalid", "true");
+    const expand = canvas.getByRole("button", { name: "Expand" });
+    await userEvent.click(expand);
+    const expanded = canvas.getByRole("dialog", { name: "View canvas" });
+    await expect(expanded).toHaveFocus();
+    await expect(within(expanded).getByRole("textbox", { name: "Dashboard title" })).toBe(title);
+    await expect(title).toHaveValue("");
+    await expect(title).toHaveAttribute("aria-invalid", "true");
+    await userEvent.keyboard("{Escape}");
+    await expect(expand).toHaveFocus();
+    await expect(canvas.getByRole("textbox", { name: "Dashboard title" })).toBe(title);
+    await expect(title).toHaveValue("");
+    await expect(title).toHaveAttribute("aria-invalid", "true");
+  },
+};
+
+/** Escape closes a nested Source before closing the expanded canvas. */
+export const ExpandedCanvasNestedSource: Story = {
+  parameters: { appPath: dashboardPath },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await canvas.findByRole("heading", { name: "Morning overview" });
+    const expand = canvas.getByRole("button", { name: "Expand" });
+    await userEvent.click(expand);
+    const expanded = canvas.getByRole("dialog", { name: "View canvas" });
+    await expect(expanded).toHaveFocus();
+    const source = within(expanded).getAllByRole("button", { name: "Source" })[0];
+    await userEvent.click(source);
+    const body = within(canvasElement.ownerDocument.body);
+    await expect(await body.findByRole("heading", { name: "Reading details" })).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(body.queryByRole("heading", { name: "Reading details" })).not.toBeInTheDocument());
+    await expect(canvas.getByRole("dialog", { name: "View canvas" })).toBeVisible();
+    await expect(source).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    await expect(expand).toHaveFocus();
+    await expect(canvas.getByRole("region", { name: "View canvas" })).toBeVisible();
+  },
+};
+
 export const UnsavedNavigation: Story = {
   parameters: { appPath: dashboardPath },
   play: async context => {
