@@ -31,6 +31,7 @@ it("filters a long list by preview, says when nothing matches, and clears with E
     ...Array.from({ length: 12 }, (_, index) => conversation(`c${index}`, `Temperature check ${index}`, 30 + index)),
   ]);
   const search = await recent.findByRole("searchbox", { name: "Search conversations" });
+  expect(search.getAttribute("data-size")).toBe("auto");
   fireEvent.change(search, { target: { value: "  GARAGE " } });
   expect(recent.getAllByRole("link").map(link => link.textContent)).toEqual(["Is the garage door open?"]);
   expect(recent.getAllByRole("heading", { level: 3 }).map(heading => heading.textContent)).toEqual(["Today"]);
@@ -46,7 +47,9 @@ it("filters a long list by preview, says when nothing matches, and clears with E
   expect(search).toHaveProperty("value", "");
   expect(recent.getAllByRole("link")).toHaveLength(13);
   fireEvent.change(search, { target: { value: "garage" } });
-  fireEvent.click(recent.getByRole("button", { name: "Clear search" }));
+  const clear = recent.getByRole("button", { name: "Clear search" });
+  expect(clear.getAttribute("data-size")).toBe("icon-touch");
+  fireEvent.click(clear);
   expect(search).toHaveProperty("value", "");
   expect(document.activeElement).toBe(search);
 });

@@ -405,6 +405,8 @@ it("renders views in the reply, opens the canvas on demand, and closes an unedit
   expect(within(screen.getByRole("log")).getByText("Hello home")).toBeTruthy();
   fireEvent.click(open);
   const canvas = await screen.findByRole("region", { name: "View canvas" });
+  expect(screen.getByRole("button", { name: "Show selected view: Warm house" }).getAttribute("data-size")).toBe("touch");
+  expect(screen.getByRole("button", { name: "Close selected view" }).getAttribute("data-size")).toBe("icon-touch");
   expect(within(canvas).getByText("Hello home")).toBeTruthy();
   // The open view is drawn once, in the canvas.
   expect(within(screen.getByRole("log")).queryByText("Hello home")).toBeNull();
@@ -574,7 +576,9 @@ it("renders assistant Markdown and copies its original text with native copied f
   expect(log.getByRole("link", { name: "Details" }).getAttribute("href")).toBe("https://example.com");
   expect(log.getByText('{"temperature":21}').closest("pre")).toBeTruthy();
   expect(log.queryByText("unsafe()")).toBeNull();
-  fireEvent.click(log.getByRole("button", { name: "Copy response" }));
+  const copy = log.getByRole("button", { name: "Copy response" });
+  expect(copy.getAttribute("data-size")).toBe("touch");
+  fireEvent.click(copy);
   await waitFor(() => expect(writeText).toHaveBeenCalledWith(text));
   expect(await log.findByText("Copied")).toBeTruthy();
   expect(log.getByRole("button", { name: "Response copied" })).toBeTruthy();

@@ -28,10 +28,9 @@ function JumpToLatest() {
 // The view or Automation on the canvas travels with the next message; the chip shows it and closes it like the canvas's own Close.
 // Its revision and saved state stay in the canvas header, which is beside the composer or one tap away.
 function SelectedContextChip({ kind, title, closeDisabled, onShow, onClose }: { kind: string; title: string; closeDisabled: boolean; onShow: () => void; onClose: () => void }) {
-  const action = "pointer-coarse:h-11 hover:bg-violet-soft";
   return <div className="flex max-w-[calc(100%+8px)] min-w-0 justify-self-start -ms-2 rounded-md border border-violet/35 text-label leading-normal text-violet-text" role="group" aria-label={`Selected ${kind}`}>
-    <Button variant="ghost" type="button" className={cn(action, "min-w-0 justify-start gap-2 py-0 ps-[7px] pe-1 text-left text-violet-text")} aria-label={`Show selected ${kind}: ${title}`} title={title} onClick={onShow}><PanelsTopLeftIcon aria-hidden="true" /><span className="min-w-0 truncate">{title}</span></Button>
-    <Button variant="ghost" size="icon" type="button" className={cn(action, "pointer-coarse:w-11")} aria-label={`Close selected ${kind}`} title={`Close ${kind}`} disabled={closeDisabled} onClick={onClose}><XIcon aria-hidden="true" /></Button>
+    <Button variant="ghost" size="touch" type="button" className="min-w-0 justify-start gap-2 ps-[7px] pe-1 text-left text-violet-text hover:bg-violet-soft" aria-label={`Show selected ${kind}: ${title}`} title={title} onClick={onShow}><PanelsTopLeftIcon aria-hidden="true" /><span className="min-w-0 truncate">{title}</span></Button>
+    <Button variant="ghost" size="icon-touch" type="button" className="hover:bg-violet-soft" aria-label={`Close selected ${kind}`} title={`Close ${kind}`} disabled={closeDisabled} onClick={onClose}><XIcon aria-hidden="true" /></Button>
   </div>;
 }
 

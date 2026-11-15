@@ -33,21 +33,23 @@ export function ConversationHistory({ id, open, onNavigate, onClose, classNames 
     list.current?.querySelector<HTMLElement>("a[aria-current=page]")?.scrollIntoView?.({ block: "nearest" });
   }, [current, open, conversations.length]);
   const searchable = conversations.length > SEARCH_THRESHOLD || query !== "";
-  return <section id={id} className={cn("conversation-history flex min-h-0 flex-1 flex-col border-t border-border pt-5 [--history-bg:var(--gray-0)] [--history-field:var(--gray-1)]", classNames?.root)} aria-labelledby={`${id}-title`}>
+  return <section id={id} className={cn("conversation-history flex min-h-0 flex-1 flex-col border-t border-border pt-5 [--history-bg:var(--gray-0)]", classNames?.root)} aria-labelledby={`${id}-title`}>
     <div className={cn("flex min-h-5 items-center justify-between gap-2 px-3 pb-2", classNames?.header)}>
       <h2 className="text-label leading-5 font-semibold text-muted-foreground" id={`${id}-title`} tabIndex={-1}>Recent</h2>
       {onClose && <Button variant="ghost" size="icon-touch" type="button" className={classNames?.close} aria-label="Close recent conversations" onClick={onClose}><XIcon aria-hidden="true" /></Button>}
     </div>
-    {searchable && <div className="history-search mb-2 flex min-h-9 shrink-0 items-center gap-2 rounded-md border border-border bg-[var(--history-field)] ps-3 pe-1 text-muted-foreground focus-within:border-ring pointer-coarse:min-h-11">
-      <SearchIcon className="size-4 shrink-0" aria-hidden="true" />
-      <Input size="auto" className="h-[34px] min-w-0 flex-1 appearance-none rounded-none border-0 bg-transparent p-0 text-label text-foreground caret-violet placeholder:text-muted-foreground placeholder:opacity-100 focus-visible:outline-none pointer-coarse:h-[42px] pointer-coarse:text-body [&::-webkit-search-cancel-button]:appearance-none" ref={search} type="search" aria-label="Search conversations" placeholder="Search conversations" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => {
-        // Escape clears a search first; only an empty field lets it close the drawer.
-        if (event.key !== "Escape" || !query) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setQuery("");
-      }} />
-      {query && <Button variant="ghost" size="icon" className="pointer-coarse:size-11" type="button" aria-label="Clear search" onClick={() => { setQuery(""); search.current?.focus(); }}><XIcon aria-hidden="true" /></Button>}
+    {searchable && <div className="history-search mb-2 flex min-h-11 shrink-0 items-center gap-1">
+      <div className="relative min-w-0 flex-1">
+        <SearchIcon className="pointer-events-none absolute top-1/2 start-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <Input size="auto" className="ps-9 [&::-webkit-search-cancel-button]:appearance-none" ref={search} type="search" aria-label="Search conversations" placeholder="Search conversations" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => {
+          // Escape clears a search first; only an empty field lets it close the drawer.
+          if (event.key !== "Escape" || !query) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setQuery("");
+        }} />
+      </div>
+      {query && <Button variant="ghost" size="icon-touch" type="button" aria-label="Clear search" onClick={() => { setQuery(""); search.current?.focus(); }}><XIcon aria-hidden="true" /></Button>}
     </div>}
     {error ? <p className="px-3 text-label leading-normal text-muted-foreground" role="alert">Could not load conversations. <Button variant="link" onClick={refresh}>Retry</Button></p>
       : !loading && conversations.length === 0 ? <p className="px-3 text-label leading-normal text-muted-foreground">Conversations you start appear here.</p>

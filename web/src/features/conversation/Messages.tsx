@@ -104,34 +104,36 @@ function ContextPart({ data }: DataMessagePartProps<unknown>) {
   const automation = automationContextSchema.safeParse(data);
   const parsed = viewContextSchema.safeParse(data);
   const view = parsed.success ? readDefinition(parsed.data.definition) : null;
-  const badge = "mt-1.5 flex items-start gap-2 text-label leading-normal whitespace-normal text-violet-text [overflow-wrap:anywhere] [&_svg]:mt-[2.5px] [&_svg]:size-4 [&_svg]:shrink-0";
-  if (automation.success) return <p className={badge}><PanelsTopLeftIcon aria-hidden="true" />Selected Automation: {readAutomationDocument(automation.data.definition_json).definition.name}</p>;
-  return <p className={badge}><PanelsTopLeftIcon aria-hidden="true" />{view?.status === "supported" ? `Selected view: ${view.definition.title}` : "Selected view context unavailable in this version"}</p>;
+  const badge = "mt-1.5 flex items-start gap-2 text-label leading-normal whitespace-normal text-violet-text [overflow-wrap:anywhere]";
+  const icon = "mt-[2.5px] size-4 shrink-0";
+  if (automation.success) return <p className={badge}><PanelsTopLeftIcon className={icon} aria-hidden="true" />Selected Automation: {readAutomationDocument(automation.data.definition_json).definition.name}</p>;
+  return <p className={badge}><PanelsTopLeftIcon className={icon} aria-hidden="true" />{view?.status === "supported" ? `Selected view: ${view.definition.title}` : "Selected view context unavailable in this version"}</p>;
 }
 
 // Reply metadata rows share one icon column: status icon at the reply's edge, text after it, disclosure last.
-const activitySummary = "flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-[6px] hover:text-foreground pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden [&_svg]:size-4 [&_svg]:shrink-0";
+const activitySummary = "flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-sm hover:text-foreground pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden";
+const activityIcon = "size-4 shrink-0";
 function ToolGroup({ count, pending, children }: { count: number; pending: number; children: ReactNode }) {
-  return <details className="group/tools text-label leading-normal text-muted-foreground"><summary className={activitySummary}>{pending ? <CircleDashedIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />}<span>Used {plural(count, "tool")}{pending ? ` · ${pending} pending or unknown` : ""}</span><ChevronRightIcon className="!size-3.5 -ms-0.5 transition-transform duration-150 ease-out group-open/tools:rotate-90" aria-hidden="true" /></summary><ul className="mt-1 ms-[7.5px] list-none border-s border-border ps-[15.5px]">{children}</ul></details>;
+  return <details className="group/tools text-label leading-normal text-muted-foreground"><summary className={activitySummary}>{pending ? <CircleDashedIcon className={activityIcon} aria-hidden="true" /> : <CheckIcon className={activityIcon} aria-hidden="true" />}<span>Used {plural(count, "tool")}{pending ? ` · ${pending} pending or unknown` : ""}</span><ChevronRightIcon className="-ms-0.5 size-3.5 shrink-0 transition-transform duration-150 ease-out group-open/tools:rotate-90" aria-hidden="true" /></summary><ul className="mt-1 ms-[7.5px] list-none border-s border-border ps-[15.5px]">{children}</ul></details>;
 }
 
 function ToolPart({ toolName, argsText, result }: ToolCallMessagePartProps) {
-  return <li><details className="group/tool"><summary className={activitySummary}>{result === undefined ? <CircleDashedIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />}<span className="min-w-0 [overflow-wrap:anywhere]">{toolName} {result === undefined ? "· outcome unknown or pending" : "· complete"}</span><ChevronRightIcon className="!size-3.5 -ms-0.5 transition-transform duration-150 ease-out group-open/tool:rotate-90" aria-hidden="true" /></summary><p className="mt-1 mb-2 ms-6 [overflow-wrap:anywhere]">{argsText}</p>{result !== undefined && <pre className="mt-1 mb-2 ms-6 max-h-[180px] overflow-auto rounded-md border border-border bg-card px-3 py-2 text-label whitespace-pre-wrap [overflow-wrap:anywhere]">{String(result)}</pre>}</details></li>;
+  return <li><details className="group/tool"><summary className={activitySummary}>{result === undefined ? <CircleDashedIcon className={activityIcon} aria-hidden="true" /> : <CheckIcon className={activityIcon} aria-hidden="true" />}<span className="min-w-0 [overflow-wrap:anywhere]">{toolName} {result === undefined ? "· outcome unknown or pending" : "· complete"}</span><ChevronRightIcon className="-ms-0.5 size-3.5 shrink-0 transition-transform duration-150 ease-out group-open/tool:rotate-90" aria-hidden="true" /></summary><p className="mt-1 mb-2 ms-6 [overflow-wrap:anywhere]">{argsText}</p>{result !== undefined && <pre className="mt-1 mb-2 ms-6 max-h-[180px] overflow-auto rounded-md border border-border bg-card px-3 py-2 text-label whitespace-pre-wrap [overflow-wrap:anywhere]">{String(result)}</pre>}</details></li>;
 }
 
 const userParts = { data: { by_name: { "hearth-context": ContextPart } } };
-function UserMessage() { return <div className="mt-8 ms-auto w-fit max-w-[min(85%,560px)] rounded-[12px_12px_4px_12px] border border-gray-3 bg-gray-2 px-4 py-2.5 text-body leading-[1.6] whitespace-pre-wrap text-foreground [overflow-wrap:break-word] first:mt-4"><MessagePrimitive.Parts components={userParts} /></div>; }
+function UserMessage() { return <div className="mt-8 ms-auto w-fit max-w-[min(85%,560px)] rounded-card rounded-br-xs border border-gray-3 bg-gray-2 px-4 py-2.5 text-body leading-[1.6] whitespace-pre-wrap text-foreground [overflow-wrap:break-word] first:mt-4"><MessagePrimitive.Parts components={userParts} /></div>; }
 
 function CopyResponse() {
   const copied = useAuiState(state => state.message.isCopied);
-  return <ActionBarPrimitive.Copy asChild><Button variant="ghost" className="px-2 data-[copied]:text-success pointer-coarse:h-11" aria-label={copied ? "Response copied" : "Copy response"} title={copied ? "Response copied" : "Copy response"}>
+  return <ActionBarPrimitive.Copy asChild><Button variant="ghost" size="touch" className="px-2 data-[copied]:text-success" aria-label={copied ? "Response copied" : "Copy response"} title={copied ? "Response copied" : "Copy response"}>
     {copied ? <><CheckIcon aria-hidden="true" />Copied</> : <><CopyIcon aria-hidden="true" />Copy</>}
   </Button></ActionBarPrimitive.Copy>;
 }
 
 function AssistantMessage() {
   return <div className="mt-6 flex flex-col gap-3 text-body leading-[1.7] text-gray-9 [overflow-wrap:break-word]">
-    <div className="mb-[-4px] flex min-h-6 items-center gap-2 text-label leading-normal font-semibold text-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-violet"><HouseIcon aria-hidden="true" />Hearth</div>
+    <div className="mb-[-4px] flex min-h-6 items-center gap-2 text-label leading-normal font-semibold text-foreground"><HouseIcon className="size-4 shrink-0 text-violet" aria-hidden="true" />Hearth</div>
     <MessagePrimitive.GroupedParts groupBy={toolGroups} indicator="never">{({ part, children }) => {
       switch (part.type) {
         case "group-tools": return <ToolGroup count={part.indices.length} pending={part.indices.length - part.counts.complete}>{children}</ToolGroup>;
