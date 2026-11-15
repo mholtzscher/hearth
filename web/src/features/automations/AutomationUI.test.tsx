@@ -59,7 +59,7 @@ describe("Automation cards and editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
     await waitFor(() => expect(document.activeElement).toBe(opener));
     expect(arm.open).toBe(true);
-    const exactDefinition = document.querySelector(".automation-code-block")?.textContent ?? "";
+    const exactDefinition = document.querySelector('[data-slot="automation-code-block"]')?.textContent ?? "";
     expect(exactDefinition).toContain('\n  "steps": [');
     expect(exactDefinition.replace(/\s+/g, "")).toBe(source.replace(/\s+/g, ""));
     expect(exactDefinition).toContain("9007199254740993");
