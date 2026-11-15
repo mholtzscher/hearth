@@ -182,6 +182,12 @@ Primary buttons are orange with dark, semibold text. Hover uses solid `orange-ho
 
 Every variant uses a 2px violet focus outline with a 3px offset. The shared Button supplies its own styling, including when `asChild` renders a link. Existing handwritten household controls adopt this component in their migration units.
 
+### Switches
+
+`components/ui/Switch` uses the household 44×24px pill track and 18px thumb. Its target is 32px high by default or 44px with `size="touch"`. The target has 8px corners and the shared 2px violet focus outline with a 3px offset; the visible track remains pill-shaped.
+
+Off uses a `gray-3` track, `gray-7` border, and `gray-8` thumb. On uses a violet track and a `gray-10` thumb. Disabled shared switches keep those state colours at 50% opacity. This is the approved shared disabled treatment, distinct from the full-opacity gray treatment still used by handwritten household controls until adoption.
+
 ### Fields
 
 `components/ui/Input`, `Textarea`, and `NativeSelect` share a card background, a 1px `gray-4` border, 8px corners, and 14px text with a 21px line height. Horizontal padding is 8px. Focus uses a 2px violet outline with a 3px offset; invalid fields use a destructive-colour border, and disabled fields use 50% opacity.
@@ -437,8 +443,9 @@ controls from Entity support; definitions never declare them.
   4px track is `--gray-4`, its level violet, and its 18px thumb `--gray-10`,
   with a 44px-tall target. It runs from 1 to 100 %; only the switch turns a
   light off.
-- Disabled controls use `--gray-3` to `--gray-6` at full opacity, never dimmed
-  violet. The card's **Disabled** status says why.
+- Handwritten disabled controls still use `--gray-3` to `--gray-6` at full opacity.
+  Shared switches use the treatment above when adopted. The card's **Disabled**
+  status says why the control is unavailable.
 - The reading keeps showing observed State. While a Command is pending, the
   control shows the requested value and a line beneath it, with a dusk-blue dot,
   says **Turning on…** or **Setting brightness to 40 %…**. Each control reserves
