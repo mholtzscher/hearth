@@ -244,6 +244,11 @@ description = "Run dashboard stories in Chromium with interaction and accessibil
 depends = ["web-install"]
 run = '''pnpm --dir web run test-storybook'''
 
+[tasks."story-shots"]
+description = "Temporary: screenshot every story, compare two captures, or report unrendered stylesheet classes"
+depends = ["web-install"]
+run = '''pnpm --dir web run story-shots'''
+
 [tasks."storybook-browser-install"]
 description = "Install Chromium for Storybook tests (CI also passes --with-deps)"
 depends = ["web-install"]

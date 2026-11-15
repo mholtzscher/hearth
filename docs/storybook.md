@@ -210,3 +210,45 @@ export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="$(command -v chromium)"
 
 Report unavailable browser checks as unverified. Do not substitute jsdom results
 for browser evidence.
+
+## Compare story screenshots during the design-system migration
+
+This tooling is temporary. It exists to prove that moving the dashboard's
+handwritten CSS to Tailwind utilities keeps every story's pixels, and it is
+deleted with the last handwritten stylesheet. It is not a regression suite and
+CI does not run it.
+
+```sh
+mise run --skip-deps story-shots -- capture /tmp/opencode/hearth-shots/base
+mise run --skip-deps story-shots -- compare /tmp/opencode/hearth-shots/base /tmp/opencode/hearth-shots/branch
+mise run --skip-deps story-shots -- coverage /tmp/opencode/hearth-shots/base
+```
+
+- `capture <dir>` requires a new or empty directory and writes one PNG for each
+  story into it. A story that sets its own viewport is captured at that size. Any
+  other story is captured at 1280×900 and again at 390×844, with the name
+  suffix `--phone`. The capture waits until nothing is marked `aria-busy` and
+  the document has stopped changing, up to three seconds per wait. The image
+  captures the viewport without enlarging it to fit tall content. It also writes
+  `classes.json`, the class names each story rendered, including offscreen content.
+  The command exits 1 if a story fails. Only successful runs write `complete.json`;
+  comparisons and coverage reject incomplete runs.
+- `compare <base-dir> <branch-dir>` exits 0 when both directories have the same
+  images and every pair is byte-identical. Otherwise it exits 1, lists the images
+  that differ, and writes `<branch-dir>/report.html` with both versions of
+  each. Missing images fail the comparison too, so an incomplete capture cannot
+  silently reduce the comparison. Added or removed stories require a new baseline.
+- `coverage <dir>` lists the stylesheet classes that no captured story
+  rendered and exits 1 when there are any. It checks class names only. It does
+  not show whether a story renders each `data-*` or ARIA state.
+
+To compare a branch with its base, capture the base commit in a second
+worktree, capture the branch, and compare the two directories. Capture both on
+the same machine: the comparison is exact, so a different browser build or font
+renderer changes every image. Keep the output outside the repository. A relative
+directory resolves from the directory where you ran `mise`.
+
+A capture run starts Chromium with `--disable-partial-raster` and with reduced
+motion to avoid timing-dependent pixels. Normal story tests do not use either
+setting. Stories tagged `needs-work` have no capture; the command lists their IDs.
+Before relying on a baseline, capture it twice and confirm that `compare` exits 0.
