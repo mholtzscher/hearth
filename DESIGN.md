@@ -170,7 +170,7 @@ Surfaces are mostly flat: tonal separation and fine borders establish hierarchy 
 
 ## Shapes
 
-Cards use a soft 12px radius and a 1px neutral border; household buttons and navigation commonly use 8px corners. The underlying shadcn radius is 0.625rem, while editor fields use 6px and the workspace modal uses 14px. Gradients appear only as one- or two-pixel horizon lines, not as large decorative fills.
+Cards use a soft 12px radius and a 1px neutral border; shared buttons, shared fields, and household navigation use 8px corners. The underlying shadcn radius is 0.625rem, while handwritten editor fields still use 6px and the workspace modal uses 14px. Gradients appear only as one- or two-pixel horizon lines, not as large decorative fills.
 
 ## Components
 
@@ -181,6 +181,14 @@ Both surfaces use `components/ui/Button` with 8px corners and 14px text. The `de
 Primary buttons are orange with dark, semibold text. Hover uses solid `orange-hover`; disabled primary buttons use `gray-3` background and border with `gray-7` text at full opacity. Outline buttons use the card surface, a neutral border, and regular-weight foreground text; hover uses `gray-3`. Use outline for filters, paging, and secondary workspace actions. The secondary, ghost, destructive, and link variants remain available. Disabled non-primary buttons use 50% opacity.
 
 Every variant uses a 2px violet focus outline with a 3px offset. The shared Button supplies its own styling, including when `asChild` renders a link. Existing handwritten household controls adopt this component in their migration units.
+
+### Fields
+
+`components/ui/Input`, `Textarea`, and `NativeSelect` share a card background, a 1px `gray-4` border, 8px corners, and 14px text with a 21px line height. Horizontal padding is 8px. Focus uses a 2px violet outline with a 3px offset; invalid fields use a destructive-colour border, and disabled fields use 50% opacity.
+
+Input and NativeSelect default to 32px high with 4px vertical padding. The `touch` size is 44px with 8px vertical padding; `auto` uses 32px with a fine pointer and 44px with a coarse pointer. These size names replace the native numeric `size` attribute. NativeSelect keeps the browser's selection behavior and arrow.
+
+Textarea has a 44px minimum height and 8px vertical padding. Its native `rows` prop controls the initial multiline height; it does not auto-grow with content. Caller typography overrides remain available for diagnostic JSON and identifiers. Existing household editor fields keep their handwritten 6px corners until their adoption units; comparison stories assert that approved 6px-to-8px change separately.
 
 ### View cards
 
@@ -469,7 +477,7 @@ bordered treatment.
 
 ### Inputs and navigation
 
-The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled and sits in its own row below the text, so it never floats between lines. The selected view and any editor note share that row, to the left of Send, rather than adding rows of their own. The selected view or Automation is a chip on the composer's 8px inset, mirroring Send: a 1px violet border, its icon on the text's edge, and the name truncating to one line. The name shows the canvas, on phones by switching to the Canvas tab; its close button closes the view like the canvas's own Close, asking first when there are unsaved changes. Both parts are 36px tall with a fine pointer and 44px with touch. The revision and saved state stay in the canvas header rather than repeating in the chip. Sent messages keep a plain, non-interactive record of the view they carried. Development inputs are compact, bordered shadcn fields with violet focus rings and error-colored invalid states. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it moves into the drawer, and while the server is not ready the menu button carries a status dot in its tone, with the status in its accessible name and in words inside the drawer. Status chips pair words with their tone.
+The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled and sits in its own row below the text, so it never floats between lines. The selected view and any editor note share that row, to the left of Send, rather than adding rows of their own. The selected view or Automation is a chip on the composer's 8px inset, mirroring Send: a 1px violet border, its icon on the text's edge, and the name truncating to one line. The name shows the canvas, on phones by switching to the Canvas tab; its close button closes the view like the canvas's own Close, asking first when there are unsaved changes. Both parts are 36px tall with a fine pointer and 44px with touch. The revision and saved state stay in the canvas header rather than repeating in the chip. Sent messages keep a plain, non-interactive record of the view they carried. Development uses the shared fields described above. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it moves into the drawer, and while the server is not ready the menu button carries a status dot in its tone, with the status in its accessible name and in words inside the drawer. Status chips pair words with their tone.
 
 ## Do's and Don'ts
 

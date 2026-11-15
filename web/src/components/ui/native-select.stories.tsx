@@ -1,16 +1,12 @@
-import type { ComponentProps } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
-
-/** Pre-migration baseline: exercise the native household control before adding its shared wrapper. */
-function HouseholdSelect(props: ComponentProps<"select">) {
-  return <div className="view-editor"><select {...props} /></div>;
-}
+import { NativeSelect } from "./native-select.tsx";
+import { expectFieldFocus, expectFieldSize, expectHouseholdField } from "./field-story-assertions.ts";
 
 const meta = {
   title: "components/ui/native-select",
-  component: HouseholdSelect,
+  component: NativeSelect,
   tags: ["ai-generated"],
   args: {
     "aria-label": "State field",
@@ -21,7 +17,7 @@ const meta = {
       <option value="pressure" disabled>Pressure unavailable</option>
     </>,
   },
-} satisfies Meta<typeof HouseholdSelect>;
+} satisfies Meta<typeof NativeSelect>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
@@ -41,6 +37,7 @@ export const Disabled: Story = {
   play: async ({ canvas, userEvent }) => {
     const select = canvas.getByRole("combobox", { name: "State field" });
     await expect(select).toBeDisabled();
+    await expect(getComputedStyle(select).opacity).toBe("0.5");
     await userEvent.selectOptions(select, "humidity");
     await expect(select).toHaveValue("temperature");
   },
@@ -48,35 +45,49 @@ export const Disabled: Story = {
 
 export const Invalid: Story = {
   args: { "aria-invalid": true },
+  play: async ({ canvas }) => {
+    await expect(getComputedStyle(canvas.getByRole("combobox")).borderColor).toBe("rgb(255, 92, 122)");
+  },
 };
 
 export const Sizes: Story = {
   render: (args) => (
     <div className="grid gap-3">
-      <HouseholdSelect {...args} aria-label="Default size" />
-      <HouseholdSelect {...args} aria-label="Touch size" />
-      <HouseholdSelect {...args} aria-label="Automatic size" />
+      <NativeSelect {...args} size="default" aria-label="Default size" />
+      <NativeSelect {...args} size="touch" aria-label="Touch size" />
+      <NativeSelect {...args} size="auto" aria-label="Automatic size" />
     </div>
   ),
-  play: async ({ canvasElement }) => expectNoHorizontalOverflow(canvasElement),
+  play: async ({ canvas, canvasElement }) => {
+    await expectFieldSize(canvas.getByRole("combobox", { name: "Default size" }), "32px");
+    await expectFieldSize(canvas.getByRole("combobox", { name: "Touch size" }), "44px");
+    await expectFieldSize(canvas.getByRole("combobox", { name: "Automatic size" }), matchMedia("(pointer: coarse)").matches ? "44px" : "32px");
+    await expectNoHorizontalOverflow(canvasElement);
+  },
 };
 
 export const KeyboardFocus: Story = {
+  args: { size: "touch" },
   play: async ({ canvas, userEvent }) => {
     await userEvent.tab();
-    await expect(canvas.getByRole("combobox", { name: "State field" })).toHaveFocus();
+    const select = canvas.getByRole("combobox", { name: "State field" });
+    await expectFieldSize(select, "44px");
+    await expectFieldFocus(select);
   },
 };
 
 /** Temporary household reference; remove when the editor adopts NativeSelect. */
 export const HouseholdComparison: Story = {
-  render: (args) => (
+  render: ({ size: _size, ...args }) => (
     <div className="grid gap-4">
       <div className="view-editor">
         <select {...args} aria-label="Legacy State field" />
       </div>
-      <HouseholdSelect {...args} aria-label="Shared State field" />
+      <NativeSelect {...args} size="touch" aria-label="Shared State field" />
     </div>
   ),
-  play: async ({ canvasElement }) => expectNoHorizontalOverflow(canvasElement),
+  play: async ({ canvas, canvasElement }) => {
+    await expectHouseholdField(canvas.getByRole("combobox", { name: "Shared State field" }), canvas.getByRole("combobox", { name: "Legacy State field" }));
+    await expectNoHorizontalOverflow(canvasElement);
+  },
 };
