@@ -231,7 +231,6 @@
 .view-metric-value:not([data-slot=reading]) small { margin-inline-start:4px; color:var(--quiet); font-size:14px; letter-spacing:0; }
 .view-metric-value:not([data-slot=reading])[data-value=dimmed] { color:var(--gray-8); }
 .view-metric-value:not([data-slot=reading])[data-value=empty] { color:var(--gray-6); }
-.view-state-value { overflow-wrap:anywhere; text-wrap:balance; }
 .view-rows { display:grid; list-style:none; margin-block:-4px; }
 /* Flex, not grid: iOS Safari kept a grid column sized to the loading "—" and broke "Off" between letters. */
 .view-row:not([data-slot=reading-row]) { position:relative; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 16px; padding:10px 0; font-variant-numeric:tabular-nums; }
