@@ -61,16 +61,16 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
     <WeatherZones aside={trend && history && rateStatus.value !== "empty" && <Trend window={trend} resource={history} dimmed={rateStatus.value === "dimmed"} className="@min-[460px]:mt-0" bandClassName="fill-chart-4" classNames={{ ...weatherTrendParts, mean: rateStatus.value !== "dimmed" ? "stroke-[color:color-mix(in_oklch,var(--chart-4)_50%,var(--gray-9))]" : undefined }} />}>
       {stormLeads ? <>
         <WeatherReading data={stormData} status={status} />
-        <p className="view-weather-conditions" data-value={derivedTreatment(stormReading, rateReading)}>This storm{!rateData ? "" : mmPerHour === undefined ? ` · Rate ${formatReading(rateData)}` : word ? ` · ${word} now, ${formatReading(rateData)}` : " · Stopped for now"}</p>
+        <p data-slot="weather-conditions" className="view-weather-conditions" data-value={derivedTreatment(stormReading, rateReading)}>This storm{!rateData ? "" : mmPerHour === undefined ? ` · Rate ${formatReading(rateData)}` : word ? ` · ${word} now, ${formatReading(rateData)}` : " · Stopped for now"}</p>
       </> : rateData && mmPerHour === 0 ? <>
         <WeatherReading status={rateStatus} words="Dry" />
         <p className="view-weather-detail" data-value={rateStatus.value}>Rate {formatReading(rateData)}</p>
       </> : <>
         <WeatherReading data={rateData} status={rateStatus} />
-        {word && <p className="view-weather-conditions" data-value={rateStatus.value}>{word}</p>}
+        {word && <p data-slot="weather-conditions" className="view-weather-conditions" data-value={rateStatus.value}>{word}</p>}
       </>}
     </WeatherZones>
-    {totalsLine.length > 0 && <p className="view-weather-inline">
+    {totalsLine.length > 0 && <p data-slot="rain-totals" className="view-weather-inline">
       {totalsLine.map((total, index) => <span key={total.period} data-value={cardStatus(total.resource).value}>
         {index > 0 && " · "}{periodNames[total.period]} {sharedUnit ? total.data!.value.toFixed(total.data!.format.fraction_digits) : formatReading(total.data!)}
       </span>)}{sharedUnit && ` ${totalsLine[0].data!.format.unit_label}`}

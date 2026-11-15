@@ -40,7 +40,7 @@ export function useWeatherReads<K extends string>(slots: Array<[K, WeatherRead |
 
 /** The fixed 40px reading, or words such as Dry at the same scale. Dimmed or empty by the card state table. */
 export function WeatherReading({ data, status, words }: { data?: MetricData; status: CardStatus; words?: string }) {
-  return <p className={`view-metric-value${words ? " view-state-value" : ""}`} data-value={status.value}>
+  return <p data-slot="weather-reading" className={`view-metric-value${words ? " view-state-value" : ""}`} data-value={status.value}>
     {words ?? (data ? data.value.toFixed(data.format.fraction_digits) : "—")}
     {!words && data?.format.unit_label && <small>{data.format.unit_label}</small>}
   </p>;
@@ -52,8 +52,8 @@ export function WeatherReading({ data, status, words }: { data?: MetricData; sta
  */
 export function WeatherZones({ aside, children }: { aside?: ReactNode; children: ReactNode }) {
   return <div className="view-weather-zones">
-    <div className="view-weather-main">{children}</div>
-    {aside ? <div className="view-weather-aside">{aside}</div> : null}
+    <div data-slot="weather-main" className="view-weather-main">{children}</div>
+    {aside ? <div data-slot="weather-aside" className="view-weather-aside">{aside}</div> : null}
   </div>;
 }
 
@@ -61,7 +61,7 @@ export function WeatherZones({ aside, children }: { aside?: ReactNode; children:
 export function SlotStatus({ name, resource }: { name: string; resource?: Resolved<unknown> }) {
   const entries = resource ? cardStatus(resource).entries : [];
   if (entries.length === 0) return null;
-  return <div className="view-weather-slot-status"><span>{name}</span><StatusList className="basis-full" entries={entries} /></div>;
+  return <div data-slot="weather-slot-status" className="view-weather-slot-status"><span>{name}</span><StatusList className="basis-full" entries={entries} /></div>;
 }
 
 /** A row for each bound slot, in order, so the footer, afterglow, and Source cover every reading the card uses. */

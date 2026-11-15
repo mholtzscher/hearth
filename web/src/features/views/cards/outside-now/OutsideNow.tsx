@@ -59,9 +59,9 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
           <div className="grid gap-[3px]" key={label}><dt className="text-label text-gray-8">{label}</dt><dd className="m-0"><time dateTime={at}>{new Date(at).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</time></dd></div>)}
       </dl>}
     </>}>
-    <WeatherZones aside={rows.length > 0 && <div className="view-weather-rows"><ReadingRows className="mt-0" rows={rows} /></div>}>
+    <WeatherZones aside={rows.length > 0 && <div data-slot="weather-rows" className="view-weather-rows"><ReadingRows className="mt-0" rows={rows} /></div>}>
       <WeatherReading data={data} status={status} />
-      {words.length > 0 && <p className="view-weather-conditions" data-value={wordTreatment}>{words.join(" · ")}</p>}
+      {words.length > 0 && <p data-slot="weather-conditions" className="view-weather-conditions" data-value={wordTreatment}>{words.join(" · ")}</p>}
       {data && <p className="view-weather-detail">{range
         ? `${history.refreshFailed ? "Last loaded 24 h:" : "24 h"} high ${range.high.toFixed(digits)}, low ${range.low.toFixed(digits)} ${history.data!.format.unit_label}`
         : history.status === "loading" ? "Loading the last 24 hours…" : history.status === "error" ? "Couldn't load the last 24 hours." : "No history in the last 24 h."}</p>}

@@ -33,7 +33,7 @@ function TendencyLine({ data, history, canonical, status }: { data?: MetricData;
   const digits = history.data!.format.fraction_digits;
   const shown = Number((change.now - change.then).toFixed(digits));
   const sign = shown > 0 ? "+" : shown < 0 ? "−" : "±";
-  return <p className="view-weather-tendency" data-value={status.value}>
+  return <p data-slot="pressure-tendency" className="view-weather-tendency" data-value={status.value}>
     <Icon aria-hidden="true" />{tendency.words}
     <span>{sign}{Math.abs(shown).toFixed(digits)} {history.data!.format.unit_label} in 3&nbsp;h</span>
   </p>;
