@@ -435,8 +435,12 @@ export const SelectedViewMessage: Story = {
     await context.canvas.findByText(conversationReply);
     await context.userEvent.click(context.canvas.getByRole("button", { name: "Open in canvas" }));
     await askTemperature(context);
-    await expect(await context.canvas.findByText(sentReply)).toBeVisible();
-    await expect(context.canvas.getByText("Selected view: Morning overview")).toBeVisible();
+    // History reconciliation replaces the streamed message after the reply arrives.
+    await waitFor(() => {
+      expect(context.canvas.getByRole("textbox", { name: "Ask Hearth" })).toBeEnabled();
+      expect(context.canvas.getByText(sentReply)).toBeVisible();
+      expect(context.canvas.getByText("Selected view: Morning overview")).toBeVisible();
+    });
   },
 };
 
