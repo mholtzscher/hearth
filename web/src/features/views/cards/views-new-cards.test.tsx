@@ -35,7 +35,7 @@ it.each([
   render(<StateCard label="Front door" resource={resource} />, { wrapper: MemoryRouter });
   expect(screen.getByText(text).getAttribute("data-value")).toBe(treatment);
   if (status) expect(screen.getByText(status)).toBeTruthy();
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
 
 it("State and numeric fields share one validated Entity request", async () => {
@@ -59,10 +59,10 @@ it("lists state the oldest reading and light a changed older row independently",
   const view = render(<ReadingList title="Doors" rows={rows(old, newer)} />, { wrapper: MemoryRouter });
   expect(document.querySelector("time")?.getAttribute("datetime")).toBe(old);
   view.rerender(<ReadingList title="Doors" rows={rows(changed, newer, "Open")} />);
-  expect(document.querySelectorAll(".view-card-arrival")).toHaveLength(1);
+  expect(document.querySelectorAll('[data-slot="card-arrival"]')).toHaveLength(1);
   expect(document.querySelectorAll(".view-row-arrival")).toHaveLength(1);
   await act(async () => { vi.advanceTimersByTime(60_001); });
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
 
 it("shows pinned ranges in words and keeps gaps in a trend", () => {
@@ -174,9 +174,9 @@ it("does not replay a displayed unavailable change when availability returns", (
   const view = render(<StateCard resource={ready} />, { wrapper: MemoryRouter });
   const changed = { ...ready, data: { text: "Open", observed_at: "2026-11-06T10:01:00Z" } };
   view.rerender(<StateCard resource={{ ...changed, metadata: { ...ready.metadata!, availability: "unavailable" } }} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   view.rerender(<StateCard resource={changed} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
 
 it("does not use a hidden inactive color for the Device footer or afterglow", () => {
@@ -187,7 +187,7 @@ it("does not use a hidden inactive color for the Device footer or afterglow", ()
   expect(document.querySelector("time")?.getAttribute("datetime")).toBe(at);
   const updated = { ...data, entities: data.entities.map(e => e.type === "hearth.colorxy/v1" ? { ...e, state: { value: { active: false, x: 0.5, y: 0.4 }, observed_at: "2026-11-06T10:02:00Z" } } : e) };
   view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: updated }} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   const unavailable = { ...data, entities: data.entities.map(e => e.type === "hearth.colorhs/v1" ? { ...e, availability: { status: "unavailable" } } : e) };
   view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: unavailable }} />);
   expect(document.querySelector(".view-light-swatch")?.hasAttribute("data-dimmed")).toBe(true);
@@ -210,7 +210,7 @@ it("observes color-mode changes that select a new light color and reports select
   const view = render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} />, { wrapper: MemoryRouter });
   const updated = { ...data, entities: data.entities.map(e => e.type === "hearth.colormode/v1" ? { ...e, state: { value: "xy", observed_at: "2026-11-06T10:02:00Z" } } : e) };
   view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: updated }} />);
-  expect(document.querySelector(".view-card-arrival")).toBeTruthy();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeTruthy();
   const unavailable = { ...updated, entities: updated.entities.map(e => e.type === "hearth.colormode/v1" ? { ...e, availability: { status: "unavailable" } } : e) };
   view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: unavailable }} />);
   expect(screen.getByText("Unavailable")).toBeTruthy();

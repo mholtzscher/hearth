@@ -49,7 +49,7 @@ it("uses a modal sheet on phones and closes before guarded Source navigation", (
   fireEvent.click(trigger);
   const panel = screen.getByRole("dialog", { name: "Reading details" });
   expect(panel.getAttribute("aria-modal")).toBe("true");
-  expect(panel.classList.contains("view-source-sheet")).toBe(true);
+  expect(panel.getAttribute("data-placement")).toBe("bottom");
   expect(within(panel).getByText(/15-minute/)).toBeTruthy();
   fireEvent.click(within(panel).getByRole("link", { name: "Temperature" }));
   expect(screen.queryByRole("dialog")).toBeNull();

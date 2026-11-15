@@ -139,13 +139,13 @@ it("treats a fan as active when the mode has no manual choice", async () => {
 
 it("glows only for a newer changed air or filter reading on the card", async () => {
   const values = fixture(); core(values); await mount(<BoundAirPurifier {...props} />);
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   values[0].state = { value: false, observed_at: "2026-11-09T10:00:01Z" };
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   values[1].state = { value: 15, observed_at: "2026-11-09T10:00:02Z" };
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(document.querySelector(".view-card-arrival")).toBeTruthy();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeTruthy();
   expect(screen.getByText("PM2.5").closest("li")?.querySelector(".view-row-arrival")).toBeTruthy();
 });
 
@@ -188,8 +188,8 @@ it("lights the tile's edge for a changed PM2.5 reading but not for a power chang
   const values = fixture(); core(values); await mount(<BoundAirPurifier {...props} layout="tile" />);
   values[0].state = { value: false, observed_at: "2026-11-09T10:00:01Z" };
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   values[1].state = { value: 15, observed_at: "2026-11-09T10:00:02Z" };
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(document.querySelector(".view-card-arrival")).toBeTruthy();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeTruthy();
 });

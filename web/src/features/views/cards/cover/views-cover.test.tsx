@@ -212,7 +212,7 @@ it("offers Stop when that is the cover's only writable Operation", async () => {
 
 it("tile: opens a closed cover after a second press, then stops it while it moves", async () => {
   const api = core(cover(0)); await mount(<BoundCover {...tile} />);
-  const press = () => fireEvent.click(document.querySelector(".view-toggle-tile-action")!);
+  const press = () => fireEvent.click(screen.getByRole("button", { name: /Garage door,/ }));
   expect(screen.getByText("Press to open")).toBeTruthy();
   press(); expect(api.posts).toHaveLength(0);
   expect(document.querySelector(".view-cover-short")?.textContent).toBe("Press again.");
@@ -227,7 +227,7 @@ it("tile: closes a partly open cover in one press and keeps one-line rows", asyn
   const api = core(cover(40)); await mount(<BoundCover {...tile} />);
   expect(document.querySelector(".view-metric-value")?.textContent).toBe("Open");
   expect(document.querySelector(".view-cover-position")?.textContent).toBe("40 % open");
-  fireEvent.click(document.querySelector(".view-toggle-tile-action")!); await flush();
+  fireEvent.click(screen.getByRole("button", { name: /Garage door,/ })); await flush();
   expect(api.posts[0].parameters).toEqual({ position: 0 });
   api.fail(api.posts[0], 502); await flush();
   const alert = screen.getByRole("alert");

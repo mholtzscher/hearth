@@ -47,7 +47,7 @@ it("dims an unavailable reading, leads with its status, and links Source to the 
   const status = await within(card).findByText("Unavailable");
   expect(status.closest("li")?.getAttribute("data-tone")).toBe("warn");
   expect(card.querySelector(".view-metric-value")?.getAttribute("data-value")).toBe("dimmed");
-  expect(card.querySelector(".view-card-arrival")).toBeNull();
+  expect(card.querySelector('[data-slot="card-arrival"]')).toBeNull();
   const toggle = within(card).getByRole("button", { name: "Source" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle);
@@ -69,7 +69,7 @@ it("separates combined statuses into distinct list items", async () => {
   await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={view} /></ViewDataProvider>, { wrapper: MemoryRouter }));
   const card = await screen.findByRole("article", { name: "Garage temperature" });
   await within(card).findByText("Disabled");
-  expect([...card.querySelectorAll(".view-status li")].map(li => li.textContent)).toEqual(["Unavailable", "Disabled"]);
+  expect(within(within(card).getByRole("list")).getAllByRole("listitem").map(li => li.textContent)).toEqual(["Unavailable", "Disabled"]);
 });
 
 it.each([

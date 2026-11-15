@@ -371,12 +371,12 @@ it("glows for changed display but not identical republications", async () => {
   await mount(<BoundForecast source={source("daily")} />);
   const same = entity("daily", daily); same.state.observed_at = "2026-11-09T10:01:00Z"; api.set(same);
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   const changed = entity("daily", { periods: [{ ...daily.periods[0], temperature_max: 20 }] }); changed.state.observed_at = "2026-11-09T10:02:00Z"; api.set(changed);
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(document.querySelector(".view-card-arrival")).toBeTruthy();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeTruthy();
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(document.querySelector(".view-card-arrival")).toBeNull();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
 
 it("glows when only a day or night condition variant changes", async () => {
@@ -386,7 +386,7 @@ it("glows when only a day or night condition variant changes", async () => {
   const night = entity("daily", { periods: [{ ...clear.periods[0], condition: "clear-night" }] });
   night.state.observed_at = "2026-11-09T10:01:00Z"; api.set(night);
   await act(() => vi.advanceTimersByTimeAsync(10000));
-  expect(document.querySelector(".view-card-arrival")).toBeTruthy();
+  expect(document.querySelector('[data-slot="card-arrival"]')).toBeTruthy();
 });
 
 it("keeps the chart summary within the 10% precipitation threshold", async () => {

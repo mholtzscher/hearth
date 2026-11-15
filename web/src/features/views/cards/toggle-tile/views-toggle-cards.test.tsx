@@ -226,7 +226,7 @@ it("keeps an optional detail reading independently bound and states the oldest d
   const api = core([power(), numeric(), energy]);
   await mount(<BoundToggleTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h", detail: { source: metricSource(22), label: "Total energy" } }} />);
   expect(screen.getByText("Total energy")).toBeTruthy();
-  expect(document.querySelector(".view-card-footer time")?.getAttribute("datetime")).toBe(energy.state!.observed_at);
+  expect(screen.getByRole("article", { name: "Plug" }).querySelector('[data-slot="card-footer"] time')?.getAttribute("datetime")).toBe(energy.state!.observed_at);
   expect(document.querySelectorAll(".view-trend")).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Source" }));
   expect(screen.getAllByRole("link")).toHaveLength(3);

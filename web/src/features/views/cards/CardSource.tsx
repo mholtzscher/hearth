@@ -73,7 +73,7 @@ export function CardSource({ title, observedAt, observedLabel, now, sources, chi
     <Dialog.Trigger asChild>{trigger}</Dialog.Trigger>
     <Dialog.Portal>
       <Dialog.Overlay className="view-source-backdrop" />
-      <Dialog.Content className="view-source view-source-sheet" aria-modal="true" onClick={closeOnNavigation}>{content}</Dialog.Content>
+      <Dialog.Content data-placement="bottom" className="view-source view-source-sheet" aria-modal="true" onClick={closeOnNavigation}>{content}</Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root> : <Popover.Root open={open} onOpenChange={setOpen}>
     <Popover.Trigger asChild>{trigger}</Popover.Trigger>

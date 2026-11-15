@@ -58,14 +58,14 @@ export function CardFrame({ title, unit, status, observedAt, observedLabel = "Ob
   const hasSource = sources.length > 0 || sourceExtra !== undefined;
   return <article className={`view-card${className ? ` ${className}` : ""}`} aria-labelledby={titleId}>
     {/* A new key restarts the fade for each arrival. */}
-    {glow !== undefined && <span key={glow} className="view-card-arrival" aria-hidden="true" />}
+    {glow !== undefined && <span key={glow} data-slot="card-arrival" className="view-card-arrival" aria-hidden="true" />}
     <header className="view-card-header">
       <Title id={titleId} className="view-card-title">{title}</Title>
       {unit && <span className="view-card-unit">{unit}</span>}
       <StatusList entries={status} />
     </header>
     <div className="view-card-body">{children}</div>
-    {(observedAt || hasSource) && <footer className="view-card-footer">
+    {(observedAt || hasSource) && <footer data-slot="card-footer" className="view-card-footer">
       {observedAt && (age ? <time dateTime={observedAt} aria-label={`${observedLabel} ${ageWords}`}>{compactTimeLabel ? <><span className="view-card-time-label">{shortLabel} </span>{age}</> : `${shortLabel} ${age}`}</time> : <span>Observation time unavailable</span>)}
       {hasSource && <CardSource title={title} observedAt={observedAt} observedLabel={observedLabel} now={now} sources={sources}>{sourceExtra}</CardSource>}
     </footer>}
