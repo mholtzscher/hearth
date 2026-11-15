@@ -26,7 +26,7 @@ export const SetBrightness: Story = {
   play: async ({ canvas }) => {
     const slider = canvas.getByRole("slider");
     await fireEvent.change(slider, { target: { value: "65" } });
-    await fireEvent.blur(slider);
+    await fireEvent.focusOut(slider);
     await waitFor(() => expect(slider).not.toHaveAttribute("aria-busy", "true"));
     await expect(slider).toHaveAttribute("aria-valuetext", "65 %");
   },
@@ -53,7 +53,7 @@ export const FirstObservation: Story = {
     const slider = canvas.getByRole("slider");
     await expect(slider).toHaveAttribute("aria-valuetext", "No value");
     await fireEvent.change(slider, { target: { value: "40" } });
-    await fireEvent.blur(slider);
+    await fireEvent.focusOut(slider);
     await waitFor(() => {
       expect(slider).not.toHaveAttribute("aria-busy", "true");
       expect(slider).toHaveAttribute("aria-valuetext", "40 %");
