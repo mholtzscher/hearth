@@ -20,7 +20,7 @@ it("draws seven days with five levels, future cells and daily text summaries", (
   render(<WeekPattern label="Door" entityId={id} resource={ready} trueWord="Open" />, { wrapper: MemoryRouter });
   expect(document.querySelectorAll('[data-slot="week-hours"]')).toHaveLength(7);
   expect(document.querySelectorAll('[data-slot="week-hours"] [data-slot="week-cell"]')).toHaveLength(168);
-  for (let n = 0; n < 5; n++) expect(document.querySelector(`.view-week-hours [data-level="${n}"]`)).toBeTruthy();
+  for (let n = 0; n < 5; n++) expect(document.querySelector(`[data-slot="week-hours"] [data-level="${n}"]`)).toBeTruthy();
   expect(document.querySelectorAll('[data-slot="week-hours"] [data-future]')).toHaveLength(11);
   expect(document.querySelector('[data-slot="week-grid"]')?.getAttribute("aria-hidden")).toBe("true");
   expect(screen.getAllByText(/times, .* open\./)).toHaveLength(7);
