@@ -51,7 +51,7 @@ export function AirPurifierCard({ props, title }: { props: AirPurifierProps; tit
     ((item.key === "display" || item.key === "child_lock") && controllable(item.key)));
   return <CardFrame title={title} className="view-air-purifier" status={status} observedAt={oldestObservation(shown)} observedLabel="Oldest reading" arrivals={listArrivals(numeric)} sources={sources} sourceExtra={sourceExtra}>
     <div className="view-air-purifier-head"><div><p className="view-metric-value" data-value={power?.status.value}>{power?.data && "text" in power.data ? power.data.text : "—"}</p>
-      {observedMode && <p className="view-air-purifier-detail" data-value={mode?.status.value}>{choiceWords(observedMode)}{observedMode === "manual" && observedFan && ` · fan ${observedFan}`}</p>}</div>
+      {observedMode && <p data-slot="purifier-detail" className="view-air-purifier-detail" data-value={mode?.status.value}>{choiceWords(observedMode)}{observedMode === "manual" && observedFan && ` · fan ${observedFan}`}</p>}</div>
       {controllable("power") && <PowerSwitch entity={entities.power!} label={`${title} power`} />}
     </div>
     {power && <StatusList entries={allUnavailable ? power.status.entries.filter(entry => entry.key !== "unavailable") : power.status.entries} />}

@@ -92,7 +92,7 @@ it("sends mode and fan strings and shows requested controls without changing obs
   api.satisfy(api.posts[1]); await flush(); await flush();
   expect(screen.getByText("Switching to Sleep…")).toBeTruthy();
   api.satisfy(api.posts[0]); await flush(); await flush();
-  expect(document.querySelector(".view-air-purifier-detail")?.textContent).toBe("Sleep");
+  expect(document.querySelector('[data-slot="purifier-detail"]')?.textContent).toBe("Sleep");
 });
 
 it("leaves every mode unselected when no mode has been observed", async () => {
@@ -135,7 +135,7 @@ it("marks the stored manual level hollow in auto and disables disabled Entities"
   const values = fixture(); values[3].state!.value = "auto"; values[3].enabled = false; values[4].enabled = false; values[5].enabled = false; values[1].availability.status = "unavailable";
   core(values); await mount(<BoundAirPurifier {...props} />);
   expect(screen.getByText("Level 2 kept for Manual")).toBeTruthy();
-  expect(document.querySelector(".view-air-purifier-pips")?.hasAttribute("data-stored")).toBe(true);
+  expect(document.querySelector('[data-slot="fan-pips"]')?.hasAttribute("data-stored")).toBe(true);
   expect((screen.getByRole("switch", { name: "Display" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole("button", { name: "Sleep" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole("button", { name: "Raise fan level" }) as HTMLButtonElement).disabled).toBe(true);
@@ -146,7 +146,7 @@ it("treats a fan as active when the mode has no manual choice", async () => {
   const values = fixture(); values[3].state!.value = "auto"; values[3].support = { state: { choices: ["auto", "sleep"] }, operations: { set: {} } };
   core(values); await mount(<BoundAirPurifier {...props} />);
   expect(screen.getByText("Level 2 of 4")).toBeTruthy();
-  expect(document.querySelector(".view-air-purifier-pips")?.hasAttribute("data-stored")).toBe(false);
+  expect(document.querySelector('[data-slot="fan-pips"]')?.hasAttribute("data-stored")).toBe(false);
 });
 
 it("glows only for a newer changed air or filter reading on the card", async () => {
@@ -158,7 +158,7 @@ it("glows only for a newer changed air or filter reading on the card", async () 
   values[1].state = { value: 15, observed_at: "2026-11-09T10:00:02Z" };
   await act(() => vi.advanceTimersByTimeAsync(10000));
   expect(document.querySelector('[data-slot="card-arrival"]')).toBeTruthy();
-  expect(screen.getByText("PM2.5").closest("li")?.querySelector(".view-row-arrival")).toBeTruthy();
+  expect(screen.getByText("PM2.5").closest("li")?.querySelector(':scope > span[aria-hidden="true"]')).toBeTruthy();
 });
 
 it("shows all-unavailable at card level", async () => {

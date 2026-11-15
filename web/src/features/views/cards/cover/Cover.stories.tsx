@@ -52,6 +52,16 @@ export const ConfirmOpening: Story = {
     await expect(canvas.getByText("Rejected.")).toBeVisible();
   },
 };
+export const ConfirmOpeningCard: Story = {
+  beforeEach: ({ msw }) => { msw.use(...createCoreHandlers([writableCover()])); },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Open Garage door" }));
+    const confirm = await canvas.findByRole("button", { name: "Confirm open Garage door" });
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toHaveTextContent("Confirm");
+    await expect(getComputedStyle(confirm).backgroundColor).toBe("rgb(255, 138, 61)");
+  },
+};
 export const RequestedPosition: Story = {
   args: { confirm_open: false },
   beforeEach: ({ msw }) => {

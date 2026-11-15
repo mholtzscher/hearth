@@ -45,15 +45,15 @@ const wait = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
 async function mount(children: ReactNode) { render(<StrictMode><ViewDataProvider>{children}</ViewDataProvider></StrictMode>, { wrapper: MemoryRouter }); await flush(); }
 const card: CoverProps = { layout: "card", label: "Garage door", source };
 const tile: CoverProps = { layout: "tile", label: "Garage door", source };
-const status = () => document.querySelector(".view-cover-status")?.textContent ?? "";
+const status = () => document.querySelector("[data-cover-status]")?.textContent ?? "";
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-09T10:00:30Z")); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 it("words the reported State and its position", async () => {
   for (const [position, motion, word] of [[0, "idle", "Closed"], [100, "idle", "Open"], [40, "idle", "Partly open"], [40, "opening", "Opening"], [40, "closing", "Closing"]] as const) {
     core(cover(position, motion)); await mount(<BoundCover {...card} />);
-    expect(document.querySelector(".view-metric-value")?.textContent).toBe(word);
-    expect(document.querySelector(".view-cover-position")?.textContent).toBe(`${position} % open`);
+    expect(document.querySelector("[data-cover-reading]")?.textContent).toBe(word);
+    expect(document.querySelector('[data-slot="cover-position"]')?.textContent).toBe(`${position} % open`);
     cleanup(); vi.restoreAllMocks();
   }
 });
@@ -215,7 +215,7 @@ it("tile: opens a closed cover after a second press, then stops it while it move
   const press = () => fireEvent.click(screen.getByRole("button", { name: /Garage door,/ }));
   expect(screen.getByText("Press to open")).toBeTruthy();
   press(); expect(api.posts).toHaveLength(0);
-  expect(document.querySelector(".view-cover-short")?.textContent).toBe("Press again.");
+  expect(document.querySelector('[data-slot="cover-short"]')?.textContent).toBe("Press again.");
   press(); await flush();
   expect(api.posts[0].parameters).toEqual({ position: 100 });
   expect(screen.getByText("Press to stop")).toBeTruthy();
@@ -225,13 +225,13 @@ it("tile: opens a closed cover after a second press, then stops it while it move
 
 it("tile: closes a partly open cover in one press and keeps one-line rows", async () => {
   const api = core(cover(40)); await mount(<BoundCover {...tile} />);
-  expect(document.querySelector(".view-metric-value")?.textContent).toBe("Open");
-  expect(document.querySelector(".view-cover-position")?.textContent).toBe("40 % open");
+  expect(document.querySelector('[data-slot="reading"]')?.textContent).toBe("Open");
+  expect(document.querySelector("[data-cover-position]")?.textContent).toBe("40 % open");
   fireEvent.click(screen.getByRole("button", { name: /Garage door,/ })); await flush();
   expect(api.posts[0].parameters).toEqual({ position: 0 });
   api.fail(api.posts[0], 502); await flush();
   const alert = screen.getByRole("alert");
-  expect(alert.querySelector(".view-cover-short")?.textContent).toBe("Rejected.");
+  expect(alert.querySelector('[data-slot="cover-short"]')?.textContent).toBe("Rejected.");
   expect(alert.querySelector(".sr-only")?.textContent).toBe("Change rejected. Try again.");
-  expect(document.querySelectorAll(".view-cover-tile .view-cover-row")).toHaveLength(3);
+  expect(screen.getByRole("article").querySelectorAll('[data-slot="cover-row"]')).toHaveLength(3);
 });

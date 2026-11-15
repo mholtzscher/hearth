@@ -19,8 +19,8 @@ export function CoverCard({ props }: { props: CoverProps }) {
     <div className="view-cover-lead">
       <CoverDiagram position={data?.position} target={cover.target} value={status.value} />
       <div className="view-cover-reading">
-        <p className="view-metric-value" data-value={status.value}>{word}</p>
-        <p className="view-cover-position" data-value={status.value}>{data ? `${data.position} % open` : " "}</p>
+        <p data-cover-reading className="view-metric-value" data-value={status.value}>{word}</p>
+        <p data-slot="cover-position" className="view-cover-position" data-value={status.value}>{data ? `${data.position} % open` : " "}</p>
       </div>
     </div>
     {(cover.canSet || cover.canStop) && <>

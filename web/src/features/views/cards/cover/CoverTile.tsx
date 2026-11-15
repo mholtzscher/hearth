@@ -31,8 +31,8 @@ export function CoverTile({ props }: { props: CoverProps }) {
       ? <button type="button" data-slot="tile-action" className={tileActionClass} aria-label={`${title}, ${word}${position ? `, ${position}` : ""}. ${verbText}`}
           aria-busy={busy || undefined} title={cover.line("tile")?.text} disabled={!cover.enabled} onClick={press}>{reading}</button>
       : <p>{reading}</p>}
-    <p className="view-cover-row view-cover-position" data-value={status.value}>{position ?? " "}</p>
-    <p className="view-cover-row view-cover-verb">{verbText || " "}</p>
+    <p data-slot="cover-row" data-cover-position className="view-cover-row view-cover-position" data-value={status.value}>{position ?? " "}</p>
+    <p data-slot="cover-row" className="view-cover-row view-cover-verb">{verbText || " "}</p>
     <CoverStatus line={cover.line("tile")} tile />
   </TileFrame>;
 }
