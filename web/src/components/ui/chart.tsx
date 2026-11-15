@@ -1,6 +1,6 @@
 import { ResponsiveContainer } from "recharts";
 import type { ComponentProps, ReactElement } from "react";
-import { cn } from "cn";
+import { cn } from "../../lib/utils.ts";
 
 /** Recharts sizing boundary following the shadcn chart container contract. */
 export function ChartContainer({ className, children, ...props }: Omit<ComponentProps<"div">, "children"> & { children: ReactElement }) {

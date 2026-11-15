@@ -1,4 +1,4 @@
-import { cn } from "cn";
+import { cn } from "./lib/utils.ts";
 import { HistoryIcon, HouseIcon, LayoutDashboardIcon, MenuIcon, PlusIcon, SettingsIcon, WrenchIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";

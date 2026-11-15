@@ -2,6 +2,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { cn, RADIUS_TOKENS, TEXT_TOKENS } from "./lib/utils.ts";
 
 /**
  * The dashboard is moving to one design system (CODING_STANDARDS.md, Dashboard
@@ -138,5 +139,54 @@ describe("design system limits", () => {
     const measured = applicationSource().filter(file => /from\s+["']radix-ui["']/.test(read(file)));
     expect(measured, "Import the wrapper from components/ui instead of radix-ui. If a file stopped importing it, remove it from the list.")
       .toEqual(RADIX_IMPORTS);
+  });
+});
+
+describe("Hearth theme tokens", () => {
+  const css = read("src/index.css").replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("registers every custom text size with cn", () => {
+    const names = [...css.matchAll(/--text-([\w-]+)\s*:/g)].map(match => match[1]).sort();
+    expect(names).toEqual([...TEXT_TOKENS].sort());
+  });
+
+  it("registers every custom radius with cn, excluding Tailwind's built-in names", () => {
+    const defaults = readFileSync(new URL(import.meta.resolve("tailwindcss/theme.css")), "utf8");
+    const builtIn = new Set([...defaults.matchAll(/--radius-([\w-]+)\s*:/g)].map(match => match[1]));
+    const names = [...css.matchAll(/--radius-([\w-]+)\s*:/g)]
+      .map(match => match[1]).filter(name => !builtIn.has(name)).sort();
+    expect(names).toEqual([...RADIUS_TOKENS].sort());
+  });
+});
+
+describe("Hearth class merging", () => {
+  it.each(TEXT_TOKENS)("keeps text-%s and a text colour in either order", token => {
+    expect(cn(`text-${token}`, "text-foreground")).toBe(`text-${token} text-foreground`);
+    expect(cn("text-foreground", `text-${token}`)).toBe(`text-foreground text-${token}`);
+  });
+
+  it("keeps only the last text size without removing the colour", () => {
+    expect(cn("text-label text-foreground", "text-body")).toBe("text-foreground text-body");
+    expect(cn("text-body", "text-sm")).toBe("text-sm");
+    expect(cn("text-sm", "text-body")).toBe("text-body");
+  });
+
+  it("resolves a custom radius against a built-in radius", () => {
+    expect(cn("rounded-card", "rounded-md")).toBe("rounded-md");
+    expect(cn("rounded-md", "rounded-card")).toBe("rounded-card");
+  });
+
+  it("resolves directional radius overrides on Card headers and footers", () => {
+    expect(cn("rounded-t-xl", "rounded-t-card")).toBe("rounded-t-card");
+    expect(cn("rounded-t-card", "rounded-t-xl")).toBe("rounded-t-xl");
+    expect(cn("rounded-b-xl", "rounded-b-card")).toBe("rounded-b-card");
+    expect(cn("rounded-b-card", "rounded-b-xl")).toBe("rounded-b-xl");
+    expect(cn("rounded-t-card", "rounded-md")).toBe("rounded-md");
+    expect(cn("rounded-md", "rounded-t-card")).toBe("rounded-md rounded-t-card");
+  });
+
+  it("merges named sizes within the same responsive variant", () => {
+    expect(cn("text-body tablet:text-label", "tablet:text-title tablet:text-foreground"))
+      .toBe("text-body tablet:text-title tablet:text-foreground");
   });
 });

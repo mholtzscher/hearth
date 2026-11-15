@@ -35,6 +35,13 @@ typography:
     lineHeight: 1.15
     letterSpacing: "-0.03em"
     fontFeature: "tabular-nums"
+  reading-narrow:
+    fontFamily: "Figtree Variable, sans-serif"
+    fontSize: "32px"
+    fontWeight: 350
+    lineHeight: 1.15
+    letterSpacing: "-0.03em"
+    fontFeature: "tabular-nums"
   headline:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "26px"
@@ -59,6 +66,9 @@ typography:
     fontWeight: 400
     lineHeight: 1.3
     letterSpacing: "-0.02em"
+  caption:
+    fontFamily: "Figtree Variable, sans-serif"
+    fontSize: "12px"
 rounded:
   editor: "6px"
   control: "8px"
