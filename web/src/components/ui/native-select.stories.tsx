@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
 import { NativeSelect } from "./native-select.tsx";
-import { expectFieldFocus, expectFieldSize, expectHouseholdField } from "./field-story-assertions.ts";
+import { expectFieldFocus, expectFieldSize } from "./field-story-assertions.ts";
 
 const meta = {
   title: "components/ui/native-select",
@@ -73,21 +73,5 @@ export const KeyboardFocus: Story = {
     const select = canvas.getByRole("combobox", { name: "State field" });
     await expectFieldSize(select, "44px");
     await expectFieldFocus(select);
-  },
-};
-
-/** Temporary household reference; remove when the editor adopts NativeSelect. */
-export const HouseholdComparison: Story = {
-  render: ({ size: _size, ...args }) => (
-    <div className="grid gap-4">
-      <div className="view-editor">
-        <select {...args} aria-label="Legacy State field" />
-      </div>
-      <NativeSelect {...args} size="touch" aria-label="Shared State field" />
-    </div>
-  ),
-  play: async ({ canvas, canvasElement }) => {
-    await expectHouseholdField(canvas.getByRole("combobox", { name: "Shared State field" }), canvas.getByRole("combobox", { name: "Legacy State field" }));
-    await expectNoHorizontalOverflow(canvasElement);
   },
 };

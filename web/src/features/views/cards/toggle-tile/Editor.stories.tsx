@@ -8,7 +8,7 @@ const meta = {
   title: "features/views/cards/ToggleTileEditor",
   component: ToggleTileEditor,
   tags: ["ai-generated"],
-  decorators: [Story => <div className="view-editor"><Story /></div>],
+  decorators: [Story => <div className="grid gap-3 text-label leading-normal"><Story /></div>],
   args: {
     value: {
       label: "Office plug", source: { kind: "entity-state", entity_id: entityId(4), entity_type: "hearth.power/v1" },

@@ -5,6 +5,8 @@ import { isQuantityField, resolveQuantity, stateFields } from "../../bindings/st
 import type { EntitySource, SeriesWindow } from "../../bindings/types";
 import { TextField } from "../../editor/TextField";
 import type { SensorChoice } from "../time-series/Editor";
+import { NativeSelect } from "../../../../components/ui/native-select";
+import { EditorLabel } from "../../editor/EditorLabel";
 
 const sourceKey = (source: EntitySource) => `${source.entity_id}:${source.field ?? ""}`;
 type Value = z.infer<typeof toggleTileSchema>;
@@ -31,22 +33,22 @@ export function ToggleTileEditor({ value, choices, onChange }: { value: Value; c
   return <>
     <TextField label="Tile label" value={value.label ?? ""} optional schema={toggleTileSchema.shape.label} errorMessage="Use at most 120 characters for the tile label." onChange={label => onChange({ ...value, label: label || undefined })} />
     <p>The tile switches this power Entity. Its reading and surface show observed State.</p>
-    <label>Sparkline source<select value={metricKey} onChange={event => {
+    <EditorLabel>Sparkline source<NativeSelect size="auto" value={metricKey} onChange={event => {
       if (!event.target.value) { onChange({ ...value, metric: undefined }); return; }
       const selected = candidates.find(candidate => sourceKey(candidate.source) === event.target.value);
       if (selected) onChange({ ...value, metric: { source: selected.source, window: value.metric?.window ?? "24h", detail: value.metric?.detail } });
-    }}>{options(value.metric?.source)}</select></label>
+    }}>{options(value.metric?.source)}</NativeSelect></EditorLabel>
     <p>Choose a numeric field from the same Device. The displayed value and sparkline always share this source; nothing changes automatically on refresh.</p>
     {deviceId === undefined && <p>Device information is unavailable. Existing source selections are preserved.</p>}
     {value.metric && <>
-      <label>Sparkline window<select value={value.metric.window} onChange={event => onChange({ ...value, metric: { ...value.metric!, window: event.target.value as SeriesWindow } })}>
+      <EditorLabel>Sparkline window<NativeSelect size="auto" value={value.metric.window} onChange={event => onChange({ ...value, metric: { ...value.metric!, window: event.target.value as SeriesWindow } })}>
         <option value="1h">Last hour</option><option value="6h">Last 6 hours</option><option value="24h">Last 24 hours</option><option value="7d">Last 7 days</option>
-      </select></label>
-      <label>Additional reading<select value={detailKey} onChange={event => {
+      </NativeSelect></EditorLabel>
+      <EditorLabel>Additional reading<NativeSelect size="auto" value={detailKey} onChange={event => {
         if (!event.target.value) { onChange({ ...value, metric: { ...value.metric!, detail: undefined } }); return; }
         const selected = candidates.find(candidate => sourceKey(candidate.source) === event.target.value);
         if (selected) onChange({ ...value, metric: { ...value.metric!, detail: { source: selected.source, label: value.metric?.detail?.label } } });
-      }}>{options(value.metric.detail?.source)}</select></label>
+      }}>{options(value.metric.detail?.source)}</NativeSelect></EditorLabel>
       {value.metric.detail && <TextField label="Additional reading label" value={value.metric.detail.label ?? ""} optional schema={toggleTileSchema.shape.metric.unwrap().shape.detail.unwrap().shape.label} errorMessage="Use at most 120 characters for the additional reading label." onChange={label => onChange({ ...value, metric: { ...value.metric!, detail: { ...value.metric!.detail!, label: label || undefined } } })} />}
     </>}
   </>;

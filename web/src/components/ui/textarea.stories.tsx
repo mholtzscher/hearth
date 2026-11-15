@@ -1,8 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { Textarea } from "./textarea.tsx";
-import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
-import { expectFieldFocus, expectFieldSize, expectHouseholdField } from "./field-story-assertions.ts";
+import { expectFieldFocus, expectFieldSize } from "./field-story-assertions.ts";
 
 const meta = {
   component: Textarea,
@@ -62,21 +61,5 @@ export const ReadOnly: Story = {
     const input = canvas.getByRole("textbox", { name: "Dashboard note" });
     await userEvent.type(input, "Changed");
     await expect(input).toHaveValue("Keep the hall light on.");
-  },
-};
-
-/** Temporary household reference; remove when the editor adopts Textarea. */
-export const HouseholdComparison: Story = {
-  render: () => (
-    <div className="grid gap-4">
-      <div className="view-editor">
-        <textarea aria-label="Legacy dashboard note" rows={2} defaultValue={"Check the front door.\nTurn off the kitchen lights."} />
-      </div>
-      <Textarea aria-label="Shared dashboard note" rows={2} defaultValue={"Check the front door.\nTurn off the kitchen lights."} />
-    </div>
-  ),
-  play: async ({ canvas, canvasElement }) => {
-    await expectHouseholdField(canvas.getByRole("textbox", { name: "Shared dashboard note" }), canvas.getByRole("textbox", { name: "Legacy dashboard note" }));
-    await expectNoHorizontalOverflow(canvasElement);
   },
 };

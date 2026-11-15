@@ -376,8 +376,6 @@
 .hearth-app .view-switch-group button:disabled { opacity:1; color:var(--gray-6); border-color:var(--gray-3); background:var(--gray-3); }
 .view-switch-group p { flex:1 1 9em; color:var(--quiet); font-size:14px; line-height:1.5; }
 .view-switch-group p[data-failed] { color:var(--error); }
-.view-editor label.view-checkbox { display:flex; align-items:center; gap:8px; }
-.view-editor .view-checkbox input { width:auto; }
 /*
  * Weather cards: words and derived values sit under the 40px reading; other readings follow as compact rows.
  * At a 460px content width the details move beside the lead into the right half, so a card uses its
@@ -542,15 +540,6 @@
   .view-timeline-more { margin-inline-start:0; }
 }
 .editor-panel { border:1px solid var(--edge); padding:16px; margin-bottom:20px; border-radius:10px; background:var(--gray-1); }
-.view-editor { display:grid; gap:12px; font-size:14px; line-height:1.5; }
-.view-editor label { display:grid; gap:5px; margin:8px 0; }
-.view-editor input,.view-editor textarea,.view-editor select { background:var(--gray-1); border:1px solid var(--gray-4); border-radius:6px; padding:8px; width:100%; }
-.view-editor details { border-top:1px solid var(--edge); padding-top:8px; }
-.view-editor summary { cursor:pointer; align-content:center; }
-.view-editor button { border:1px solid var(--edge); border-radius:5px; padding:3px 7px; }
-.view-editor [aria-invalid=true] { border-color:var(--error); }
-.view-field-error,.view-editor summary .invalid-fields { color:var(--error); }
-.view-editor input,.view-editor textarea,.view-editor select,.view-editor button,.view-editor summary { min-height:44px; }
 /*
  * The shell sets data-nav (useNavMode in App.tsx): "bar" on phones, where the
  * whole sidebar becomes a drawer behind a top bar; "rail", 104px wide, up to

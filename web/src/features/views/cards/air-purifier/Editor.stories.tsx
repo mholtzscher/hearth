@@ -8,7 +8,7 @@ const meta = {
   title: "features/views/cards/AirPurifierEditor",
   component: AirPurifierEditor,
   tags: ["ai-generated"],
-  decorators: [Story => <div className="view-editor"><Story /></div>],
+  decorators: [Story => <div className="grid gap-3 text-label leading-normal"><Story /></div>],
   args: {
     value: {
       layout: "card", label: "Living room purifier",

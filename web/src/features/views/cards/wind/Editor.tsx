@@ -6,6 +6,8 @@ import type { SensorChoice } from "../time-series/Editor";
 import { sensorUnits } from "../weather/schema";
 import { SlotSelect } from "../weather/SlotSelect";
 import { windSchema } from "./schema";
+import { NativeSelect } from "../../../../components/ui/native-select";
+import { EditorLabel } from "../../editor/EditorLabel";
 
 type Value = z.infer<typeof windSchema>;
 
@@ -17,8 +19,8 @@ export function WindEditor({ value, choices, onChange }: { value: Value; choices
     <SlotSelect label="Gusts" optional value={value.gust} {...speed} onChange={gust => onChange({ ...value, gust })} />
     <SlotSelect label="Wind direction" optional value={value.direction} choices={choices} type="hearth.numericsensor/v1" unit={sensorUnits.direction} onChange={direction => onChange({ ...value, direction })} />
     <SlotSelect label="Today's max gust" optional value={value.max_gust} {...speed} onChange={max_gust => onChange({ ...value, max_gust })} />
-    <label>Trend<select value={value.trend ?? ""} onChange={event => onChange({ ...value, trend: event.target.value ? event.target.value as SeriesWindow : undefined })}>
+    <EditorLabel>Trend<NativeSelect size="auto" value={value.trend ?? ""} onChange={event => onChange({ ...value, trend: event.target.value ? event.target.value as SeriesWindow : undefined })}>
       <option value="">No trend</option>{seriesWindows.map(window => <option key={window} value={window}>{window}</option>)}
-    </select></label>
+    </NativeSelect></EditorLabel>
   </>;
 }
