@@ -34,48 +34,70 @@ export interface CollectionFetchFake {
 }
 
 const FAKE_ORIGIN = "http://hearthd.test";
-const PAGE_CURSOR_PATTERN = /^page\/(\d+)\+=$/;
+const PAGE_CURSOR_PATTERN = /^page\/(?<offset>\d+)\+=$/u;
 
 /** Opaque cursor for the page starting at `nextOffset`. Holds `/`, `+` and `=`
     so following it without URL-encoding cannot round-trip. */
-export function pageCursorForOffset(nextOffset: number): string {
-  return `page/${nextOffset}+=`;
-}
+export const pageCursorForOffset = (nextOffset: number): string =>
+  `page/${nextOffset}+=`;
+
+const pageOffsetFromCursor = (cursor: string): number => {
+  const offset = PAGE_CURSOR_PATTERN.exec(cursor)?.groups?.offset;
+  if (offset === undefined) {
+    throw new Error(
+      `collection fetch fake got an unrecognized cursor: ${cursor}`
+    );
+  }
+  return Number(offset);
+};
 
 /** Install a fake `fetch` answering one collection responder per path, and
     record the request URLs. A read of a path with no responder fails the test. */
-export function installCollectionFetch(
-  responders: Record<string, (request: CollectionRequest) => CollectionPage<unknown>>,
-): CollectionFetchFake {
+export const installCollectionFetch = (
+  responders: Record<
+    string,
+    (request: CollectionRequest) => CollectionPage<unknown>
+  >
+): CollectionFetchFake => {
   const requests: string[] = [];
-  vi.stubGlobal("fetch", async (input: RequestInfo | URL): Promise<Response> => {
-    const url = String(input);
-    requests.push(url);
-    // Yield to the macrotask queue like a real round trip does. An immediate
-    // responder would let a reader that never stops starve the runner's
-    // timers, wedging the whole run instead of failing the test.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const parsed = new URL(url, FAKE_ORIGIN);
-    const responder = responders[parsed.pathname];
-    if (!responder) {
-      throw new Error(`collection fetch fake has no responder for ${parsed.pathname}`);
+  vi.stubGlobal(
+    "fetch",
+    async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      requests.push(url);
+      // Yield to the macrotask queue like a real round trip does. An immediate
+      // responder would let a reader that never stops starve the runner's
+      // timers, wedging the whole run instead of failing the test.
+      const { promise, resolve } = Promise.withResolvers<undefined>();
+      setTimeout(() => {
+        resolve(undefined);
+      }, 0);
+      await promise;
+      const parsed = new URL(url, FAKE_ORIGIN);
+      const responder = responders[parsed.pathname];
+      if (!responder) {
+        throw new Error(
+          `collection fetch fake has no responder for ${parsed.pathname}`
+        );
+      }
+      const page = responder({ cursor: parsed.searchParams.get("cursor") });
+      return Response.json(page, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }
-    const page = responder({ cursor: parsed.searchParams.get("cursor") });
-    return new Response(JSON.stringify(page), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-  });
+  );
   return { requests };
-}
+};
 
 /** Serve fixed-size pages of `items`, keyed by the offset in the offered cursor.
     Ignores the requested page size, the way a server with a smaller page cap does. */
-export function pagedCollection<T>(
-  items: T[],
-  pageSize: number,
-): (request: CollectionRequest) => CollectionPage<T> {
-  return ({ cursor }) => {
+export const pagedCollection =
+  <T>(
+    items: T[],
+    pageSize: number
+  ): ((request: CollectionRequest) => CollectionPage<T>) =>
+  ({ cursor }) => {
     const offset = cursor === null ? 0 : pageOffsetFromCursor(cursor);
     const page = items.slice(offset, offset + pageSize);
     const nextOffset = offset + page.length;
@@ -83,12 +105,3 @@ export function pagedCollection<T>(
       ? { items: page, next_cursor: pageCursorForOffset(nextOffset) }
       : { items: page };
   };
-}
-
-function pageOffsetFromCursor(cursor: string): number {
-  const match = PAGE_CURSOR_PATTERN.exec(cursor);
-  if (!match) {
-    throw new Error(`collection fetch fake got an unrecognized cursor: ${cursor}`);
-  }
-  return Number(match[1]);
-}

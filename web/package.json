@@ -2,8 +2,8 @@
   "name": "hearth-dashboard",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "description": "Hearth admin/development/debug dashboard (Vite + React + shadcn). Proxies /v1 to hearthd.",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -12,7 +12,9 @@
     "storybook": "storybook dev --host 127.0.0.1 --port 6006 --exact-port --no-open",
     "build-storybook": "tsc --noEmit && storybook build && pnpm run check-storybook-manifest",
     "check-storybook-manifest": "tsx scripts/check-storybook-manifest.ts",
-    "test-storybook": "vitest run --project storybook"
+    "test-storybook": "vitest run --project storybook",
+    "check": "ultracite check",
+    "fix": "ultracite fix"
   },
   "dependencies": {
     "@assistant-ui/react": "0.15.32",
@@ -54,10 +56,13 @@
     "mockdate": "^3.0.5",
     "msw": "^3.0.5",
     "msw-storybook-addon": "^3.0.3",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.93.0",
     "playwright": "latest",
     "storybook": "^10.6.7",
     "tsx": "4.23.15",
     "typescript": "~7.0.2",
+    "ultracite": "8.2.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
   },

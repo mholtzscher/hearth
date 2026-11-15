@@ -1,13 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
-import { Textarea } from "./textarea.tsx";
+
 import { expectFieldFocus, expectFieldSize } from "./field-story-assertions.ts";
+import { Textarea } from "./textarea.tsx";
 
 const meta = {
   title: "Components/Textarea",
   component: Textarea,
   tags: ["ai-generated"],
-  args: { "aria-label": "Dashboard note", placeholder: "What matters at home?" },
+  args: {
+    "aria-label": "Dashboard note",
+    placeholder: "What matters at home?",
+  },
 } satisfies Meta<typeof Textarea>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -22,7 +26,9 @@ export const Editable: Story = {
 export const Invalid: Story = {
   args: { "aria-invalid": true },
   play: async ({ canvas }) => {
-    await expect(getComputedStyle(canvas.getByRole("textbox")).borderColor).toBe("rgb(255, 92, 122)");
+    await expect(
+      getComputedStyle(canvas.getByRole("textbox")).borderColor
+    ).toBe("rgb(255, 92, 122)");
   },
 };
 export const Disabled: Story = {
@@ -46,12 +52,20 @@ export const KeyboardFocus: Story = {
 };
 
 export const Multiline: Story = {
-  args: { rows: 4, defaultValue: "Check the front door.\nTurn off the kitchen lights." },
+  args: {
+    rows: 4,
+    defaultValue: "Check the front door.\nTurn off the kitchen lights.",
+  },
   play: async ({ canvas, userEvent }) => {
     const input = canvas.getByRole("textbox", { name: "Dashboard note" });
     await userEvent.clear(input);
-    await userEvent.type(input, "Check the front door.{Enter}Turn off the kitchen lights.");
-    await expect(input).toHaveValue("Check the front door.\nTurn off the kitchen lights.");
+    await userEvent.type(
+      input,
+      "Check the front door.{Enter}Turn off the kitchen lights."
+    );
+    await expect(input).toHaveValue(
+      "Check the front door.\nTurn off the kitchen lights."
+    );
     await expect(getComputedStyle(input).height).toBe("102px");
   },
 };

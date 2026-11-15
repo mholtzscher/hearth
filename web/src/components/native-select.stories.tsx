@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
+
 import { expectNoHorizontalOverflow } from "../../.storybook/play.ts";
-import { NativeSelect } from "./native-select.tsx";
 import { expectFieldFocus, expectFieldSize } from "./field-story-assertions.ts";
+import { NativeSelect } from "./native-select.tsx";
 
 const meta = {
   title: "Components/NativeSelect",
@@ -11,11 +12,15 @@ const meta = {
   args: {
     "aria-label": "State field",
     defaultValue: "temperature",
-    children: <>
-      <option value="temperature">Temperature</option>
-      <option value="humidity">Humidity</option>
-      <option value="pressure" disabled>Pressure unavailable</option>
-    </>,
+    children: (
+      <>
+        <option value="temperature">Temperature</option>
+        <option value="humidity">Humidity</option>
+        <option value="pressure" disabled>
+          Pressure unavailable
+        </option>
+      </>
+    ),
   },
 } satisfies Meta<typeof NativeSelect>;
 export default meta;
@@ -46,7 +51,9 @@ export const Disabled: Story = {
 export const Invalid: Story = {
   args: { "aria-invalid": true },
   play: async ({ canvas }) => {
-    await expect(getComputedStyle(canvas.getByRole("combobox")).borderColor).toBe("rgb(255, 92, 122)");
+    await expect(
+      getComputedStyle(canvas.getByRole("combobox")).borderColor
+    ).toBe("rgb(255, 92, 122)");
   },
 };
 
@@ -59,9 +66,18 @@ export const Sizes: Story = {
     </div>
   ),
   play: async ({ canvas, canvasElement }) => {
-    await expectFieldSize(canvas.getByRole("combobox", { name: "Default size" }), "32px");
-    await expectFieldSize(canvas.getByRole("combobox", { name: "Touch size" }), "44px");
-    await expectFieldSize(canvas.getByRole("combobox", { name: "Automatic size" }), matchMedia("(pointer: coarse)").matches ? "44px" : "32px");
+    await expectFieldSize(
+      canvas.getByRole("combobox", { name: "Default size" }),
+      "32px"
+    );
+    await expectFieldSize(
+      canvas.getByRole("combobox", { name: "Touch size" }),
+      "44px"
+    );
+    await expectFieldSize(
+      canvas.getByRole("combobox", { name: "Automatic size" }),
+      matchMedia("(pointer: coarse)").matches ? "44px" : "32px"
+    );
     await expectNoHorizontalOverflow(canvasElement);
   },
 };

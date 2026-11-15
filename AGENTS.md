@@ -9,6 +9,7 @@
 - For dashboard UI development, story authoring, or browser component verification, read [docs/storybook.md](docs/storybook.md) and use the `hearth-storybook` MCP server to discover existing components and verify the affected stories.
 - During iteration, use `GO_PACKAGES='...' mise run test` for focused tests, with the existing focused lint and vet tasks as needed. Tests run without race instrumentation locally; CI enables it. Use `mise run test -- -race` for an optional local race check. After integrating the final changes, unset `GO_PACKAGES`, run `mise run validate`, and review any generated, formatting, or module changes before committing.
 - Review the resulting diff and include intended generated or formatting changes.
+- For changes under `web/`, run `mise run web-fix`, review the diff, and run `mise run web-check`. Fix violations against Ultracite's defaults rather than adding rule exceptions.
 - When reviewing a change, read `CODING_STANDARDS.md` before reporting findings.
 - For simulator development, start worktree-local NATS with `mise run simulator-start`; stop it with `mise run simulator-stop`.
 - Real-Mosquitto integration tests always require a reachable Docker daemon and fail without one.

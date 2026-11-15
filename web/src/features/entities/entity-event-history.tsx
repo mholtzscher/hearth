@@ -1,11 +1,12 @@
 import { useState } from "react";
+
 import { apiFetch, useBaseUrlVersion } from "../../api/client.ts";
 import { useApi } from "../../api/hooks.ts";
 import type { Collection, EntityEventEntry } from "../../api/types.ts";
+import { Button } from "../../components/button.tsx";
 import { ErrorBox } from "../../components/error-box.tsx";
 import { MonoId } from "../../components/mono-id.tsx";
 import { StatusChip } from "../../components/status-chip.tsx";
-import { Button } from "../../components/button.tsx";
 import {
   Table,
   TableBody,
@@ -20,13 +21,13 @@ const EVENT_HISTORY_LIMIT = 50;
 /** Entity Event history for one event-source Entity: newest-first reports with
     refresh and cursor paging. Owns its request, so a scope change remounts into
     an empty cursor. */
-export default function EntityEventHistory({
+const EntityEventHistory = ({
   entityId,
   supportedNames,
 }: {
   entityId: string;
   supportedNames: string[];
-}) {
+}) => {
   const [nonce, setNonce] = useState(0);
   const baseVersion = useBaseUrlVersion();
   // Remount the scope below on Entity, server, or refresh change: the fresh
@@ -37,43 +38,56 @@ export default function EntityEventHistory({
   const scopeKey = `${entityId}|${baseVersion}|${nonce}`;
   return (
     <div>
-      <Button size="default" variant="outline" onClick={() => setNonce((n) => n + 1)}>
+      <Button
+        size="default"
+        variant="outline"
+        onClick={() => setNonce((n) => n + 1)}
+      >
         Latest / Refresh history
       </Button>
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        Newer events appear after refreshing. Older entries may expire while paging.
+      <p className="text-muted-foreground mt-1.5 text-xs">
+        Newer events appear after refreshing. Older entries may expire while
+        paging.
       </p>
-      <EventHistoryScope key={scopeKey} entityId={entityId} supportedNames={supportedNames} />
+      <EventHistoryScope
+        key={scopeKey}
+        entityId={entityId}
+        supportedNames={supportedNames}
+      />
     </div>
   );
-}
+};
 
 /** One Entity/server/refresh scope: owns the cursor and the request, so a
     scope change remounts with an empty cursor and no carried-over rows. */
-function EventHistoryScope({
+const EventHistoryScope = ({
   entityId,
   supportedNames,
 }: {
   entityId: string;
   supportedNames: string[];
-}) {
+}) => {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const { data, error, loading } = useApi(
     `event-history-${entityId}-${cursor ?? "first"}`,
     () =>
       apiFetch<Collection<EntityEventEntry>>(
-        `/v1/entities/${entityId}/events?limit=${EVENT_HISTORY_LIMIT}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
-      ),
+        `/v1/entities/${entityId}/events?limit=${EVENT_HISTORY_LIMIT}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+      )
   );
 
   return (
     <div>
-      {loading && <span className="mt-1.5 block text-sm text-muted-foreground">Loading…</span>}
+      {loading && (
+        <span className="text-muted-foreground mt-1.5 block text-sm">
+          Loading…
+        </span>
+      )}
       {error && <ErrorBox error={error} />}
       {data && (
         <>
           {data.items.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">
+            <p className="text-muted-foreground mt-3 text-sm">
               No Entity Events are recorded.
               {supportedNames.length > 0 &&
                 ` Supported event names: ${supportedNames.join(", ")}.`}
@@ -98,22 +112,29 @@ function EventHistoryScope({
                     <TableCell>
                       <StatusChip
                         status={entry.disposition}
-                        tone={entry.disposition === "accepted" ? "success" : undefined}
+                        tone={
+                          entry.disposition === "accepted"
+                            ? "success"
+                            : undefined
+                        }
                       />
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {entry.rejection_code ?? "—"}
                     </TableCell>
                     <TableCell className="max-w-[16rem]">
-                      <MonoId value={entry.event_id} className="text-muted-foreground" />
+                      <MonoId
+                        value={entry.event_id}
+                        className="text-muted-foreground"
+                      />
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
+                    <TableCell className="text-muted-foreground font-mono text-xs">
                       {entry.emitted_at}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
+                    <TableCell className="text-muted-foreground font-mono text-xs">
                       {entry.received_at}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
+                    <TableCell className="text-muted-foreground font-mono text-xs">
                       {entry.recorded_at}
                     </TableCell>
                   </TableRow>
@@ -135,4 +156,6 @@ function EventHistoryScope({
       )}
     </div>
   );
-}
+};
+
+export default EntityEventHistory;

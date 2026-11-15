@@ -5,34 +5,44 @@ import type {
   AutomationStep,
 } from "../../api/types.ts";
 
-export function assertNever(value: never): never {
+export const assertNever = (value: never): never => {
   throw new Error(`Unexpected Automation variant: ${JSON.stringify(value)}`);
-}
+};
 
 export type AutomationOutlineRow =
   | { type: "step"; depth: number; step: AutomationStep }
-  | { type: "arm"; depth: number; label: string; condition?: AutomationBranchCondition };
+  | {
+      type: "arm";
+      depth: number;
+      label: string;
+      condition?: AutomationBranchCondition;
+    };
 
 /** API definitions are validated by Core. Still bound display traversal so an
  * oversized response cannot cause an unbounded recursive render. */
-export function describeAutomationSteps(steps: AutomationStep[]) {
+export const describeAutomationSteps = (steps: AutomationStep[]) => {
   const rows: AutomationOutlineRow[] = [];
   const commands: AutomationCommandStep[] = [];
   let stepCount = 0;
   let notificationCount = 0;
   let functionCount = 0;
   let truncated = false;
-  function sequence(children: AutomationStep[], depth: number) {
+  const sequence = (children: AutomationStep[], depth: number) => {
     for (const step of children) {
       if (depth > 8 || stepCount >= 64) {
         truncated = true;
         return;
       }
-      stepCount++;
+      stepCount += 1;
       rows.push({ type: "step", depth, step });
       switch (step.kind) {
         case "if": {
-          rows.push({ type: "arm", depth: depth + 1, label: "Then", condition: step.conditions });
+          rows.push({
+            type: "arm",
+            depth: depth + 1,
+            label: "Then",
+            condition: step.conditions,
+          });
           sequence(step.then, depth + 1);
           if (step.else) {
             rows.push({ type: "arm", depth: depth + 1, label: "Else" });
@@ -42,93 +52,152 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
         }
         case "choose": {
           for (const branch of step.branches.slice(0, 32)) {
-            rows.push({ type: "arm", depth: depth + 1, label: `Alternative ${branch.id}`, condition: branch.conditions });
+            rows.push({
+              type: "arm",
+              depth: depth + 1,
+              label: `Alternative ${branch.id}`,
+              condition: branch.conditions,
+            });
             sequence(branch.steps, depth + 1);
           }
-          if (step.branches.length > 32) truncated = true;
+          if (step.branches.length > 32) {
+            truncated = true;
+          }
           if (step.default) {
             rows.push({ type: "arm", depth: depth + 1, label: "Default" });
             sequence(step.default, depth + 1);
           }
           break;
         }
-        case "command":
+        case "command": {
           commands.push(step);
           break;
+        }
         case "delay":
         case "sub_automation":
         case "read_state":
-        case "set_variables":
+        case "set_variables": {
           break;
-        case "notification":
-          notificationCount++;
+        }
+        case "notification": {
+          notificationCount += 1;
           break;
-        case "function":
-          functionCount++;
+        }
+        case "function": {
+          functionCount += 1;
           break;
-        default:
+        }
+        default: {
           assertNever(step);
+        }
       }
     }
-  }
+  };
   sequence(steps, 1);
-  return { rows, commands, stepCount, commandCount: commands.length, notificationCount, functionCount, truncated };
-}
+  return {
+    rows,
+    commands,
+    stepCount,
+    commandCount: commands.length,
+    notificationCount,
+    functionCount,
+    truncated,
+  };
+};
 
 /** Use the largest exact whole unit; never round a delay's input precision. */
-export function automationDurationText(durationMS: number): string {
-  for (const [unit, milliseconds] of [["day", 86400000], ["hour", 3600000], ["minute", 60000], ["second", 1000]] as const) {
+export const automationDurationText = (durationMS: number): string => {
+  for (const [unit, milliseconds] of [
+    ["day", 86_400_000],
+    ["hour", 3_600_000],
+    ["minute", 60_000],
+    ["second", 1000],
+  ] as const) {
     if (durationMS % milliseconds === 0) {
       const count = durationMS / milliseconds;
       return `${count} ${unit}${count === 1 ? "" : "s"}`;
     }
   }
   return `${durationMS} millisecond${durationMS === 1 ? "" : "s"}`;
-}
+};
 
 /** Pre-order Condition nodes with their boolean nesting, bounded per root. */
-export function describeAutomationCondition(root: AutomationBranchCondition) {
+export const describeAutomationCondition = (
+  root: AutomationBranchCondition
+) => {
   const nodes: { condition: AutomationBranchCondition; depth: number }[] = [];
-  function visit(condition: AutomationBranchCondition, depth: number) {
-    if (depth > 8 || nodes.length >= 64) return;
+  const visit = (condition: AutomationBranchCondition, depth: number) => {
+    if (depth > 8 || nodes.length >= 64) {
+      return;
+    }
     nodes.push({ condition, depth });
     switch (condition.kind) {
-      case "not": visit(condition.child, depth + 1); break;
-      case "all":
-      case "any":
-        for (const child of condition.children.slice(0, 64)) visit(child, depth + 1);
+      case "not": {
+        visit(condition.child, depth + 1);
         break;
+      }
+      case "all":
+      case "any": {
+        for (const child of condition.children.slice(0, 64)) {
+          visit(child, depth + 1);
+        }
+        break;
+      }
       case "entity_state":
       case "expression":
-      case "trigger": break;
-      default: assertNever(condition);
+      case "trigger": {
+        break;
+      }
+      default: {
+        assertNever(condition);
+      }
     }
-  }
+  };
   visit(root, 1);
   return nodes;
-}
+};
 
 /** Include every defined arm and predicate, not just recorded selections. */
-export function automationEntityIds(definition: AutomationDefinition): string[] {
+export const automationEntityIds = (
+  definition: AutomationDefinition
+): string[] => {
   const ids = new Set<string>();
   for (const trigger of definition.triggers) {
     switch (trigger.kind) {
       case "observation":
       case "entity_event":
-      case "held_state": ids.add(trigger.entity_id); break;
-      case "cron": break;
-      default: assertNever(trigger);
+      case "held_state": {
+        ids.add(trigger.entity_id);
+        break;
+      }
+      case "cron": {
+        break;
+      }
+      default: {
+        assertNever(trigger);
+      }
     }
   }
-  function conditionIds(condition: AutomationBranchCondition) {
+  const conditionIds = (condition: AutomationBranchCondition) => {
     for (const node of describeAutomationCondition(condition)) {
-      if (node.condition.kind === "entity_state") ids.add(node.condition.entity_id);
+      if (node.condition.kind === "entity_state") {
+        ids.add(node.condition.entity_id);
+      }
     }
+  };
+  if (definition.conditions) {
+    conditionIds(definition.conditions);
   }
-  if (definition.conditions) conditionIds(definition.conditions);
   for (const row of describeAutomationSteps(definition.steps).rows) {
-    if (row.type === "arm" && row.condition) conditionIds(row.condition);
-    if (row.type === "step" && (row.step.kind === "command" || row.step.kind === "read_state")) ids.add(row.step.entity_id);
+    if (row.type === "arm" && row.condition) {
+      conditionIds(row.condition);
+    }
+    if (
+      row.type === "step" &&
+      (row.step.kind === "command" || row.step.kind === "read_state")
+    ) {
+      ids.add(row.step.entity_id);
+    }
   }
   return [...ids];
-}
+};

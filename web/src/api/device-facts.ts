@@ -111,26 +111,33 @@ export class DeviceFactParseError extends Error {
   }
 }
 
-function asError(value: unknown): Error {
-  return value instanceof Error ? value : new Error(String(value));
-}
+const asError = (value: unknown): Error =>
+  value instanceof Error ? value : new Error(String(value));
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
-function requireString(source: Record<string, unknown>, key: string, context: string): string {
+const requireString = (
+  source: Record<string, unknown>,
+  key: string,
+  context: string
+): string => {
   const value = source[key];
   if (typeof value !== "string" || value.length === 0) {
-    throw new DeviceFactParseError(`fact ${context} is missing string field "${key}"`);
+    throw new DeviceFactParseError(
+      `fact ${context} is missing string field "${key}"`
+    );
   }
   return value;
-}
+};
 
-function optionalString(source: Record<string, unknown>, key: string): string | undefined {
+const optionalString = (
+  source: Record<string, unknown>,
+  key: string
+): string | undefined => {
   const value = source[key];
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
+};
 
 interface DeviceFactRoute {
   entityId: string;
@@ -139,7 +146,7 @@ interface DeviceFactRoute {
 }
 
 /** Split `hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>` strictly. */
-export function parseDeviceFactSubject(subject: string): DeviceFactRoute {
+export const parseDeviceFactSubject = (subject: string): DeviceFactRoute => {
   const tokens = subject.split(".");
   if (
     tokens.length !== 8 ||
@@ -150,25 +157,32 @@ export function parseDeviceFactSubject(subject: string): DeviceFactRoute {
     tokens[4] !== "entity"
   ) {
     throw new DeviceFactParseError(
-      `fact subject is not hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>: ${subject}`,
+      `fact subject is not hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>: ${subject}`
     );
   }
-  const entityId = tokens[5];
-  const family = tokens[6];
-  const variant = tokens[7];
+  const [entityId, family, variant] = tokens.slice(5);
   if (family !== "observation" && family !== "entity-event") {
-    throw new DeviceFactParseError(`fact subject has unknown family "${family}": ${subject}`);
+    throw new DeviceFactParseError(
+      `fact subject has unknown family "${family}": ${subject}`
+    );
   }
   if (!entityId || !variant) {
-    throw new DeviceFactParseError(`fact subject is missing an entity id or variant: ${subject}`);
+    throw new DeviceFactParseError(
+      `fact subject is missing an entity id or variant: ${subject}`
+    );
   }
   return { entityId, family, variant };
-}
+};
 
-function parseObservationData(data: Record<string, unknown>, context: string): ObservationFactData {
+const parseObservationData = (
+  data: Record<string, unknown>,
+  context: string
+): ObservationFactData => {
   const disposition = requireString(data, "disposition", context);
   if (disposition !== "applied" && disposition !== "unchanged") {
-    throw new DeviceFactParseError(`fact ${context} has unknown disposition "${disposition}"`);
+    throw new DeviceFactParseError(
+      `fact ${context} has unknown disposition "${disposition}"`
+    );
   }
   if (!("value" in data)) {
     throw new DeviceFactParseError(`fact ${context} is missing "value"`);
@@ -182,34 +196,36 @@ function parseObservationData(data: Record<string, unknown>, context: string): O
     source_updated_at: optionalString(data, "source_updated_at"),
     observed_at: requireString(data, "observed_at", context),
   };
-}
+};
 
-function parseEntityEventData(
+const parseEntityEventData = (
   data: Record<string, unknown>,
-  context: string,
-): EntityEventFactData {
-  return {
-    event_id: requireString(data, "event_id", context),
-    entity_id: requireString(data, "entity_id", context),
-    name: requireString(data, "name", context),
-    reported_at: requireString(data, "reported_at", context),
-    received_at: requireString(data, "received_at", context),
-    recorded_at: requireString(data, "recorded_at", context),
-  };
-}
+  context: string
+): EntityEventFactData => ({
+  event_id: requireString(data, "event_id", context),
+  entity_id: requireString(data, "entity_id", context),
+  name: requireString(data, "name", context),
+  reported_at: requireString(data, "reported_at", context),
+  received_at: requireString(data, "received_at", context),
+  recorded_at: requireString(data, "recorded_at", context),
+});
 
 /** The delivery reply carries nanoseconds since the epoch as a JS number. */
-function brokerStoredAtFromNanos(nanosSinceEpoch: number): string {
+const brokerStoredAtFromNanos = (nanosSinceEpoch: number): string => {
   const millis = nanosSinceEpoch / 1e6;
   return Number.isFinite(millis) ? new Date(millis).toISOString() : "";
-}
+};
 
-function readHeaders(msg: JsMsg): Record<string, string[]> {
+const readHeaders = (msg: JsMsg): Record<string, string[]> => {
   const headers: Record<string, string[]> = {};
-  if (!msg.headers) return headers;
-  for (const [key, values] of msg.headers) headers[key] = values;
+  if (!msg.headers) {
+    return headers;
+  }
+  for (const [key, values] of msg.headers) {
+    headers[key] = values;
+  }
   return headers;
-}
+};
 
 /**
  * Parse one delivered message into the strict v1 envelope. Throws
@@ -218,7 +234,10 @@ function readHeaders(msg: JsMsg): Record<string, string[]> {
  * Envelope/subject/header disagreements become visible warnings, never silent
  * assumptions.
  */
-export function parseDeviceFact(msg: JsMsg, deliveredBy: DeviceFactDelivery): DeviceFact {
+export const parseDeviceFact = (
+  msg: JsMsg,
+  deliveredBy: DeviceFactDelivery
+): DeviceFact => {
   const route = parseDeviceFactSubject(msg.subject);
   const context = msg.subject;
 
@@ -229,11 +248,15 @@ export function parseDeviceFact(msg: JsMsg, deliveredBy: DeviceFactDelivery): De
     throw new DeviceFactParseError(`fact payload is not JSON: ${context}`);
   }
   if (!isRecord(parsed)) {
-    throw new DeviceFactParseError(`fact payload is not a JSON object: ${context}`);
+    throw new DeviceFactParseError(
+      `fact payload is not a JSON object: ${context}`
+    );
   }
   const dataRaw = parsed.data;
   if (!isRecord(dataRaw)) {
-    throw new DeviceFactParseError(`fact payload has no "data" object: ${context}`);
+    throw new DeviceFactParseError(
+      `fact payload has no "data" object: ${context}`
+    );
   }
 
   const data: DeviceFactData =
@@ -257,24 +280,32 @@ export function parseDeviceFact(msg: JsMsg, deliveredBy: DeviceFactDelivery): De
   if (!msgIdHeader) {
     warnings.push("published without a Nats-Msg-Id header");
   } else if (msgIdHeader !== envelope.id) {
-    warnings.push(`Nats-Msg-Id ${msgIdHeader} does not match envelope id ${envelope.id}`);
+    warnings.push(
+      `Nats-Msg-Id ${msgIdHeader} does not match envelope id ${envelope.id}`
+    );
   }
   if (data.entity_id !== route.entityId) {
     warnings.push(
-      `subject entity ${route.entityId} does not match payload entity_id ${data.entity_id}`,
+      `subject entity ${route.entityId} does not match payload entity_id ${data.entity_id}`
     );
   }
   const expectedSchema =
-    route.family === "observation" ? OBSERVATION_FACT_SCHEMA : ENTITY_EVENT_FACT_SCHEMA;
+    route.family === "observation"
+      ? OBSERVATION_FACT_SCHEMA
+      : ENTITY_EVENT_FACT_SCHEMA;
   if (envelope.schema !== expectedSchema) {
-    warnings.push(`schema ${envelope.schema} is not the v1 ${route.family} fact schema`);
+    warnings.push(
+      `schema ${envelope.schema} is not the v1 ${route.family} fact schema`
+    );
   }
   const expectedVariant =
     route.family === "observation"
       ? (data as ObservationFactData).disposition
       : (data as EntityEventFactData).name;
   if (route.variant !== expectedVariant) {
-    warnings.push(`subject variant ${route.variant} does not match payload ${expectedVariant}`);
+    warnings.push(
+      `subject variant ${route.variant} does not match payload ${expectedVariant}`
+    );
   }
 
   return {
@@ -296,7 +327,7 @@ export function parseDeviceFact(msg: JsMsg, deliveredBy: DeviceFactDelivery): De
     msgIdHeader,
     warnings,
   };
-}
+};
 
 /**
  * Newest stream sequence first, collapsing repeated fact ids to the delivery
@@ -304,14 +335,18 @@ export function parseDeviceFact(msg: JsMsg, deliveredBy: DeviceFactDelivery): De
  * stored again past the stream's duplicate window arrives as a later message,
  * so last-write-wins would keep the older delivery's retry metadata.
  */
-export function dedupeDeviceFacts(facts: DeviceFact[]): DeviceFact[] {
+export const dedupeDeviceFacts = (facts: DeviceFact[]): DeviceFact[] => {
   const byId = new Map<string, DeviceFact>();
   for (const fact of facts) {
     const existing = byId.get(fact.id);
-    if (!existing || fact.streamSequence > existing.streamSequence) byId.set(fact.id, fact);
+    if (!existing || fact.streamSequence > existing.streamSequence) {
+      byId.set(fact.id, fact);
+    }
   }
-  return [...byId.values()].sort((a, b) => b.streamSequence - a.streamSequence);
-}
+  return [...byId.values()].toSorted(
+    (a, b) => b.streamSequence - a.streamSequence
+  );
+};
 
 export interface DeviceFactSnapshot {
   facts: DeviceFact[];
@@ -333,7 +368,9 @@ export interface DeviceFactSnapshot {
  * reported, so a gap-refilled batch cannot leak newer facts into the snapshot.
  * An empty stream creates no consumer at all.
  */
-export async function readDeviceFactSnapshot(nc: NatsConnection): Promise<DeviceFactSnapshot> {
+export const readDeviceFactSnapshot = async (
+  nc: NatsConnection
+): Promise<DeviceFactSnapshot> => {
   const js = nc.jetstream();
   const jsm = await nc.jetstreamManager();
   const info = await jsm.streams.info(DEVICE_FACT_STREAM);
@@ -351,9 +388,14 @@ export async function readDeviceFactSnapshot(nc: NatsConnection): Promise<Device
     malformed: 0,
   };
   // Nothing retained: creating a consumer would add an orphan for no data.
-  if (info.state.messages <= 0 || lastSeq < firstSeq) return empty;
+  if (info.state.messages <= 0 || lastSeq < firstSeq) {
+    return empty;
+  }
 
-  const startSequence = Math.max(firstSeq, lastSeq - DEVICE_FACT_SNAPSHOT_LIMIT + 1);
+  const startSequence = Math.max(
+    firstSeq,
+    lastSeq - DEVICE_FACT_SNAPSHOT_LIMIT + 1
+  );
   // Bound the batch by the sequence span actually in range. When no sequence was
   // evicted or deleted inside that span the batch is satisfied immediately; a
   // retention gap leaves the batch short and the read waits out the expiry, which
@@ -376,7 +418,7 @@ export async function readDeviceFactSnapshot(nc: NatsConnection): Promise<Device
   try {
     const requested = Math.min(
       DEVICE_FACT_SNAPSHOT_LIMIT,
-      lastSeq - startSequence + 1,
+      lastSeq - startSequence + 1
     );
     const messages = await consumer.fetch({
       max_messages: requested,
@@ -390,7 +432,9 @@ export async function readDeviceFactSnapshot(nc: NatsConnection): Promise<Device
       // the server keeps the request open and new facts can satisfy it. Anything
       // above the watermark is newer than this snapshot and is drained but never
       // reported, here or as malformed.
-      if (msg.info.streamSequence > lastSeq) continue;
+      if (msg.info.streamSequence > lastSeq) {
+        continue;
+      }
       try {
         facts.push(parseDeviceFact(msg, "snapshot"));
       } catch {
@@ -409,9 +453,11 @@ export async function readDeviceFactSnapshot(nc: NatsConnection): Promise<Device
   } finally {
     // The snapshot ephemeral is a bounded read, never reused: delete it even if
     // the drain failed, so a retry starts from a fresh consumer.
-    await consumer.delete().catch(() => {});
+    await consumer.delete().catch(() => {
+      // Best-effort cleanup: the consumer's inactive threshold reclaims it.
+    });
   }
-}
+};
 
 export interface DeviceFactLiveHandlers {
   onFact: (fact: DeviceFact) => void;
@@ -421,7 +467,7 @@ export interface DeviceFactLiveHandlers {
 
 export interface DeviceFactLive {
   consumer: string;
-  close(): Promise<void>;
+  close: () => Promise<void>;
 }
 
 /**
@@ -435,10 +481,10 @@ export interface DeviceFactLive {
  * iterator dies abruptly. A consumer deleted out from under the tail aborts the
  * iterator and reports through `onError` rather than showing LIVE forever.
  */
-export async function startDeviceFactLive(
+export const startDeviceFactLive = async (
   nc: NatsConnection,
-  handlers: DeviceFactLiveHandlers,
-): Promise<DeviceFactLive> {
+  handlers: DeviceFactLiveHandlers
+): Promise<DeviceFactLive> => {
   const js = nc.jetstream();
   const jsm = await nc.jetstreamManager();
   const consumerInfo = await jsm.consumers.add(DEVICE_FACT_STREAM, {
@@ -469,31 +515,43 @@ export async function startDeviceFactLive(
    * suppresses delivery callbacks instead.
    */
   const startDrain = (source: ConsumerMessages): Promise<void> => {
-    if (drain) return drain;
-    const draining = (async () => {
-      for await (const msg of source) {
-        if (closed) continue;
-        try {
-          handlers.onFact(parseDeviceFact(msg, "live"));
-        } catch (err) {
-          handlers.onMalformed?.(asError(err));
+    if (drain) {
+      return drain;
+    }
+    const draining = async () => {
+      try {
+        for await (const msg of source) {
+          if (closed) {
+            continue;
+          }
+          try {
+            handlers.onFact(parseDeviceFact(msg, "live"));
+          } catch (error) {
+            handlers.onMalformed?.(asError(error));
+          }
         }
+        // The iterator ends cleanly only once something stopped it: our own
+        // close() sets `closed` first. Anything else is a dead tail, and showing
+        // LIVE forever is worse than reporting it.
+        if (!closed) {
+          throw new Error("the live consumer iterator ended without an error");
+        }
+      } catch (error: unknown) {
+        // A stop initiated by our own close() is not a delivery failure.
+        if (closed) {
+          return;
+        }
+        // The iterator has already terminated (that is why this drained), so close
+        // without waiting on the drain this handler belongs to.
+        await close(false);
+        handlers.onError?.(asError(error));
       }
-      // The iterator ends cleanly only once something stopped it: our own
-      // close() sets `closed` first. Anything else is a dead tail, and showing
-      // LIVE forever is worse than reporting it.
-      if (!closed) throw new Error("the live consumer iterator ended without an error");
-    })().catch(async (err: unknown) => {
-      // A stop initiated by our own close() is not a delivery failure.
-      if (closed) return;
-      // The iterator has already terminated (that is why this drained), so close
-      // without waiting on the drain this handler belongs to.
-      await close(false);
-      handlers.onError?.(asError(err));
-    });
+    };
     // Bookkeeping only: nothing awaits this promise, so a throwing handler must
     // not surface as an unhandled rejection.
-    drain = draining.catch(() => {});
+    drain = draining().catch(() => {
+      // The failure was already reported by the drain above.
+    });
     return drain;
   };
 
@@ -509,7 +567,9 @@ export async function startDeviceFactLive(
    */
   const stopIterator = (source: ConsumerMessages): Promise<void> => {
     const drained = startDrain(source);
-    void source.close().catch(() => {});
+    void source.close().catch(() => {
+      // Best-effort cleanup: the consumer's inactive threshold reclaims it.
+    });
     return drained;
   };
 
@@ -524,22 +584,35 @@ export async function startDeviceFactLive(
     messages = null;
     if (current) {
       const drained = stopIterator(current);
-      if (waitForDrain) await drained;
+      if (waitForDrain) {
+        await drained;
+      }
     }
-    await consumer.delete().catch(() => {});
+    await consumer.delete().catch(() => {
+      // Best-effort cleanup: the consumer's inactive threshold reclaims it.
+    });
   };
 
   const close = (waitForDrain = true): Promise<void> => {
-    if (!closePromise) closePromise = teardown(waitForDrain);
+    if (!closePromise) {
+      closePromise = teardown(waitForDrain);
+    }
     return closePromise;
   };
 
   // A socket that drops out from under the tail is a live error, not a silent
   // freeze. close() flips `closed` first, so our own teardown is ignored here.
-  void nc.closed().then((err) => {
-    if (closed) return;
-    void close().finally(() => handlers.onError?.(err ?? new Error("NATS connection closed")));
-  });
+  void (async () => {
+    const err = await nc.closed();
+    if (closed) {
+      return;
+    }
+    try {
+      await close();
+    } finally {
+      handlers.onError?.(err ?? new Error("NATS connection closed"));
+    }
+  })();
 
   let liveMessages: ConsumerMessages;
   try {
@@ -551,9 +624,9 @@ export async function startDeviceFactLive(
       abort_on_missing_resource: true,
     });
     messages = liveMessages;
-  } catch (err) {
+  } catch (error) {
     await close();
-    throw asError(err);
+    throw asError(error);
   }
 
   // Start the drain before anything awaits close(): it is the only thing that
@@ -568,4 +641,4 @@ export async function startDeviceFactLive(
   }
 
   return { consumer: consumerInfo.name, close };
-}
+};

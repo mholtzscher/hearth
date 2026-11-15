@@ -53,7 +53,7 @@ The project now includes configurable automations and a browser interface. The f
 ## Evidence on Hand
 
 - [Agent-first dashboards](dashboards.md) documents the implemented conversation, draft, save, live-data, and compatibility contracts.
-- [The web application](../web/src/App.tsx) implements Home, Dashboards, and secondary Development navigation. Its existing stack is React, TypeScript, and Vite.
+- [The web application](../web/src/app.tsx) implements Home, Dashboards, and secondary Development navigation. Its existing stack is React, TypeScript, and Vite.
 - [The README](../README.md) documents adapter coverage, setup, agent behavior, and feature-specific validation limits. Its introductory equal-goals statement predates the household-first priority recorded here.
 - [The simulator configuration](../configs/scripted.simulator.yaml) supplies simulated Devices and fault scenarios. Simulation is not evidence of physical-device behavior.
 - [Design artifacts](design/) contain prototypes, captures, and recordings. They are historical references, not binding visual requirements or proof of the current rendered interface.

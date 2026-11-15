@@ -1,103 +1,297 @@
-import { cloneElement, type ReactElement } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { TimeSeries } from "./TimeSeries";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
 import type { SeriesData } from "../../bindings/types";
+import { TimeSeries } from "./time-series";
 
 // jsdom has no layout; give the actual Recharts plot a deterministic viewport.
-vi.mock("../../../../components/chart", () => ({ ChartContainer: ({ children }: { children: ReactElement<{ width: number; height: number }> }) => cloneElement(children, { width: 600, height: 240 }) }));
-afterEach(cleanup);
+vi.mock(import("../../../../components/chart"), async () => {
+  const { ResponsiveContainer } = await import("recharts");
+  return {
+    ChartContainer: ({ children }: { children: ReactElement }) => (
+      <ResponsiveContainer width={600} height={240}>
+        {children}
+      </ResponsiveContainer>
+    ),
+  };
+});
 const data = (hour: number, value: number): SeriesData => ({
-  from: `2026-11-01T0${hour}:00:00Z`, to: `2026-11-01T${hour + 6}:00:00Z`,
+  from: `2026-11-01T0${hour}:00:00Z`,
+  to: `2026-11-01T${hour + 6}:00:00Z`,
   format: { unit_label: "%", fraction_digits: 0 },
-  buckets: [{ start: `2026-11-01T0${hour}:00:00Z`, end: `2026-11-01T0${hour}:01:15Z`, min: value, max: value, mean: value }],
+  buckets: [
+    {
+      start: `2026-11-01T0${hour}:00:00Z`,
+      end: `2026-11-01T0${hour}:01:15Z`,
+      min: value,
+      max: value,
+      mean: value,
+    },
+  ],
 });
-it("does not plot household histories with different delivered unit codes on one axis", async () => {
-  const a = { ...data(4, 1), unit: "[in_i]/h", format: { unit_label: "in/h", fraction_digits: 2 } };
-  const b = { ...data(4, 25), unit: "mm/h", format: { unit_label: "mm/h", fraction_digits: 1 } };
-  a.buckets.push({ ...a.buckets[0], start: "2026-11-01T04:01:15Z", end: "2026-11-01T04:02:30Z" });
-  b.buckets.push({ ...b.buckets[0], start: "2026-11-01T04:01:15Z", end: "2026-11-01T04:02:30Z" });
-  const { container } = render(<TimeSeries title="Rain" series={[
-    { label: "Classified", resource: { status: "ready", data: a } },
-    { label: "Unclassified", resource: { status: "ready", data: b } },
-  ]} />);
-  expect(screen.getByText("History series use incompatible units.")).toBeTruthy();
-  expect(screen.getByText("Unclassified: no readings yet.")).toBeTruthy();
-  await waitFor(() => expect(container.querySelectorAll(".recharts-yAxis-tick-labels text").length).toBeGreaterThan(0));
-  expect([...container.querySelectorAll(".recharts-yAxis-tick-labels text")].every(node => Number(node.textContent) < 10)).toBe(true);
-});
-it("keeps the last coherent plot after a sibling refresh fails and honors adapter precision", async () => {
-  const one = data(4, 65), two = data(4, 75);
-  const { container, rerender } = render(<TimeSeries title="Battery history" series={[
-    { resource: { status: "ready", data: one } }, { resource: { status: "ready", data: two } },
-  ]} />);
-  expect(container.querySelector("svg")).not.toBeNull();
-  await waitFor(() => expect(container.querySelectorAll(".recharts-yAxis-tick-labels text").length).toBeGreaterThan(0));
-  const ticks = [...container.querySelectorAll(".recharts-yAxis-tick-labels text")].map(node => node.textContent);
-  expect(ticks).toContain("75");
-  expect(ticks.every(tick => /^\d+$/.test(tick ?? ""))).toBe(true);
-  rerender(<TimeSeries title="Battery history" series={[
-    { resource: { status: "ready", data: data(5, 85) } },
-    { resource: { status: "ready", data: two, refreshFailed: true } },
-  ]} />);
-  expect(container.querySelector("svg")).not.toBeNull();
-  expect(screen.getByText("Showing the last synchronized interval while readings refresh.")).toBeTruthy();
-  expect(screen.getByText("Couldn't refresh")).toBeTruthy();
-  expect(screen.getByText("Showing the last reading.")).toBeTruthy();
-  expect([...container.querySelectorAll(".recharts-yAxis-tick-labels text")].map(node => node.textContent)).toEqual(ticks);
-});
-
-it("breaks sample-mean paths at null buckets, including refreshed gaps", async () => {
-  const history = data(4, 20);
-  history.buckets = Array.from({ length: 5 }, (_, i) => ({
-    start: new Date(Date.parse(history.from) + i * 75000).toISOString(),
-    end: new Date(Date.parse(history.from) + (i + 1) * 75000).toISOString(),
-    min: 20 + i, max: 20 + i, mean: 20 + i,
-  }));
-  const { container, rerender } = render(<TimeSeries title="Setting history" series={[{ resource: { status: "ready", data: history } }]} />);
-  const segments = () => container.querySelector(".recharts-line-curve")?.getAttribute("d")?.match(/M/g)?.length;
-  await waitFor(() => expect(segments()).toBe(1));
-  const gap = { ...history, buckets: history.buckets.map((bucket, i) => i === 2 ? { ...bucket, min: null, max: null, mean: null } : bucket) };
-  rerender(<TimeSeries title="Setting history" series={[{ resource: { status: "ready", data: gap } }]} />);
-  await waitFor(() => expect(segments()).toBe(2));
-  // The method lives in Source rather than in a caption on the card.
-  expect(screen.queryByText(/Each point averages the samples/)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Source" }));
-  expect(within(screen.getByRole("dialog", { name: "Source details" })).getByText(/Each point averages the samples/)).toBeTruthy();
-});
-
-it("draws eight distinct series, dashes an unavailable one, and offers one tab stop with a text summary", async () => {
+const roomSeries = () => {
   const history = data(4, 20);
   history.buckets = Array.from({ length: 3 }, (_, i) => ({
-    start: new Date(Date.parse(history.from) + i * 75000).toISOString(),
-    end: new Date(Date.parse(history.from) + (i + 1) * 75000).toISOString(),
-    min: 20, max: 20, mean: 20,
+    start: new Date(Date.parse(history.from) + i * 75_000).toISOString(),
+    end: new Date(Date.parse(history.from) + (i + 1) * 75_000).toISOString(),
+    min: 20,
+    max: 20,
+    mean: 20,
   }));
-  const series = Array.from({ length: 8 }, (_, i) => ({
+  return Array.from({ length: 8 }, (_, i) => ({
     label: `Room ${i + 1}`,
     resource: {
-      status: "ready" as const, data: { ...history, buckets: history.buckets.map(b => ({ ...b, min: 20 + i, max: 21 + i, mean: 20.5 + i })) },
-      metadata: { id: `ent_${i}`, label: `Sensor ${i + 1}`, enabled: true, availability: i === 7 ? "unavailable" : "available" },
+      status: "ready" as const,
+      data: {
+        ...history,
+        buckets: history.buckets.map((bucket) => ({
+          ...bucket,
+          min: 20 + i,
+          max: 21 + i,
+          mean: 20.5 + i,
+        })),
+      },
+      metadata: {
+        id: `ent_${i}`,
+        label: `Sensor ${i + 1}`,
+        enabled: true,
+        availability: i === 7 ? "unavailable" : "available",
+      },
     },
   }));
-  const { container } = render(<TimeSeries title="Rooms" series={series} />, { wrapper: MemoryRouter });
-  await waitFor(() => expect(container.querySelectorAll(".recharts-line-curve").length).toBe(8));
-  const strokes = [...container.querySelectorAll(".recharts-line-curve")].map(path => path.getAttribute("stroke"));
-  expect(new Set(strokes).size).toBe(8);
-  expect(strokes).not.toContain("var(--orange)");
-  // The axis ends at the window's end; no reference line marks now.
-  expect(container.querySelector(".recharts-reference-line")).toBeNull();
-  const dashed = [...container.querySelectorAll(".recharts-line-curve")].filter(path => path.getAttribute("stroke-dasharray"));
-  expect(dashed.map(path => path.getAttribute("stroke"))).toEqual(["var(--chart-8)"]);
-  expect(within(screen.getByRole("article", { name: "Rooms" })).getByText("Unavailable")).toBeTruthy();
-  // Source links stay out of the tab order until the overlay opens.
-  const focusable = [...container.querySelectorAll("a[href], button, [tabindex]:not([tabindex='-1'])")].filter(node => !node.closest("[hidden]"));
-  expect(focusable.map(node => node.getAttribute("role") ?? node.tagName.toLowerCase())).toEqual(["region", "button"]);
-  expect(screen.getByText("Room 2: latest 22 %, range 21 to 22 over the last 6 hours.")).toBeTruthy();
-  expect(screen.queryByText(/arithmetic sample mean|Retained observations/)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Source" }));
-  const source = screen.getByRole("dialog", { name: "Source details" });
-  expect(within(source).getAllByRole("link")).toHaveLength(8);
-  expect(within(source).getByText("Room 8 · Sensor 8").closest("li")?.textContent).toContain("Unavailable");
+};
+
+describe("Chart cards", () => {
+  afterEach(cleanup);
+
+  it("does not plot household histories with different delivered unit codes on one axis", async () => {
+    const a = {
+      ...data(4, 1),
+      unit: "[in_i]/h",
+      format: { unit_label: "in/h", fraction_digits: 2 },
+    };
+    const b = {
+      ...data(4, 25),
+      unit: "mm/h",
+      format: { unit_label: "mm/h", fraction_digits: 1 },
+    };
+    a.buckets.push({
+      ...a.buckets[0],
+      start: "2026-11-01T04:01:15Z",
+      end: "2026-11-01T04:02:30Z",
+    });
+    b.buckets.push({
+      ...b.buckets[0],
+      start: "2026-11-01T04:01:15Z",
+      end: "2026-11-01T04:02:30Z",
+    });
+    const { container } = render(
+      <TimeSeries
+        title="Rain"
+        series={[
+          { label: "Classified", resource: { status: "ready", data: a } },
+          { label: "Unclassified", resource: { status: "ready", data: b } },
+        ]}
+      />
+    );
+    expect(
+      screen.getByText("History series use incompatible units.")
+    ).toBeTruthy();
+    expect(screen.getByText("Unclassified: no readings yet.")).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        container.querySelectorAll(".recharts-yAxis-tick-labels text").length
+      ).toBeGreaterThan(0)
+    );
+    expect(
+      [...container.querySelectorAll(".recharts-yAxis-tick-labels text")].every(
+        (node) => Number(node.textContent) < 10
+      )
+    ).toBeTruthy();
+  });
+
+  it("plots both histories when their delivered unit codes agree and honors adapter precision", async () => {
+    const one = data(4, 65);
+    const two = data(4, 75);
+    const { container } = render(
+      <TimeSeries
+        title="Battery history"
+        series={[
+          { resource: { status: "ready", data: one } },
+          { resource: { status: "ready", data: two } },
+        ]}
+      />
+    );
+    expect(container.querySelector("svg")).not.toBeNull();
+    await waitFor(() =>
+      expect(
+        container.querySelectorAll(".recharts-yAxis-tick-labels text").length
+      ).toBeGreaterThan(0)
+    );
+    const ticks = [
+      ...container.querySelectorAll(".recharts-yAxis-tick-labels text"),
+    ].map((node) => node.textContent);
+    expect(ticks).toContain("75");
+    expect(ticks.every((tick) => /^\d+$/u.test(tick ?? ""))).toBeTruthy();
+  });
+
+  it("keeps the last coherent plot after a sibling refresh fails", async () => {
+    const one = data(4, 65);
+    const two = data(4, 75);
+    const { container, rerender } = render(
+      <TimeSeries
+        title="Battery history"
+        series={[
+          { resource: { status: "ready", data: one } },
+          { resource: { status: "ready", data: two } },
+        ]}
+      />
+    );
+    await waitFor(() =>
+      expect(
+        container.querySelectorAll(".recharts-yAxis-tick-labels text").length
+      ).toBeGreaterThan(0)
+    );
+    const ticks = [
+      ...container.querySelectorAll(".recharts-yAxis-tick-labels text"),
+    ].map((node) => node.textContent);
+    rerender(
+      <TimeSeries
+        title="Battery history"
+        series={[
+          { resource: { status: "ready", data: data(5, 85) } },
+          { resource: { status: "ready", data: two, refreshFailed: true } },
+        ]}
+      />
+    );
+    expect(container.querySelector("svg")).not.toBeNull();
+    expect(
+      screen.getByText(
+        "Showing the last synchronized interval while readings refresh."
+      )
+    ).toBeTruthy();
+    expect(screen.getByText("Couldn't refresh")).toBeTruthy();
+    expect(screen.getByText("Showing the last reading.")).toBeTruthy();
+    expect(
+      [...container.querySelectorAll(".recharts-yAxis-tick-labels text")].map(
+        (node) => node.textContent
+      )
+    ).toStrictEqual(ticks);
+  });
+
+  it("breaks sample-mean paths at null buckets, including refreshed gaps", async () => {
+    const history = data(4, 20);
+    history.buckets = Array.from({ length: 5 }, (_, i) => ({
+      start: new Date(Date.parse(history.from) + i * 75_000).toISOString(),
+      end: new Date(Date.parse(history.from) + (i + 1) * 75_000).toISOString(),
+      min: 20 + i,
+      max: 20 + i,
+      mean: 20 + i,
+    }));
+    const { container, rerender } = render(
+      <TimeSeries
+        title="Setting history"
+        series={[{ resource: { status: "ready", data: history } }]}
+      />
+    );
+    const segments = () =>
+      container
+        .querySelector(".recharts-line-curve")
+        ?.getAttribute("d")
+        ?.match(/M/gu)?.length;
+    await waitFor(() => expect(segments()).toBe(1));
+    const gap = {
+      ...history,
+      buckets: history.buckets.map((bucket, i) =>
+        i === 2 ? { ...bucket, min: null, max: null, mean: null } : bucket
+      ),
+    };
+    rerender(
+      <TimeSeries
+        title="Setting history"
+        series={[{ resource: { status: "ready", data: gap } }]}
+      />
+    );
+    await waitFor(() => expect(segments()).toBe(2));
+    // The method lives in Source rather than in a caption on the card.
+    expect(screen.queryByText(/Each point averages the samples/u)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    expect(
+      within(screen.getByRole("dialog", { name: "Source details" })).getByText(
+        /Each point averages the samples/u
+      )
+    ).toBeTruthy();
+  });
+
+  it("draws eight distinct series and dashes an unavailable one", async () => {
+    const { container } = render(
+      <TimeSeries title="Rooms" series={roomSeries()} />,
+      { wrapper: MemoryRouter }
+    );
+    await waitFor(() =>
+      expect(container.querySelectorAll(".recharts-line-curve")).toHaveLength(8)
+    );
+    const strokes = [...container.querySelectorAll(".recharts-line-curve")].map(
+      (path) => path.getAttribute("stroke")
+    );
+    expect(new Set(strokes).size).toBe(8);
+    expect(strokes).not.toContain("var(--orange)");
+    // The axis ends at the window's end; no reference line marks now.
+    expect(container.querySelector(".recharts-reference-line")).toBeNull();
+    const dashed = [
+      ...container.querySelectorAll(".recharts-line-curve"),
+    ].filter((path) => path.getAttribute("stroke-dasharray"));
+    expect(dashed.map((path) => path.getAttribute("stroke"))).toStrictEqual([
+      "var(--chart-8)",
+    ]);
+    expect(
+      within(screen.getByRole("article", { name: "Rooms" })).getByText(
+        "Unavailable"
+      )
+    ).toBeTruthy();
+  });
+
+  it("offers a labelled chart summary and focusable Source action", async () => {
+    const { container } = render(
+      <TimeSeries title="Rooms" series={roomSeries()} />,
+      { wrapper: MemoryRouter }
+    );
+    await waitFor(() =>
+      expect(container.querySelectorAll(".recharts-line-curve")).toHaveLength(8)
+    );
+    // Source links stay out of the tab order until the overlay opens.
+    const focusable = [
+      ...container.querySelectorAll(
+        "a[href], button, [tabindex]:not([tabindex='-1'])"
+      ),
+    ].filter((node) => !node.closest("[hidden]"));
+    expect(
+      focusable.map(
+        (node) => node.getAttribute("role") ?? node.tagName.toLowerCase()
+      )
+    ).toStrictEqual(["button"]);
+    expect(
+      screen.getByText(
+        "Room 2: latest 22 %, range 21 to 22 over the last 6 hours."
+      )
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/arithmetic sample mean|Retained observations/u)
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    const source = screen.getByRole("dialog", { name: "Source details" });
+    expect(within(source).getAllByRole("link")).toHaveLength(8);
+    expect(
+      within(source).getByText("Room 8 · Sensor 8").closest("li")?.textContent
+    ).toContain("Unavailable");
+  });
 });

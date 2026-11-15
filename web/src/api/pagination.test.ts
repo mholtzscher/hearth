@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import {
   installCollectionFetch,
   pageCursorForOffset,
@@ -11,22 +12,31 @@ import {
   fetchAllCollectionPages,
 } from "./pagination.ts";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+describe(fetchAllCollectionPages, () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
-describe("fetchAllCollectionPages", () => {
   it("reads every page and concatenates them in server order", async () => {
     const { requests } = installCollectionFetch({
-      "/v1/entities": pagedCollection(["ent_1", "ent_2", "ent_3", "ent_4", "ent_5"], 2),
+      "/v1/entities": pagedCollection(
+        ["ent_1", "ent_2", "ent_3", "ent_4", "ent_5"],
+        2
+      ),
     });
 
     const collection = await fetchAllCollectionPages<string>("/v1/entities");
 
-    expect(collection.items).toEqual(["ent_1", "ent_2", "ent_3", "ent_4", "ent_5"]);
+    expect(collection.items).toStrictEqual([
+      "ent_1",
+      "ent_2",
+      "ent_3",
+      "ent_4",
+      "ent_5",
+    ]);
     // Every page was consumed, so there is no cursor left to hand a caller.
     expect(collection.next_cursor).toBeUndefined();
-    expect(requests).toEqual([
+    expect(requests).toStrictEqual([
       "/v1/entities?limit=200",
       `/v1/entities?limit=200&cursor=${encodeURIComponent(pageCursorForOffset(2))}`,
       `/v1/entities?limit=200&cursor=${encodeURIComponent(pageCursorForOffset(4))}`,
@@ -58,20 +68,22 @@ describe("fetchAllCollectionPages", () => {
     // reserved characters are encoded: `+` unencoded would arrive as a space.
     expect(pageCursorForOffset(2)).toBe("page/2+=");
     expect(requests[1]).toBe("/v1/entities?limit=200&cursor=page%2F2%2B%3D");
-    expect(collection.items).toEqual(["ent_1", "ent_2", "ent_3"]);
+    expect(collection.items).toStrictEqual(["ent_1", "ent_2", "ent_3"]);
   });
 
   it("stops when the server omits the next cursor, including an empty one", async () => {
     const omitted = installCollectionFetch({
       "/v1/entities": () => ({ items: ["ent_1"] }),
     });
-    expect((await fetchAllCollectionPages("/v1/entities")).items).toEqual(["ent_1"]);
+    const omittedCollection = await fetchAllCollectionPages("/v1/entities");
+    expect(omittedCollection.items).toStrictEqual(["ent_1"]);
     expect(omitted.requests).toHaveLength(1);
 
     const empty = installCollectionFetch({
       "/v1/entities": () => ({ items: ["ent_1"], next_cursor: "" }),
     });
-    expect((await fetchAllCollectionPages("/v1/entities")).items).toEqual(["ent_1"]);
+    const emptyCollection = await fetchAllCollectionPages("/v1/entities");
+    expect(emptyCollection.items).toStrictEqual(["ent_1"]);
     expect(empty.requests).toHaveLength(1);
   });
 
@@ -82,17 +94,20 @@ describe("fetchAllCollectionPages", () => {
 
     await fetchAllCollectionPages("/v1/entities?device_id=dev_kitchen");
 
-    expect(requests).toEqual([
+    expect(requests).toStrictEqual([
       "/v1/entities?device_id=dev_kitchen&limit=200",
       `/v1/entities?device_id=dev_kitchen&limit=200&cursor=${encodeURIComponent(
-        pageCursorForOffset(1),
+        pageCursorForOffset(1)
       )}`,
     ]);
   });
 
   it("fails instead of looping when the server repeats a cursor it already served", async () => {
     const { requests } = installCollectionFetch({
-      "/v1/entities": () => ({ items: ["ent_1"], next_cursor: pageCursorForOffset(50) }),
+      "/v1/entities": () => ({
+        items: ["ent_1"],
+        next_cursor: pageCursorForOffset(50),
+      }),
     });
 
     const pageRead = fetchAllCollectionPages("/v1/entities");
@@ -113,10 +128,13 @@ describe("fetchAllCollectionPages", () => {
         pagesServed += 1;
         if (pagesServed > MAX_COLLECTION_PAGES) {
           throw new Error(
-            `collection read never stopped: served more than ${MAX_COLLECTION_PAGES} pages`,
+            `collection read never stopped: served more than ${MAX_COLLECTION_PAGES} pages`
           );
         }
-        return { items: ["ent_1"], next_cursor: pageCursorForOffset(pagesServed) };
+        return {
+          items: ["ent_1"],
+          next_cursor: pageCursorForOffset(pagesServed),
+        };
       },
     });
 

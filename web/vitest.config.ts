@@ -1,7 +1,8 @@
 import path from "node:path";
-import { defineConfig } from "vitest/config";
+
 import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { playwright } from "@vitest/browser-playwright";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
@@ -12,7 +13,20 @@ export default defineConfig({
       },
       {
         extends: false,
-        plugins: [storybookTest({ configDir: path.resolve(import.meta.dirname, ".storybook"), tags: { skip: ["needs-work"] } })],
+        test: {
+          name: "scripts",
+          environment: "node",
+          include: ["scripts/**/*.test.ts"],
+        },
+      },
+      {
+        extends: false,
+        plugins: [
+          storybookTest({
+            configDir: path.resolve(import.meta.dirname, ".storybook"),
+            tags: { skip: ["needs-work"] },
+          }),
+        ],
         test: {
           name: "storybook",
           browser: {

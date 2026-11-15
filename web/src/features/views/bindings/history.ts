@@ -1,9 +1,11 @@
 import { z } from "zod";
+
 import { ApiError, apiFetch } from "../../../api/client";
-import type { NumericSource, SeriesWindow } from "./types";
 import type { ReadRequest } from "../data/cache";
+import { quantitySchema } from "./quantity";
+import type { Quantity } from "./quantity";
 import { quantityField } from "./state-fields";
-import { quantitySchema, type Quantity } from "./quantity";
+import type { NumericSource, SeriesWindow } from "./types";
 
 // One shared history read owns admission: the window's requested interval is
 // computed here, and the response's bucket count is checked before the cache
@@ -15,86 +17,160 @@ const windows = {
   "7d": { bucketMillis: 1_800_000, bucket: "30m0s", count: 336 },
 } as const;
 
-export type HistorySeries = {
-  from: string; to: string;
+export interface HistorySeries {
+  from: string;
+  to: string;
   quantity: Quantity;
-  buckets: Array<{ start: string; end: string; min: number | null; max: number | null; mean: number | null }>;
+  buckets: {
+    start: string;
+    end: string;
+    min: number | null;
+    max: number | null;
+    mean: number | null;
+  }[];
   /** HTTP reads populate the same aggregation in stored units alongside display. */
   canonical?: HistorySeries;
-};
+}
 const timestamp = z.string().datetime({ offset: true });
 const bucketRange = z.object({ from: timestamp, to: timestamp });
-const metrics = z.object({ min: z.number().nullable(), max: z.number().nullable(), mean: z.number().nullable() });
+const metrics = z.object({
+  min: z.number().nullable(),
+  max: z.number().nullable(),
+  mean: z.number().nullable(),
+});
 const pairedSummary = z.object({
   range: bucketRange,
-  buckets: z.array(z.object({
-    range: bucketRange,
-    canonical: z.object({ unit: z.string(), metrics }),
-    display: quantitySchema.extend({ metrics }),
-  })),
+  buckets: z.array(
+    z.object({
+      range: bucketRange,
+      canonical: z.object({ unit: z.string(), metrics }),
+      display: quantitySchema.extend({ metrics }),
+    })
+  ),
 });
 
 /** Shown when Core refuses a window as more work than one query may do. */
-export const tooMuchHistory = "Too many readings for this window. Choose a shorter one.";
+export const tooMuchHistory =
+  "Too many readings for this window. Choose a shorter one.";
 
 /** A read error in the words a card shows; a refused window says how to recover. */
-export function readErrorMessage(error: Error | undefined): string | undefined {
-  const limited = error instanceof ApiError && error.status === 422 &&
-    typeof error.detail === "object" && error.detail.code === "query_limit";
+export const readErrorMessage = (
+  error: Error | undefined
+): string | undefined => {
+  const limited =
+    error instanceof ApiError &&
+    error.status === 422 &&
+    typeof error.detail === "object" &&
+    error.detail.code === "query_limit";
   return limited ? tooMuchHistory : error?.message;
-}
+};
 
-function windowRange(window: SeriesWindow, to: Date) {
+const windowRange = (window: SeriesWindow, to: Date) => {
   const { bucketMillis, count } = windows[window];
   // Ceil keeps exactly count buckets even when to lands on the bucket grid.
-  const from = Math.ceil(to.getTime() / bucketMillis) * bucketMillis - count * bucketMillis;
+  const from =
+    Math.ceil(to.getTime() / bucketMillis) * bucketMillis -
+    count * bucketMillis;
   return { from: new Date(from), to };
-}
+};
 
-function readPairedSummary(raw: unknown, window: SeriesWindow, canonicalUnit?: string): HistorySeries {
+const readPairedSummary = (
+  raw: unknown,
+  window: SeriesWindow,
+  canonicalUnit?: string
+): HistorySeries => {
   const data = pairedSummary.parse(raw);
-  if (data.buckets.length !== windows[window].count) throw new Error("Invalid series resolution");
-  const first = data.buckets[0];
-  if (canonicalUnit && first.canonical.unit !== canonicalUnit) throw new Error("Canonical history unit mismatch");
+  if (data.buckets.length !== windows[window].count) {
+    throw new Error("Invalid series resolution");
+  }
+  const [first] = data.buckets;
+  if (canonicalUnit && first.canonical.unit !== canonicalUnit) {
+    throw new Error("Canonical history unit mismatch");
+  }
   for (const bucket of data.buckets) {
-    if (bucket.canonical.unit !== first.canonical.unit || bucket.display.unit !== first.display.unit ||
-      bucket.display.label !== first.display.label || bucket.display.fraction_digits !== first.display.fraction_digits) {
+    if (
+      bucket.canonical.unit !== first.canonical.unit ||
+      bucket.display.unit !== first.display.unit ||
+      bucket.display.label !== first.display.label ||
+      bucket.display.fraction_digits !== first.display.fraction_digits
+    ) {
       throw new Error("History bucket units differ");
     }
     for (const name of ["min", "max", "mean"] as const) {
-      if ((bucket.canonical.metrics[name] === null) !== (bucket.display.metrics[name] === null)) {
+      if (
+        (bucket.canonical.metrics[name] === null) !==
+        (bucket.display.metrics[name] === null)
+      ) {
         throw new Error("Paired history gaps differ");
       }
     }
   }
   const interval = { from: data.range.from, to: data.range.to };
   return {
-    ...interval, quantity: first.display,
-    buckets: data.buckets.map(bucket => ({ start: bucket.range.from, end: bucket.range.to, ...bucket.display.metrics })),
+    ...interval,
+    quantity: first.display,
+    buckets: data.buckets.map((bucket) => ({
+      start: bucket.range.from,
+      end: bucket.range.to,
+      ...bucket.display.metrics,
+    })),
     canonical: {
-      ...interval, quantity: { unit: first.canonical.unit, label: first.canonical.unit, fraction_digits: 1 },
-      buckets: data.buckets.map(bucket => ({ start: bucket.range.from, end: bucket.range.to, ...bucket.canonical.metrics })),
+      ...interval,
+      quantity: {
+        unit: first.canonical.unit,
+        label: first.canonical.unit,
+        fraction_digits: 1,
+      },
+      buckets: data.buckets.map((bucket) => ({
+        start: bucket.range.from,
+        end: bucket.range.to,
+        ...bucket.canonical.metrics,
+      })),
     },
   };
-}
+};
 
-export function historySeriesRequest(source: NumericSource, window: SeriesWindow, canonicalUnit?: string): ReadRequest {
+export const historySeriesRequest = (
+  source: NumericSource,
+  window: SeriesWindow,
+  canonicalUnit?: string
+): ReadRequest => {
   const field = quantityField(source);
-  if (!field) throw new Error("Unsupported quantity field");
-  const expectedUnit = canonicalUnit ?? (typeof field.quantity.unit === "string" ? field.quantity.unit : undefined);
+  if (!field) {
+    throw new Error("Unsupported quantity field");
+  }
+  const expectedUnit =
+    canonicalUnit ??
+    (typeof field.quantity.unit === "string" ? field.quantity.unit : undefined);
   const path = source.field ?? "";
   const nulls = field.presence === "sometimes" ? "gap" : "reject";
   return {
-    key: `entity-series:${source.entity_id}:${path}:${window}:${nulls}:paired`, kind: "series",
+    key: `entity-series:${source.entity_id}:${path}:${window}:${nulls}:paired`,
+    kind: "series",
     load: (signal: AbortSignal, to: Date) => {
       const range = windowRange(window, to);
       const body = JSON.stringify({
         range: { from: range.from.toISOString(), to: range.to.toISOString() },
         select_field: path,
-        result: { kind: "summary", ...(nulls === "gap" ? { nulls } : {}), metrics: { min: { operation: "min" }, max: { operation: "max" }, mean: { operation: "sample_mean" } }, bucket: { duration: windows[window].bucket, alignment: "range_start" } },
+        result: {
+          kind: "summary",
+          ...(nulls === "gap" ? { nulls } : {}),
+          metrics: {
+            min: { operation: "min" },
+            max: { operation: "max" },
+            mean: { operation: "sample_mean" },
+          },
+          bucket: {
+            duration: windows[window].bucket,
+            alignment: "range_start",
+          },
+        },
       });
-      return apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}/state/history`, { method: "POST", body, signal },
-        text => readPairedSummary(JSON.parse(text), window, expectedUnit));
+      return apiFetch(
+        `/v1/entities/${encodeURIComponent(source.entity_id)}/state/history`,
+        { method: "POST", body, signal },
+        (text) => readPairedSummary(JSON.parse(text), window, expectedUnit)
+      );
     },
   };
-}
+};

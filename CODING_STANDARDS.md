@@ -801,7 +801,7 @@ assistive technology cannot share.
 **Applies to:** New and changed components under `web/src`.
 **Source:** observed + stated
 
-[`ServerStatus`](web/src/features/workspace/ServerStatus.tsx) already publishes its state
+[`ServerStatus`](web/src/features/workspace/server-status.tsx) already publishes its state
 as `data-state`.
 
 Bad:
@@ -902,7 +902,7 @@ call site, so one widget ends up with several implementations.
 it to `components` first.
 **Source:** observed + stated
 
-[`App.tsx`](web/src/App.tsx) uses the popover wrapper.
+[`app.tsx`](web/src/app.tsx) uses the popover wrapper.
 
 Bad:
 

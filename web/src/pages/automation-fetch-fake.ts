@@ -1,5 +1,15 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import { vi } from "vitest";
-import type { Automation, AutomationDefinition, AutomationRun, AutomationSkip, Entity } from "../api/types.ts";
+
+import type {
+  Automation,
+  AutomationDefinition,
+  AutomationRun,
+  AutomationSkip,
+  Entity,
+} from "../api/types.ts";
+import { readAutomationDocument } from "../features/automations/document.ts";
 import { assertNever } from "./automation-step-tree.ts";
 
 /**
@@ -41,9 +51,14 @@ export interface AutomationRoute {
 
 const FAKE_ORIGIN = "http://hearthd.test";
 
+const routeMatches = (path: string | RegExp, pathname: string): boolean =>
+  typeof path === "string" ? path === pathname : path.test(pathname);
+
 /** Install a fake `fetch` answering `routes` in order, and return the recorded
     requests. */
-export function installAutomationFetch(routes: AutomationRoute[]): AutomationRequest[] {
+export const installAutomationFetch = (
+  routes: AutomationRoute[]
+): AutomationRequest[] => {
   const requests: AutomationRequest[] = [];
   vi.stubGlobal(
     "fetch",
@@ -59,42 +74,49 @@ export function installAutomationFetch(routes: AutomationRoute[]): AutomationReq
       };
       requests.push(request);
       // Yield to the macrotask queue like a real round trip does.
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await delay(0);
       const route = routes.find(
-        (candidate) => candidate.method === method && routeMatches(candidate.path, parsed.pathname),
+        (candidate) =>
+          candidate.method === method &&
+          routeMatches(candidate.path, parsed.pathname)
       );
       if (!route) {
-        throw new Error(`automation fetch fake has no route for ${method} ${parsed.pathname}`);
+        throw new Error(
+          `automation fetch fake has no route for ${method} ${parsed.pathname}`
+        );
       }
       const response = route.respond(request);
-      return new Response(response.body === undefined ? "" : JSON.stringify(response.body), {
-        status: response.status ?? 200,
-        headers: { "content-type": "application/json" },
-      });
-    },
+      return new Response(
+        response.body === undefined ? "" : JSON.stringify(response.body),
+        {
+          status: response.status ?? 200,
+          headers: { "content-type": "application/json" },
+        }
+      );
+    }
   );
   return requests;
-}
-
-function routeMatches(path: string | RegExp, pathname: string): boolean {
-  return typeof path === "string" ? path === pathname : path.test(pathname);
-}
+};
 
 /** One hearthd RFC 9457 problem response with its stable `code`. */
-export function problemResponse(status: number, code: string, detail: string): AutomationResponse {
-  return { status, body: { type: "about:blank", title: String(status), status, detail, code } };
-}
+export const problemResponse = (
+  status: number,
+  code: string,
+  detail: string
+): AutomationResponse => ({
+  status,
+  body: { type: "about:blank", title: String(status), status, detail, code },
+});
 
 /** Requests the fake recorded for one method and pathname prefix. */
-export function requestsFor(
+export const requestsFor = (
   requests: AutomationRequest[],
   method: string,
-  path: string,
-): AutomationRequest[] {
-  return requests.filter(
-    (request) => request.method === method && request.path === path,
+  path: string
+): AutomationRequest[] =>
+  requests.filter(
+    (request) => request.method === method && request.path === path
   );
-}
 
 export const AUTOMATION_ID = "aut_01920000-0000-7000-8000-000000000001";
 export const RUN_ID = "arn_01920000-0000-7000-8000-000000000002";
@@ -105,123 +127,219 @@ export const VERIFIED_COMMAND_ID = "cmd_01920000-0000-7000-8000-000000000005";
 export const AUTOMATION_NAME = "Kitchen light on press";
 export const AUTOMATION_REVISION = 3;
 
-export const BRANCH_STATE_ENTITY_ID = "ent_01920000-0000-7000-8000-000000000010";
+export const BRANCH_STATE_ENTITY_ID =
+  "ent_01920000-0000-7000-8000-000000000010";
 export const UNSELECTED_ENTITY_ID = "ent_01920000-0000-7000-8000-000000000011";
 export const ADMISSION_ENTITY_ID = "ent_01920000-0000-7000-8000-000000000012";
 
-/** All arms remain defined even when a Run selects just the first alternative. */
-export function branchingDefinitionFixture(): AutomationDefinition {
-  const command = (id: string, value: number) => ({ id, kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters: { value } });
-  return {
-    ...automationFixture().definition,
-    conditions: { id: "admission-ready", kind: "entity_state", entity_id: ADMISSION_ENTITY_ID, value_pointer: "", operator: "eq", operand: true },
-    steps: [
-      { id: "route-button", kind: "choose", branches: [
-        { id: "press", conditions: { id: "press-trigger", kind: "trigger", trigger_ids: ["button_press"] }, steps: [
-          { id: "set-level", kind: "if", conditions: {
-            id: "level-check", kind: "all", children: [
-              { id: "matched", kind: "trigger", trigger_ids: ["button_press"] },
-              { id: "not-low", kind: "not", child: { id: "low", kind: "entity_state", entity_id: BRANCH_STATE_ENTITY_ID, value_pointer: "", operator: "lt", operand: 110 } },
-            ],
-          }, then: [command("dim", 35)], else: [command("brighten", 91)] },
-        ] },
-        { id: "other", conditions: { id: "other-state", kind: "entity_state", entity_id: UNSELECTED_ENTITY_ID, value_pointer: "", operator: "eq", operand: true }, steps: [command("off", 0)] },
-      ], default: [command("default-level", 50)] },
-      command("finish", 100),
-    ],
-  };
-}
-
-/** Delay-only tree with nested selected and unselected arms and exact durations. */
-export function delayDefinitionFixture(): AutomationDefinition {
-  return {
-    ...automationFixture().definition,
-    triggers: [{ id: "daily", kind: "cron", expression: "0 7 * * *" }],
-    steps: [
-      { id: "wait", kind: "delay", duration_ms: 300000 },
-      { id: "route", kind: "choose", branches: [
-        { id: "morning", conditions: { id: "daily-trigger", kind: "trigger", trigger_ids: ["daily"] }, steps: [
-          { id: "check", kind: "if", conditions: { id: "matched", kind: "trigger", trigger_ids: ["daily"] },
-            then: [{ id: "precise-wait", kind: "delay", duration_ms: 1001 }],
-            else: [{ id: "short-wait", kind: "delay", duration_ms: 1 }],
-          },
-        ] },
-      ], default: [{ id: "long-wait", kind: "delay", duration_ms: 86400000 }] },
-    ],
-  };
-}
-
-/** Both selections committed, then Core stopped before dispatching any command. */
-export function interruptedBranchRunFixture(): AutomationRun {
-  const evaluated_at = "2026-10-03T12:00:00Z";
-  return runFixture({
-    matched_trigger_ids: ["button_press"],
-    cause: { kind: "device_fact", fact: {
-      fact_id: "fct_01920000-0000-7000-8000-000000000006",
-      family: "entity_event", entity_id: ENTITY_ID, name: "single_press",
-      event_id: "evt_01920000-0000-7000-8000-000000000007",
-      emitted_at: "2026-10-03T11:59:59Z",
-    } },
-    status: "interrupted", failure_code: "core_stopping",
-    started_at: "2026-10-03T11:59:59Z", completed_at: "2026-10-03T12:00:01Z",
-    snapshot: branchingDefinitionFixture(),
-    condition_decision: {
-      mode: "evaluated", bypass_requested: false,
-      snapshot: { id: "admission-ready", kind: "entity_state", entity_id: ADMISSION_ENTITY_ID, value_pointer: "", operator: "eq", operand: true },
-      evaluation: { evaluated_at: "2026-10-03T11:59:59Z", result: "true", nodes: [
-        { id: "admission-ready", kind: "entity_state", result: "true", selected_value: true,
-          observation_id: "obs_01920000-0000-7000-8000-000000000014", observed_at: "2026-10-03T11:59:58Z" },
-      ] },
-    },
-    executions: [
-      { sequence: 0, step_id: "route-button", kind: "choose", phase: "succeeded", started_at: evaluated_at, completed_at: evaluated_at, evidence: { outcome: "branch", selected_branch_id: "press", evaluations: [
-        { branch_id: "press", evaluation: { evaluated_at, result: "true", nodes: [{ id: "press-trigger", kind: "trigger", result: "true", matched_trigger_ids: ["button_press"] }] } },
-      ] } },
-      { sequence: 1, step_id: "set-level", kind: "if", phase: "succeeded", started_at: evaluated_at, completed_at: evaluated_at, evidence: { outcome: "then", evaluations: [
-        { evaluation: { evaluated_at, result: "true", nodes: [
-          { id: "matched", kind: "trigger", result: "true", matched_trigger_ids: ["button_press"] },
-          { id: "low", kind: "entity_state", result: "false", selected_value: 120, observation_id: "obs_01920000-0000-7000-8000-000000000013", observed_at: "2026-10-03T11:59:58Z" },
-        ] } },
-      ] } },
-    ],
-  });
-}
-
 /** One Automation: an Entity Event Trigger on the kitchen button, one Step that
     turns the light on. */
-export function automationFixture(overrides: Partial<Automation> = {}): Automation {
-  return {
-    id: AUTOMATION_ID,
-    revision: AUTOMATION_REVISION,
-    created_at: "2026-02-01T09:00:00.000Z",
-    updated_at: "2026-02-01T09:30:00.000Z",
-    definition: {
-      name: AUTOMATION_NAME,
-      enabled: true,
-      triggers: [
+export const automationFixture = (
+  overrides: Partial<Automation> = {}
+): Automation => ({
+  id: AUTOMATION_ID,
+  revision: AUTOMATION_REVISION,
+  created_at: "2026-02-01T09:00:00.000Z",
+  updated_at: "2026-02-01T09:30:00.000Z",
+  definition: {
+    name: AUTOMATION_NAME,
+    enabled: true,
+    triggers: [
+      {
+        id: "button_press",
+        kind: "entity_event",
+        entity_id: ENTITY_ID,
+        event_name: "single_press",
+      },
+    ],
+    steps: [
+      {
+        id: "turn_on",
+        kind: "command",
+        entity_id: ENTITY_ID,
+        operation: "set",
+        parameters: { value: true },
+      },
+    ],
+  },
+  ...overrides,
+});
+
+/** All arms remain defined even when a Run selects just the first alternative. */
+const BRANCHING_DEFINITION_SOURCE = `{
+  "name": "${AUTOMATION_NAME}",
+  "enabled": true,
+  "triggers": [
+    {
+      "id": "button_press",
+      "kind": "entity_event",
+      "entity_id": "${ENTITY_ID}",
+      "event_name": "single_press"
+    }
+  ],
+  "steps": [
+    {
+      "id": "route-button",
+      "kind": "choose",
+      "branches": [
         {
-          id: "button_press",
-          kind: "entity_event",
-          entity_id: ENTITY_ID,
-          event_name: "single_press",
+          "id": "press",
+          "conditions": {
+            "id": "press-trigger",
+            "kind": "trigger",
+            "trigger_ids": ["button_press"]
+          },
+          "steps": [
+            {
+              "id": "set-level",
+              "kind": "if",
+              "conditions": {
+                "id": "level-check",
+                "kind": "all",
+                "children": [
+                  {
+                    "id": "matched",
+                    "kind": "trigger",
+                    "trigger_ids": ["button_press"]
+                  },
+                  {
+                    "id": "not-low",
+                    "kind": "not",
+                    "child": {
+                      "id": "low",
+                      "kind": "entity_state",
+                      "entity_id": "${BRANCH_STATE_ENTITY_ID}",
+                      "value_pointer": "",
+                      "operator": "lt",
+                      "operand": 110
+                    }
+                  }
+                ]
+              },
+              "then": [
+                {
+                  "id": "dim",
+                  "kind": "command",
+                  "entity_id": "${ENTITY_ID}",
+                  "operation": "set",
+                  "parameters": { "value": 35 }
+                }
+              ],
+              "else": [
+                {
+                  "id": "brighten",
+                  "kind": "command",
+                  "entity_id": "${ENTITY_ID}",
+                  "operation": "set",
+                  "parameters": { "value": 91 }
+                }
+              ]
+            }
+          ]
         },
-      ],
-      steps: [
         {
-          id: "turn_on",
-          kind: "command",
-          entity_id: ENTITY_ID,
-          operation: "set",
-          parameters: { value: true },
-        },
+          "id": "other",
+          "conditions": {
+            "id": "other-state",
+            "kind": "entity_state",
+            "entity_id": "${UNSELECTED_ENTITY_ID}",
+            "value_pointer": "",
+            "operator": "eq",
+            "operand": true
+          },
+          "steps": [
+            {
+              "id": "off",
+              "kind": "command",
+              "entity_id": "${ENTITY_ID}",
+              "operation": "set",
+              "parameters": { "value": 0 }
+            }
+          ]
+        }
       ],
+      "default": [
+        {
+          "id": "default-level",
+          "kind": "command",
+          "entity_id": "${ENTITY_ID}",
+          "operation": "set",
+          "parameters": { "value": 50 }
+        }
+      ]
     },
-    ...overrides,
-  };
-}
+    {
+      "id": "finish",
+      "kind": "command",
+      "entity_id": "${ENTITY_ID}",
+      "operation": "set",
+      "parameters": { "value": 100 }
+    }
+  ],
+  "conditions": {
+    "id": "admission-ready",
+    "kind": "entity_state",
+    "entity_id": "${ADMISSION_ENTITY_ID}",
+    "value_pointer": "",
+    "operator": "eq",
+    "operand": true
+  }
+}`;
+
+export const branchingDefinitionFixture = (): AutomationDefinition =>
+  structuredClone(
+    readAutomationDocument(BRANCHING_DEFINITION_SOURCE).definition
+  );
+
+/** Delay-only tree with nested selected and unselected arms and exact durations. */
+const DELAY_DEFINITION_SOURCE = `{
+  "name": "${AUTOMATION_NAME}",
+  "enabled": true,
+  "triggers": [{ "id": "daily", "kind": "cron", "expression": "0 7 * * *" }],
+  "steps": [
+    { "id": "wait", "kind": "delay", "duration_ms": 300000 },
+    {
+      "id": "route",
+      "kind": "choose",
+      "branches": [
+        {
+          "id": "morning",
+          "conditions": {
+            "id": "daily-trigger",
+            "kind": "trigger",
+            "trigger_ids": ["daily"]
+          },
+          "steps": [
+            {
+              "id": "check",
+              "kind": "if",
+              "conditions": {
+                "id": "matched",
+                "kind": "trigger",
+                "trigger_ids": ["daily"]
+              },
+              "then": [
+                { "id": "precise-wait", "kind": "delay", "duration_ms": 1001 }
+              ],
+              "else": [{ "id": "short-wait", "kind": "delay", "duration_ms": 1 }]
+            }
+          ]
+        }
+      ],
+      "default": [
+        { "id": "long-wait", "kind": "delay", "duration_ms": 86400000 }
+      ]
+    }
+  ]
+}`;
+
+export const delayDefinitionFixture = (): AutomationDefinition =>
+  structuredClone(readAutomationDocument(DELAY_DEFINITION_SOURCE).definition);
 
 /** One Run: a manual Run that satisfied its single Step. */
-export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRun {
+export const runFixture = (
+  overrides: Partial<AutomationRun> = {}
+): AutomationRun => {
   const { status = "succeeded", ...fields } = overrides;
   const common = {
     id: RUN_ID,
@@ -229,7 +347,10 @@ export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRu
     automation_name: AUTOMATION_NAME,
     revision: AUTOMATION_REVISION,
     cause: { kind: "manual" as const },
-    condition_decision: { mode: "not_configured" as const, bypass_requested: false as const },
+    condition_decision: {
+      mode: "not_configured" as const,
+      bypass_requested: false as const,
+    },
     matched_trigger_ids: [],
     started_at: "2026-02-01T10:00:00.000Z",
     snapshot: automationFixture().definition,
@@ -241,68 +362,206 @@ export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRu
         step_id: "turn_on",
         kind: "command" as const,
         phase: "succeeded" as const,
-        evidence: { command_id: VERIFIED_COMMAND_ID, correlation_id: "cor_reserved", verified_command_id: VERIFIED_COMMAND_ID, command_outcome: "satisfied" as const },
+        evidence: {
+          command_id: VERIFIED_COMMAND_ID,
+          correlation_id: "cor_reserved",
+          verified_command_id: VERIFIED_COMMAND_ID,
+          command_outcome: "satisfied" as const,
+        },
         started_at: "2026-02-01T10:00:00.100Z",
         completed_at: "2026-02-01T10:00:00.900Z",
       },
     ],
     ...fields,
   };
-  const completedAt = "completed_at" in fields ? fields.completed_at ?? "2026-02-01T10:00:01.000Z" : "2026-02-01T10:00:01.000Z";
+  const completedAt =
+    "completed_at" in fields
+      ? (fields.completed_at ?? "2026-02-01T10:00:01.000Z")
+      : "2026-02-01T10:00:01.000Z";
   switch (status) {
-    case "running": return { ...common, status };
-    case "succeeded": return { ...common, status, completed_at: completedAt };
+    case "running": {
+      return { ...common, status };
+    }
+    case "succeeded": {
+      return { ...common, status, completed_at: completedAt };
+    }
     case "failed":
-    case "interrupted": return { ...common, status,
-      completed_at: completedAt,
-      failure_code: "failure_code" in fields ? fields.failure_code ?? "core_stopping" : "core_stopping",
-    };
-    default: return assertNever(status);
+    case "interrupted": {
+      return {
+        ...common,
+        status,
+        completed_at: completedAt,
+        failure_code:
+          "failure_code" in fields
+            ? (fields.failure_code ?? "core_stopping")
+            : "core_stopping",
+      };
+    }
+    default: {
+      return assertNever(status);
+    }
   }
-}
+};
+
+/** Both selections committed, then Core stopped before dispatching any command. */
+export const interruptedBranchRunFixture = (): AutomationRun => {
+  const evaluated_at = "2026-10-03T12:00:00Z";
+  return runFixture({
+    matched_trigger_ids: ["button_press"],
+    cause: {
+      kind: "device_fact",
+      fact: {
+        fact_id: "fct_01920000-0000-7000-8000-000000000006",
+        family: "entity_event",
+        entity_id: ENTITY_ID,
+        name: "single_press",
+        event_id: "evt_01920000-0000-7000-8000-000000000007",
+        emitted_at: "2026-10-03T11:59:59Z",
+      },
+    },
+    status: "interrupted",
+    failure_code: "core_stopping",
+    started_at: "2026-10-03T11:59:59Z",
+    completed_at: "2026-10-03T12:00:01Z",
+    snapshot: branchingDefinitionFixture(),
+    condition_decision: {
+      mode: "evaluated",
+      bypass_requested: false,
+      snapshot: {
+        id: "admission-ready",
+        kind: "entity_state",
+        entity_id: ADMISSION_ENTITY_ID,
+        value_pointer: "",
+        operator: "eq",
+        operand: true,
+      },
+      evaluation: {
+        evaluated_at: "2026-10-03T11:59:59Z",
+        result: "true",
+        nodes: [
+          {
+            id: "admission-ready",
+            kind: "entity_state",
+            result: "true",
+            selected_value: true,
+            observation_id: "obs_01920000-0000-7000-8000-000000000014",
+            observed_at: "2026-10-03T11:59:58Z",
+          },
+        ],
+      },
+    },
+    executions: [
+      {
+        sequence: 0,
+        step_id: "route-button",
+        kind: "choose",
+        phase: "succeeded",
+        started_at: evaluated_at,
+        completed_at: evaluated_at,
+        evidence: {
+          outcome: "branch",
+          selected_branch_id: "press",
+          evaluations: [
+            {
+              branch_id: "press",
+              evaluation: {
+                evaluated_at,
+                result: "true",
+                nodes: [
+                  {
+                    id: "press-trigger",
+                    kind: "trigger",
+                    result: "true",
+                    matched_trigger_ids: ["button_press"],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      {
+        sequence: 1,
+        step_id: "set-level",
+        kind: "if",
+        phase: "succeeded",
+        started_at: evaluated_at,
+        completed_at: evaluated_at,
+        evidence: {
+          outcome: "then",
+          evaluations: [
+            {
+              evaluation: {
+                evaluated_at,
+                result: "true",
+                nodes: [
+                  {
+                    id: "matched",
+                    kind: "trigger",
+                    result: "true",
+                    matched_trigger_ids: ["button_press"],
+                  },
+                  {
+                    id: "low",
+                    kind: "entity_state",
+                    result: "false",
+                    selected_value: 120,
+                    observation_id: "obs_01920000-0000-7000-8000-000000000013",
+                    observed_at: "2026-10-03T11:59:58Z",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ],
+  });
+};
 
 /** One Skip: a matched Fact that arrived while the Automation was busy. */
-export function skipFixture(overrides: Partial<AutomationSkip> = {}): AutomationSkip {
-  return {
-    id: SKIP_ID,
-    automation_id: AUTOMATION_ID,
-    automation_name: AUTOMATION_NAME,
-    revision: AUTOMATION_REVISION,
-    condition_decision: { mode: "not_configured", bypass_requested: false },
-    cause: { kind: "device_fact", fact: {
+export const skipFixture = (
+  overrides: Partial<AutomationSkip> = {}
+): AutomationSkip => ({
+  id: SKIP_ID,
+  automation_id: AUTOMATION_ID,
+  automation_name: AUTOMATION_NAME,
+  revision: AUTOMATION_REVISION,
+  condition_decision: { mode: "not_configured", bypass_requested: false },
+  cause: {
+    kind: "device_fact",
+    fact: {
       fact_id: "fct_01920000-0000-7000-8000-000000000006",
       family: "entity_event",
       entity_id: ENTITY_ID,
       name: "single_press",
       event_id: "evt_01920000-0000-7000-8000-000000000007",
       emitted_at: "2026-02-01T10:05:00.000Z",
-    } },
-    matched_triggers: automationFixture().definition.triggers,
-    reason: "automation_busy",
-    skipped_at: "2026-02-01T10:05:00.050Z",
-    ...overrides,
-  };
-}
+    },
+  },
+  matched_triggers: automationFixture().definition.triggers,
+  reason: "automation_busy",
+  skipped_at: "2026-02-01T10:05:00.050Z",
+  ...overrides,
+});
 
 /** The Entities read the detail page uses to label Trigger and Step references. */
-export function entityFixture(overrides: Partial<Entity> = {}): Entity {
-  return {
-    id: ENTITY_ID,
-    device_id: "dev_01920000-0000-7000-8000-000000000008",
-    adapter_id: "adp_zigbee2mqtt",
-    name: ENTITY_NAME,
-    adapter_name: ENTITY_NAME,
-    name_override: null,
-    type: "hearth.enumaction/v1",
-    support: { operations: { trigger: { values: ["single_press"] } } },
-    enabled: true,
-    availability: {
-      status: "available",
-      source: "adp_zigbee2mqtt",
-      since: "2026-02-01T09:00:00.000Z",
-      evidence_at: "2026-02-01T09:00:00.000Z",
-    },
-    state: null,
-    ...overrides,
-  };
-}
+export const entityFixture = (overrides: Partial<Entity> = {}): Entity => ({
+  id: ENTITY_ID,
+  device_id: "dev_01920000-0000-7000-8000-000000000008",
+  adapter_id: "adp_zigbee2mqtt",
+  name: ENTITY_NAME,
+  adapter_name: ENTITY_NAME,
+  name_override: null,
+  type: "hearth.enumaction/v1",
+  support: { operations: { trigger: { values: ["single_press"] } } },
+  enabled: true,
+  availability: {
+    status: "available",
+    source: "adp_zigbee2mqtt",
+    since: "2026-02-01T09:00:00.000Z",
+    evidence_at: "2026-02-01T09:00:00.000Z",
+  },
+  state: null,
+  ...overrides,
+});

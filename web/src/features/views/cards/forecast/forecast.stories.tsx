@@ -1,0 +1,127 @@
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import MockDate from "mockdate";
+import { expect, within } from "storybook/test";
+
+import {
+  entityId,
+  fixtureEntity,
+  fixtureNow,
+} from "../../../../../.storybook/fixtures";
+import {
+  createCoreHandlers,
+  entityScenario,
+} from "../../../../../.storybook/msw-handlers";
+import { BoundForecast } from "./forecast";
+import { localDate } from "./upcoming";
+
+const nextMidnight = () => {
+  const midnight = new Date(fixtureNow);
+  midnight.setHours(24, 0, 0, 0);
+  return midnight;
+};
+
+const stateOf = (entity: ReturnType<typeof fixtureEntity>) => {
+  const { state } = entity;
+  if (!state) {
+    throw new Error("Fixture Entity has no State");
+  }
+  return state;
+};
+
+const meta = {
+  title: "Components/Cards/Forecast",
+  component: BoundForecast,
+  tags: ["ai-generated"],
+  args: {
+    label: "Next 12 hours",
+    periods: 12,
+    source: {
+      kind: "entity-state",
+      entity_id: entityId(201),
+      entity_type: "hearth.hourlyforecast/v1",
+    },
+  },
+} satisfies Meta<typeof BoundForecast>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const Hourly: Story = {
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("figure", { name: /Next 12 hours/u })
+    ).toBeVisible();
+  },
+};
+export const Daily: Story = {
+  args: {
+    label: "Next 7 days",
+    periods: 7,
+    source: {
+      kind: "entity-state",
+      entity_id: entityId(202),
+      entity_type: "hearth.dailyforecast/v1",
+    },
+  },
+  play: async ({ canvas }) => {
+    await canvas.findByRole("listitem", { name: /^Today:/u });
+    await expect(canvas.getAllByRole("listitem")).toHaveLength(7);
+  },
+};
+export const NeverObserved: Story = {
+  beforeEach: ({ msw }) => {
+    msw.use(entityScenario(201, "unobserved"));
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Never observed")).toBeVisible();
+  },
+};
+export const CrossingMidnight: Story = {
+  beforeEach: ({ msw }) => {
+    const now = nextMidnight().getTime() - 2 * 3_600_000 + 30_000;
+    MockDate.set(now);
+    const forecast = fixtureEntity(201);
+    const state = stateOf(forecast);
+    state.observed_at = new Date(now).toISOString();
+    state.adapter_received_at = new Date(now).toISOString();
+    const value = state.value as { periods: { starts_at: string }[] };
+    // Forecast periods start on the UTC hour, even in fractional-offset zones.
+    const start = Math.floor(now / 3_600_000) * 3_600_000;
+    for (const [index, period] of value.periods.entries()) {
+      period.starts_at = new Date(start + index * 3_600_000).toISOString();
+    }
+    msw.use(...createCoreHandlers([forecast]));
+    return () => MockDate.set(fixtureNow);
+  },
+  play: async ({ canvas }) => {
+    const chart = await canvas.findByRole("figure", { name: /Next 12 hours/u });
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+    }).format(nextMidnight());
+    const label = await within(chart).findByText(weekday);
+    await expect(label.previousElementSibling?.tagName.toLowerCase()).toBe(
+      "line"
+    );
+    await expect(label.previousElementSibling).toHaveAttribute("y1", "10");
+    await expect(label.previousElementSibling).toHaveAttribute("y2", "176");
+  },
+};
+export const PartialUnavailableForecast: Story = {
+  args: Daily.args,
+  beforeEach: ({ msw }) => {
+    const forecast = fixtureEntity(202);
+    const value = stateOf(forecast).value as { periods: { date: string }[] };
+    const yesterday = new Date(fixtureNow);
+    yesterday.setDate(yesterday.getDate() - 1);
+    value.periods[0].date = localDate(yesterday.getTime());
+    forecast.availability.status = "unavailable";
+    msw.use(...createCoreHandlers([forecast]));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText(/Showing the remaining days of a forecast/u)
+    ).toBeVisible();
+    await expect(
+      canvas.getAllByRole("listitem", { name: /low/u })
+    ).toHaveLength(6);
+  },
+};

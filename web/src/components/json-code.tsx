@@ -7,23 +7,21 @@ const jsonTheme = {
   plain: { ...themes.nightOwl.plain, backgroundColor: "transparent" },
 };
 
-export function JsonCode({ code }: { code: string }) {
-  return (
-    <Highlight code={code} language="json" theme={jsonTheme}>
-      {({ tokens, getLineProps, getTokenProps }) => (
-        <pre className="m-0 overflow-auto text-xs">
-          {/* getLineProps/getTokenProps echo every extra input key back into
+export const JsonCode = ({ code }: { code: string }) => (
+  <Highlight code={code} language="json" theme={jsonTheme}>
+    {({ tokens, getLineProps, getTokenProps }) => (
+      <pre className="m-0 overflow-auto text-xs">
+        {/* getLineProps/getTokenProps echo every extra input key back into
               the props they return, so ask for line and token props only and
               pass the React key explicitly: spreading a key into JSX warns. */}
-          {tokens.map((line, lineIndex) => (
-            <div key={lineIndex} {...getLineProps({ line })}>
-              {line.map((token, tokenIndex) => (
-                <span key={tokenIndex} {...getTokenProps({ token })} />
-              ))}
-            </div>
-          ))}
-        </pre>
-      )}
-    </Highlight>
-  );
-}
+        {tokens.map((line, lineIndex) => (
+          <div key={lineIndex} {...getLineProps({ line })}>
+            {line.map((token, tokenIndex) => (
+              <span key={tokenIndex} {...getTokenProps({ token })} />
+            ))}
+          </div>
+        ))}
+      </pre>
+    )}
+  </Highlight>
+);

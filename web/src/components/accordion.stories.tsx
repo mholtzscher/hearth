@@ -1,23 +1,32 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./accordion";
+
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "./accordion";
 
 const meta = {
   title: "Components/Accordion",
   component: Accordion,
   tags: ["ai-generated"],
   args: {
-    type: "single", collapsible: true,
-    children: <>
-      <AccordionItem value="state">
-        <AccordionTrigger>Observed State</AccordionTrigger>
-        <AccordionContent>Living room · 21.5 °C</AccordionContent>
-      </AccordionItem>
-      <AccordionItem value="availability">
-        <AccordionTrigger>Entity availability</AccordionTrigger>
-        <AccordionContent>Available</AccordionContent>
-      </AccordionItem>
-    </>,
+    type: "single",
+    collapsible: true,
+    children: (
+      <>
+        <AccordionItem value="state">
+          <AccordionTrigger>Observed State</AccordionTrigger>
+          <AccordionContent>Living room · 21.5 °C</AccordionContent>
+        </AccordionItem>
+        <AccordionItem value="availability">
+          <AccordionTrigger>Entity availability</AccordionTrigger>
+          <AccordionContent>Available</AccordionContent>
+        </AccordionItem>
+      </>
+    ),
   },
 } satisfies Meta<typeof Accordion>;
 export default meta;
