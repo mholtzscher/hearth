@@ -7,7 +7,7 @@ const meta = {
   component: Label,
   tags: ["ai-generated"],
   args: { htmlFor: "dashboard-name", children: "Dashboard name" },
-  render: args => <div>
+  render: args => <div className="grid gap-2">
     <Label {...args} />
     <Input id="dashboard-name" defaultValue="Morning overview" />
   </div>,
