@@ -17,7 +17,7 @@ export const HeadingLevel = createContext<3 | 4>(3);
 /** Status entries in precedence order: a tone dot and words, never color alone. */
 export function StatusList({ entries, className, separators = true }: { entries: StatusEntry[]; className?: string; separators?: boolean }) {
   if (entries.length === 0) return null;
-  return <ul data-slot="card-status" className={cn("view-status flex list-none flex-wrap gap-x-2 gap-y-0 text-label leading-normal text-gray-9", className)}>
+  return <ul data-slot="card-status" className={cn("flex list-none flex-wrap gap-x-2 gap-y-0 text-label leading-normal text-gray-9", className)}>
     {entries.map((entry, index) => <li key={entry.key} data-tone={entry.tone} className={cn("inline-flex items-baseline gap-1.5 data-[tone=warn]:text-warning data-[tone=error]:text-destructive", separators && index > 0 && "before:text-gray-6 before:[content:'·'_/_'']")}>
       <StatusDot tone={entry.tone} /><span>{entry.text}{entry.detail && <span className="text-muted-foreground"> {entry.detail}</span>}</span>
     </li>)}
