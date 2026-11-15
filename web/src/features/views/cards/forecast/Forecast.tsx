@@ -39,7 +39,7 @@ function Daily({ periods, now }: { periods: DailyPeriod[]; now: number }) {
     return <li key={p.date} className="grid min-h-11 grid-cols-[4.2em_28px_3.2em_2.6em_1fr_2.6em] items-center gap-2.5 border-t border-border tabular-nums first:border-t-0 @max-[300px]:grid-cols-[3.4em_24px_2.8em_2.4em_1fr_2.4em] @max-[300px]:gap-1.5" aria-label={dailyLabel(p, now)}>
       <span className="text-foreground group-data-[value=dimmed]/forecast:text-gray-8" aria-hidden="true">{p.date === localDate(now) ? "Today" : weekday(dateValue(p.date))}</span>
       <ForecastIcon condition={p.condition} />
-      <span className="text-[13px] text-info group-data-[value=dimmed]/forecast:text-gray-8" aria-hidden="true">{probability}</span>
+      <span className="text-label text-info group-data-[value=dimmed]/forecast:text-gray-8" aria-hidden="true">{probability}</span>
       <span data-slot="forecast-temp" data-low className={`${temperatureClass} text-muted-foreground`} aria-hidden="true">{temperature(p.temperature_min, p.quantities.temperature_min, true)}</span>
       <span data-slot="forecast-range" className="relative h-1 rounded-[2px] bg-gray-3" aria-hidden="true">{bar && <span className="absolute inset-y-0 rounded-[2px] bg-gray-9 group-data-[value=dimmed]/forecast:bg-gray-8" style={{ left: `${(p.temperature_min! - min) / range * 100}%`, right: `${100 - (p.temperature_max! - min) / range * 100}%` }} />}</span>
       <span data-slot="forecast-temp" className={temperatureClass} aria-hidden="true">{temperature(p.temperature_max, p.quantities.temperature_max, true)}</span>
@@ -88,7 +88,7 @@ function Hourly({ periods, count }: { periods: HourlyPeriod[]; count: number }) 
     const command = drawing ? "L" : "M"; drawing = true;
     return `${command}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
   }).join("");
-  return <><div data-slot="forecast-legend" className="mb-1.5 flex flex-wrap gap-4 text-[13px] text-muted-foreground" aria-hidden="true"><span className="before:mr-1.5 before:inline-block before:h-0.5 before:w-2.5 before:bg-gray-10 before:align-middle">Temperature{unit && ` ${unit}`}</span><span className="before:mr-1.5 before:inline-block before:size-2 before:bg-info before:align-middle before:opacity-55">Chance of precipitation</span></div>
+  return <><div data-slot="forecast-legend" className="mb-1.5 flex flex-wrap gap-4 text-label text-muted-foreground" aria-hidden="true"><span className="before:mr-1.5 before:inline-block before:h-0.5 before:w-2.5 before:bg-gray-10 before:align-middle">Temperature{unit && ` ${unit}`}</span><span className="before:mr-1.5 before:inline-block before:size-2 before:bg-info before:align-middle before:opacity-55">Chance of precipitation</span></div>
     <div ref={plotRef} className="overflow-x-auto rounded-md" role="img" tabIndex={0} aria-label={summary}>
       <svg data-slot="forecast-chart" className="block overflow-visible tabular-nums" width={width} height={216} viewBox={`0 0 ${width} 216`} aria-hidden="true">
         <line className="stroke-gray-3" x1="0" x2={width} y1="176" y2="176" />
@@ -103,7 +103,7 @@ function Hourly({ periods, count }: { periods: HourlyPeriod[]; count: number }) 
           return <g key={p.starts_at}>
             {midnight !== undefined && <><line data-slot="forecast-midnight" className="stroke-gray-5 [stroke-dasharray:2_3]" x1={midnight} x2={midnight} y1="10" y2="176" /><text className={axisText} x={midnight} y="212" textAnchor="middle">{weekday(date)}</text></>}
             {probability !== undefined && probability >= 10 && <rect data-slot="forecast-bar" className="fill-info opacity-55 group-data-[value=dimmed]/forecast:fill-gray-8" x={x(i) - 7} y={176 - 26 * probability / 100} width="14" height={26 * probability / 100} rx="2" />}
-            {i % step === 0 && <><ForecastIcon condition={p.condition} x={x(i) - 12} y={8} />{values[i] !== undefined && <text data-slot="forecast-temp-label" className="fill-gray-10 text-[13px] group-data-[value=dimmed]/forecast:fill-gray-8" x={x(i)} y={y(values[i]!) - 8} textAnchor="middle">{temperature(p.temperature, p.quantities.temperature, true)}</text>}<text className={axisText} x={x(i)} y="192" textAnchor="middle">{i === 0 ? "Now" : hour(date)}</text></>}
+            {i % step === 0 && <><ForecastIcon condition={p.condition} x={x(i) - 12} y={8} />{values[i] !== undefined && <text data-slot="forecast-temp-label" className="fill-gray-10 text-label group-data-[value=dimmed]/forecast:fill-gray-8" x={x(i)} y={y(values[i]!) - 8} textAnchor="middle">{temperature(p.temperature, p.quantities.temperature, true)}</text>}<text className={axisText} x={x(i)} y="192" textAnchor="middle">{i === 0 ? "Now" : hour(date)}</text></>}
           </g>;
         })}
         <path data-slot="forecast-line" className="fill-none stroke-gray-10 stroke-2 group-data-[value=dimmed]/forecast:stroke-gray-8" d={path} />
