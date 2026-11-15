@@ -1,5 +1,7 @@
 import { quantityField, resolveQuantity } from "../../bindings/state-fields";
 import type { SensorChoice } from "../time-series/Editor";
+import { NativeSelect } from "../../../../components/ui/native-select";
+import { EditorLabel } from "../../editor/EditorLabel";
 
 /**
  * Picks the Entity for one weather slot: Entities of the slot's type, and for
@@ -20,12 +22,12 @@ export function SlotSelect<T extends string>({ label, value, choices, type, unit
     catch { return false; }
   });
   const missing = value && !candidates.some(choice => choice.id === value.entity_id);
-  return <label>{label}<select value={value?.entity_id ?? ""} onChange={event => {
+  return <EditorLabel>{label}<NativeSelect size="auto" value={value?.entity_id ?? ""} onChange={event => {
     const id = event.target.value;
     onChange(id ? { kind: "entity-state", entity_id: id, entity_type: type } : undefined);
   }}>
     {(optional || !value) && <option value="">{optional ? "None" : "Choose a sensor…"}</option>}
     {missing && <option value={value.entity_id}>Existing sensor · {value.entity_id}</option>}
     {candidates.map(choice => <option key={choice.id} value={choice.id}>{choice.name}{choice.device_name ? ` · ${choice.device_name}` : ""}{unit ? ` (${unit})` : ""}</option>)}
-  </select></label>;
+  </NativeSelect></EditorLabel>;
 }

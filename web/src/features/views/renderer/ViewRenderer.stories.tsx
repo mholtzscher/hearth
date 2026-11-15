@@ -43,7 +43,7 @@ export const WeatherRefresh: Story = {
     await expect(await canvas.findByText("Falling")).toBeVisible();
     await expect(await canvas.findByText(/24 h high/)).toBeVisible();
     const outside = canvas.getByRole("article", { name: "Outside" });
-    const rowCount = outside.querySelectorAll(".view-row").length;
+    const rowCount = outside.querySelectorAll('[data-slot="reading-row"]').length;
     const cards = [...canvasElement.querySelectorAll("article")];
     const bounds = () => cards.map(card => {
       const rect = card.getBoundingClientRect();
@@ -53,9 +53,9 @@ export const WeatherRefresh: Story = {
     let fallbackAppeared = false;
     const observer = new MutationObserver(() => {
       samples.push(bounds());
-      fallbackAppeared ||= outside.querySelectorAll(".view-row").length !== rowCount ||
-        !outside.querySelector(".view-weather-conditions") ||
-        !canvasElement.querySelector(".view-wind .view-weather-conditions");
+      fallbackAppeared ||= outside.querySelectorAll('[data-slot="reading-row"]').length !== rowCount ||
+        !outside.querySelector('[data-slot="weather-conditions"]') ||
+        !within(canvasElement).queryByRole("article", { name: "Wind" })?.querySelector('[data-slot="weather-conditions"]');
     });
     observer.observe(canvasElement, { childList: true, subtree: true, characterData: true });
     const speed = createEntities().find(entity => entity.id === entityId(103))!;

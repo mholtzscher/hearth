@@ -5,8 +5,46 @@ import type { ViewDefinition } from "../catalog";
 import { TimeSeriesEditor } from "../cards/time-series/Editor";
 import { ToggleListEditor } from "../cards/toggle-list/Editor";
 import { WindEditor } from "../cards/wind/Editor";
+import { SlotSelect } from "../cards/weather/SlotSelect";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+it("reorders view children without changing their definitions", () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response('{"items":[],"next_cursor":null}'));
+  const definition: ViewDefinition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Room", spec: {
+    root: "root", elements: {
+      root: { type: "Stack", props: { gap: "medium" }, children: ["one", "two"] },
+      one: { type: "Heading", props: { text: "First" } },
+      two: { type: "Note", props: { text: "Second" } },
+    },
+  } };
+  const onChange = vi.fn();
+  render(<ViewEditor definition={definition} onChange={onChange} />);
+  fireEvent.click(screen.getByText("Stack · root"));
+  expect((screen.getByRole("button", { name: "Move one up" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Move two up" }));
+  expect(onChange).toHaveBeenLastCalledWith({ ...definition, spec: { ...definition.spec, elements: {
+    ...definition.spec.elements, root: { type: "Stack", props: { gap: "medium" }, children: ["two", "one"] },
+  } } });
+});
+
+it("retains a missing weather selection and allows choosing or clearing a compatible Entity", () => {
+  const existing = { kind: "entity-state" as const, entity_id: "ent_existing", entity_type: "hearth.speed/v1" };
+  const onChange = vi.fn();
+  render(<SlotSelect label="Wind speed" value={existing} optional type="hearth.speed/v1" choices={[
+    { id: "ent_new", name: "Wind", type: "hearth.speed/v1", device_name: "Station" },
+    { id: "ent_other", name: "Temperature", type: "hearth.temperature/v1" },
+  ]} onChange={onChange} />);
+  const select = screen.getByRole("combobox", { name: "Wind speed" });
+  expect((select as HTMLSelectElement).value).toBe("ent_existing");
+  expect(within(select).getByRole("option", { name: "Existing sensor · ent_existing" })).toBeTruthy();
+  expect(within(select).queryByRole("option", { name: "Temperature" })).toBeNull();
+  fireEvent.change(select, { target: { value: "ent_new" } });
+  expect(onChange).toHaveBeenLastCalledWith({ kind: "entity-state", entity_id: "ent_new", entity_type: "hearth.speed/v1" });
+  fireEvent.change(select, { target: { value: "" } });
+  expect(onChange).toHaveBeenLastCalledWith(undefined);
+});
+
 it("adds, changes, and removes Wind speed history without changing its slots", () => {
   const speed = { kind: "entity-state" as const, entity_id: "ent_019a3e6a-4111-7000-8000-000000000001", entity_type: "hearth.speed/v1" as const };
   const onChange = vi.fn();

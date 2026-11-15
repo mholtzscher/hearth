@@ -40,19 +40,19 @@ it.each(["lanes", "ledger", "feed"] as TimelineStyle[])("%s presents each card s
 it("draws lanes with unknown spans and dimming, and exposes a text summary", () => {
   const unavailable = { ...ready, metadata: { ...ready.metadata!, availability: "unavailable" } };
   render(<StateTimeline title="Doors" window="1h" style="lanes" rows={[row(unavailable)]} />, { wrapper: MemoryRouter });
-  expect(document.querySelector(".view-timeline-segment[data-unknown]")).toBeTruthy();
-  expect(document.querySelector(".view-timeline-track[data-dimmed]")).toBeTruthy();
+  expect(document.querySelector('[data-slot="timeline-segment"][data-unknown]')).toBeTruthy();
+  expect(document.querySelector('[data-slot="timeline-track"][data-dimmed]')).toBeTruthy();
   expect(screen.getByText(/Door: Closed since/)).toBeTruthy();
-  expect(document.querySelector(".view-timeline-track")?.getAttribute("aria-hidden")).toBe("true");
+  expect(document.querySelector('[data-slot="timeline-track"]')?.getAttribute("aria-hidden")).toBe("true");
   expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
 });
 
 it("ledger omits since when current State disagrees with history", () => {
   const resource = { ...ready, data: { ...ready.data!, current: { text: "Open", observed_at: new Date(end).toISOString() } } };
   render(<StateTimeline title="Doors" window="1h" style="ledger" rows={[row(resource)]} />, { wrapper: MemoryRouter });
-  expect(document.querySelector(".view-timeline-current")?.textContent).toBe("Open");
-  expect(document.querySelector(".view-timeline-track-compact")).toBeTruthy();
-  expect(document.querySelector(".view-timeline-axis")).toBeTruthy();
+  expect(document.querySelector('[data-slot="timeline-current"]')?.textContent).toBe("Open");
+  expect(document.querySelector('[data-slot="timeline-track"][data-compact]')).toBeTruthy();
+  expect(document.querySelector('[data-slot="timeline-axis"]')).toBeTruthy();
 });
 
 it("feed groups, pages twelve changes at a time, and names an empty window", () => {
@@ -63,11 +63,11 @@ it("feed groups, pages twelve changes at a time, and names an empty window", () 
   ])) });
   const rows = [0, 1].map((n): TimelineRow => ({ key: String(n), label: `Door ${n}`, entityId: `${id}${n}`, resource: { ...ready, data: { ...ready.data, timeline: make(n * 120_000) } } }));
   const view = render(<StateTimeline title="Doors" window="7d" style="feed" rows={rows} />, { wrapper: MemoryRouter });
-  expect(document.querySelectorAll(".view-timeline-feed-entry")).toHaveLength(12);
+  expect(document.querySelectorAll('[data-slot="timeline-feed-entry"]')).toHaveLength(12);
   fireEvent.click(screen.getByRole("button", { name: "Show 16 earlier changes" }));
-  expect(document.querySelectorAll(".view-timeline-feed-entry")).toHaveLength(24);
+  expect(document.querySelectorAll('[data-slot="timeline-feed-entry"]')).toHaveLength(24);
   fireEvent.click(screen.getByRole("button", { name: "Show 4 earlier changes" }));
-  expect(document.querySelectorAll(".view-timeline-feed-entry")).toHaveLength(28);
+  expect(document.querySelectorAll('[data-slot="timeline-feed-entry"]')).toHaveLength(28);
   view.rerender(<StateTimeline title="Doors" window="24h" style="feed" rows={[row({ ...ready, data: { ...ready.data, timeline: { ...timeline, intervals: [] } } })]} />);
   expect(screen.getByText("No changes in the last 24 hours")).toBeTruthy();
 });
@@ -137,8 +137,8 @@ it("names no since time for a value held since before the window", () => {
   const held: TimelineData = { ...timeline, intervals: [{ kind: "value", from: start, to: end, text: "Closed", truthy: false }] };
   const resource = { ...ready, data: { ...ready.data!, timeline: held } };
   render(<StateTimeline title="Doors" window="1h" style="ledger" rows={[row(resource)]} />, { wrapper: MemoryRouter });
-  expect(document.querySelector(".view-timeline-current")?.textContent).toBe("Closed");
+  expect(document.querySelector('[data-slot="timeline-current"]')?.textContent).toBe("Closed");
   cleanup();
   render(<StateTimeline title="Doors" window="1h" style="ledger" rows={[row()]} />, { wrapper: MemoryRouter });
-  expect(document.querySelector(".view-timeline-current")?.textContent).toMatch(/^Closedsince /);
+  expect(document.querySelector('[data-slot="timeline-current"]')?.textContent).toMatch(/^Closedsince /);
 });

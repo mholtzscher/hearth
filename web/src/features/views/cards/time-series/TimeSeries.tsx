@@ -94,16 +94,16 @@ export function TimeSeries({ title, series: inputs }: { title: string; series: A
     <p>Each point averages the samples in a {bucketMinutes >= 1 ? `${Number(bucketMinutes.toFixed(1))}-minute` : `${Math.round(bucketMinutes * 60)}-second`} interval; the shaded band spans their minimum and maximum. Gaps mean no samples or a reported absent field.</p>
     {first && <p>{new Date(from).toLocaleString()} to {new Date(to).toLocaleString()}</p>}
   </>;
-  return <CardFrame className="view-chart" title={title} unit={label} status={[]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
-    <ul className="view-chart-legend">{items.map((item, i) => <li key={i} data-dimmed={item.dimmed || undefined}>
-      <span className="view-chart-swatch" aria-hidden="true" style={{ background: item.color }} />{item.label}
+  return <CardFrame title={title} unit={label} status={[]} arrivals={arrivals} sources={[...sources.values()]} sourceExtra={method}>
+    <ul className="mb-2 flex list-none flex-wrap gap-x-4 gap-y-1 text-label leading-normal">{items.map((item, i) => <li className="group/series inline-flex flex-wrap items-center gap-x-2 gap-y-0 data-[dimmed]:text-muted-foreground" key={i} data-dimmed={item.dimmed || undefined}>
+      <span className="inline-block size-2.5 shrink-0 rounded-[2px] align-[-1px] group-data-[dimmed]/series:opacity-60" aria-hidden="true" style={{ background: item.color }} />{item.label}
       <StatusList entries={item.status.entries} />
     </li>)}</ul>
-    {!aligned && first && <p className="view-chart-note">Showing the last synchronized interval while readings refresh.</p>}
-    {since && <p className="view-chart-note">History since {timeLabel(Date.parse(since), { weekday: !sameDay(Date.parse(since), Date.now()) })}</p>}
-    {first ? <div className="view-chart-scroll" role="region" tabIndex={0} aria-label={`${title}, average line with minimum to maximum band`}>
+    {!aligned && first && <p className="mb-2 text-label leading-normal text-muted-foreground">Showing the last synchronized interval while readings refresh.</p>}
+    {since && <p className="mb-2 text-label leading-normal text-muted-foreground">History since {timeLabel(Date.parse(since), { weekday: !sameDay(Date.parse(since), Date.now()) })}</p>}
+    {first ? <div className="overflow-x-auto rounded-md" role="region" tabIndex={0} aria-label={`${title}, average line with minimum to maximum band`}>
       <ul className="sr-only">{items.map((item, i) => <li key={i}>{seriesSummary(item.label, item.data)}{item.dimmed ? " Unavailable." : ""}</li>)}</ul>
-      <ChartContainer className="view-chart-container" aria-hidden="true">
+      <ChartContainer className="h-[230px] w-full min-w-0" aria-hidden="true">
         <ComposedChart data={points} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} accessibilityLayer={false}>
           <CartesianGrid vertical={false} stroke="var(--gray-3)" />
           <XAxis dataKey="time" type="number" domain={[from, to]} ticks={x.map(tick => tick.value)} tickFormatter={value => xLabels.get(Number(value)) ?? ""} stroke="var(--gray-8)" tickLine={false} tickMargin={8} interval="preserveStart" minTickGap={12} />
@@ -114,13 +114,13 @@ export function TimeSeries({ title, series: inputs }: { title: string; series: A
             const bucket = first.buckets[index];
             if (!bucket) return null;
             const start = Date.parse(bucket.start);
-            return <div className="view-tooltip"><p>{timeLabel(start, { weekday: !sameDay(start, Date.now()) })}</p>
+            return <div className="grid gap-0.5 rounded-md border border-gray-4 bg-gray-2 px-2.5 py-2 text-label leading-normal text-foreground tabular-nums"><p className="text-muted-foreground">{timeLabel(start, { weekday: !sameDay(start, Date.now()) })}</p>
               {items.map((item, i) => {
                 const b = item.data?.buckets[index];
                 const digits = item.data?.format.fraction_digits;
                 const itemUnit = item.data?.format.unit_label ? ` ${item.data.format.unit_label}` : "";
                 const reading = b?.mean === null || b?.mean === undefined ? "no samples" : `avg ${b.mean.toFixed(digits)}${itemUnit} (${b.min?.toFixed(digits)}–${b.max?.toFixed(digits)})`;
-                return <p key={i}><span className="view-chart-swatch" aria-hidden="true" style={{ background: item.color }} />{item.label} {reading}{item.dimmed ? " (unavailable)" : ""}</p>;
+                return <p key={i}><span className="me-1.5 inline-block size-2.5 shrink-0 rounded-[2px] align-[-1px]" aria-hidden="true" style={{ background: item.color }} />{item.label} {reading}{item.dimmed ? " (unavailable)" : ""}</p>;
               })}</div>;
           }} />
           {items.map((item, i) => item.dimmed ? null : <Area key={`band${i}`} type="linear" dataKey={`band${i}`} stroke="none" fill={item.color} fillOpacity={0.12} connectNulls={false} isAnimationActive={false} />)}
@@ -128,7 +128,7 @@ export function TimeSeries({ title, series: inputs }: { title: string; series: A
             dot={{ r: 2, strokeWidth: 0, fill: item.color, fillOpacity: item.dimmed ? 0.6 : 1 }} connectNulls={false} isAnimationActive={false} />)}
         </ComposedChart>
       </ChartContainer>
-    </div> : <p className="view-empty">{aligned ? "Historical readings will appear here." : "Synchronizing series intervals…"}</p>}
+    </div> : <p className="py-6 text-label leading-normal text-muted-foreground">{aligned ? "Historical readings will appear here." : "Synchronizing series intervals…"}</p>}
   </CardFrame>;
 }
 export function BoundTimeSeries({ title, series }: { title: string; series: Array<{ source: NumericSource & { window: SeriesWindow }; label?: string }> }) {

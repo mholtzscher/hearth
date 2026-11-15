@@ -3,6 +3,8 @@ import { TextField } from "../../editor/TextField";
 import type { SensorChoice } from "../time-series/Editor";
 import { choicesOf } from "./category";
 import { airPurifierSchema, type AirPurifierProps, type AirPurifierRole } from "./schema";
+import { NativeSelect } from "../../../../components/ui/native-select";
+import { EditorLabel } from "../../editor/EditorLabel";
 
 const labels: Record<AirPurifierRole, string> = { power: "Power", pm25: "PM2.5", filter_life: "Filter life", mode: "Mode", fan_level: "Fan level", display: "Display", child_lock: "Child lock" };
 const roles: AirPurifierRole[] = ["power", "pm25", "filter_life", "mode", "fan_level", "display", "child_lock"];
@@ -22,13 +24,13 @@ export function AirPurifierEditor({ value, choices, onChange }: { value: AirPuri
   const deviceId = choices.find(choice => choice.id === value.power.entity_id)?.device_id;
   return <>
     <TextField label="Card label" value={value.label ?? ""} optional schema={airPurifierSchema.shape.label} errorMessage="Use at most 120 characters for the card label." onChange={label => onChange({ ...value, label: label || undefined })} />
-    <label>Layout<select value={value.layout} onChange={event => onChange({ ...value, layout: event.target.value as AirPurifierProps["layout"] })}><option value="card">Card</option><option value="tile">Tile</option></select></label>
+    <EditorLabel>Layout<NativeSelect size="auto" value={value.layout} onChange={event => onChange({ ...value, layout: event.target.value as AirPurifierProps["layout"] })}><option value="card">Card</option><option value="tile">Tile</option></NativeSelect></EditorLabel>
     {roles.map(role => {
       const current = value[role];
       const used = new Set(roles.filter(other => other !== role).map(other => value[other]?.entity_id));
       const candidates = choices.filter(choice => compatible(role, choice) && (role === "power" || (deviceId !== undefined && choice.device_id === deviceId)) && !used.has(choice.id));
       const missing = current && !candidates.some(choice => choice.id === current.entity_id);
-      return <label key={role}>{labels[role]}<select value={current?.entity_id ?? ""} onChange={event => {
+      return <EditorLabel key={role}>{labels[role]}<NativeSelect size="auto" value={current?.entity_id ?? ""} onChange={event => {
         const selected = candidates.find(choice => choice.id === event.target.value);
         if (!selected) { if (role !== "power" && role !== "pm25") onChange({ ...value, [role]: undefined }); return; }
         const source = { kind: "entity-state", entity_id: selected.id, entity_type: selected.type };
@@ -50,7 +52,7 @@ export function AirPurifierEditor({ value, choices, onChange }: { value: AirPuri
         {role === "pm25" && !current?.entity_id && <option value="">Choose a sensor…</option>}
         {missing && current.entity_id && <option value={current.entity_id}>Existing source · {current.entity_id}</option>}
         {candidates.map(choice => <option key={choice.id} value={choice.id}>{choice.device_name ? `${choice.device_name} · ` : ""}{choice.name}</option>)}
-      </select></label>;
+      </NativeSelect></EditorLabel>;
     })}
     {deviceId === undefined && <p>Device information is unavailable. Existing source selections are preserved.</p>}
   </>;

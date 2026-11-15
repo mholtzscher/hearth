@@ -69,9 +69,9 @@ it("shows pinned ranges in words and keeps gaps in a trend", () => {
   const data: SeriesData = { from: at, to: at, format: { fraction_digits: 0, unit_label: "%" }, buckets: [10, 20, null, 30, 40].map(value => ({ start: at, end: at, min: value, max: value, mean: value })) };
   render(<Metric label="Brightness" range trend={{ window: "1h", resource: { ...ready, data } }} resource={{ ...ready, data: { value: 120, format: data.format, range: { minimum: 0, maximum: 100 }, observed_at: at } }} />, { wrapper: MemoryRouter });
   expect(screen.getByText("Above the 100 % range")).toBeTruthy();
-  expect(document.querySelector<HTMLElement>(".view-range-marker")?.style.left).toBe("100%");
-  expect(document.querySelector(".view-trend-mean")?.getAttribute("d")?.match(/M/g)).toHaveLength(2);
-  expect(document.querySelector(".view-trend-now")).toBeNull();
+  expect(document.querySelector<HTMLElement>('[data-slot="range-marker"]')?.style.left).toBe("100%");
+  expect(document.querySelector('[data-slot="trend-mean"]')?.getAttribute("d")?.match(/M/g)).toHaveLength(2);
+  expect(document.querySelector('[data-slot="trend"] circle')).toBeNull();
   expect(screen.getByText("1 h range 10–40 %")).toBeTruthy();
 });
 
@@ -96,7 +96,7 @@ it("Device handles never observed colors and skips event sources, not malformed 
 it("renders RGB in the light composite without a duplicate color row", () => {
   const data = parseDevice({ id: deviceId, name: "Lamp", entities: [entity("power", true), entity("brightness", 64, 2), entity("colorrgb", { active: true, red: 12, green: 128, blue: 255 }, 3), entity("textsensor", "Good", 4)] }, deviceId);
   render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} />, { wrapper: MemoryRouter });
-  expect(document.querySelector<HTMLElement>(".view-light-swatch")?.style.backgroundColor).toBe("rgb(12, 128, 255)");
+  expect(document.querySelector<HTMLElement>('[data-slot="light-swatch"]')?.style.backgroundColor).toBe("rgb(12, 128, 255)");
   expect(screen.getByText("RGB 12, 128, 255")).toBeTruthy();
   expect(screen.getByText("Good")).toBeTruthy();
   expect(document.querySelectorAll(".view-row")).toHaveLength(1);
@@ -136,7 +136,7 @@ it("renders projected color coordinates but requests canonical coordinates for t
   });
   render(<ViewDataProvider><BoundDevice device={{ kind: "device", device_id: deviceId }} /></ViewDataProvider>, { wrapper: MemoryRouter });
   expect(await screen.findByText(/X 0\.3127/)).toBeTruthy();
-  await waitFor(() => expect(document.querySelector<HTMLElement>(".view-light-swatch")?.style.backgroundColor).toBe("rgb(255, 255, 255)"));
+  await waitFor(() => expect(document.querySelector<HTMLElement>('[data-slot="light-swatch"]')?.style.backgroundColor).toBe("rgb(255, 255, 255)"));
   expect(fetch.mock.calls.some(([url]) => String(url).includes("units=canonical"))).toBe(true);
   expect(fetch.mock.calls.some(([url]) => !String(url).includes("units=canonical"))).toBe(true);
 });
@@ -150,7 +150,7 @@ it("hides a stale XY swatch until its observation matches, including after a can
   const canonical = parseDevice({ id: deviceId, name: "Lamp", entities: [canonicalColor] }, deviceId);
   const card = (data: typeof canonical, error?: string) => <DeviceCard deviceId={deviceId} resource={{ status: "ready", data: device }} canonical={data} canonicalError={error} />;
   const view = render(card(canonical), { wrapper: MemoryRouter });
-  const swatch = () => document.querySelector<HTMLElement>(".view-light-swatch")!.style.backgroundColor;
+  const swatch = () => document.querySelector<HTMLElement>('[data-slot="light-swatch"]')!.style.backgroundColor;
   expect(swatch()).toBe("");
   expect(screen.getByText("Color preview unavailable; canonical reading is missing or out of date.")).toBeTruthy();
   const matching = { ...canonical, entities: canonical.entities.map(item => ({ ...item, state: { ...item.state!, observation_id: "obs_3" } })) };
@@ -190,8 +190,8 @@ it("does not use a hidden inactive color for the Device footer or afterglow", ()
   expect(document.querySelector('[data-slot="card-arrival"]')).toBeNull();
   const unavailable = { ...data, entities: data.entities.map(e => e.type === "hearth.colorhs/v1" ? { ...e, availability: { status: "unavailable" } } : e) };
   view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: unavailable }} />);
-  expect(document.querySelector(".view-light-swatch")?.hasAttribute("data-dimmed")).toBe(true);
-  expect(document.querySelector(".view-light-detail [data-dimmed]")).toBeTruthy();
+  expect(document.querySelector('[data-slot="light-swatch"]')?.hasAttribute("data-dimmed")).toBe(true);
+  expect(document.querySelector('[data-slot="light-detail"] [data-dimmed]')).toBeTruthy();
 });
 
 it("names a refresh failure even with an empty Device or an empty history interval", () => {
@@ -214,7 +214,7 @@ it("observes color-mode changes that select a new light color and reports select
   const unavailable = { ...updated, entities: updated.entities.map(e => e.type === "hearth.colormode/v1" ? { ...e, availability: { status: "unavailable" } } : e) };
   view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: unavailable }} />);
   expect(screen.getByText("Unavailable")).toBeTruthy();
-  expect(document.querySelector(".view-light-status")?.textContent).toContain("colormode");
+  expect(document.querySelector('[data-slot="light-status"]')?.textContent).toContain("colormode");
 });
 
 it("dims an off light's retained brightness independently of color", () => {

@@ -10,7 +10,7 @@ import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates, ty
  */
 export function ReadingList({ title, rows }: { title: string; rows: ReadingRow[] }) {
   const states = rowStates(rows);
-  return <CardFrame className="view-reading-list" title={title} status={[]} observedAt={oldestObservation(states)} observedLabel="Oldest reading"
+  return <CardFrame title={title} status={[]} observedAt={oldestObservation(states)} observedLabel="Oldest reading"
     arrivals={listArrivals(states)} sources={rowSources(rows)}>
     <ReadingRows rows={states} />
   </CardFrame>;

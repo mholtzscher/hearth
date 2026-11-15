@@ -6,6 +6,8 @@ import type { SensorChoice } from "../time-series/Editor";
 import { sensorUnits } from "../weather/schema";
 import { SlotSelect } from "../weather/SlotSelect";
 import { rainPeriods, rainSchema } from "./schema";
+import { NativeSelect } from "../../../../components/ui/native-select";
+import { EditorLabel } from "../../editor/EditorLabel";
 
 type Value = z.infer<typeof rainSchema>;
 const totalLabels = { day: "Today's total", week: "This week's total", month: "This month's total", year: "This year's total" } as const;
@@ -20,8 +22,8 @@ export function RainEditor({ value, choices, onChange }: { value: Value; choices
       const totals = { ...value.totals, [period]: source };
       onChange({ ...value, totals: rainPeriods.some(key => totals[key]) ? totals : undefined });
     }} />)}
-    <label>Trend<select value={value.trend ?? ""} onChange={event => onChange({ ...value, trend: event.target.value ? event.target.value as SeriesWindow : undefined })}>
+    <EditorLabel>Trend<NativeSelect size="auto" value={value.trend ?? ""} onChange={event => onChange({ ...value, trend: event.target.value ? event.target.value as SeriesWindow : undefined })}>
       <option value="">No trend</option>{seriesWindows.map(window => <option key={window} value={window}>{window}</option>)}
-    </select></label>
+    </NativeSelect></EditorLabel>
   </>;
 }

@@ -8,7 +8,7 @@ const meta = {
   title: "features/views/cards/TimeSeriesEditor",
   component: TimeSeriesEditor,
   tags: ["ai-generated"],
-  decorators: [Story => <div className="view-editor"><Story /></div>],
+  decorators: [Story => <div className="grid gap-3 text-label leading-normal"><Story /></div>],
   args: {
     value: {
       title: "Temperatures",

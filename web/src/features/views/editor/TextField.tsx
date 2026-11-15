@@ -1,5 +1,8 @@
 import { useId, type ChangeEvent } from "react";
 import type { z } from "zod";
+import { Input } from "../../../components/ui/input";
+import { Textarea } from "../../../components/ui/textarea";
+import { EditorLabel } from "./EditorLabel";
 
 /** Validate text with its catalog schema while retaining intermediate edits. */
 export function TextField({ label, value, onChange, schema, errorMessage, placeholder, multiline = false, optional = false }: {
@@ -20,9 +23,9 @@ export function TextField({ label, value, onChange, schema, errorMessage, placeh
     "aria-invalid": invalid || undefined,
     "aria-describedby": invalid ? `${id}-error` : undefined,
   };
-  return <div className="view-editor-field">
-    <label htmlFor={id}>{label}</label>
-    {multiline ? <textarea {...input} /> : <input {...input} />}
-    {invalid && <p className="view-field-error" id={`${id}-error`}>{errorMessage}</p>}
+  return <div>
+    <EditorLabel htmlFor={id}>{label}</EditorLabel>
+    {multiline ? <Textarea {...input} /> : <Input size="auto" {...input} />}
+    {invalid && <p className="text-destructive" id={`${id}-error`}>{errorMessage}</p>}
   </div>;
 }

@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { Input } from "./input.tsx";
 import { expectNoHorizontalOverflow } from "../../../.storybook/play.ts";
-import { expectFieldFocus, expectFieldSize, expectHouseholdField } from "./field-story-assertions.ts";
+import { expectFieldFocus, expectFieldSize } from "./field-story-assertions.ts";
 
 const meta = {
   component: Input,
@@ -77,21 +77,5 @@ export const Search: Story = {
     await expect(input).toHaveValue("temperature");
     await userEvent.clear(input);
     await expect(input).toHaveValue("");
-  },
-};
-
-/** Temporary household reference; remove when the editor adopts Input. */
-export const HouseholdComparison: Story = {
-  render: () => (
-    <div className="grid gap-4">
-      <div className="view-editor">
-        <input aria-label="Legacy dashboard name" defaultValue="Living room" />
-      </div>
-      <Input size="touch" aria-label="Shared dashboard name" defaultValue="Living room" />
-    </div>
-  ),
-  play: async ({ canvas, canvasElement }) => {
-    await expectHouseholdField(canvas.getByRole("textbox", { name: "Shared dashboard name" }), canvas.getByRole("textbox", { name: "Legacy dashboard name" }));
-    await expectNoHorizontalOverflow(canvasElement);
   },
 };

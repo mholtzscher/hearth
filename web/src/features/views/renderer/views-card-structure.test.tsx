@@ -46,7 +46,7 @@ it("dims an unavailable reading, leads with its status, and links Source to the 
   const card = await screen.findByRole("article", { name: "Garage temperature" });
   const status = await within(card).findByText("Unavailable");
   expect(status.closest("li")?.getAttribute("data-tone")).toBe("warn");
-  expect(card.querySelector(".view-metric-value")?.getAttribute("data-value")).toBe("dimmed");
+  expect(within(card).getByText("20.0").getAttribute("data-value")).toBe("dimmed");
   expect(card.querySelector('[data-slot="card-arrival"]')).toBeNull();
   const toggle = within(card).getByRole("button", { name: "Source" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -73,10 +73,10 @@ it("separates combined statuses into distinct list items", async () => {
 });
 
 it.each([
-  ["single readings", ["Metric", "State"], "view-grid-reading"],
-  ["quick switches", ["ToggleTile", "ToggleTile"], "view-grid-toggle"],
-  ["purifier tiles", ["AirPurifierTile", "AirPurifierTile"], "view-grid-toggle"],
-  ["purifier tiles and switches", ["AirPurifierTile", "ToggleTile"], "view-grid-toggle"],
+  ["single readings", ["Metric", "State"], "reading"],
+  ["quick switches", ["ToggleTile", "ToggleTile"], "toggle"],
+  ["purifier tiles", ["AirPurifierTile", "AirPurifierTile"], "toggle"],
+  ["purifier tiles and switches", ["AirPurifierTile", "ToggleTile"], "toggle"],
   ["purifier card mixed with tiles", ["AirPurifierTile", "AirPurifierCard"], null],
   ["mixed content", ["Metric", "Heading"], null],
 ])("selects the compact grid layout only for %s", async (_name, types, expected) => {
@@ -89,7 +89,7 @@ it.each([
     ...elements, root: { type: "Grid", props: { columns: 3 }, children: types.map((_, i) => `child${i}`) },
   } } };
   const { container } = await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={definition} /></ViewDataProvider>, { wrapper: MemoryRouter }));
-  const grid = container.querySelector<HTMLElement>(".view-grid")!;
-  expect([...grid.classList]).toEqual(expected ? ["view-grid", expected] : ["view-grid"]);
+  const grid = container.querySelector<HTMLElement>('[data-slot="view-grid"]')!;
+  expect(grid.getAttribute("data-grid-kind")).toBe(expected);
   expect(grid.style.getPropertyValue("--view-columns")).toBe("3");
 });

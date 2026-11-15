@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import { Button } from "../../../components/ui/button";
+import { NativeSelect } from "../../../components/ui/native-select";
 import { apiFetch, useBaseUrlVersion } from "../../../api/client";
 import { definitionSchema, type ViewDefinition, type ViewElement } from "../catalog";
 import { parseDefinition } from "../catalog/compatibility";
@@ -25,6 +27,7 @@ import { fieldTypes } from "../bindings/state-fields";
 import { quantitySchema } from "../bindings/quantity";
 import { headingSchema, noteSchema } from "../cards/text/schema";
 import { TextField } from "./TextField";
+import { EditorLabel } from "./EditorLabel";
 
 const entityPage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string(), type: z.string(), support: z.unknown().optional(), quantities: z.record(z.string(), quantitySchema).optional(), device_id: z.string().optional() })), next_cursor: z.string().nullish() });
 const devicePage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string() })), next_cursor: z.string().nullish() });
@@ -75,11 +78,11 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
   const validation = definitionSchema.safeParse(working);
   const invalidNodes = new Set(validation.success ? [] : validation.error.issues.flatMap(issue =>
     issue.path[0] === "spec" && issue.path[1] === "elements" ? [String(issue.path[2])] : []));
-  return <div className="view-editor">
+  return <div className="grid gap-3 text-label leading-normal">
     <p>Changes stay in this draft until you save.</p>
     {error && <p role="status">{error}</p>}
     <TextField label="Dashboard title" value={working.title} onChange={title => update({ ...working, title })} schema={definitionSchema.shape.title} errorMessage="Use 1–80 characters for the dashboard title." />
-    {Object.entries(working.spec.elements).map(([key, node]) => <details key={key}><summary>{node.type} · {key}{invalidNodes.has(key) && <span className="invalid-fields"> · Fix invalid fields</span>}</summary>
+    {Object.entries(working.spec.elements).map(([key, node]) => <details key={key} className="border-t border-border pt-2"><summary className="min-h-11 cursor-pointer content-center">{node.type} · {key}{invalidNodes.has(key) && <span className="text-destructive"> · Fix invalid fields</span>}</summary>
       {node.type === "Metric" && <MetricEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
       {node.type === "State" && <StateEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
       {node.type === "ReadingList" && <ReadingListEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
@@ -97,12 +100,12 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
       {node.type === "Forecast" && <ForecastEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "TimeSeries" && <TimeSeriesEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {(node.type === "Heading" || node.type === "Note") && <TextField label="Text" multiline value={node.props.text} onChange={text => element(key, { ...node, props: { text } })} schema={node.type === "Heading" ? headingSchema.shape.text : noteSchema.shape.text} errorMessage={`Use 1–${node.type === "Heading" ? 120 : 500} characters for this ${node.type.toLowerCase()}.`} />}
-      {node.type === "Grid" && <label>Columns<select value={node.props.columns} onChange={event => element(key, { ...node, props: { columns: gridSchema.shape.columns.parse(Number(event.target.value)) } })}><option>1</option><option>2</option><option>3</option><option>4</option></select></label>}
-      {(node.type === "Grid" || node.type === "Stack") && <ol>{node.children.map((child, index) => <li key={child}>{child} <button type="button" disabled={index === 0} aria-label={`Move ${child} up`} onClick={() => {
+      {node.type === "Grid" && <EditorLabel>Columns<NativeSelect size="auto" value={node.props.columns} onChange={event => element(key, { ...node, props: { columns: gridSchema.shape.columns.parse(Number(event.target.value)) } })}><option>1</option><option>2</option><option>3</option><option>4</option></NativeSelect></EditorLabel>}
+      {(node.type === "Grid" || node.type === "Stack") && <ol>{node.children.map((child, index) => <li key={child}>{child} <Button variant="outline" size="icon-touch" type="button" disabled={index === 0} aria-label={`Move ${child} up`} onClick={() => {
         const children = [...node.children]; [children[index - 1], children[index]] = [children[index], children[index - 1]]; element(key, { ...node, children });
-      }}>↑</button><button type="button" disabled={index === node.children.length - 1} aria-label={`Move ${child} down`} onClick={() => {
+      }}>↑</Button><Button variant="outline" size="icon-touch" type="button" disabled={index === node.children.length - 1} aria-label={`Move ${child} down`} onClick={() => {
         const children = [...node.children]; [children[index], children[index + 1]] = [children[index + 1], children[index]]; element(key, { ...node, children });
-      }}>↓</button></li>)}</ol>}
+      }}>↓</Button></li>)}</ol>}
     </details>)}
   </div>;
 }

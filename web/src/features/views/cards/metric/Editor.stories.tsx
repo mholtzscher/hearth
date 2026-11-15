@@ -8,7 +8,7 @@ const meta = {
   title: "features/views/cards/MetricEditor",
   component: MetricEditor,
   tags: ["ai-generated"],
-  decorators: [Story => <div className="view-editor"><Story /></div>],
+  decorators: [Story => <div className="grid gap-3 text-label leading-normal"><Story /></div>],
   args: {
     value: {
       label: "Outdoor humidity", trend: "24h", range: true,

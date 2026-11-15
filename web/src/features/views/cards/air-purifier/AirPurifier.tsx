@@ -3,6 +3,7 @@ import { PowerSwitch } from "../../controls/PowerSwitch";
 import { SharedControlStatus, type StatusControl } from "../../controls/SharedControlStatus";
 import { supportsOperation } from "../../controls/support";
 import { CardFrame, StatusList } from "../CardFrame";
+import { Reading, ReadingRow, ReadingUnit } from "../Reading";
 import { useArrival } from "../observation";
 import { listArrivals, oldestObservation, shownReading } from "../reading-list/ReadingRows";
 import { FanStepper } from "./FanStepper";
@@ -16,14 +17,17 @@ type Row = ReturnType<typeof usePurifier>["rows"][number];
 function NumericRow({ row, hideUnavailable }: { row: Row; hideUnavailable: boolean }) {
   const data = row.data && "value" in row.data ? row.data : undefined;
   const glow = useArrival(data ? { updatedAt: data.observed_at, shown: shownReading(data), eligible: row.status.glows } : undefined);
-  return <li className="view-row">
-    {glow !== undefined && <span key={glow} className="view-row-arrival" aria-hidden="true" />}
-    <span className="view-row-name">{row.name}</span>
-    {row.key === "pm25" && data && <Category value={data.value} dimmed={row.status.value === "dimmed"} />}
-    <span className="view-row-value" data-value={row.status.value}>{data ? <>{data.value.toFixed(data.format.fraction_digits)}<small>{data.format.unit_label}</small></> : "—"}</span>
-    {row.key === "filter_life" && data && data.value <= 10 && <span className="view-air-purifier-note">Replace the filter soon</span>}
-    <StatusList className="basis-full" entries={hideUnavailable ? row.status.entries.filter(entry => entry.key !== "unavailable") : row.status.entries} />
-  </li>;
+  return <ReadingRow name={row.name} value={row.status.value} arrival={glow} className="border-t border-border"
+    beforeValue={row.key === "pm25" && data && <Category value={data.value} dimmed={row.status.value === "dimmed"} />}
+    afterValue={row.key === "filter_life" && data && data.value <= 10 && <span className="basis-full text-warning">Replace the filter soon</span>}
+    status={hideUnavailable ? row.status.entries.filter(entry => entry.key !== "unavailable") : row.status.entries}>
+    {data ? <>{data.value.toFixed(data.format.fraction_digits)}<ReadingUnit className="ms-[3px]">{data.format.unit_label}</ReadingUnit></> : "—"}
+  </ReadingRow>;
+}
+
+function RoleStatus({ row, hideUnavailable }: { row: Row; hideUnavailable: boolean }) {
+  const entries = hideUnavailable ? row.status.entries.filter(entry => entry.key !== "unavailable") : row.status.entries;
+  return entries.length > 0 ? <div className="mb-2 flex flex-wrap gap-x-2 gap-y-0.5 text-muted-foreground"><span>{row.name}</span><StatusList entries={entries} /></div> : null;
 }
 
 export function AirPurifierCard({ props, title }: { props: AirPurifierProps; title: string }) {
@@ -49,18 +53,18 @@ export function AirPurifierCard({ props, title }: { props: AirPurifierProps; tit
     (item.key === "mode" && observedMode !== undefined) ||
     (item.key === "fan_level" && (controllable("fan_level") || observedMode === "manual")) ||
     ((item.key === "display" || item.key === "child_lock") && controllable(item.key)));
-  return <CardFrame title={title} className="view-air-purifier" status={status} observedAt={oldestObservation(shown)} observedLabel="Oldest reading" arrivals={listArrivals(numeric)} sources={sources} sourceExtra={sourceExtra}>
-    <div className="view-air-purifier-head"><div><p className="view-metric-value" data-value={power?.status.value}>{power?.data && "text" in power.data ? power.data.text : "—"}</p>
-      {observedMode && <p className="view-air-purifier-detail" data-value={mode?.status.value}>{choiceWords(observedMode)}{observedMode === "manual" && observedFan && ` · fan ${observedFan}`}</p>}</div>
+  return <CardFrame title={title} className="@container" status={status} observedAt={oldestObservation(shown)} observedLabel="Oldest reading" arrivals={listArrivals(numeric)} sources={sources} sourceExtra={sourceExtra}>
+    <div className="flex items-center gap-3.5 pb-3"><div className="min-w-0 flex-1"><Reading value={power?.status.value}>{power?.data && "text" in power.data ? power.data.text : "—"}</Reading>
+      {observedMode && <p data-slot="purifier-detail" className="text-gray-9 tabular-nums data-[value=dimmed]:text-gray-8" data-value={mode?.status.value}>{choiceWords(observedMode)}{observedMode === "manual" && observedFan && ` · fan ${observedFan}`}</p>}</div>
       {controllable("power") && <PowerSwitch entity={entities.power!} label={`${title} power`} />}
     </div>
     {power && <StatusList entries={allUnavailable ? power.status.entries.filter(entry => entry.key !== "unavailable") : power.status.entries} />}
-    <ul className="view-rows view-air-purifier-rows">{numeric.map(item => <NumericRow key={item.key} row={item} hideUnavailable={allUnavailable} />)}</ul>
+    <ul className="my-[-4px] grid list-none">{numeric.map(item => <NumericRow key={item.key} row={item} hideUnavailable={allUnavailable} />)}</ul>
     {controllable("mode") && <ModeControl entity={entities.mode!} label="Mode" />}
     {controllable("fan_level") && <FanStepper entity={entities.fan_level!} levels={choicesOf(entities.fan_level?.support).length} active={active} label="Fan level" />}
-    {(["mode", "fan_level"] as const).map(role => { const item = row(role); return item && item.status.entries.length > 0 && <div key={role} className="view-air-purifier-role-status"><span>{item.name}</span><StatusList entries={allUnavailable ? item.status.entries.filter(entry => entry.key !== "unavailable") : item.status.entries} /></div>; })}
-    {(controllable("display") || controllable("child_lock")) && <div className="view-air-purifier-settings">{(["display", "child_lock"] as const).map(role => controllable(role) && <div className="view-air-purifier-setting" key={role}><span>{role === "display" ? "Display" : "Child lock"}</span><PowerSwitch entity={entities[role]!} label={role === "display" ? "Display" : "Child lock"} /></div>)}</div>}
-    {(["display", "child_lock"] as const).map(role => { const item = row(role); return item && item.status.entries.length > 0 && <div key={role} className="view-air-purifier-role-status"><span>{item.name}</span><StatusList entries={allUnavailable ? item.status.entries.filter(entry => entry.key !== "unavailable") : item.status.entries} /></div>; })}
+    {(["mode", "fan_level"] as const).map(role => { const item = row(role); return item && <RoleStatus key={role} row={item} hideUnavailable={allUnavailable} />; })}
+    {(controllable("display") || controllable("child_lock")) && <div className="grid grid-cols-2 gap-x-5 gap-y-1 border-t border-border pt-3 pb-0.5 @max-[260px]:grid-cols-1">{(["display", "child_lock"] as const).map(role => controllable(role) && <div className="flex min-h-11 items-center justify-between gap-2.5 text-gray-9" key={role}><span>{role === "display" ? "Display" : "Child lock"}</span><PowerSwitch entity={entities[role]!} label={role === "display" ? "Display" : "Child lock"} /></div>)}</div>}
+    {(["display", "child_lock"] as const).map(role => { const item = row(role); return item && <RoleStatus key={role} row={item} hideUnavailable={allUnavailable} />; })}
     <SharedControlStatus controls={controls} />
   </CardFrame>;
 }

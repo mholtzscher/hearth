@@ -201,9 +201,9 @@ it("uses the established modal phone sheet and omits the trigger without color s
 
 it("places the wheel beside On, leaves the swatch passive, and shows brightness once", async () => {
   await mount([temperature()]);
-  const article = screen.getByRole("article"), row = article.querySelector(".view-light")!;
+  const article = screen.getByRole("article"), row = article.querySelector('[data-slot="light"]')!;
   expect(within(row as HTMLElement).getByRole("button", { name: /Adjust/ }).parentElement?.previousElementSibling?.textContent).toBe("On");
-  expect(row.querySelector(".view-light-swatch")?.tagName).toBe("SPAN");
+  expect(row.querySelector('[data-slot="light-swatch"]')?.tagName).toBe("SPAN");
   expect(row.querySelector('[data-slot="color-wheel-icon"]')).toBeTruthy();
   expect(within(article).getAllByText("64 %")).toHaveLength(1);
   expect(article.querySelectorAll('[data-slot="control-status"]')).toHaveLength(2);

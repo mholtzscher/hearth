@@ -14,12 +14,12 @@ import { cn, RADIUS_TOKENS, TEXT_TOKENS } from "./lib/utils.ts";
 /** Selectors that contain a class, by stylesheet. A stylesheet that is not listed may hold none. */
 const CLASS_SELECTORS: Record<string, number> = {
   ".storybook/preview.css": 3,
-  "src/legacy.css": 690,
+  "src/legacy.css": 338,
 };
 
 /** Raw <select>, <textarea>, and <input> elements outside components/ui, by directory. */
 const RAW_CONTROLS: Record<string, number> = {
-  "src/features": 37,
+  "src/features": 6,
   "src/pages": 1,
 };
 
