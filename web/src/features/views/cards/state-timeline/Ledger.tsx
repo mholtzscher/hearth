@@ -10,7 +10,7 @@ export function TimelineLedger({ rows, windowWords }: { rows: TimelineRow[]; win
       const status = cardStatus(row.resource);
       return <li key={row.key}>
         <span className="view-timeline-ledger-name">{row.label}</span><span className="view-timeline-total">{totalsText(row.resource.data?.timeline, row.trueWord)}</span>
-        <div className="view-timeline-current"><strong data-value={status.value}>{row.resource.data?.current?.text ?? "—"}</strong><span>{sinceText(row)}</span><StatusList entries={status.entries} /></div>
+        <div data-slot="timeline-current" className="view-timeline-current"><strong data-value={status.value}>{row.resource.data?.current?.text ?? "—"}</strong><span>{sinceText(row)}</span><StatusList entries={status.entries} /></div>
         <Track data={row.resource.data?.timeline} color="var(--gray-9)" dimmed={status.value === "dimmed"} compact />
       </li>;
     })}</ol>

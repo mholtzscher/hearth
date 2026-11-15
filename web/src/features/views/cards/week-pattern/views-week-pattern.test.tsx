@@ -18,11 +18,11 @@ const ready: Resolved<{ current?: TextData; week?: WeekPatternData }> = { status
 
 it("draws seven days with five levels, future cells and daily text summaries", () => {
   render(<WeekPattern label="Door" entityId={id} resource={ready} trueWord="Open" />, { wrapper: MemoryRouter });
-  expect(document.querySelectorAll(".view-week-hours")).toHaveLength(7);
-  expect(document.querySelectorAll(".view-week-hours .view-week-cell")).toHaveLength(168);
+  expect(document.querySelectorAll('[data-slot="week-hours"]')).toHaveLength(7);
+  expect(document.querySelectorAll('[data-slot="week-hours"] [data-slot="week-cell"]')).toHaveLength(168);
   for (let n = 0; n < 5; n++) expect(document.querySelector(`.view-week-hours [data-level="${n}"]`)).toBeTruthy();
-  expect(document.querySelectorAll(".view-week-hours [data-future]")).toHaveLength(11);
-  expect(document.querySelector(".view-week-grid")?.getAttribute("aria-hidden")).toBe("true");
+  expect(document.querySelectorAll('[data-slot="week-hours"] [data-future]')).toHaveLength(11);
+  expect(document.querySelector('[data-slot="week-grid"]')?.getAttribute("aria-hidden")).toBe("true");
   expect(screen.getAllByText(/times, .* open\./)).toHaveLength(7);
   expect(screen.getByText("Minutes open per hour")).toBeTruthy();
 });
@@ -101,7 +101,7 @@ it("renders both registered nodes through shared State and real change-response 
     return new Response(JSON.stringify({ ...base, kind: "summary", bucket: { duration: "1h0m0s", alignment: "range_start" }, buckets }));
   });
   render(<ViewDataProvider><ViewRenderer definition={definition} headingLevel={3} /></ViewDataProvider>, { wrapper: MemoryRouter });
-  await waitFor(() => expect(document.querySelectorAll(".view-week-hours")).toHaveLength(7));
+  await waitFor(() => expect(document.querySelectorAll('[data-slot="week-hours"]')).toHaveLength(7));
   expect(screen.getByRole("article", { name: "Changes" })).toBeTruthy();
   expect(screen.getByRole("article", { name: "Week" })).toBeTruthy();
   expect(fetch.mock.calls.filter(([url]) => !String(url).includes("/state/changes"))).toHaveLength(1);

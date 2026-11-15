@@ -16,7 +16,7 @@ export function TimelineFeed({ rows, windowWords }: { rows: TimelineRow[]; windo
   }
   const hasHistory = rows.some(row => row.resource.data?.timeline);
   return <div className="view-timeline-feed">{visible.length === 0 ? <p className="view-empty">{hasHistory ? `No changes in the last ${windowWords}` : "Historical readings will appear here."}</p> : groups.map(group => <section key={group.key}>
-    <h5>{group.label}</h5><ol>{group.entries.map(entry => <li key={`${entry.row}:${entry.at}`} className="view-timeline-feed-entry" style={{ "--timeline-color": `var(--chart-${(indices[entry.row] ?? 0) % 8 + 1})` } as CSSProperties}>
+    <h5>{group.label}</h5><ol>{group.entries.map(entry => <li key={`${entry.row}:${entry.at}`} data-slot="timeline-feed-entry" className="view-timeline-feed-entry" style={{ "--timeline-color": `var(--chart-${(indices[entry.row] ?? 0) % 8 + 1})` } as CSSProperties}>
       <time dateTime={new Date(entry.at).toISOString()}>{new Date(entry.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time><span className="view-timeline-rail" aria-hidden="true" /><div><b>{entry.label}</b> <span>{entry.text}</span>
         {entry.pulses && <div className="view-timeline-pulses" aria-hidden="true">{entry.pulses.map((pulse, i) => {
           const first = entry.pulses![0].from, last = Math.max(entry.pulses![entry.pulses!.length - 1].to, first + 1);

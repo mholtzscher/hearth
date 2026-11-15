@@ -24,10 +24,10 @@ export function WeekPattern({ label, entityId, resource, trueWord = "On" }: { la
     {week ? <>
       <div role="region" tabIndex={0} aria-label={`${label}, last 7 days`}>
         <ul className="sr-only">{week.days.map(day => { const total = dayTotals(day); return <li key={day.start}>{new Date(day.start).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}: {total.known ? `${total.count} times, ${durationWords(total.seconds)} ${trueWord.toLowerCase()}.${total.unknown ? " Some hours have no history." : ""}` : "No history."}</li>; })}</ul>
-        <div className="view-week-grid" aria-hidden="true"><span /><div className="view-week-axis"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span></div><span className="view-week-total">{trueWord}</span>
+        <div data-slot="week-grid" className="view-week-grid" aria-hidden="true"><span /><div className="view-week-axis"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span></div><span className="view-week-total">{trueWord}</span>
           {week.days.map((day, index) => { const total = dayTotals(day); return <div className="view-week-day" key={day.start}>
             <span>{index === 6 ? "Today" : new Date(day.start).toLocaleDateString([], { weekday: "short" })}</span>
-            <div className="view-week-hours">{day.hours.map((cell, hour) => <span key={hour} className="view-week-cell" data-level={level(cell.seconds) ?? undefined} data-unknown={cell.seconds === null && !cell.future || undefined} data-future={cell.future || undefined} />)}</div>
+            <div data-slot="week-hours" className="view-week-hours">{day.hours.map((cell, hour) => <span key={hour} data-slot="week-cell" className="view-week-cell" data-level={level(cell.seconds) ?? undefined} data-unknown={cell.seconds === null && !cell.future || undefined} data-future={cell.future || undefined} />)}</div>
             <span className="view-week-total">{total.known ? <><b>{total.count}×</b> {durationWords(total.seconds)}</> : "No history"}</span>
           </div>; })}
         </div>

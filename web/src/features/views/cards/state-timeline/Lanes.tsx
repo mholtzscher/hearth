@@ -25,19 +25,19 @@ export function sinceText(row: TimelineRow): string | undefined {
 
 export function Axis({ data }: { data?: TimelineData }) {
   if (!data) return null;
-  return <div className="view-timeline-axis" aria-hidden="true">{timeTicks(data.from, data.to).filter(tick => tick.value > data.from && tick.value < data.to - 0.12 * (data.to - data.from)).map(tick => <span key={tick.value} style={{ left: `${100 * (tick.value - data.from) / (data.to - data.from)}%` }}>{tick.label}</span>)}<span className="view-timeline-axis-end">Now</span></div>;
+  return <div data-slot="timeline-axis" className="view-timeline-axis" aria-hidden="true">{timeTicks(data.from, data.to).filter(tick => tick.value > data.from && tick.value < data.to - 0.12 * (data.to - data.from)).map(tick => <span key={tick.value} style={{ left: `${100 * (tick.value - data.from) / (data.to - data.from)}%` }}>{tick.label}</span>)}<span className="view-timeline-axis-end">Now</span></div>;
 }
 
 export function Track({ data, color, dimmed, compact = false }: { data?: TimelineData; color: string; dimmed: boolean; compact?: boolean }) {
-  if (!data) return <div className="view-timeline-track" data-dimmed={dimmed || undefined} aria-hidden="true" />;
+  if (!data) return <div data-slot="timeline-track" className="view-timeline-track" data-dimmed={dimmed || undefined} aria-hidden="true" />;
   const ranked = [...data.totals].filter(total => total.truthy === null).sort((a, b) => b.seconds - a.seconds);
   const ranks = new Map(ranked.map((total, index) => [total.text, index]));
-  return <div className={`view-timeline-track${compact ? " view-timeline-track-compact" : ""}`} data-dimmed={dimmed || undefined} style={{ "--timeline-color": color } as CSSProperties} aria-hidden="true">
+  return <div data-slot="timeline-track" data-compact={compact || undefined} className={`view-timeline-track${compact ? " view-timeline-track-compact" : ""}`} data-dimmed={dimmed || undefined} style={{ "--timeline-color": color } as CSSProperties} aria-hidden="true">
     {data.intervals.map((interval, index) => {
       if (interval.kind === "absent" || (interval.kind === "value" && interval.truthy === false)) return null;
       const rank = interval.kind === "value" && interval.truthy === null ? ranks.get(interval.text) ?? 0 : 0;
       const text = interval.kind === "unknown" ? "No history" : interval.text;
-      return <span key={index} className="view-timeline-segment" data-unknown={interval.kind === "unknown" || undefined} data-rank={rank > 1 ? 2 : rank} style={{ left: `${100 * (interval.from - data.from) / (data.to - data.from)}%`, width: `${100 * (interval.to - interval.from) / (data.to - data.from)}%` }}>
+      return <span key={index} data-slot="timeline-segment" className="view-timeline-segment" data-unknown={interval.kind === "unknown" || undefined} data-rank={rank > 1 ? 2 : rank} style={{ left: `${100 * (interval.from - data.from) / (data.to - data.from)}%`, width: `${100 * (interval.to - interval.from) / (data.to - data.from)}%` }}>
         {!compact && (interval.kind === "unknown" || interval.truthy === null) && <span>{text}</span>}
       </span>;
     })}

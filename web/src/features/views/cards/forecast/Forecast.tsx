@@ -37,9 +37,9 @@ function Daily({ periods, now }: { periods: DailyPeriod[]; now: number }) {
       <span className="forecast-day" aria-hidden="true">{p.date === localDate(now) ? "Today" : weekday(dateValue(p.date))}</span>
       <ForecastIcon condition={p.condition} />
       <span className="forecast-chance" aria-hidden="true">{probability}</span>
-      <span className="forecast-temp forecast-low" aria-hidden="true">{temperature(p.temperature_min, p.quantities.temperature_min, true)}</span>
-      <span className="forecast-range" aria-hidden="true">{bar && <span style={{ left: `${(p.temperature_min! - min) / range * 100}%`, right: `${100 - (p.temperature_max! - min) / range * 100}%` }} />}</span>
-      <span className="forecast-temp" aria-hidden="true">{temperature(p.temperature_max, p.quantities.temperature_max, true)}</span>
+      <span data-slot="forecast-temp" data-low className="forecast-temp forecast-low" aria-hidden="true">{temperature(p.temperature_min, p.quantities.temperature_min, true)}</span>
+      <span data-slot="forecast-range" className="forecast-range" aria-hidden="true">{bar && <span style={{ left: `${(p.temperature_min! - min) / range * 100}%`, right: `${100 - (p.temperature_max! - min) / range * 100}%` }} />}</span>
+      <span data-slot="forecast-temp" className="forecast-temp" aria-hidden="true">{temperature(p.temperature_max, p.quantities.temperature_max, true)}</span>
     </li>;
   })}</ul></div>;
 }
@@ -85,9 +85,9 @@ function Hourly({ periods, count }: { periods: HourlyPeriod[]; count: number }) 
     const command = drawing ? "L" : "M"; drawing = true;
     return `${command}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
   }).join("");
-  return <><div className="forecast-legend" aria-hidden="true"><span>Temperature{unit && ` ${unit}`}</span><span>Chance of precipitation</span></div>
+  return <><div data-slot="forecast-legend" className="forecast-legend" aria-hidden="true"><span>Temperature{unit && ` ${unit}`}</span><span>Chance of precipitation</span></div>
     <div ref={plotRef} className="view-chart-scroll" role="img" tabIndex={0} aria-label={summary}>
-      <svg className="forecast-chart" width={width} height={216} viewBox={`0 0 ${width} 216`} aria-hidden="true">
+      <svg data-slot="forecast-chart" className="forecast-chart" width={width} height={216} viewBox={`0 0 ${width} 216`} aria-hidden="true">
         <line className="forecast-grid" x1="0" x2={width} y1="176" y2="176" />
         {periods.map((p, i) => {
           const date = new Date(p.starts_at), probability = p.precipitation_probability;
@@ -98,12 +98,12 @@ function Hourly({ periods, count }: { periods: HourlyPeriod[]; count: number }) 
             ? x(i - 1) + (new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() - previous) / (date.getTime() - previous) * (x(i) - x(i - 1))
             : undefined;
           return <g key={p.starts_at}>
-            {midnight !== undefined && <><line className="forecast-midnight" x1={midnight} x2={midnight} y1="10" y2="176" /><text x={midnight} y="212" textAnchor="middle">{weekday(date)}</text></>}
-            {probability !== undefined && probability >= 10 && <rect className="forecast-bar" x={x(i) - 7} y={176 - 26 * probability / 100} width="14" height={26 * probability / 100} rx="2" />}
-            {i % step === 0 && <><ForecastIcon condition={p.condition} x={x(i) - 12} y={8} />{values[i] !== undefined && <text className="forecast-temp-label" x={x(i)} y={y(values[i]!) - 8} textAnchor="middle">{temperature(p.temperature, p.quantities.temperature, true)}</text>}<text x={x(i)} y="192" textAnchor="middle">{i === 0 ? "Now" : hour(date)}</text></>}
+            {midnight !== undefined && <><line data-slot="forecast-midnight" className="forecast-midnight" x1={midnight} x2={midnight} y1="10" y2="176" /><text x={midnight} y="212" textAnchor="middle">{weekday(date)}</text></>}
+            {probability !== undefined && probability >= 10 && <rect data-slot="forecast-bar" className="forecast-bar" x={x(i) - 7} y={176 - 26 * probability / 100} width="14" height={26 * probability / 100} rx="2" />}
+            {i % step === 0 && <><ForecastIcon condition={p.condition} x={x(i) - 12} y={8} />{values[i] !== undefined && <text data-slot="forecast-temp-label" className="forecast-temp-label" x={x(i)} y={y(values[i]!) - 8} textAnchor="middle">{temperature(p.temperature, p.quantities.temperature, true)}</text>}<text x={x(i)} y="192" textAnchor="middle">{i === 0 ? "Now" : hour(date)}</text></>}
           </g>;
         })}
-        <path className="forecast-line" d={path} />
+        <path data-slot="forecast-line" className="forecast-line" d={path} />
       </svg>
     </div></>;
 }
@@ -124,7 +124,7 @@ export function BoundForecast({ label, source, periods }: Props) {
     arrival={data ? { updatedAt: data.observed_at, shown: JSON.stringify(shown), eligible: status.glows } : undefined}
     sources={metadata ? [{ entityId: metadata.id, label: metadata.label, availability: metadata.availability, enabled: metadata.enabled }] : []}
     sourceExtra={<p>Modeled forecast from the bound Entity's Adapter; periods that have ended are hidden.</p>}>
-    <div data-value={status.value} className="forecast-body">
+    <div data-slot="forecast-body" data-value={status.value} className="forecast-body">
       {!data ? <p className="view-metric-value" data-value="empty" aria-hidden="true">—</p> : data.kind === "hourly" ?
         hours.length ? <Hourly periods={hours} count={count} /> : <p>Every hour in the last forecast has passed.</p> :
         days.length ? <>{partial && <p className="forecast-note">Showing the remaining days of a forecast from {weekday(new Date(data.observed_at))}.</p>}<Daily periods={days} now={now} /></> : <p>Every day in the last forecast has passed.</p>}
