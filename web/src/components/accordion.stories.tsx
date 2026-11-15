@@ -3,6 +3,7 @@ import { expect } from "storybook/test";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./accordion";
 
 const meta = {
+  title: "Components/Accordion",
   component: Accordion,
   tags: ["ai-generated"],
   args: {

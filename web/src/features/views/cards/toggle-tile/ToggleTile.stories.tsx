@@ -6,7 +6,7 @@ import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundToggleTile } from "./ToggleTile";
 
 const meta = {
-  title: "features/views/cards/ToggleTile",
+  title: "Components/Cards/ToggleTile",
   component: BoundToggleTile,
   tags: ["ai-generated"],
   args: {

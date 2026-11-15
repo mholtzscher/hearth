@@ -10,6 +10,11 @@ and the Command queue. HTTP requests use synthetic, story-local household data.
 
 ## Find an example
 
+Browse shared UI directly under `Components`, cards under `Components/Cards`,
+feature controls under `Components/Controls`, and editors under
+`Components/Editors`. AutomationCard belongs with Cards and AutomationEditor
+with Editors. These catalog groups do not move the feature-owned source files.
+
 The sidebar includes every current dashboard catalog element. Stack, Grid,
 Heading, and Note are renderer stories because they are graph nodes rather than
 standalone React components. The card stories document their bound components.
@@ -19,12 +24,12 @@ popover and phone dialog.
 
 Shared control and frame stories document the pieces used inside those cards.
 Metric, ToggleTile, AirPurifier, and TimeSeries have direct editor stories with
-local drafts. The `pages` group adds the debug Entity list, Device list
+local drafts. The `Pages` group adds the debug Entity list, Device list
 with inline detail, and Entity detail with retained history. Each page has
 loaded, empty or unobserved, and failed-read scenarios using the synthetic
 household.
 
-The `application/Workspace` group shows the production shell, conversation, and
+The `Application/Workspace` group shows the production shell, conversation, and
 dashboard canvas together, including tablet/phone navigation, synthetic replies,
 retry, editing, save conflicts, and unsaved-navigation dialogs. These stories own
 isolated routers and use synthetic HTTP/SSE responses, not a live model.

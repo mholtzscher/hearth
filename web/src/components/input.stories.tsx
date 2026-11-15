@@ -5,6 +5,7 @@ import { expectNoHorizontalOverflow } from "../../.storybook/play.ts";
 import { expectFieldFocus, expectFieldSize } from "./field-story-assertions.ts";
 
 const meta = {
+  title: "Components/Input",
   component: Input,
   tags: ["ai-generated"],
   args: { "aria-label": "Dashboard name", placeholder: "Morning overview" },

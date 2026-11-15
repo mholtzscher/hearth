@@ -5,7 +5,7 @@ import { NativeSelect } from "./native-select.tsx";
 import { expectFieldFocus, expectFieldSize } from "./field-story-assertions.ts";
 
 const meta = {
-  title: "components/native-select",
+  title: "Components/NativeSelect",
   component: NativeSelect,
   tags: ["ai-generated"],
   args: {

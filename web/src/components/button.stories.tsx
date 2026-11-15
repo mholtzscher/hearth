@@ -5,6 +5,7 @@ import { Button } from "./button.tsx";
 import { expectNoHorizontalOverflow } from "../../.storybook/play.ts";
 
 const meta = {
+  title: "Components/Button",
   component: Button,
   tags: ["ai-generated"],
   args: { children: "Save dashboard" },

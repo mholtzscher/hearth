@@ -5,6 +5,7 @@ import { deviceId, entityId } from "../../.storybook/fixtures";
 import EntitiesPage from "./EntitiesPage";
 
 const meta = {
+  title: "Pages/EntitiesPage",
   component: EntitiesPage,
   tags: ["ai-generated"],
   parameters: {

@@ -11,6 +11,7 @@ const options = [
 ];
 
 const meta = {
+  title: "Components/SegmentedControl",
   component: SegmentedControl,
   args: { label: "Purifier mode", value: "auto", options, onValueChange: fn() },
 } satisfies Meta<typeof SegmentedControl>;

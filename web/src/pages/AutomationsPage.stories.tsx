@@ -8,7 +8,7 @@ import { expectNoHorizontalOverflow } from "../../.storybook/play";
 import App, { appRoutes } from "../App";
 
 const meta = {
-  title: "application/Automations",
+  title: "Application/Automations",
   component: App,
   tags: ["ai-generated", "!autodocs"],
   parameters: { application: true, layout: "fullscreen" },

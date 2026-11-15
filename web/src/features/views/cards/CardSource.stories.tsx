@@ -5,6 +5,7 @@ import { expectNoHorizontalOverflow } from "../../../../.storybook/play";
 import { CardSource } from "./CardSource";
 
 const meta = {
+  title: "Components/Cards/CardSource",
   component: CardSource,
   tags: ["ai-generated"],
   args: {

@@ -13,6 +13,7 @@ const examples = Object.fromEntries([
 ]);
 
 const meta = {
+  title: "Components/ViewRenderer",
   component: ViewRenderer,
   tags: ["ai-generated"],
   args: { definition: dashboardDefinition, headingLevel: 3 },

@@ -6,6 +6,7 @@ import { AutomationCard } from "./AutomationCard";
 import { readAutomationDocument } from "./document";
 
 const meta = {
+  title: "Components/Cards/AutomationCard",
   component: AutomationCard,
   tags: ["ai-generated"],
   args: { document: readAutomationDocument(JSON.stringify(definition)) },

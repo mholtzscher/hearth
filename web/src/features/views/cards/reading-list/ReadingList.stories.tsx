@@ -6,7 +6,7 @@ import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
 import { BoundReadingList } from "./ReadingList";
 
 const meta = {
-  title: "features/views/cards/ReadingList",
+  title: "Components/Cards/ReadingList",
   component: BoundReadingList,
   tags: ["ai-generated"],
   args: {

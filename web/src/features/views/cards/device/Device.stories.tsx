@@ -6,6 +6,7 @@ import { createCoreHandlers } from "../../../../../.storybook/msw-handlers";
 import { BoundDevice } from "./Device";
 
 const meta = {
+  title: "Components/Cards/Device",
   component: BoundDevice,
   tags: ["ai-generated"],
   args: { label: "Hallway lamp", device: { kind: "device", device_id: deviceId(2) } },

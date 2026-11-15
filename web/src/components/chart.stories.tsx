@@ -4,6 +4,7 @@ import { Area, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from 
 import { ChartContainer } from "./chart";
 
 const meta = {
+  title: "Components/ChartContainer",
   component: ChartContainer,
   tags: ["ai-generated"],
   args: {

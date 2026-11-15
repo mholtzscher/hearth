@@ -6,7 +6,7 @@ import { Button } from "./button.tsx";
 import { Notice } from "./notice.tsx";
 
 const meta = {
-  title: "components/notice",
+  title: "Components/Notice",
   component: Notice,
   tags: ["ai-generated"],
   args: { role: "alert", children: "The dashboard could not be saved. Your changes are still here." },

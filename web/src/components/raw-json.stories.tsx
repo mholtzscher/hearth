@@ -3,6 +3,7 @@ import { expect } from "storybook/test";
 import { RawJson } from "./raw-json.tsx";
 
 const meta = {
+  title: "Components/RawJson",
   component: RawJson,
   tags: ["ai-generated"],
   args: { value: { name: "Living room", value: 21.5 }, title: "Raw reading JSON" },

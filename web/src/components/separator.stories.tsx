@@ -3,6 +3,7 @@ import { expect } from "storybook/test";
 import { Separator } from "./separator";
 
 const meta = {
+  title: "Components/Separator",
   component: Separator,
   tags: ["ai-generated"],
   args: { orientation: "horizontal", decorative: false },

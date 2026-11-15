@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw";
 import DevicesPage from "./DevicesPage";
 
 const meta = {
+  title: "Pages/DevicesPage",
   component: DevicesPage,
   tags: ["ai-generated"],
   parameters: {

@@ -5,7 +5,7 @@ import { entityId } from "../../../../../.storybook/fixtures";
 import { MetricEditor } from "./Editor";
 
 const meta = {
-  title: "features/views/cards/MetricEditor",
+  title: "Components/Editors/MetricEditor",
   component: MetricEditor,
   tags: ["ai-generated"],
   decorators: [Story => <div className="grid gap-3 text-label leading-normal"><Story /></div>],

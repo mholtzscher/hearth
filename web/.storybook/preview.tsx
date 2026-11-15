@@ -62,6 +62,9 @@ const preview: Preview = {
     if (unhandledCoreRequests.length > 0) throw new Error(`Unhandled Core requests: ${unhandledCoreRequests.join(", ")}`);
   },
   parameters: {
+    options: {
+      storySort: { method: "alphabetical", order: ["Start here", "Components", "Pages", "Application"] },
+    },
     layout: "fullscreen",
     controls: {
       matchers: {

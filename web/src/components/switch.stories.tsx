@@ -3,6 +3,7 @@ import { expect, fn, waitFor } from "storybook/test";
 import { Switch } from "./switch";
 
 const meta = {
+  title: "Components/Switch",
   component: Switch,
   tags: ["ai-generated"],
   args: { "aria-label": "Enable automation" },

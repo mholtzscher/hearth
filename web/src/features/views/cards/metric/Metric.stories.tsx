@@ -5,6 +5,7 @@ import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundMetric } from "./Metric";
 
 const meta = {
+  title: "Components/Cards/Metric",
   component: BoundMetric,
   tags: ["ai-generated"],
   args: {

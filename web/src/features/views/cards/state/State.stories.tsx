@@ -5,6 +5,7 @@ import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundState } from "./State";
 
 const meta = {
+  title: "Components/Cards/State",
   component: BoundState,
   tags: ["ai-generated"],
   args: {

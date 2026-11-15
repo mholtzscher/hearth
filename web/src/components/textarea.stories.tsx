@@ -4,6 +4,7 @@ import { Textarea } from "./textarea.tsx";
 import { expectFieldFocus, expectFieldSize } from "./field-story-assertions.ts";
 
 const meta = {
+  title: "Components/Textarea",
   component: Textarea,
   tags: ["ai-generated"],
   args: { "aria-label": "Dashboard note", placeholder: "What matters at home?" },

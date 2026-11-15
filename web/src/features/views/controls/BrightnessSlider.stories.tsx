@@ -7,6 +7,7 @@ import { useObservedEntity } from "../../../../.storybook/use-observed-entity";
 import { BrightnessSlider } from "./BrightnessSlider";
 
 const meta = {
+  title: "Components/Controls/BrightnessSlider",
   component: BrightnessSlider,
   tags: ["ai-generated"],
   args: { entity: fixtureEntity(13), label: "Hallway lamp brightness" },

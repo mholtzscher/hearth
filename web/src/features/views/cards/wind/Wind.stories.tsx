@@ -6,6 +6,7 @@ import { createCoreHandlers } from "../../../../../.storybook/msw-handlers";
 import { BoundWind } from "./Wind";
 
 const meta = {
+  title: "Components/Cards/Wind",
   component: BoundWind,
   tags: ["ai-generated"],
   args: {

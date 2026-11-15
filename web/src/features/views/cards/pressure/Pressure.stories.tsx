@@ -5,6 +5,7 @@ import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
 import { BoundPressure } from "./Pressure";
 
 const meta = {
+  title: "Components/Cards/Pressure",
   component: BoundPressure,
   tags: ["ai-generated"],
   args: {

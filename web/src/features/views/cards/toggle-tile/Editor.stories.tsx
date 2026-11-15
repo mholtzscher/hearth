@@ -5,7 +5,7 @@ import { createEntities, entityId } from "../../../../../.storybook/fixtures";
 import { ToggleTileEditor } from "./Editor";
 
 const meta = {
-  title: "features/views/cards/ToggleTileEditor",
+  title: "Components/Editors/ToggleTileEditor",
   component: ToggleTileEditor,
   tags: ["ai-generated"],
   decorators: [Story => <div className="grid gap-3 text-label leading-normal"><Story /></div>],

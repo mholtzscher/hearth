@@ -4,6 +4,7 @@ import { Input } from "./input";
 import { Label } from "./label";
 
 const meta = {
+  title: "Components/Label",
   component: Label,
   tags: ["ai-generated"],
   args: { htmlFor: "dashboard-name", children: "Dashboard name" },

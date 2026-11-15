@@ -3,6 +3,7 @@ import { expect, waitFor, within } from "storybook/test";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "./popover";
 
 const meta = {
+  title: "Components/Popover",
   component: Popover,
   args: {
     children: <>

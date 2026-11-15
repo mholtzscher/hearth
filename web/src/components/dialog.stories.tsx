@@ -7,6 +7,7 @@ import { Button } from "./button.tsx";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DialogTrigger } from "./dialog.tsx";
 
 const meta = {
+  title: "Components/Dialog",
   component: Dialog,
   parameters: { docs: { description: { component: "A centered decision dialog, or a bottom sheet on phones. Radix manages focus and dismissal." } } },
 } satisfies Meta<typeof Dialog>;

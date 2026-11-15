@@ -5,6 +5,7 @@ import { CardFrame } from "./CardFrame";
 import { statusEntry } from "./status";
 
 const meta = {
+  title: "Components/Cards/CardFrame",
   component: CardFrame,
   tags: ["ai-generated"],
   args: {

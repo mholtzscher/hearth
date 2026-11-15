@@ -44,6 +44,18 @@ Rename or enablement PATCH requests.
 
 Run `mise run storybook`, then open:
 
-- `http://localhost:6006/?path=/story/features-views-renderer-viewrenderer--morning-dashboard`
-- `http://localhost:6006/?path=/story/features-views-renderer-viewrenderer--phone-dashboard`
-- `http://localhost:6006/?path=/story/features-views-cards-device--phone-color-sheet`
+- `http://localhost:6006/?path=/story/components-viewrenderer--morning-dashboard`
+- `http://localhost:6006/?path=/story/components-viewrenderer--phone-dashboard`
+- `http://localhost:6006/?path=/story/components-cards-device--phone-color-sheet`
+
+## Catalog organization
+
+The catalog captures show the approved Components, Pages, and Application
+hierarchy on 2026-11-15. Feature source folders remain unchanged by this sidebar
+reorganization. The story imports, args, and play functions are unchanged from
+`2d712fd`; only their catalog titles changed.
+
+| File | Capture conditions and observed result |
+| --- | --- |
+| `catalog-cards.png` | Storybook manager at 1440×1000 over Tailscale HTTPS. Components/Cards contains AutomationCard alongside the other cards. The Sentence story renders the synthetic Household data. |
+| `catalog-editors.png` | Same viewport and server. Components/Editors contains AutomationEditor alongside the other editors. Its EditName play function changes Name to "Hallway light at dusk routine". |
