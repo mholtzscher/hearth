@@ -40,7 +40,7 @@ export function Track({ data, color, dimmed, compact = false, className = "" }: 
       const rank = interval.kind === "value" && interval.truthy === null ? ranks.get(interval.text) ?? 0 : 0;
       const text = interval.kind === "unknown" ? "No history" : interval.text;
       return <span key={index} data-slot="timeline-segment" className="absolute inset-y-0 min-w-0.5 overflow-hidden rounded-[2px] bg-(--timeline-color) data-[rank='1']:bg-[color-mix(in_oklch,var(--timeline-color)_32%,var(--gray-1))] data-[rank='2']:bg-[color-mix(in_oklch,var(--timeline-color)_16%,var(--gray-1))] data-[unknown]:border data-[unknown]:border-dashed data-[unknown]:border-gray-5 data-[unknown]:bg-card group-data-[dimmed]/track:opacity-60" data-unknown={interval.kind === "unknown" || undefined} data-rank={rank > 1 ? 2 : rank} style={{ left: `${100 * (interval.from - data.from) / (data.to - data.from)}%`, width: `${100 * (interval.to - interval.from) / (data.to - data.from)}%` }}>
-        {!compact && (interval.kind === "unknown" || interval.truthy === null) && <span className={`block overflow-hidden whitespace-nowrap px-[5px] text-[13px] ${interval.kind === "unknown" ? "font-normal leading-4 text-gray-7" : `font-medium leading-[18px] ${rank > 0 ? "text-foreground" : "text-background"}`}`}>{text}</span>}
+        {!compact && (interval.kind === "unknown" || interval.truthy === null) && <span className={`block overflow-hidden whitespace-nowrap px-[5px] text-label ${interval.kind === "unknown" ? "font-normal leading-4 text-gray-7" : `font-medium leading-[18px] ${rank > 0 ? "text-foreground" : "text-background"}`}`}>{text}</span>}
       </span>;
     })}
   </div>;

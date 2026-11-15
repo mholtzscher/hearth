@@ -27,7 +27,7 @@ export function WeekPattern({ label, entityId, resource, trueWord = "On" }: { la
     {week ? <>
       <div role="region" tabIndex={0} aria-label={`${label}, last 7 days`}>
         <ul className="sr-only">{week.days.map(day => { const total = dayTotals(day); return <li key={day.start}>{new Date(day.start).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}: {total.known ? `${total.count} times, ${durationWords(total.seconds)} ${trueWord.toLowerCase()}.${total.unknown ? " Some hours have no history." : ""}` : "No history."}</li>; })}</ul>
-        <div data-slot="week-grid" className="grid grid-cols-[2.4rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-[3px] tabular-nums @max-[420px]:grid-cols-[2.2rem_minmax(0,1fr)]" aria-hidden="true"><span /><div className="grid grid-cols-4 text-[13px] text-muted-foreground"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span></div><span className={totalClass}>{trueWord}</span>
+        <div data-slot="week-grid" className="grid grid-cols-[2.4rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-[3px] tabular-nums @max-[420px]:grid-cols-[2.2rem_minmax(0,1fr)]" aria-hidden="true"><span /><div className="grid grid-cols-4 text-label text-muted-foreground"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span></div><span className={totalClass}>{trueWord}</span>
           {week.days.map((day, index) => { const total = dayTotals(day); return <div className="contents" key={day.start}>
             <span className="text-muted-foreground">{index === 6 ? "Today" : new Date(day.start).toLocaleDateString([], { weekday: "short" })}</span>
             <div data-slot="week-hours" className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-0.5 @max-[420px]:gap-px">{day.hours.map((cell, hour) => <span key={hour} data-slot="week-cell" className={`${cellClass} aspect-[1/1.15]`} data-level={level(cell.seconds) ?? undefined} data-unknown={cell.seconds === null && !cell.future || undefined} data-future={cell.future || undefined} />)}</div>
@@ -35,7 +35,7 @@ export function WeekPattern({ label, entityId, resource, trueWord = "On" }: { la
           </div>; })}
         </div>
       </div>
-      <div className="mt-3.5 flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[13px] text-muted-foreground"><span>Minutes {trueWord.toLowerCase()} per hour</span><ol className="flex list-none flex-wrap gap-x-[9px] gap-y-[3px]">{["0", "1–5", "6–15", "16–30", "30+"].map((name, index) => <li className="flex items-center gap-[5px]" key={name}><span className={`${cellClass} aspect-square w-3`} data-level={index} aria-hidden="true" />{name}</li>)}</ol></div>
+      <div className="mt-3.5 flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-label text-muted-foreground"><span>Minutes {trueWord.toLowerCase()} per hour</span><ol className="flex list-none flex-wrap gap-x-[9px] gap-y-[3px]">{["0", "1–5", "6–15", "16–30", "30+"].map((name, index) => <li className="flex items-center gap-[5px]" key={name}><span className={`${cellClass} aspect-square w-3`} data-level={index} aria-hidden="true" />{name}</li>)}</ol></div>
     </> : <p className="py-6 text-label leading-normal text-muted-foreground">Historical readings will appear here.</p>}
   </CardFrame>;
 }

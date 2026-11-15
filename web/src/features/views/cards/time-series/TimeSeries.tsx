@@ -114,7 +114,7 @@ export function TimeSeries({ title, series: inputs }: { title: string; series: A
             const bucket = first.buckets[index];
             if (!bucket) return null;
             const start = Date.parse(bucket.start);
-            return <div className="grid gap-0.5 rounded-md border border-gray-4 bg-gray-2 px-2.5 py-2 text-[13px] leading-normal text-foreground tabular-nums"><p className="text-muted-foreground">{timeLabel(start, { weekday: !sameDay(start, Date.now()) })}</p>
+            return <div className="grid gap-0.5 rounded-md border border-gray-4 bg-gray-2 px-2.5 py-2 text-label leading-normal text-foreground tabular-nums"><p className="text-muted-foreground">{timeLabel(start, { weekday: !sameDay(start, Date.now()) })}</p>
               {items.map((item, i) => {
                 const b = item.data?.buckets[index];
                 const digits = item.data?.format.fraction_digits;
