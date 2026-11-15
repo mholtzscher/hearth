@@ -26,7 +26,7 @@ export const Primary: Story = {
 export const Secondary: Story = { args: { variant: "outline", children: "Discard changes" } };
 export const Disabled: Story = { args: { disabled: true } };
 
-/** Proves Tailwind, the production theme, and the preview stylesheet loaded. */
+/** Proves Tailwind and the production theme loaded. */
 export const CssCheck: Story = {
   play: async ({ canvas }) => {
     const button = canvas.getByRole("button", { name: "Save dashboard" });
@@ -70,15 +70,18 @@ export const Sizes: Story = {
       if (name.includes("icon")) await expect(getComputedStyle(button).width).toBe(height);
     }
     await canvasElement.ownerDocument.fonts.ready;
-    for (const [name, width, background, color, border, weight, opacity] of [
-      ["Save dashboard ready", 127.359, "rgb(255, 138, 61)", "rgb(31, 13, 0)", "rgb(255, 138, 61)", "600", "1"],
-      ["Discard changes ready", 129.25, "rgb(12, 12, 12)", "rgb(244, 244, 244)", "rgb(31, 31, 31)", "400", "1"],
-      ["Save dashboard disabled", 127.359, "rgb(31, 31, 31)", "rgb(125, 125, 125)", "rgb(31, 31, 31)", "600", "1"],
-      ["Discard changes disabled", 129.25, "rgb(12, 12, 12)", "rgb(244, 244, 244)", "rgb(31, 31, 31)", "400", "0.5"],
+    for (const [name, background, color, border, weight, opacity] of [
+      ["Save dashboard ready", "rgb(255, 138, 61)", "rgb(31, 13, 0)", "rgb(255, 138, 61)", "600", "1"],
+      ["Discard changes ready", "rgb(12, 12, 12)", "rgb(244, 244, 244)", "rgb(31, 31, 31)", "400", "1"],
+      ["Save dashboard disabled", "rgb(31, 31, 31)", "rgb(125, 125, 125)", "rgb(31, 31, 31)", "600", "1"],
+      ["Discard changes disabled", "rgb(12, 12, 12)", "rgb(244, 244, 244)", "rgb(31, 31, 31)", "400", "0.5"],
     ] as const) {
       const button = canvas.getByRole("button", { name });
       const style = getComputedStyle(button);
-      await expect(button.getBoundingClientRect().width).toBeCloseTo(width, 1);
+      // Glyph advances differ across Chromium builds; the contract is content + 12px padding + 1px border on each side.
+      const text = canvasElement.ownerDocument.createRange();
+      text.selectNodeContents(button);
+      await expect(button.getBoundingClientRect().width).toBeCloseTo(text.getBoundingClientRect().width + 26, 1);
       for (const [property, value] of Object.entries({
         height: "44px", backgroundColor: background, color, borderColor: border,
         borderWidth: "1px", borderStyle: "solid", borderRadius: "8px", fontSize: "14px",
