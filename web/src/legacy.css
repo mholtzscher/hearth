@@ -22,35 +22,6 @@
 .sidebar-new { display:flex; align-items:center; gap:10px; min-height:44px; padding:0 12px; border:1px solid var(--edge); border-radius:10px; background:var(--gray-1); color:var(--ink); font-size:14px; font-weight:500; text-align:left; }
 .sidebar-new svg { width:18px; height:18px; flex-shrink:0; color:var(--violet); }
 .sidebar-new:hover:not(:disabled) { background:var(--gray-2); border-color:var(--gray-4); }
-/* Recent: date headings pin while their conversations scroll beneath them. --history-bg matches the surface behind the list. */
-.conversation-history { --history-bg:var(--gray-0); --history-field:var(--gray-1); display:flex; flex-direction:column; flex:1; min-height:0; border-top:1px solid var(--edge); padding-top:20px; }
-.history-header { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:20px; padding:0 12px 8px; }
-.history-header h2 { font-size:13px; line-height:20px; font-weight:600; color:var(--quiet); }
-.history-search { display:flex; align-items:center; gap:8px; flex-shrink:0; min-height:36px; margin-bottom:8px; padding-inline:12px 4px; border:1px solid var(--edge); border-radius:8px; background:var(--history-field); color:var(--quiet); }
-.history-search:focus-within { border-color:var(--violet); }
-.history-search svg { width:16px; height:16px; flex-shrink:0; }
-.history-search input { flex:1; min-width:0; height:34px; border:0; background:none; color:var(--ink); font-size:14px; caret-color:var(--violet); appearance:none; }
-.history-search input::-webkit-search-cancel-button { appearance:none; }
-.history-search input::placeholder { color:var(--quiet); opacity:1; }
-.hearth-app .history-search input:focus-visible { outline:none; }
-.history-search button { display:grid; place-items:center; flex-shrink:0; width:28px; height:28px; border-radius:6px; color:var(--quiet); }
-.history-search button:hover { background:var(--gray-3); color:var(--ink); }
-.history-list { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; }
-.history-group+.history-group { margin-top:12px; }
-.history-group h3 { position:sticky; top:0; z-index:1; padding:6px 12px 4px; background:var(--history-bg); color:var(--gray-7); font-size:12px; line-height:18px; font-weight:500; }
-.history-group ul { list-style:none; display:grid; grid-template-columns:minmax(0,1fr); gap:2px; }
-.conversation-history a { display:block; padding:8px 12px; border-radius:8px; color:var(--quiet); font-size:14px; line-height:20px; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; scroll-margin-top:28px; }
-.conversation-history a:hover { background:var(--gray-2); color:var(--ink); }
-.conversation-history a[aria-current=page] { background:var(--gray-3); color:var(--ink); }
-/* Touch keeps 44px rows, and a 16px field so phones don't zoom into it. */
-@media(pointer:coarse) {
-  .conversation-history a { padding-block:12px; }
-  .history-search { min-height:44px; }
-  .history-search input { height:42px; font-size:16px; }
-  .history-search button { width:40px; height:40px; }
-}
-.history-note { color:var(--quiet); font-size:13px; line-height:1.5; padding:0 12px; }
-.history-note button { color:var(--link); text-decoration:underline; text-underline-offset:3px; }
 .history-toggle,.phone-bar { display:none; }
 .drawer-backdrop { position:fixed; inset:0; z-index:55; background:#0008; }
 .hearth-main { min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
@@ -64,144 +35,9 @@
 .server-status[data-state=not-ready] .server-status-dot { background:var(--warn); }
 .server-status[data-state=unavailable] .server-status-dot { background:var(--error); }
 .development-workspace { overflow:auto; flex:1; }
-.conversation-workspace { display:flex; flex-direction:column; min-height:0; flex:1; }
-.workspace-body { display:grid; grid-template-columns:minmax(0,1fr); min-height:0; flex:1; }
-/* Beside a canvas the conversation grows with the screen; 368px keeps the composer prompt on one line. */
-.workspace-body.has-canvas { grid-template-columns:clamp(368px,28vw,480px) minmax(0,1fr); }
-.conversation { --gutter:26px; --pad:var(--gutter); display:flex; min-width:0; min-height:0; flex-direction:column; background:var(--gray-0); }
-.has-canvas .conversation { --gutter:20px; border-right:1px solid var(--edge); }
-/*
- * Without a view, the conversation is a centered column up to 960px, so inline views keep their columns;
- * reply prose stays within 720px of the shared left edge.
- */
-.workspace-body:not(.has-canvas) .conversation { --pad:max(var(--gutter), calc((100% - 960px) / 2)); }
-.message-area { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; }
-.messages { overflow:auto; flex:1; min-height:0; padding:8px var(--pad) 25px; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; }
-.jump-to-latest { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); display:inline-flex; align-items:center; gap:8px; min-height:40px; max-width:calc(100% - 32px); padding:8px 12px; border:1px solid var(--gray-4); border-radius:10px; background:var(--gray-2); color:var(--ink); font-size:14px; white-space:nowrap; }
-.jump-to-latest:hover { background:var(--gray-3); }
-.jump-to-latest svg { width:16px; height:16px; }
-/*
- * One rail for every reply. Text, cards, and tables start at the column edge;
- * metadata rows (Hearth, tool activity, Copy) put a 16px icon on that edge and
- * their text at 24px. Interactive rows hang their hover padding outside the
- * rail so the icon, not the button box, aligns.
- */
-.chat-message { font-size:16px; line-height:1.7; }
-.chat-message.user { width:fit-content; max-width:min(85%,560px); margin:32px 0 0 auto; padding:10px 16px; background:var(--gray-2); border:1px solid var(--gray-3); border-radius:12px 12px 4px 12px; color:var(--ink); line-height:1.6; white-space:pre-wrap; overflow-wrap:break-word; }
-.chat-message.user:first-child { margin-top:16px; }
-.chat-message.assistant { display:flex; flex-direction:column; gap:12px; margin-top:24px; color:var(--gray-9); overflow-wrap:break-word; }
-.agent-label { display:flex; align-items:center; gap:8px; min-height:24px; margin-bottom:-4px; color:var(--ink); font-size:14px; line-height:1.5; font-weight:600; }
-.agent-label svg { width:16px; height:16px; flex-shrink:0; color:var(--violet); }
-.message-markdown { min-width:0; max-width:720px; overflow-x:auto; line-height:1.7; }
-.message-markdown p,.message-markdown ul,.message-markdown ol,.message-markdown blockquote,.message-markdown pre,.message-markdown table { margin:12px 0; }
-.message-markdown>:first-child { margin-top:0; }
-.message-markdown>:last-child { margin-bottom:0; }
-.message-markdown ul { list-style:disc; padding-inline-start:24px; }
-.message-markdown ol { list-style:decimal; padding-inline-start:24px; }
-.message-markdown li { margin:4px 0; }
-.message-markdown li>p { margin:4px 0; }
-.message-markdown h1,.message-markdown h2,.message-markdown h3,.message-markdown h4,.message-markdown h5,.message-markdown h6 { margin:24px 0 8px; color:var(--ink); font-size:18px; line-height:1.4; font-weight:600; }
-.message-markdown a { color:var(--link); text-decoration:underline; text-underline-offset:3px; }
-.message-markdown strong { color:var(--ink); font-weight:600; }
-.message-markdown :not(pre)>code { padding:1px 5px; border:1px solid var(--gray-3); border-radius:4px; background:var(--gray-2); font-size:.85em; overflow-wrap:anywhere; }
-.message-markdown pre { overflow-x:auto; padding:12px 16px; border:1px solid var(--edge); border-radius:12px; background:var(--gray-1); font-size:14px; line-height:1.5; }
-.message-markdown blockquote { padding-inline-start:12px; border-left:1px solid var(--edge); color:var(--quiet); }
-/* Tables read as the same bordered card as views, with row rules only. */
-.message-markdown table { width:100%; border-collapse:separate; border-spacing:0; border:1px solid var(--edge); border-radius:12px; background:var(--gray-1); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; }
-.message-markdown th,.message-markdown td { padding:10px 16px; text-align:start; vertical-align:top; }
-.message-markdown th { color:var(--quiet); font-weight:600; }
-.message-markdown tbody>tr>* { border-top:1px solid var(--edge); }
-.message-actions { display:flex; margin-inline-start:-8px; }
-.message-actions .copy-response { display:inline-flex; align-items:center; gap:8px; min-height:32px; padding:4px 8px; border-radius:8px; color:var(--quiet); font-size:14px; line-height:1.5; }
-.copy-response:hover:not(:disabled) { color:var(--ink); background:var(--gray-2); }
-.copy-response[data-copied] { color:var(--ok); }
-.copy-response svg { width:16px; height:16px; flex-shrink:0; }
-.activity-group { color:var(--quiet); font-size:14px; line-height:1.5; }
-.activity-group summary { display:flex; width:fit-content; max-width:100%; align-items:center; gap:8px; min-height:28px; border-radius:6px; cursor:pointer; list-style:none; }
-.activity-group summary::-webkit-details-marker { display:none; }
-.activity-group summary:hover { color:var(--ink); }
-.activity-group svg { width:16px; height:16px; flex-shrink:0; }
-.activity-group .activity-chevron { width:14px; height:14px; margin-inline-start:-2px; transition:transform .15s ease-out; }
-.activity-group[open]>summary>.activity-chevron,.activity[open]>summary>.activity-chevron { transform:rotate(90deg); }
-/* The guide sits under the status icon; nested rows start on the text column. */
-.activity-group ul { list-style:none; margin:4px 0 0 7.5px; padding-left:15.5px; border-left:1px solid var(--edge); }
-.activity summary>span { min-width:0; overflow-wrap:anywhere; }
-.activity p,.activity pre { margin:4px 0 8px 24px; overflow-wrap:anywhere; }
-.activity pre { padding:8px 12px; border:1px solid var(--edge); border-radius:8px; background:var(--gray-1); font-size:13px; white-space:pre-wrap; max-height:180px; overflow:auto; }
-@media(pointer:coarse) { .activity-group summary,.message-actions .copy-response { min-height:44px; } }
-.artifact-preview { container-type:inline-size; background:var(--gray-1); border:1px solid var(--gray-3); border-radius:12px; padding:16px; color:var(--ink); }
-.artifact-preview.open { border-color:color-mix(in oklch, var(--violet) 45%, transparent); }
-.artifact-header { display:grid; grid-template-columns:36px minmax(0,1fr) auto; align-items:center; gap:8px 12px; }
-.artifact-text h3 { font-size:16px; font-weight:600; line-height:1.4; overflow-wrap:anywhere; }
-.artifact-text p { font-size:14px; line-height:1.5; color:var(--quiet); }
-.artifact-header>button { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 12px; border:1px solid var(--gray-4); border-radius:8px; color:var(--link); font-size:14px; white-space:nowrap; }
-.artifact-header>button:hover { background:var(--gray-2); }
-.artifact-preview.open .artifact-header>button { border-color:transparent; color:var(--quiet); }
-.artifact-preview.open .artifact-header>button:hover { background:none; color:var(--link); }
-.artifact-header>button svg { width:16px; height:16px; flex-shrink:0; }
-/* In a narrow column the action drops under the title, on the title's edge; an inline view keeps a short Open on the title row instead. */
-@container (max-width:440px) {
-  .artifact-preview:is(:not(.artifact-view),.open) .artifact-header>button { grid-column:2 / -1; justify-self:start; }
-  .artifact-preview.open .artifact-header>button { margin-inline-start:-12px; }
-  .artifact-open-detail { display:none; }
-}
-.artifact-body { margin-top:16px; padding-top:16px; border-top:1px solid var(--edge); min-width:0; overflow-x:auto; }
-/* An inline view is a titled group, not a card: its own cards start on the reply's edge. Space above sets each view apart. */
-.artifact-view:not(.open) { margin-top:12px; padding:0; background:none; border:0; border-radius:0; }
-.artifact-view:not(.open) .artifact-body { margin-top:12px; padding-top:0; border-top:0; }
-/* A view on its way: the same card, with tiles the size of a reading card that breathe until the checked view replaces them. */
-.pending-tiles { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-.pending-tiles span { height:157px; border:1px solid var(--edge); border-radius:12px; background:var(--gray-1); animation:view-pending 1.6s cubic-bezier(.45,0,.55,1) infinite; }
-.pending-tiles span+span { animation-delay:.2s; }
-.artifact-icon { display:inline-grid; place-items:center; width:36px; height:36px; background:var(--violet-soft); color:var(--violet); border-radius:8px; }
-.artifact-icon svg { width:20px; height:20px; }
-.empty-chat { padding:clamp(36px,12vh,140px) 0 24px; max-width:520px; }
-.empty-chat h2 { font-size:28px; line-height:1.25; font-weight:500; letter-spacing:-.03em; text-wrap:balance; margin:0; }
-.working { margin-top:12px; color:var(--quiet); font-size:14px; line-height:1.5; }
-/* Starters size to their words and wrap, so no row is mostly empty. */
-.starters { list-style:none; display:flex; flex-wrap:wrap; gap:8px; margin-top:28px; }
-.starters button { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:10px 14px 10px 16px; text-align:left; border:1px solid var(--edge); border-radius:8px; background:var(--gray-1); font-size:15px; line-height:1.4; }
-.starters button svg { width:16px; height:16px; flex-shrink:0; color:var(--quiet); }
-.starters button:hover:not(:disabled) { background:var(--gray-2); border-color:var(--gray-4); }
-.starters button:hover:not(:disabled) svg { color:var(--violet); }
-.composer-wrap { flex-shrink:0; padding:12px var(--pad) 20px; }
-/*
- * Text on top, actions in their own row: Send never floats between lines of text.
- * Text starts at the same 16px inset as the user bubble; Send keeps an equal 8px inset.
- */
-.composer { display:flex; flex-direction:column; border:1px solid var(--gray-4); background:var(--gray-1); border-radius:12px; padding:8px; }
-.composer:focus-within { border-color:var(--violet); }
-.hearth-app .composer textarea:focus-visible { outline:none; }
-.composer textarea { display:block; width:100%; resize:none; min-height:44px; padding:10px 8px; overflow-y:auto; border:0; background:transparent; color:var(--ink); outline:none; font-size:16px; line-height:1.5; caret-color:var(--violet); }
-.composer textarea::placeholder { color:var(--quiet); opacity:1; }
-.composer-footer { display:flex; align-items:center; gap:12px; }
-.composer-footer .send { margin-inline-start:auto; }
-.composer-meta { display:grid; flex:1; min-width:0; gap:2px; padding:0 8px; }
-.composer-note { color:var(--quiet); font-size:12px; line-height:1.5; }
-.send { display:inline-flex; justify-content:center; align-items:center; gap:4px; flex-shrink:0; background:var(--orange); color:var(--on-orange); border-radius:8px; min-width:44px; min-height:44px; padding:0 10px; font-weight:600; }
-.send svg { width:18px; height:18px; }
-.send:hover:not(:disabled) { background:var(--orange-hover); }
 /* A disabled primary action leaves the brand hue entirely rather than dimming orange to brown. */
-.hearth-app .send:disabled,.hearth-app button.primary:disabled { background:var(--gray-3); border-color:var(--gray-3); color:var(--gray-7); opacity:1; }
-.context-badge { display:flex; align-items:flex-start; gap:8px; color:var(--violet-text); font-size:14px; line-height:1.5; white-space:normal; overflow-wrap:anywhere; }
-.chat-message.user .context-badge { margin-top:6px; }
-.context-badge svg { width:16px; height:16px; flex-shrink:0; margin-top:2.5px; }
-/* The selected-view chip sits on the composer's 8px inset, mirroring Send, with its icon on the text's 16px edge. */
-.context-chip { display:flex; justify-self:start; max-width:calc(100% + 8px); min-width:0; margin-inline-start:-8px; border:1px solid color-mix(in oklch, var(--violet) 35%, transparent); border-radius:8px; color:var(--violet-text); font-size:14px; line-height:1.5; }
-.context-chip button { display:flex; align-items:center; min-height:36px; border-radius:7px; }
-.context-chip button:hover:not(:disabled) { background:var(--violet-soft); }
-.hearth-app .context-chip button:focus-visible { outline-offset:-2px; }
-.context-chip svg { width:16px; height:16px; flex-shrink:0; }
-.context-chip-show { gap:8px; min-width:0; padding:0 4px 0 7px; text-align:left; }
-.context-chip-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.context-chip-close { justify-content:center; flex-shrink:0; width:36px; color:var(--quiet); }
-.context-chip-close:hover:not(:disabled) { color:var(--ink); }
-@media(pointer:coarse) { .context-chip button { min-height:44px; } .context-chip-close { width:44px; } }
-.mobile-tabs { display:none; }
-.phone-bar .mobile-tabs { display:flex; gap:2px; }
-.mobile-tabs button { min-height:44px; padding:0 14px; color:var(--quiet); border-radius:8px; font-size:14px; white-space:nowrap; }
-.mobile-tabs button[aria-pressed=true] { color:var(--ink); background:var(--gray-3); }
-.conversation ::selection,.hearth-canvas ::selection { background:color-mix(in oklch, var(--violet) 40%, transparent); color:var(--ink); }
+.hearth-app button.primary:disabled { background:var(--gray-3); border-color:var(--gray-3); color:var(--gray-7); opacity:1; }
+.hearth-canvas ::selection { background:color-mix(in oklch, var(--violet) 40%, transparent); color:var(--ink); }
 .hearth-canvas { overflow:auto; min-width:0; min-height:0; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; background:var(--gray-0); }.hearth-main > .hearth-canvas { flex:1; }.hearth-canvas.expanded { position:fixed; inset:0; z-index:50; }.canvas-inner { container:canvas / inline-size; max-width:1080px; margin:auto; padding:22px 28px 40px; }
 /* A canvas with the screen to itself, expanded or as a dashboard page, may grow wider. */
 .hearth-canvas.expanded .canvas-inner,.hearth-main>.hearth-canvas .canvas-inner { max-width:1440px; }
@@ -259,10 +95,6 @@
   .history-toggle:hover,.history-toggle[aria-expanded=true] { background:var(--gray-2); color:var(--ink); }
   .history-toggle svg { width:18px; height:18px; }
   .history-toggle span { font-size:12px; line-height:1.5; }
-  .conversation-history { --history-bg:var(--gray-1); --history-field:var(--gray-2); position:fixed; top:0; bottom:0; left:104px; z-index:60; width:min(320px,85vw); padding:12px 12px 16px; border-top:0; border-right:1px solid var(--edge); background:var(--gray-1); box-shadow:12px 0 40px #0006; visibility:hidden; opacity:0; transform:translateX(-12px); transition:opacity .18s ease-out,transform .18s cubic-bezier(.16,1,.3,1),visibility 0s linear .18s; }
-  .conversation-history.open { visibility:visible; opacity:1; transform:none; transition-delay:0s; }
-  .history-header { padding:0 0 4px 12px; }
-  .history-header .icon-button { margin-inline-end:-4px; }
 }
 .hearth-app:has(>.hearth-sidebar[data-nav=rail]) { grid-template-columns:104px minmax(0,1fr); }
 .hearth-sidebar[data-nav=rail] {
@@ -294,7 +126,6 @@
   .hearth-brand span svg { width:20px; height:20px; }
   .hearth-brand small { display:none; }
   .drawer-close { position:absolute; top:16px; right:8px; }
-  .conversation-history { --history-bg:var(--gray-1); --history-field:var(--gray-2); padding-top:16px; }
   .sidebar-new { background:var(--gray-2); }
   .hearth-main-nav { gap:2px; }
   .hearth-main-nav a:hover, .hearth-main-nav a.active { background:var(--gray-3); }
@@ -304,24 +135,12 @@
    */
   &:has(.history-search:focus-within), &:has(.history-search input:not(:placeholder-shown)) {
     .hearth-brand, .sidebar-new, .hearth-main-nav, .server-status { display:none; }
-    .conversation-history { border-top:0; padding-top:12px; }
   }
 }
-@media(min-width:721px) and (max-width:980px) {
-  .workspace-body.has-canvas { grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr); }
-  .conversation { --gutter:20px; }
-}
 @media(max-width:720px) {
-  .workspace-body,.workspace-body.has-canvas { display:block; overflow:hidden; }
-  .conversation,.hearth-canvas { height:100%; }
-  .conversation { --gutter:20px; }
+  .hearth-canvas { height:100%; }
   .workspace-body>.hearth-canvas { display:none; animation:none; }
-  .has-canvas .conversation { border-right:0; }
-  .show-canvas .conversation { display:none; }
   .show-canvas .workspace-body>.hearth-canvas { display:block; }
-  .messages { padding-top:0; }
-  .empty-chat { padding-top:clamp(20px,5vh,48px); }
-  .empty-chat h2 { max-width:18ch; }
   .canvas-inner { padding:16px 20px 28px; }
   /* The Canvas tab already gives the view the whole screen. */
   .hearth-canvas:not(.expanded) .canvas-expand { display:none; }
@@ -331,14 +150,10 @@
   .canvas-save[data-pending] button { flex:0 1 auto; min-width:0; justify-content:center; text-align:center; line-height:1.25; }
   .canvas-inner:has(.canvas-save[data-pending]) { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
   .canvas-save:not([data-pending]) .primary { display:none; }
-  .composer-wrap { padding:12px var(--pad) max(12px,var(--safe-bottom,env(safe-area-inset-bottom))); }
   .library { padding:24px 20px; }
   .canvas-title h2 { font-size:22px; }
 }
 @media(prefers-reduced-motion:reduce) { .hearth-app *, .hearth-app *::before, .hearth-app *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; } }
 @media(max-height:600px) {
-  .conversation { overflow-y:auto; }
-  .messages { flex:1 0 180px; }
-  .empty-chat { padding-top:12px; }
   .workspace-modal { max-height:calc(100dvh - 40px); overflow-y:auto; }
 }

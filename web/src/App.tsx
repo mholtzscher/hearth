@@ -222,7 +222,12 @@ function HouseholdShell() {
         <NavLink to="/devices" aria-label="Development"><WrenchIcon aria-hidden="true" /><span>Development</span></NavLink>
       </nav>
       <button ref={historyButton} className="history-toggle" aria-label="Recent conversation history" aria-expanded={nav === "rail" && drawerOpen} aria-controls="conversation-history" onClick={() => setDrawerOpen(open => !open)}><HistoryIcon aria-hidden="true" /><span>Recent</span></button>
-      <ConversationHistory id="conversation-history" open={nav === "rail" && drawerOpen} onNavigate={() => setDrawerOpen(false)} onClose={nav === "rail" ? closeDrawer : undefined} />
+      <ConversationHistory id="conversation-history" open={nav === "rail" && drawerOpen} onNavigate={() => setDrawerOpen(false)} onClose={nav === "rail" ? closeDrawer : undefined} classNames={{
+        root: nav === "rail" ? cn("invisible fixed inset-y-0 left-[104px] z-[60] w-[min(320px,85vw)] -translate-x-3 border-t-0 border-r border-border bg-card px-3 pt-3 pb-4 opacity-0 shadow-[12px_0_40px_#0006] [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_.18s] [--history-bg:var(--gray-1)] [--history-field:var(--gray-2)]", drawerOpen && "visible translate-x-0 opacity-100 [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]")
+          : nav === "bar" ? "pt-4 [--history-bg:var(--gray-1)] [--history-field:var(--gray-2)] has-[input:focus]:border-t-0 has-[input:focus]:pt-3 has-[input:not(:placeholder-shown)]:border-t-0 has-[input:not(:placeholder-shown)]:pt-3" : undefined,
+        header: nav === "rail" ? "pt-0 pe-0 pb-1 ps-3" : undefined,
+        close: nav === "rail" ? "-me-1" : undefined,
+      }} />
       <ServerStatus onChange={setServer} />
     </aside>
     {drawerOpen && <div className="drawer-backdrop" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
