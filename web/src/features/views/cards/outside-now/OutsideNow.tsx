@@ -49,7 +49,7 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
     .map(row => row.key === "wind" && from ? { ...row, nameTreatment: derivedTreatment(reads.current("wind"), reads.current("direction")) } : row);
   const title = label ?? "Outside";
   const digits = history.data?.format.fraction_digits ?? 1;
-  return <CardFrame className="view-weather view-outside-now" title={title} status={status.entries}
+  return <CardFrame className="view-weather view-outside-now" classNames={{ body: "flex flex-col gap-1.5" }} title={title} status={status.entries}
     observedAt={oldestObservation(displayed)} observedLabel={all.length > 1 ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
       <p>Conditions come from measurements only: rain words from the rain rate, wind words from the Beaufort scale.</p>

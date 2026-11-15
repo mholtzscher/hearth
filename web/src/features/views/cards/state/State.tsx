@@ -11,7 +11,7 @@ import { cardStatus } from "../status";
 export function StateCard({ label, resource }: { label?: string; resource: Resolved<TextData> }) {
   const status = cardStatus(resource);
   const data = status.value === "empty" ? undefined : resource.data;
-  return <CardFrame className="view-state" compactTimeLabel title={label ?? resource.metadata?.label ?? "State"} status={status.entries} observedAt={data?.observed_at}
+  return <CardFrame className="view-state" classNames={{ timeLabel: "@max-[200px]:hidden", footer: "@max-[200px]:gap-2", sourceToggle: "@max-[200px]:-me-1 @max-[200px]:px-1" }} compactTimeLabel title={label ?? resource.metadata?.label ?? "State"} status={status.entries} observedAt={data?.observed_at}
     arrival={data ? { updatedAt: data.observed_at, shown: data.text, eligible: status.glows } : undefined}
     sources={resource.metadata ? [{ entityId: resource.metadata.id, label: resource.metadata.label, availability: resource.metadata.availability, enabled: resource.metadata.enabled }] : []}>
     <p className="view-metric-value view-state-value" data-value={status.value}>{data ? data.text : "—"}</p>

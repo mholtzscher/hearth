@@ -51,7 +51,7 @@ export function BoundPressure({ label, source, trend }: Props) {
   const recent = reads.history("pressure")!, canonical = reads.history("canonical")!;
   const history = trend === "6h" ? recent : reads.history("trend");
   const metadata = reading.metadata;
-  return <CardFrame className="view-weather view-pressure" title={label ?? "Pressure"} status={status.entries}
+  return <CardFrame className="view-weather view-pressure" classNames={{ body: "flex flex-col gap-1.5" }} title={label ?? "Pressure"} status={status.entries}
     observedAt={data?.observed_at} arrival={data ? { updatedAt: data.observed_at, shown: `${data.value.toFixed(data.format.fraction_digits)} ${data.format.unit_label}`, eligible: status.glows } : undefined}
     sources={metadata ? [{ entityId: metadata.id, label: metadata.label, availability: metadata.availability, enabled: metadata.enabled }] : []}
     sourceExtra={<>

@@ -239,19 +239,6 @@
 .view-note { max-width:70ch; color:var(--quiet); font-size:16px; line-height:1.7; }
 /* A note binds to the heading it follows, whatever the stack gap. */
 .view-stack>.view-heading+.view-note { margin-top:calc(4px - var(--stack-gap)); }
-.view-card { position:relative; display:flex; flex-direction:column; gap:12px; min-width:0; overflow:hidden; padding:18px; background:var(--gray-1); border:1px solid var(--edge); border-radius:12px; }
-.view-card-header { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; }
-.view-card-title { min-width:0; color:var(--ink); font-size:14px; line-height:1.5; font-weight:500; overflow-wrap:anywhere; }
-.view-card-unit { color:var(--quiet); font-size:14px; line-height:1.5; }
-/* Status sits opposite the title and wraps beneath it in a narrow card. */
-.view-card-header>.view-status { margin-inline-start:auto; justify-content:flex-end; }
-.view-card-body { min-width:0; }
-/* The footer stays on the card's bottom edge, so a stretched card puts its spare height above it. */
-.view-card-footer { display:flex; align-items:center; gap:12px; margin-top:auto; color:var(--quiet); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; }
-.view-card-footer time { min-width:0; white-space:nowrap; }
-.view-source-toggle { display:inline-flex; flex-shrink:0; align-items:center; gap:4px; min-height:28px; margin-inline:auto -6px; padding:0 6px; border-radius:6px; color:var(--quiet); white-space:nowrap; }
-.view-source-toggle:hover { background:var(--gray-2); color:var(--ink); }
-.view-source-toggle svg { width:14px; height:14px; }
 /* The portal has its own workspace aliases rather than inheriting from .hearth-app. */
 .view-source { --ink:var(--gray-10); --quiet:var(--gray-8); --edge:var(--gray-4); z-index:81; width:min(440px,calc(100vw - 24px)); max-height:min(720px,var(--radix-popover-content-available-height,calc(100dvh - 24px))); padding:22px; overflow:auto; overscroll-behavior:contain; overflow-wrap:anywhere; background:var(--gray-2); color:var(--ink); border-radius:12px; box-shadow:0 18px 60px #0008; font-size:14px; line-height:1.5; }
 .view-source:focus { outline:none; }
@@ -277,33 +264,19 @@
 .view-source-backdrop { position:fixed; inset:0; z-index:80; background:#0009; }
 .view-source-sheet { position:fixed; inset:auto 0 0; width:100%; max-height:85dvh; padding:22px 22px max(24px,env(safe-area-inset-bottom)); border-radius:14px 14px 0 0; }
 .view-source-sheet::before { content:""; display:block; width:32px; height:4px; margin:-10px auto 18px; border-radius:2px; background:var(--gray-6); }
-/* Touch keeps a 44px Source target without a 44px footer row: the target reaches 8px into the card's padding and the gap above. */
-@media(max-width:720px),(pointer:coarse) { .view-source-toggle { position:relative; } .view-source-toggle::after { content:""; position:absolute; inset:-8px 0; } }
 @media(max-width:720px) { .view-source li>a { min-height:44px; } }
 /* Status entries: a tone dot and words; warn and error words take their tone. */
-.view-status { display:flex; flex-wrap:wrap; gap:0 8px; list-style:none; color:var(--gray-9); font-size:14px; line-height:1.5; }
-.view-status li { display:inline-flex; align-items:baseline; gap:6px; }
-.view-status li+li::before { content:"·" / ""; color:var(--gray-6); }
 .view-status-dot { flex-shrink:0; align-self:center; width:6px; height:6px; border-radius:50%; background:var(--gray-7); }
-.view-status-detail { color:var(--quiet); }
-.view-status [data-tone=warn] { color:var(--warn); }
-.view-status [data-tone=warn] .view-status-dot { background:var(--warn); }
-.view-status [data-tone=error] { color:var(--error); }
-.view-status [data-tone=error] .view-status-dot { background:var(--error); }
-.view-metric-value { color:var(--ink); font-size:40px; font-weight:350; line-height:1.15; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
-.view-metric-value small { margin-inline-start:4px; color:var(--quiet); font-size:14px; letter-spacing:0; }
-.view-metric-value[data-value=dimmed] { color:var(--gray-8); }
-.view-metric-value[data-value=empty] { color:var(--gray-6); }
+.view-metric-value:not([data-slot=reading]) { color:var(--ink); font-size:40px; font-weight:350; line-height:1.15; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
+.view-metric-value:not([data-slot=reading]) small { margin-inline-start:4px; color:var(--quiet); font-size:14px; letter-spacing:0; }
+.view-metric-value:not([data-slot=reading])[data-value=dimmed] { color:var(--gray-8); }
+.view-metric-value:not([data-slot=reading])[data-value=empty] { color:var(--gray-6); }
 .view-state-value { overflow-wrap:anywhere; text-wrap:balance; }
 /* A reading in a narrow cell, such as two to a row on a phone, steps down to 32px, as ToggleTiles do. */
 .view-metric,.view-state { container-type:inline-size; }
 .view-metric .view-metric-value { overflow-wrap:anywhere; }
 @container(max-width:200px) {
   :is(.view-metric,.view-state) .view-metric-value { font-size:32px; }
-  /* The footer stays on one row: the visible Observed prefix goes, the accessible label keeps it. */
-  :is(.view-metric,.view-state) .view-card-time-label { display:none; }
-  :is(.view-metric,.view-state) .view-card-footer { gap:8px; }
-  :is(.view-metric,.view-state) .view-source-toggle { padding-inline:4px; margin-inline-end:-4px; }
 }
 .view-trend { display:grid; gap:4px; margin-top:12px; }
 .view-trend-plot { position:relative; height:44px; }
@@ -322,17 +295,16 @@
 .view-range-note { color:var(--gray-9); font-size:14px; line-height:1.5; }
 .view-rows { display:grid; list-style:none; margin-block:-4px; }
 /* Flex, not grid: iOS Safari kept a grid column sized to the loading "—" and broke "Off" between letters. */
-.view-row { position:relative; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 16px; padding:10px 0; font-variant-numeric:tabular-nums; }
-.view-row+.view-row { border-top:1px solid var(--edge); }
-.view-row-name { flex:1 1 9em; min-width:0; color:var(--gray-9); font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
-.view-row-name[data-value=dimmed] { color:var(--gray-8); }
-.view-row-value { flex:0 0 auto; max-width:100%; margin-inline-start:auto; color:var(--ink); font-size:20px; font-weight:400; line-height:1.3; letter-spacing:-.02em; text-align:right; overflow-wrap:break-word; }
-.view-row-value small { margin-inline-start:3px; color:var(--quiet); font-size:14px; letter-spacing:0; }
-.view-row-value[data-value=dimmed] { color:var(--gray-8); }
-.view-row-value[data-value=empty] { color:var(--gray-6); }
-.view-row .view-status { flex-basis:100%; }
-.view-row-arrival { position:absolute; inset:auto 0 -1px; height:2px; background:var(--orange); pointer-events:none; animation:view-arrival 10s cubic-bezier(.16,1,.3,1) forwards; z-index:1; }
-.view-row:last-child .view-row-arrival { bottom:0; }
+.view-row:not([data-slot=reading-row]) { position:relative; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 16px; padding:10px 0; font-variant-numeric:tabular-nums; }
+.view-row+.view-row:not([data-slot=reading-row]) { border-top:1px solid var(--edge); }
+.view-row-name:not([data-slot=reading-name]) { flex:1 1 9em; min-width:0; color:var(--gray-9); font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+.view-row-name:not([data-slot=reading-name])[data-value=dimmed] { color:var(--gray-8); }
+.view-row-value:not([data-slot=reading-value]) { flex:0 0 auto; max-width:100%; margin-inline-start:auto; color:var(--ink); font-size:20px; font-weight:400; line-height:1.3; letter-spacing:-.02em; text-align:right; overflow-wrap:break-word; }
+.view-row-value:not([data-slot=reading-value]) small { margin-inline-start:3px; color:var(--quiet); font-size:14px; letter-spacing:0; }
+.view-row-value:not([data-slot=reading-value])[data-value=dimmed] { color:var(--gray-8); }
+.view-row-value:not([data-slot=reading-value])[data-value=empty] { color:var(--gray-6); }
+.view-row-arrival:not([data-slot=reading-arrival]) { position:absolute; inset:auto 0 -1px; height:2px; background:var(--orange); pointer-events:none; animation:view-arrival 10s cubic-bezier(.16,1,.3,1) forwards; z-index:1; }
+.view-row:last-child .view-row-arrival:not([data-slot=reading-arrival]) { bottom:0; }
 .view-light { display:flex; align-items:center; gap:14px; }
 .view-light-swatch { flex-shrink:0; width:32px; height:32px; border-radius:50%; background:var(--gray-9); border:1px solid var(--gray-5); }
 .view-light-swatch[data-off] { background:transparent; }
@@ -422,39 +394,14 @@
 .view-color-picker.view-source-sheet { width:100%; }
 .view-color-picker.view-source-sheet .view-source-header { position:sticky; top:-22px; z-index:1; padding-top:6px; background:var(--gray-2); }
 .view-device .view-rows:not(:first-child) { margin-top:12px; }
-/* ToggleTile is one press target, with the independent Source control above it. */
-.view-toggle-tile { container-type:inline-size; transition:background-color 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1); }
-.view-toggle-tile.is-on { background:color-mix(in oklch,var(--violet) 11%,var(--gray-1)); border-color:color-mix(in oklch,var(--violet) 38%,var(--gray-3)); }
-.view-toggle-tile.is-interactive:hover { border-color:var(--gray-6); }
-.view-toggle-tile .view-card-body { display:flex; flex-direction:column; gap:8px; }
-.view-toggle-tile-action { display:block; width:100%; padding:0; border:0; background:none; color:inherit; text-align:left; }
-.view-toggle-tile-action::after { content:""; position:absolute; inset:0; z-index:1; border-radius:12px; }
-.view-toggle-tile-action:focus-visible { outline:none; }
-.view-toggle-tile:has(.view-toggle-tile-action:focus-visible) { outline:2px solid var(--violet); outline-offset:3px; }
-.view-toggle-tile .view-metric-value { display:block; }
-.view-toggle-tile .view-power-metric { display:inline-block; margin-inline-start:6px; white-space:nowrap; }
-.view-toggle-tile .view-power-metric[data-value=empty] { color:var(--gray-6); }
-.view-toggle-tile .view-card-footer { position:relative; z-index:2; gap:8px; pointer-events:none; }
-.view-toggle-tile .view-source-toggle { pointer-events:auto; }
-/* One reserved status line; a longer message, such as a failure, grows the tile while it shows. */
-.view-toggle-tile .view-control-status, .view-toggle-tile .view-power-idle { min-height:21px; margin-top:0; }
 .view-power-idle { min-height:42px; color:var(--quiet); font-size:14px; line-height:1.5; }
 .view-power-reading-status { display:grid; gap:2px; color:var(--quiet); font-size:14px; }
-.view-toggle-tile .view-trend { margin-top:2px; }
-.view-toggle-tile .view-rows { margin-top:8px; border-top:1px solid var(--edge); }
-.view-toggle-tile .view-trend-band { fill-opacity:.05; }
-.hearth-app .view-toggle-tile-action:disabled { opacity:1; }
-@container(max-width:200px) {
-  .view-toggle-tile .view-metric-value { font-size:32px; }
-  .view-toggle-tile .view-card-time-label { display:none; }
-  .view-toggle-tile .view-source-toggle { padding-inline:4px; margin-inline-end:-4px; }
-}
 /* Air purifier: compact readings, segmented mode and a stored manual fan level. */
 .view-air-purifier { container-type:inline-size; }
 .view-air-purifier-head { display:flex; align-items:center; gap:14px; padding-bottom:12px; }
 .view-air-purifier-head > div { flex:1; min-width:0; }
 .view-air-purifier-detail { color:var(--gray-9); font-variant-numeric:tabular-nums; }
-.view-air-purifier-detail[data-value=dimmed], .view-air-purifier-tile [data-value=dimmed] { color:var(--gray-8); }
+.view-air-purifier-detail[data-value=dimmed] { color:var(--gray-8); }
 .view-air-purifier-rows .view-row { border-top:1px solid var(--edge); }
 .view-air-purifier-category { display:inline-flex; align-items:baseline; gap:6px; color:var(--gray-9); font-size:14px; }
 .view-air-purifier-category[data-tone=ok] .view-status-dot { background:var(--ok); }
@@ -494,8 +441,6 @@
 .view-air-purifier-role-status { display:flex; flex-wrap:wrap; gap:2px 8px; color:var(--quiet); }
 .view-air-purifier-role-status:has(.view-status) { margin-bottom:8px; }
 .view-air-purifier-role-status:not(:has(.view-status)) { display:none; }
-.view-air-purifier-tile .view-metric-value .view-air-purifier-tile-mode { margin-inline-start:6px; color:var(--gray-9); font-size:20px; letter-spacing:-.02em; }
-.view-air-purifier-tile .view-metric-value .view-air-purifier-tile-mode[data-value=dimmed] { color:var(--gray-8); }
 .view-air-purifier-tile-air { display:flex; flex-wrap:wrap; align-items:baseline; gap:0 10px; color:var(--gray-9); }
 .view-air-purifier-tile-air small { color:var(--quiet); }
 @container(max-width:260px) {
@@ -542,16 +487,14 @@
   .view-cover-action { gap:4px; padding-inline:4px; }
 }
 /* Every tile row is one line, so pending words and failures never change the tile's height. */
-.view-cover-tile .view-card-body { gap:2px; }
-.view-cover-tile .view-metric-value { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .view-cover-row { height:21px; margin:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:14px; line-height:1.5; }
 .view-cover-tile .view-cover-status { min-height:0; margin-top:0; }
 .view-cover-tile .view-cover-status p { min-width:0; }
 .view-cover-short { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .view-cover-verb { color:var(--gray-8); }
-.view-cover-tile.is-on :is(.view-cover-verb,.view-cover-position,.view-cover-status) { color:color-mix(in oklch,var(--violet) 14%,var(--gray-9)); }
-.view-cover-tile.is-on .view-cover-status [data-tone=error] { color:var(--error); }
-.view-cover-tile.is-on .view-cover-status [data-tone=warn] { color:var(--warn); }
+.view-cover-tile[data-on] :is(.view-cover-verb,.view-cover-position,.view-cover-status) { color:color-mix(in oklch,var(--violet) 14%,var(--gray-9)); }
+.view-cover-tile[data-on] .view-cover-status [data-tone=error] { color:var(--error); }
+.view-cover-tile[data-on] .view-cover-status [data-tone=warn] { color:var(--warn); }
 @media (prefers-reduced-motion: reduce) { .view-cover-panel { transition:none; } }
 /* Lists reuse the same per-Entity queue and existing switch, not a batch endpoint. */
 .view-switch-rows { display:grid; list-style:none; margin:-4px 0; }
@@ -578,7 +521,6 @@
  * width instead of its height and cards in one grid row end at similar heights.
  */
 .view-weather { container-type:inline-size; }
-.view-weather .view-card-body { display:flex; flex-direction:column; gap:6px; }
 .view-rain { --weather-trend-color:var(--chart-4); }
 .view-pressure { --weather-trend-color:var(--chart-5); }
 :is(.view-rain,.view-pressure) .view-trend:not([data-value=dimmed]) .view-trend-mean { stroke:color-mix(in oklch,var(--weather-trend-color) 50%,var(--gray-9)); }
@@ -591,7 +533,6 @@
 .view-weather-rows { margin-top:10px; border-top:1px solid var(--edge); }
 .view-weather-rows .view-rows { margin-block:0 -4px; }
 .view-weather-slot-status { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; color:var(--quiet); font-size:14px; line-height:1.5; }
-.view-weather-slot-status .view-status { flex-basis:100%; }
 .view-weather-zones, .view-weather-main, .view-weather-aside { display:flex; flex-direction:column; gap:6px; min-width:0; }
 .view-weather-wind { display:grid; grid-template-columns:minmax(0,1fr); grid-template-areas:"reading" "gust" "force" "direction" "rows"; gap:0 18px; }
 .view-weather-wind:has(> .view-weather-compass) { grid-template-columns:auto minmax(0,1fr); grid-template-areas:"compass reading" "compass gust" "compass force" "compass direction" "rows rows"; }
@@ -632,12 +573,6 @@
 .view-weather-tendency span { color:var(--quiet); }
 .view-weather-tendency span::before { content:"·" / ""; margin-inline-end:6px; color:var(--gray-6); }
 @media(prefers-reduced-motion:reduce) { .view-weather-compass-arrow { transition:none; } }
-/*
- * Afterglow: a new observation lights the card's top edge orange, which fades
- * over ten seconds. Under reduced motion the edge stays lit for those ten
- * seconds without fading, then disappears.
- */
-.view-card-arrival { position:absolute; inset:0 0 auto; height:2px; background:var(--orange); pointer-events:none; animation:view-arrival 10s cubic-bezier(.16,1,.3,1) forwards; }
 .view-chart-legend { display:flex; flex-wrap:wrap; gap:4px 16px; margin-bottom:8px; list-style:none; font-size:14px; line-height:1.5; }
 .view-chart-legend li { display:inline-flex; flex-wrap:wrap; align-items:center; gap:0 8px; }
 .view-chart-legend li[data-dimmed] { color:var(--quiet); }
@@ -657,9 +592,6 @@
 .view-timeline-lane { display:contents; }
 .view-timeline-name { min-width:0; display:grid; line-height:1.35; }
 .view-timeline-name > span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-/* A narrow name column stacks its status entries instead of wrapping separators. */
-.view-timeline-name > .view-status { display:grid; }
-.view-timeline-name > .view-status li+li::before { content:none; }
 .view-timeline-name > span:nth-child(2), .view-timeline-ledger-name, .view-timeline-total { color:var(--quiet); }
 .view-timeline-name [data-value="empty"], .view-timeline-current [data-value="empty"] { color:var(--gray-6); }
 .view-timeline-name [data-value="dimmed"], .view-timeline-current [data-value="dimmed"] { color:var(--gray-8); }
@@ -734,7 +666,6 @@
   .view-timeline-lane .view-timeline-track { grid-column:1 / -1; }
   .view-timeline-lane .view-timeline-total { grid-row:1; grid-column:2; }
   .view-timeline-name { display:flex; flex-wrap:wrap; gap:0 8px; align-items:baseline; }
-  .view-timeline-name > .view-status { display:flex; }
   .view-timeline-axis-spacer { display:none; }
 }
 @container (max-width:420px) {
@@ -848,13 +779,6 @@
   .canvas-save:not([data-pending]) .primary { display:none; }
   .composer-wrap { padding:12px var(--pad) max(12px,var(--safe-bottom,env(safe-area-inset-bottom))); }
   .view-grid:not(.view-grid-toggle,.view-grid-reading) { grid-template-columns:1fr; }
-  /* Metering needs a reading-width row, not a quick-switch cell. */
-  .view-grid-toggle>.view-toggle-tile.is-metered { grid-column:1/-1; }
-  .view-toggle-tile.is-metered { gap:8px; padding:16px; }
-  .view-toggle-tile.is-metered .view-card-body { gap:6px; }
-  .view-toggle-tile.is-metered .view-metric-value { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 12px; }
-  .view-toggle-tile.is-metered .view-power-metric { max-width:100%; margin-inline-start:0; white-space:normal; overflow-wrap:anywhere; }
-  .view-toggle-tile.is-metered .view-power-metric-reading { font-size:20px; font-weight:400; letter-spacing:-.02em; }
   .library { padding:24px 20px; }
   .canvas-title h2 { font-size:22px; }
 }

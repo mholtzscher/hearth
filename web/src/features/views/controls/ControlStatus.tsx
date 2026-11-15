@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { CommandFailure } from "../../../api/commands";
 import { useControl } from "../data/provider";
+import { cn } from "../../../lib/utils";
 
 export const lightFailures: Record<CommandFailure["kind"], string> = {
   disabled: "Couldn't change the light. This Entity is disabled.",
@@ -31,10 +32,10 @@ export const powerFailures: Record<CommandFailure["kind"], string> = {
  * alert. Both pair a tone dot with words, and the failure stays until the next
  * request.
  */
-export function ControlStatus({ entityId, pending, subject = "light", idle }: { entityId: string; pending: (requested: unknown) => string; subject?: "light" | "power"; idle?: ReactNode }) {
+export function ControlStatus({ entityId, pending, subject = "light", idle, className }: { entityId: string; pending: (requested: unknown) => string; subject?: "light" | "power"; idle?: ReactNode; className?: string }) {
   const [state] = useControl({ entityId, operation: "set" });
   const working = state.phase === "pending" || state.phase === "confirming";
-  return <div className="view-control-status">
+  return <div className={cn("view-control-status", className)}>
     <p role="status" data-tone="info">
       {working && <><span className="view-status-dot" aria-hidden="true" />{pending(state.requested)}</>}
       {state.phase === "idle" && idle}

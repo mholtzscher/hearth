@@ -2,8 +2,10 @@ import type { Reading } from "../../bindings/registry";
 import type { Resolved } from "../../bindings/types";
 import type { Arrival } from "../observation";
 import { useArrival } from "../observation";
-import { StatusList, type SourceItem } from "../CardFrame";
+import type { SourceItem } from "../CardFrame";
 import { cardStatus, type CardStatus } from "../status";
+import { cn } from "../../../../lib/utils";
+import { ReadingRow as SharedReadingRow, ReadingUnit } from "../Reading";
 
 export type ReadingRow = { key: string; name: string; nameTreatment?: "live" | "dimmed"; resource: Resolved<Reading> };
 
@@ -44,17 +46,12 @@ function Row({ row }: { row: ReturnType<typeof rowStates>[number] }) {
   const { data, status } = row;
   // The rule beneath a changed row lights with the card's edge, naming which reading changed.
   const glow = useArrival(data ? { updatedAt: data.observed_at, shown: shownReading(data), eligible: status.glows } : undefined);
-  return <li className="view-row">
-    {glow !== undefined && <span key={glow} className="view-row-arrival" aria-hidden="true" />}
-    <span className="view-row-name" data-value={row.nameTreatment}>{row.name}</span>
-    <span className="view-row-value" data-value={status.value}>
-      {data ? "text" in data ? data.text : <>{data.value.toFixed(data.format.fraction_digits)}{data.format.unit_label && <small>{data.format.unit_label}</small>}</> : "—"}
-    </span>
-    <StatusList entries={status.entries} />
-  </li>;
+  return <SharedReadingRow name={row.name} nameValue={row.nameTreatment} value={status.value} arrival={glow} status={status.entries}>
+    {data ? "text" in data ? data.text : <>{data.value.toFixed(data.format.fraction_digits)}{data.format.unit_label && <ReadingUnit className="ms-[3px]">{data.format.unit_label}</ReadingUnit>}</> : "—"}
+  </SharedReadingRow>;
 }
 
 /** Name and reading rows, each carrying its own status. */
-export function ReadingRows({ rows }: { rows: ReturnType<typeof rowStates> }) {
-  return <ul className="view-rows">{rows.map(row => <Row key={row.key} row={row} />)}</ul>;
+export function ReadingRows({ rows, className }: { rows: ReturnType<typeof rowStates>; className?: string }) {
+  return <ul className={cn("view-rows", className)}>{rows.map(row => <Row key={row.key} row={row} />)}</ul>;
 }
