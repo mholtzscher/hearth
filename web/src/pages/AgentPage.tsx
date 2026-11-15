@@ -22,7 +22,7 @@ const STARTERS: readonly ThreadSuggestion[] = [
 
 function JumpToLatest() {
   const isAtBottom = useThreadViewport(state => state.isAtBottom);
-  return isAtBottom ? null : <ThreadPrimitive.ScrollToBottom asChild><Button variant="outline" size="touch" className="absolute bottom-3 left-1/2 max-w-[calc(100%-32px)] -translate-x-1/2 bg-gray-2" aria-label="Jump to latest"><ArrowDownIcon aria-hidden="true" />Jump to latest</Button></ThreadPrimitive.ScrollToBottom>;
+  return isAtBottom ? null : <ThreadPrimitive.ScrollToBottom asChild><Button variant="outline" size="touch" className="absolute bottom-3 left-1/2 max-w-[calc(100%-32px)] -translate-x-1/2" aria-label="Jump to latest"><ArrowDownIcon aria-hidden="true" />Jump to latest</Button></ThreadPrimitive.ScrollToBottom>;
 }
 
 // The view or Automation on the canvas travels with the next message; the chip shows it and closes it like the canvas's own Close.

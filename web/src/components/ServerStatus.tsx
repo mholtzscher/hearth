@@ -14,12 +14,12 @@ export const serverLabels = {
 export type ServerState = keyof typeof serverLabels;
 
 /** The one readiness poller; onChange lets the phone bar reflect a problem without polling again. */
-export function ServerStatus({ onChange, rail = false }: { onChange?: (state: ServerState) => void; rail?: boolean }) {
+export function ServerStatus({ onChange, rail = false, className }: { onChange?: (state: ServerState) => void; rail?: boolean; className?: string }) {
   const version = useBaseUrlVersion();
-  return <ConnectedServerStatus key={version} onChange={onChange} rail={rail} />;
+  return <ConnectedServerStatus key={version} onChange={onChange} rail={rail} className={className} />;
 }
 
-function ConnectedServerStatus({ onChange, rail }: { onChange?: (state: ServerState) => void; rail: boolean }) {
+function ConnectedServerStatus({ onChange, rail, className }: { onChange?: (state: ServerState) => void; rail: boolean; className?: string }) {
   const { data, error, loading } = usePolling("readyz", api.ready, 10_000);
   const [state, setState] = useState<ServerState>("checking");
   // Retain the last completed check during polling, including a failed check.
@@ -34,7 +34,7 @@ function ConnectedServerStatus({ onChange, rail }: { onChange?: (state: ServerSt
   useEffect(() => onChange?.(state), [onChange, state]);
 
   const tone = state === "ready" ? "text-success" : state === "not-ready" ? "text-warning" : state === "unavailable" ? "text-destructive" : "text-muted-foreground";
-  return <p data-slot="server-status" data-hide-on-search className={cn("m-0 flex shrink-0 items-center gap-2 border-t border-border px-3 pt-3 text-label leading-normal text-muted-foreground", rail && "mt-auto flex-col gap-1 px-0 text-center text-caption")} data-state={state} role="status" aria-busy={state === "checking"}>
+  return <p data-slot="server-status" className={cn("m-0 flex shrink-0 items-center gap-2 border-t border-border px-3 pt-3 text-label leading-normal text-muted-foreground", rail && "mt-auto flex-col gap-1 px-0 text-center text-caption", className)} data-state={state} role="status" aria-busy={state === "checking"}>
     <span className={cn("size-1.5 shrink-0 rounded-full bg-current", tone)} aria-hidden="true" />
     <span>Hearth server <strong className={cn("ms-2 font-medium", rail && "ms-0", tone)}>{serverLabels[state]}</strong></span>
   </p>;

@@ -51,7 +51,7 @@ export function ConversationHistory({ id, open, onNavigate, onClose, classNames 
       </div>
       {query && <Button variant="ghost" size="icon-touch" type="button" aria-label="Clear search" onClick={() => { setQuery(""); search.current?.focus(); }}><XIcon aria-hidden="true" /></Button>}
     </div>}
-    {error ? <p className="px-3 text-label leading-normal text-muted-foreground" role="alert">Could not load conversations. <Button variant="link" onClick={refresh}>Retry</Button></p>
+    {error ? <p className="px-3 text-label leading-normal text-muted-foreground" role="alert">Could not load conversations. <Button variant="link" size="touch" onClick={refresh}>Retry</Button></p>
       : !loading && conversations.length === 0 ? <p className="px-3 text-label leading-normal text-muted-foreground">Conversations you start appear here.</p>
       : needle && groups.length === 0 ? <p className="px-3 text-label leading-normal text-muted-foreground" role="status">No conversations match “{query.trim()}”.</p> : null}
     {groups.length > 0 && <div ref={list} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-color:var(--gray-5)_transparent] [scrollbar-width:thin]">{groups.map(group => <div key={group.label} className="not-first:mt-3">
