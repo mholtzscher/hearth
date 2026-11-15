@@ -5,6 +5,7 @@ import type { Collection, EntityStateHistoryEntry } from "../api/types.ts";
 import { ErrorBox, MonoId, StatusChip } from "./common.tsx";
 import { forecastSummary } from "./forecast-summary.ts";
 import { Button } from "./ui/button.tsx";
+import { SegmentedControl } from "./ui/segmented-control.tsx";
 import {
   Table,
   TableBody,
@@ -446,19 +447,7 @@ export default function EntityStateHistory({
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
-        <div role="group" aria-label="State history filter" className="flex flex-wrap gap-1.5">
-          {FILTERS.map((option) => (
-            <Button
-              key={option.value}
-              size="default"
-              variant={filter === option.value ? "default" : "outline"}
-              aria-pressed={filter === option.value}
-              onClick={() => setFilter(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
+        <SegmentedControl label="State history filter" value={filter} onValueChange={setFilter} options={FILTERS} />
         <Button size="default" variant="outline" onClick={() => setNonce((n) => n + 1)}>
           Latest / Refresh history
         </Button>

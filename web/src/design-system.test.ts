@@ -20,7 +20,7 @@ const CLASS_SELECTORS: Record<string, number> = {
 /** Raw <select>, <textarea>, and <input> elements outside components/ui, by directory. */
 const RAW_CONTROLS: Record<string, number> = {
   "src/features": 37,
-  "src/pages": 3,
+  "src/pages": 1,
 };
 
 /** Files outside components/ui that import radix-ui. */

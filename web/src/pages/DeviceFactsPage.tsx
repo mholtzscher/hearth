@@ -25,6 +25,8 @@ import type { NatsConnectionLease } from "../api/nats.ts";
 import { ErrorBox, Facts, JsonCode, RawJson, Section, StatusChip } from "../components/common.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
+import { NativeSelect } from "../components/ui/native-select.tsx";
+import { SegmentedControl } from "../components/ui/segmented-control.tsx";
 import { Label } from "../components/ui/label.tsx";
 import { Switch } from "../components/ui/switch.tsx";
 import {
@@ -579,22 +581,8 @@ export default function DeviceFactsPage() {
           <span id="device-facts-family-label" className="block text-xs text-muted-foreground">
             Family
           </span>
-          <div
-            role="group"
-            aria-labelledby="device-facts-family-label"
-            className="mt-0.5 flex gap-1"
-          >
-            {FAMILY_OPTIONS.map((option) => (
-              <Button
-                key={option.value}
-                size="default"
-                variant={familyFilter === option.value ? "secondary" : "ghost"}
-                aria-pressed={familyFilter === option.value}
-                onClick={() => selectFamily(option.value)}
-              >
-                {option.label}
-              </Button>
-            ))}
+          <div className="mt-0.5">
+            <SegmentedControl label="Family" value={familyFilter} onValueChange={selectFamily} options={FAMILY_OPTIONS} />
           </div>
         </div>
         <div>
@@ -604,23 +592,9 @@ export default function DeviceFactsPage() {
           >
             Disposition (observations only)
           </span>
-          <div
-            role="group"
-            aria-labelledby="device-facts-disposition-label"
-            className="mt-0.5 flex gap-1"
-          >
-            {DISPOSITION_OPTIONS.map((option) => (
-              <Button
-                key={option.value}
-                size="default"
-                variant={dispositionFilter === option.value ? "secondary" : "ghost"}
-                aria-pressed={dispositionFilter === option.value}
-                disabled={dispositionDisabled}
-                onClick={() => setDispositionFilter(option.value)}
-              >
-                {option.label}
-              </Button>
-            ))}
+          <div className="mt-0.5">
+            <SegmentedControl label="Disposition (observations only)" value={dispositionFilter}
+              onValueChange={setDispositionFilter} options={DISPOSITION_OPTIONS} disabled={dispositionDisabled} />
           </div>
         </div>
         <div className="min-w-[16rem] flex-1">
@@ -640,9 +614,9 @@ export default function DeviceFactsPage() {
           <Label htmlFor="device-facts-cap" className="text-xs text-muted-foreground">
             Row cap
           </Label>
-          <select
+          <NativeSelect
             id="device-facts-cap"
-            className="mt-0.5 h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring dark:bg-input/30"
+            className="mt-0.5"
             value={rowCap}
             onChange={(event) => setRowCap(Number(event.target.value))}
           >
@@ -651,7 +625,7 @@ export default function DeviceFactsPage() {
                 {cap}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         {filtersActive && (
           <Button size="default" variant="outline" onClick={clearFilters}>
