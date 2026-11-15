@@ -160,9 +160,9 @@ export const PhoneSheet: Story = {
 
 /** Programmatic decisions restore focus without a registered DialogTrigger. */
 export const ProgrammaticDecision: Story = {
-  render: function Comparison() {
+  render: function ProgrammaticDecision() {
     const [open, setOpen] = useState(false);
-    return <div className="hearth-app">
+    return <div>
       <Button variant="outline" onClick={() => setOpen(true)}>Open decision</Button>
       {open && <DecisionDialog title="Unsaved decision" onClose={() => setOpen(false)}>
         <p className="mt-[14px] mb-5 text-muted-foreground">Unsaved changes will be lost.</p>

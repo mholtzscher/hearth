@@ -8,6 +8,7 @@ import { Button } from "../components/ui/button.tsx";
 import { Card, CardContent } from "../components/ui/card.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { Label } from "../components/ui/label.tsx";
+import { NativeSelect } from "../components/ui/native-select.tsx";
 import {
   Table,
   TableBody,
@@ -254,9 +255,8 @@ export default function CommandsPage() {
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor="cmd-status-filter">Status filter</Label>
-          <select
+          <NativeSelect
             id="cmd-status-filter"
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
             value={statusFilter}
             onChange={(e) => {
               setStatusFilter(e.target.value);
@@ -270,7 +270,7 @@ export default function CommandsPage() {
                 {s}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <Button size="default" variant="outline" onClick={applyFilters}>
           Apply

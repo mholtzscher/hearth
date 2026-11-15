@@ -2,8 +2,6 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/figtree";
-/* Temporary migration styles: utilities take precedence over handwritten rules. */
-@import "./legacy.css" layer(components);
 
 @custom-variant dark (&:is(.dark *));
 @custom-variant short (@media (max-height: 600px));

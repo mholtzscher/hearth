@@ -5,21 +5,18 @@ import { describe, expect, it } from "vitest";
 import { cn, RADIUS_TOKENS, TEXT_TOKENS } from "./lib/utils.ts";
 
 /**
- * The dashboard is moving to one design system (CODING_STANDARDS.md, Dashboard
- * design system). These limits hold what remains of the older ways of writing
- * styles and controls. Lower a number when a change removes what it counts, and
- * delete an entry that reaches zero. Never raise one.
+ * Keep the dashboard on one design system (CODING_STANDARDS.md, Dashboard design
+ * system). Only the specialized BrightnessSlider and LightColorPicker inputs
+ * remain outside components/ui. Lower a count if an exception disappears; never
+ * raise one.
  */
 
 /** Selectors that contain a class, by stylesheet. A stylesheet that is not listed may hold none. */
-const CLASS_SELECTORS: Record<string, number> = {
-  "src/legacy.css": 7,
-};
+const CLASS_SELECTORS: Record<string, number> = {};
 
 /** Raw <select>, <textarea>, and <input> elements outside components/ui, by directory. */
 const RAW_CONTROLS: Record<string, number> = {
   "src/features": 5,
-  "src/pages": 1,
 };
 
 /** Files outside components/ui that import radix-ui. */

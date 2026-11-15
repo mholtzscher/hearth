@@ -122,16 +122,16 @@ export const CommandStatusFilter: Story = {
     }));
   },
   play: async ({ canvas, userEvent }) => {
-    await expect(await canvas.findByRole("cell", { name: "turn_on", exact: true })).toBeVisible();
-    await expect(canvas.getByRole("cell", { name: "turn_off", exact: true })).toBeVisible();
+    await expect(await canvas.findByRole("cell", { name: "turn_on" })).toBeVisible();
+    await expect(canvas.getByRole("cell", { name: "turn_off" })).toBeVisible();
     const filter = canvas.getByRole("combobox", { name: "Status filter" });
     await userEvent.selectOptions(filter, "rejected");
     await expect(filter).toHaveValue("rejected");
-    await waitFor(() => expect(canvas.queryByRole("cell", { name: "turn_on", exact: true })).not.toBeInTheDocument());
-    await expect(canvas.getByRole("cell", { name: "turn_off", exact: true })).toBeVisible();
-    await userEvent.click(canvas.getByRole("button", { name: "Clear", exact: true }));
+    await waitFor(() => expect(canvas.queryByRole("cell", { name: "turn_on" })).not.toBeInTheDocument());
+    await expect(canvas.getByRole("cell", { name: "turn_off" })).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Clear" }));
     await expect(filter).toHaveValue("");
-    await expect(await canvas.findByRole("cell", { name: "turn_on", exact: true })).toBeVisible();
+    await expect(await canvas.findByRole("cell", { name: "turn_on" })).toBeVisible();
   },
 };
 

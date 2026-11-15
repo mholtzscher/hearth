@@ -12,8 +12,7 @@
     "storybook": "storybook dev --host 127.0.0.1 --port 6006 --exact-port --no-open",
     "build-storybook": "tsc --noEmit && storybook build && pnpm run check-storybook-manifest",
     "check-storybook-manifest": "tsx scripts/check-storybook-manifest.ts",
-    "test-storybook": "vitest run --project storybook",
-    "story-shots": "tsx scripts/story-shots.ts"
+    "test-storybook": "vitest run --project storybook"
   },
   "dependencies": {
     "@assistant-ui/react": "0.15.32",

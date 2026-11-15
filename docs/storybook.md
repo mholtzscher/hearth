@@ -122,7 +122,8 @@ streamed replies, send failure/retry, and dashboard editing, save conflicts,
 discard confirmation, expansion, and phone panel switching. It also covers the
 dashboard library (loaded, empty, deletion, and phone layout), conversation search,
 pending views, selected-view messages, invalid drafts, and reading older messages.
-This group does not add Automations or other Development-page coverage.
+Its Commands story verifies status filtering and clearing the filter on the
+Development page. Automations have their own application group.
 
 The `application/Automations` group covers the Automation library and new-draft
 canvas, including a 390px phone layout. Direct AutomationCard and AutomationEditor
