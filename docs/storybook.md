@@ -110,11 +110,10 @@ Controls resets that draft; canvas edits do not update Controls. Other card
 editors have no direct stories. ViewEditor mounts Device and OutsideNow editors
 inside collapsed sections, but its stories do not interact with those sections.
 
-The `components/ui` catalog includes Button, Input, Textarea, NativeSelect,
-Switch, SegmentedControl, Dialog, Popover, and Notice stories, as well as
-Accordion, Badge, Card, Label, and Table stories. `ChartContainer` is exercised
-through TimeSeries stories but has no colocated story. `Separator` also has no
-colocated story.
+The `components/ui` catalog includes stories for Button, Input, Textarea,
+NativeSelect, Switch, SegmentedControl, Dialog, Popover, Notice, Accordion,
+Badge, Card, ChartContainer, Label, Separator, and Table. ChartContainer also
+appears in TimeSeries stories.
 
 The `application/Workspace` group runs the real application shell, conversation,
 and full dashboard canvas together. It includes desktop, tablet, and phone
