@@ -176,7 +176,11 @@ Cards use a soft 12px radius and a 1px neutral border; household buttons and nav
 
 ### Buttons
 
-Household primary buttons are orange with dark text, 8px corners, and a 44px minimum height; hover lightens the orange. Their disabled state uses gray background and text at full opacity. Secondary workspace actions are neutral bordered controls. Development uses the same semantic colors through shadcn's compact default, outline, secondary, ghost, destructive, and link variants; the default button is 32px high and uses its own translucent-orange hover treatment. Use outline for filters and paging. Focus is visibly violet: household controls use a 2px outline, while shadcn controls use a ring.
+Both surfaces use `components/ui/Button` with 8px corners and 14px text. The `default` size is 32px high; `touch` is 44px. Icon-only buttons use the square `icon` (32px) or `icon-touch` (44px) size and have an accessible name.
+
+Primary buttons are orange with dark, semibold text. Hover uses solid `orange-hover`; disabled primary buttons use `gray-3` background and border with `gray-7` text at full opacity. Outline buttons use the card surface, a neutral border, and regular-weight foreground text; hover uses `gray-3`. Use outline for filters, paging, and secondary workspace actions. The secondary, ghost, destructive, and link variants remain available. Disabled non-primary buttons use 50% opacity.
+
+Every variant uses a 2px violet focus outline with a 3px offset. The shared Button supplies its own styling, including when `asChild` renders a link. Existing handwritten household controls adopt this component in their migration units.
 
 ### View cards
 

@@ -46,7 +46,7 @@ export default function DevicesPage() {
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-2 text-lg font-semibold">Devices</h1>
-        <Button size="sm" variant="outline" onClick={() => { void refresh(); void detail.refresh(); }}>
+        <Button size="default" variant="outline" onClick={() => { void refresh(); void detail.refresh(); }}>
           Refresh
         </Button>
         {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
@@ -85,7 +85,7 @@ export default function DevicesPage() {
             </TableBody>
           </Table>
           {data.next_cursor && (
-            <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+            <Button size="default" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
               Next page
             </Button>
           )}

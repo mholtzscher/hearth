@@ -520,7 +520,7 @@ export default function DeviceFactsPage() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-2 text-lg font-semibold">Device facts</h1>
         <Button
-          size="sm"
+          size="default"
           variant="outline"
           disabled={snapshotState === "reading"}
           onClick={handleRefresh}
@@ -557,7 +557,7 @@ export default function DeviceFactsPage() {
         <p className="mt-1.5 text-xs text-muted-foreground">{liveExplanation}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Button
-            size="xs"
+            size="default"
             variant="outline"
             disabled={liveFacts.length === 0}
             onClick={() => {
@@ -587,7 +587,7 @@ export default function DeviceFactsPage() {
             {FAMILY_OPTIONS.map((option) => (
               <Button
                 key={option.value}
-                size="xs"
+                size="default"
                 variant={familyFilter === option.value ? "secondary" : "ghost"}
                 aria-pressed={familyFilter === option.value}
                 onClick={() => selectFamily(option.value)}
@@ -612,7 +612,7 @@ export default function DeviceFactsPage() {
             {DISPOSITION_OPTIONS.map((option) => (
               <Button
                 key={option.value}
-                size="xs"
+                size="default"
                 variant={dispositionFilter === option.value ? "secondary" : "ghost"}
                 aria-pressed={dispositionFilter === option.value}
                 disabled={dispositionDisabled}
@@ -654,7 +654,7 @@ export default function DeviceFactsPage() {
           </select>
         </div>
         {filtersActive && (
-          <Button size="xs" variant="outline" onClick={clearFilters}>
+          <Button size="default" variant="outline" onClick={clearFilters}>
             Clear filters
           </Button>
         )}

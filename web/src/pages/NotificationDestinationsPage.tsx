@@ -15,7 +15,7 @@ export default function NotificationDestinationsPage() {
   return <div>
     <div className="flex flex-wrap items-center gap-3">
       <h1 className="text-lg font-semibold">Notification destinations</h1>
-      <Button variant="outline" size="sm" onClick={() => { setCursor(""); if (!cursor) void refresh(); }}>Refresh destinations</Button>
+      <Button variant="outline" size="default" onClick={() => { setCursor(""); if (!cursor) void refresh(); }}>Refresh destinations</Button>
       <Link to="/notifications" className={linkClass}>Notification history</Link>
     </div>
     <p className="mt-2 text-sm text-muted-foreground">Select an adapter-registered destination to send a test message. Availability is current Core routing evidence, not a provider connection guarantee.</p>

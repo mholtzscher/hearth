@@ -14,7 +14,7 @@ function AttemptDetail({ id }: { id: string }) {
   const missing = error instanceof ApiError && error.status === 404;
   return <section className="mt-4 rounded-lg border p-3">
     <h2 className="font-semibold">Attempt {id}</h2>
-    <Button variant="outline" size="sm" onClick={() => void refresh()}>Refresh attempt</Button>
+    <Button variant="outline" size="default" onClick={() => void refresh()}>Refresh attempt</Button>
     {loading && <p>Loading…</p>}
     {missing ? <p role="status">This notification attempt was not found or has been pruned after its 30-day retention. Any retained Automation outcome is unchanged.</p> : error && <ErrorBox error={error} />}
     {data && !error && <>
@@ -43,7 +43,7 @@ export default function NotificationsPage() {
     <div className="flex flex-wrap items-center gap-3">
       <h1 className="text-lg font-semibold">Notification history</h1>
       <Link className={linkClass} to="/notification-destinations">Destinations and test send</Link>
-      <Button variant="outline" size="sm" onClick={() => { setCursor(""); if (!cursor) void refresh(); }}>Refresh history</Button>
+      <Button variant="outline" size="default" onClick={() => { setCursor(""); if (!cursor) void refresh(); }}>Refresh history</Button>
     </div>
     <p className="mt-2 text-sm text-muted-foreground">Manual and Automation attempts, newest first. History is independent of Automation retention; terminal attempts are retained for 30 days. All outcomes, including running and failed attempts, are listed.</p>
     {attemptId && <AttemptDetail key={attemptId} id={attemptId} />}

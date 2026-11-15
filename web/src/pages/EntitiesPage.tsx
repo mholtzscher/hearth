@@ -49,7 +49,7 @@ export default function EntitiesPage() {
           }}
         />
         <Button
-          size="sm"
+          size="default"
           variant="outline"
           onClick={() => {
             setAppliedDeviceId(deviceId.trim());
@@ -58,7 +58,7 @@ export default function EntitiesPage() {
         >
           Apply
         </Button>
-        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+        <Button size="default" variant="outline" onClick={() => void refresh()}>
           Refresh
         </Button>
         {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
@@ -104,7 +104,7 @@ export default function EntitiesPage() {
             </TableBody>
           </Table>
           {data.next_cursor && (
-            <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+            <Button size="default" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
               Next page
             </Button>
           )}

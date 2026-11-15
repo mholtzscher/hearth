@@ -104,7 +104,7 @@ function ConnectionSettings() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="Connection settings">
+        <Button variant="ghost" size="icon" aria-label="Connection settings">
           <SettingsIcon />
         </Button>
       </PopoverTrigger>
@@ -125,7 +125,7 @@ function ConnectionSettings() {
             Empty uses the same origin (the vite proxy).
           </p>
         </div>
-        <Button variant="outline" size="sm" asChild>
+        <Button variant="outline" size="default" asChild>
           <a href={`${baseUrl || ""}/openapi.json`} target="_blank" rel="noreferrer">
             Open OpenAPI JSON
           </a>

@@ -706,7 +706,7 @@ export default function AutomationDetailPage() {
           />
         )}
         {automation && <StatusChip label="revision" status={String(automation.revision)} />}
-        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+        <Button size="default" variant="outline" onClick={() => void refresh()}>
           Refresh
         </Button>
         {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
@@ -780,7 +780,7 @@ export default function AutomationDetailPage() {
                   retried: check the history before running again.
                 </p>
                 <div className="mt-3">
-                  <Button size="sm" disabled={runStarting || !!editing} onClick={() => void runNow()}>
+                  <Button size="default" disabled={runStarting || !!editing} onClick={() => void runNow()}>
                     {runStarting ? "Starting…" : "Run now"}
                   </Button>
                 </div>
@@ -831,7 +831,7 @@ export default function AutomationDetailPage() {
       {showHistory && (
         <Section title="History">
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="outline" onClick={refreshHistoryAndSelection}>
+            <Button size="default" variant="outline" onClick={refreshHistoryAndSelection}>
               Refresh history
             </Button>
             {historyLoading && <span className="text-sm text-muted-foreground">Loading…</span>}
@@ -874,7 +874,7 @@ export default function AutomationDetailPage() {
                       <TableCell className="max-w-[18rem]">
                         <Button
                           variant="link"
-                          size="xs"
+                          size="default"
                           className="font-mono"
                           aria-current={summary.id === selectedEntryId ? "true" : undefined}
                           onClick={() => setSelectedEntryId(summary.id)}
@@ -888,7 +888,7 @@ export default function AutomationDetailPage() {
               </Table>
               {history.next_cursor && (
                 <Button
-                  size="sm"
+                  size="default"
                   variant="outline"
                   className="mt-2"
                   onClick={() => {

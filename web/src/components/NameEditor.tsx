@@ -71,12 +71,12 @@ function Editor({ objectId, kind, metadata, onUpdated }: Props) {
           <Input id={fieldId} autoFocus value={draft} disabled={pending} aria-describedby={`${fieldId}-count`} onChange={(event) => setDraft(event.target.value)} />
           <p id={`${fieldId}-count`} className="text-xs text-muted-foreground">{Array.from(draft).length} code points. Names must contain 1–128 code points after trimming.</p>
           <div className="flex gap-2">
-            <Button size="sm" type="submit" disabled={pending}>{pending ? "Saving…" : "Save name"}</Button>
-            <Button size="sm" type="button" variant="outline" disabled={pending} onClick={() => { setEditing(false); setError(null); setStatus(""); }}>Cancel</Button>
+            <Button size="default" type="submit" disabled={pending}>{pending ? "Saving…" : "Save name"}</Button>
+            <Button size="default" type="button" variant="outline" disabled={pending} onClick={() => { setEditing(false); setError(null); setStatus(""); }}>Cancel</Button>
           </div>
         </form>
-      ) : <Button size="sm" variant="outline" disabled={pending} onClick={() => { setDraft(metadata.name); setEditing(true); setError(null); setStatus(""); }}>Rename</Button>}
-      <Button size="sm" variant="outline" disabled={pending || metadata.name_override === null} onClick={() => void submit(null)}>Reset to Adapter name</Button>
+      ) : <Button size="default" variant="outline" disabled={pending} onClick={() => { setDraft(metadata.name); setEditing(true); setError(null); setStatus(""); }}>Rename</Button>}
+      <Button size="default" variant="outline" disabled={pending || metadata.name_override === null} onClick={() => void submit(null)}>Reset to Adapter name</Button>
       <p role="status" className="text-sm">{status}</p>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </div>

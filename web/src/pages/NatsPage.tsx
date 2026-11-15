@@ -181,7 +181,7 @@ function LiveMessages() {
         {SUBJECT_PRESETS.map((p) => (
           <Button
             key={p.label}
-            size="xs"
+            size="default"
             variant={subject === p.subject ? "secondary" : "ghost"}
             onClick={() => setSubject(p.subject)}
           >
@@ -190,16 +190,16 @@ function LiveMessages() {
         ))}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" disabled={status !== "disconnected"} onClick={() => void subscribe()}>
+        <Button size="default" disabled={status !== "disconnected"} onClick={() => void subscribe()}>
           Subscribe
         </Button>
-        <Button size="sm" variant="outline" disabled={status === "disconnected"} onClick={unsubscribe}>
+        <Button size="default" variant="outline" disabled={status === "disconnected"} onClick={unsubscribe}>
           Unsubscribe
         </Button>
-        <Button size="sm" variant="outline" onClick={() => setPaused((p) => !p)}>
+        <Button size="default" variant="outline" onClick={() => setPaused((p) => !p)}>
           {paused ? "Resume" : "Pause"}
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => setMessages([])}>
+        <Button size="default" variant="ghost" onClick={() => setMessages([])}>
           Clear
         </Button>
         <Input
@@ -339,7 +339,7 @@ function ServerInfo() {
         <CardContent>
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-medium">JetStream: HEARTH_OBSERVATIONS_V1</span>
-            <Button size="xs" variant="outline" onClick={() => void jsz.refresh()}>
+            <Button size="default" variant="outline" onClick={() => void jsz.refresh()}>
               Refresh
             </Button>
           </div>
@@ -370,7 +370,7 @@ function ServerInfo() {
         <CardContent>
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-medium">Connections</span>
-            <Button size="xs" variant="outline" onClick={() => void conns.refresh()}>
+            <Button size="default" variant="outline" onClick={() => void conns.refresh()}>
               Refresh
             </Button>
           </div>

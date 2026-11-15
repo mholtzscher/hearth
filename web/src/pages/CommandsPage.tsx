@@ -111,7 +111,7 @@ function CommandDetail({ commandId }: { commandId: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs">{commandId}</span>
           {data && <StatusChip status={data.status} />}
-          <Button size="sm" variant="outline" onClick={() => void refresh()}>
+          <Button size="default" variant="outline" onClick={() => void refresh()}>
             Refresh
           </Button>
           {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
@@ -205,10 +205,10 @@ export default function CommandsPage() {
             if (e.key === "Enter") lookUp(commandId);
           }}
         />
-        <Button size="sm" onClick={() => lookUp(commandId)}>
+        <Button size="default" onClick={() => lookUp(commandId)}>
           Look up
         </Button>
-        <Button size="sm" variant="outline" onClick={() => void refresh()}>
+        <Button size="default" variant="outline" onClick={() => void refresh()}>
           Refresh list
         </Button>
         {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
@@ -224,7 +224,7 @@ export default function CommandsPage() {
           {recentIds.map((id) => (
             <Button
               key={id}
-              size="xs"
+              size="default"
               variant="outline"
               className="font-mono"
               onClick={() => lookUp(id)}
@@ -271,12 +271,12 @@ export default function CommandsPage() {
             ))}
           </select>
         </div>
-        <Button size="sm" variant="outline" onClick={applyFilters}>
+        <Button size="default" variant="outline" onClick={applyFilters}>
           Apply
         </Button>
         {(appliedEntity || statusFilter) && (
           <Button
-            size="sm"
+            size="default"
             variant="outline"
             onClick={() => {
               setEntityFilter("");
@@ -330,7 +330,7 @@ export default function CommandsPage() {
                   <TableCell className="max-w-[16rem]">
                     <Button
                       variant="link"
-                      size="xs"
+                      size="default"
                       className="font-mono"
                       aria-current={c.id === selectedId ? "true" : undefined}
                       onClick={() => lookUp(c.id)}
@@ -343,7 +343,7 @@ export default function CommandsPage() {
             </TableBody>
           </Table>
           {data.next_cursor && (
-            <Button size="sm" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
+            <Button size="default" variant="outline" className="mt-2" onClick={() => setCursor(data.next_cursor)}>
               Next page
             </Button>
           )}
