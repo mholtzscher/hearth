@@ -62,7 +62,7 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
   const children = graph.children[id].map(child => <ViewNode key={child} graph={graph} id={child} />);
   switch (node.type) {
     case "Stack": return <div className={`view-stack gap-${node.props.gap}`}>{children}</div>;
-    case "Grid": return <div className={`view-grid${gridKind(graph, id)}`} style={{ "--view-columns": node.props.columns } as CSSProperties}>{children}</div>;
+    case "Grid": return <div data-slot="view-grid" data-grid-kind={gridKind(graph, id).trim().replace("view-grid-", "") || undefined} className={`view-grid${gridKind(graph, id)}`} style={{ "--view-columns": node.props.columns } as CSSProperties}>{children}</div>;
     case "Heading": return <Heading className="view-heading">{node.props.text}</Heading>;
     case "Note": return <p className="view-note">{node.props.text}</p>;
     case "Metric": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Reading"}><BoundMetric {...node.props} /></CardBoundary>;
