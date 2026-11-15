@@ -190,6 +190,12 @@ Input and NativeSelect default to 32px high with 4px vertical padding. The `touc
 
 Textarea has a 44px minimum height and 8px vertical padding. Its native `rows` prop controls the initial multiline height; it does not auto-grow with content. Caller typography overrides remain available for diagnostic JSON and identifiers. Existing household editor fields keep their handwritten 6px corners until their adoption units; comparison stories assert that approved 6px-to-8px change separately.
 
+### Notices
+
+`components/ui/Notice` uses the household error tint: a 45% destructive-colour border, an 8% destructive-colour background, foreground text, 8px corners, and 12px padding. Its text uses the 12px caption step with an 18px line height. Notices grow with their content rather than taking a control height.
+
+Callers choose `role="alert"` for errors or `role="status"` for non-urgent feedback. Recovery actions remain caller-owned shared Buttons. The handwritten workspace notice keeps its 9px corners until its adoption unit; the comparison story checks the approved 9px-to-8px change separately.
+
 ### View cards
 
 State cards show boolean and text fields in words at the reading scale.
