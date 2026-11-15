@@ -6,7 +6,7 @@ export type SegmentedControlProps<T extends string> = {
   value: T;
   onValueChange: (value: T) => void;
   options: Array<{ value: T; label: ReactNode; disabled?: boolean }>;
-  /** The height of each segment: 32px by default or 44px for touch. */
+  /** The minimum height of each segment: 32px by default or 44px for touch. */
   size?: "default" | "touch";
   disabled?: boolean;
 };
@@ -24,7 +24,7 @@ export function SegmentedControl<T extends string>({
     {options.map(option => <button key={option.value} data-slot="segment" type="button"
       aria-pressed={value === option.value} disabled={disabled || option.disabled}
       onClick={() => onValueChange(option.value)}
-      className={`${segmentClasses} ${size === "touch" ? "h-11" : "h-8"}`}>
+      className={`${segmentClasses} ${size === "touch" ? "min-h-11" : "min-h-8"}`}>
       {option.label}
     </button>)}
   </div>;

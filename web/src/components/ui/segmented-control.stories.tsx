@@ -68,6 +68,50 @@ export const Controlled: Story = {
   },
 };
 
+export const LongLabels: Story = {
+  render: args => <div className="grid w-[180px] gap-6">
+    {(["default", "touch"] as const).map(size => <SegmentedControl key={size} {...args}
+      label={`${size} mode`} size={size} options={[
+        { value: "auto", label: <span className="block">Automatic air quality monitoring</span> },
+        { value: "sleep", label: <span className="block">Quiet night-time operation</span> },
+        { value: "manual", label: <span className="block">Manual fan speed control</span> },
+      ]} />)}
+  </div>,
+  play: async ({ canvas, canvasElement, userEvent, args }) => {
+    await canvasElement.ownerDocument.fonts.ready;
+    for (const size of ["default", "touch"]) {
+      const group = within(canvas.getByRole("group", { name: `${size} mode` }));
+      for (const name of ["Automatic air quality monitoring", "Quiet night-time operation", "Manual fan speed control"]) {
+        const button = group.getByRole("button", { name });
+        const label = within(button).getByText(name);
+        const bounds = button.getBoundingClientRect();
+        const text = label.getBoundingClientRect();
+        await expect(text.top, `${size} ${name}: top`).toBeGreaterThanOrEqual(bounds.top);
+        await expect(text.bottom, `${size} ${name}: bottom`).toBeLessThanOrEqual(bounds.bottom);
+        await expect(text.left, `${size} ${name}: left`).toBeGreaterThanOrEqual(bounds.left);
+        await expect(text.right, `${size} ${name}: right`).toBeLessThanOrEqual(bounds.right);
+        await expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth);
+        await expect(button.scrollHeight).toBeLessThanOrEqual(button.clientHeight);
+      }
+    }
+    const first = within(canvas.getByRole("group", { name: "default mode" })).getByRole("button", { name: "Automatic air quality monitoring" });
+    const second = within(canvas.getByRole("group", { name: "touch mode" })).getByRole("button", { name: "Automatic air quality monitoring" });
+    await userEvent.tab();
+    await expect(first).toHaveFocus();
+    await expect(getComputedStyle(first).outlineWidth).toBe("2px");
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onValueChange).toHaveBeenCalledWith("auto");
+    await userEvent.tab();
+    await userEvent.tab();
+    await userEvent.tab();
+    await expect(second).toHaveFocus();
+    await expect(getComputedStyle(second).outlineWidth).toBe("2px");
+    await userEvent.keyboard(" ");
+    await expect(args.onValueChange).toHaveBeenCalledTimes(2);
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
 export const Disabled: Story = {
   args: { disabled: true },
   play: async ({ canvas, userEvent, args }) => {
@@ -85,6 +129,11 @@ export const HouseholdComparison: Story = {
     <div role="group" aria-label="Legacy mode" className="view-air-purifier-segmented">
       {options.map(option => <button key={option.value} type="button" aria-pressed={args.value === option.value}
         disabled={option.disabled}>{option.label}</button>)}
+    </div>
+    <SegmentedControl {...args} label="Disabled shared mode" disabled />
+    <div role="group" aria-label="Disabled legacy mode" className="view-air-purifier-segmented">
+      {options.map(option => <button key={option.value} type="button" aria-pressed={args.value === option.value}
+        disabled>{option.label}</button>)}
     </div>
   </div>,
   play: async ({ canvas, canvasElement }) => {
@@ -108,5 +157,16 @@ export const HouseholdComparison: Story = {
       await expect(a.borderRadius).toBe("8px");
       await expect(b.borderRadius).toBe("6px");
     }
+    const enabledSelected = getComputedStyle(shared.getByRole("button", { name: "Auto" }));
+    const disabledShared = getComputedStyle(within(canvas.getByRole("group", { name: "Disabled shared mode" })).getByRole("button", { name: "Auto" }));
+    const disabledLegacy = getComputedStyle(within(canvas.getByRole("group", { name: "Disabled legacy mode" })).getByRole("button", { name: "Auto" }));
+    await expect(disabledShared.backgroundColor).toBe(enabledSelected.backgroundColor);
+    await expect(disabledShared.color).toBe(enabledSelected.color);
+    await expect(disabledShared.boxShadow).toBe(enabledSelected.boxShadow);
+    await expect(disabledShared.opacity).toBe("0.5");
+    await expect(disabledLegacy.backgroundColor).toBe("rgb(31, 31, 31)");
+    await expect(disabledLegacy.color).toBe("rgb(125, 125, 125)");
+    await expect(disabledLegacy.boxShadow).toContain("rgb(61, 61, 61)");
+    await expect(disabledLegacy.opacity).toBe("1");
   },
 };
