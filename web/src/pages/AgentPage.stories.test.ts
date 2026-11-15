@@ -3,8 +3,10 @@ import { getResponse } from "msw";
 import { expect, it } from "vitest";
 import { automationId, definition } from "../../.storybook/automation-fixtures";
 import { conversationId, createApplicationHandlers, queuedConversationId } from "../../.storybook/application-fixtures";
+import { projectHistory } from "../features/conversation/runtime";
 
 const base = "http://localhost";
+const toolArguments = '{"entity_id":"ent_019a3e6a-4111-7000-8000-000000000004"}';
 async function request(handlers: ReturnType<typeof createApplicationHandlers>, path: string, init?: RequestInit) {
   const response = await getResponse(handlers, new Request(new URL(path, base), init), { baseUrl: base });
   if (!response) throw new Error(`No fixture response for ${init?.method ?? "GET"} ${path}`);
@@ -12,7 +14,9 @@ async function request(handlers: ReturnType<typeof createApplicationHandlers>, p
 }
 
 it("lists a newly committed conversation while its create response waits for the canonical turn", async () => {
-  const handlers = createApplicationHandlers({ turn: "queue-collision" });
+  let failTurn!: () => void;
+  const queuedTurnFailure = new Promise<void>(resolve => { failTurn = resolve; });
+  const handlers = createApplicationHandlers({ turn: "queue-collision", queuedTurnFailure });
   const path = `/v1/agent/conversations/${queuedConversationId}`;
   expect((await request(handlers, `${path}/messages`)).status).toBe(404);
   const list = request(handlers, "/v1/agent/conversations");
@@ -33,15 +37,35 @@ it("lists a newly committed conversation while its create response waits for the
     body: JSON.stringify({ text: "Check the hallway." }),
   });
   expect(await (await create).json()).toEqual({ id: queuedConversationId, created_at: "2026-11-09T10:00:30Z" });
-  expect(await (await request(handlers, `${path}/messages`)).json()).toEqual({
-    messages: [{ message_id: 1, role: "user", content: "Check the hallway.", created_at: "2026-11-09T10:00:30Z" }],
+  const reader = (await stream).body!.getReader();
+  const readEvent = async () => {
+    const chunk = await reader.read();
+    expect(chunk.done).toBe(false);
+    return JSON.parse(new TextDecoder().decode(chunk.value).replace(/^data: /, "").trim());
+  };
+  expect(await readEvent()).toEqual({ type: "turn.started" });
+  expect(await readEvent()).toEqual({ type: "tool.started", call_id: "read-temperature", name: "get_entity", arguments: toolArguments });
+  const history = await (await request(handlers, `${path}/messages`)).json();
+  expect(history).toEqual({
+    messages: [
+      { message_id: 1, role: "user", content: "Check the hallway.", created_at: "2026-11-09T10:00:30Z" },
+      { message_id: 2, role: "assistant", content: "", created_at: "2026-11-09T10:00:30Z",
+        calls: [{ id: "read-temperature", name: "get_entity", arguments: toolArguments }] },
+    ],
   });
+  failTurn();
+  expect(await readEvent()).toEqual({ type: "turn.failed", error: "agent turn failed" });
+  expect((await reader.read()).done).toBe(true);
+  const reconciled = await (await request(handlers, `${path}/messages`)).json();
+  expect(reconciled).toEqual(history);
+  const activity = projectHistory(reconciled.messages)[1].activities[0];
+  expect(activity).toMatchObject({ id: "read-temperature", name: "get_entity", arguments: toolArguments });
+  expect(activity).not.toHaveProperty("result");
   const updated = await (await request(handlers, "/v1/agent/conversations")).json();
   expect(updated.conversations).toContainEqual({
     id: queuedConversationId, created_at: "2026-11-09T10:00:30Z", last_message_at: "2026-11-09T10:00:30Z",
-    message_count: 1, preview: "Check the hallway.",
+    message_count: 2, preview: "Check the hallway.",
   });
-  await (await stream).body?.cancel();
 });
 
 it.each([

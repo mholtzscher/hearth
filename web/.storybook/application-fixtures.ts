@@ -4,7 +4,7 @@ import type { AgentMessage, AutomationArtifact, TurnEvent } from "../src/api/age
 import { viewContextSchema } from "../src/api/agent";
 import type { Dashboard } from "../src/api/dashboards";
 import { automation, automationHandlers, automationId, definition as automationDefinition } from "./automation-fixtures";
-import { dashboardDefinition, fixtureNow } from "./fixtures";
+import { dashboardDefinition, entityId, fixtureNow } from "./fixtures";
 
 export const conversationId = "conversation_story_morning";
 export const queuedConversationId = "aconv_01920000000070008000000000000001";
@@ -152,13 +152,17 @@ export function createApplicationHandlers(scenario: ApplicationScenario = {}) {
         return HttpResponse.json({ detail: "Synthetic provider unavailable" }, { status: 503 });
       }
       const pending = scenario.turn === "pending" || scenario.turn === "pending-view" || scenario.turn === "queue-collision";
+      const toolStarted = { type: "tool.started", call_id: "read-temperature", name: scenario.turn === "pending-view" ? "present_view" : "get_entity",
+        arguments: scenario.turn === "queue-collision" ? JSON.stringify({ entity_id: entityId(4) }) : "{}" } as const satisfies TurnEvent;
       if (scenario.turn === "queue-collision" && params.id === queuedConversationId) {
-        histories.set(queuedConversationId, [{ message_id: 1, role: "user", content: text, created_at: fixtureNow }]);
+        histories.set(queuedConversationId, [
+          { message_id: 1, role: "user", content: text, created_at: fixtureNow },
+          { message_id: 2, role: "assistant", content: "", created_at: fixtureNow,
+            calls: [{ id: toolStarted.call_id, name: toolStarted.name, arguments: toolStarted.arguments }] },
+        ]);
         startCanonical();
       }
-      const events: TurnEvent[] = [
-        { type: "tool.started", call_id: "read-temperature", name: scenario.turn === "pending-view" ? "present_view" : "get_entity", arguments: "{}" },
-      ];
+      const events: TurnEvent[] = [...(scenario.turn === "queue-collision" ? [{ type: "turn.started" }] : []), toolStarted];
       if (!pending) {
         const messages = histories.get(String(params.id)) ?? [];
         const next = messages.length + 1;

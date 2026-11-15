@@ -582,6 +582,7 @@ export const QueuedAfterFailedReply: Story = {
     context.parameters.releaseQueuedTurn();
     await expect(await context.canvas.findByRole("alert")).toHaveTextContent("agent turn failed");
     await expect(await context.canvas.findByText("Queued message has not been sent.")).toBeVisible();
+    await expect(await context.canvas.findByText("Used 1 tool · 1 pending or unknown")).toBeVisible();
     await expect(context.canvas.getByRole("button", { name: "Send queued message" })).toBeDisabled();
     await expect(context.canvas.getByRole("button", { name: "Discard failed prompt" })).toBeEnabled();
     await expect(context.canvas.getByRole("button", { name: "Cancel queued message" })).toBeEnabled();
