@@ -2,29 +2,35 @@ import * as React from "react"
 import { cn } from "../../lib/utils.ts"
 import { Switch as SwitchPrimitive } from "radix-ui"
 
+type SwitchProps = React.ComponentProps<typeof SwitchPrimitive.Root> & {
+  /** The touch target is 44px high; the default target is 32px. */
+  size?: "touch" | "default"
+}
+
 function Switch({
   className,
   size = "default",
   ...props
-}: React.ComponentProps<typeof SwitchPrimitive.Root> & {
-  size?: "sm" | "default"
-}) {
+}: SwitchProps) {
   return (
     <SwitchPrimitive.Root
       data-slot="switch"
       data-size={size}
       className={cn(
-        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent transition-all outline-none group-has-[:focus-visible]/field-label:border-transparent group-has-[:focus-visible]/field-label:ring-0 after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[18.4px] data-[size=default]:w-[32px] data-[size=sm]:h-[14px] data-[size=sm]:w-[24px] dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-input dark:data-unchecked:bg-input/80 data-disabled:cursor-not-allowed data-disabled:opacity-50",
+        "group/switch inline-flex w-11 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-[3px] data-[size=default]:h-8 data-[size=touch]:h-11 disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       {...props}
     >
-      <SwitchPrimitive.Thumb
-        data-slot="switch-thumb"
-        className="pointer-events-none block rounded-full bg-background ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 group-data-[size=default]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=sm]/switch:data-checked:translate-x-[calc(100%-2px)] dark:data-checked:bg-primary-foreground group-data-[size=default]/switch:data-unchecked:translate-x-0 group-data-[size=sm]/switch:data-unchecked:translate-x-0 dark:data-unchecked:bg-foreground"
-      />
+      <span data-slot="switch-track" className="pointer-events-none relative h-6 w-11 rounded-card border border-gray-7 bg-gray-3 transition-[background-color,border-color] duration-[160ms] ease-out-expo motion-reduce:transition-none group-data-checked/switch:border-violet group-data-checked/switch:bg-violet group-aria-invalid/switch:border-destructive">
+        <SwitchPrimitive.Thumb
+          data-slot="switch-thumb"
+          className="absolute top-[2px] left-[2px] size-[18px] rounded-full bg-gray-8 transition-[translate,background-color] duration-[160ms] ease-out-expo motion-reduce:transition-none group-data-checked/switch:translate-x-5 group-data-checked/switch:bg-gray-10"
+        />
+      </span>
     </SwitchPrimitive.Root>
   )
 }
 
 export { Switch }
+export type { SwitchProps }
