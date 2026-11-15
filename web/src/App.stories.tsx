@@ -127,8 +127,11 @@ export const CommandStatusFilter: Story = {
     const filter = canvas.getByRole("combobox", { name: "Status filter" });
     await userEvent.selectOptions(filter, "rejected");
     await expect(filter).toHaveValue("rejected");
-    await waitFor(() => expect(canvas.queryByRole("cell", { name: "turn_on" })).not.toBeInTheDocument());
-    await expect(canvas.getByRole("cell", { name: "turn_off" })).toBeVisible();
+    // Changing the filter clears the list until the filtered response arrives.
+    await waitFor(() => {
+      expect(canvas.queryByRole("cell", { name: "turn_on" })).not.toBeInTheDocument();
+      expect(canvas.getByRole("cell", { name: "turn_off" })).toBeVisible();
+    });
     await userEvent.click(canvas.getByRole("button", { name: "Clear" }));
     await expect(filter).toHaveValue("");
     await expect(await canvas.findByRole("cell", { name: "turn_on" })).toBeVisible();
