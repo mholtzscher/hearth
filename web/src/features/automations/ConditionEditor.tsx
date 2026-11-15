@@ -10,9 +10,9 @@ import { Input } from "../../components/ui/input";
 import { NativeSelect } from "../../components/ui/native-select";
 import { Textarea } from "../../components/ui/textarea";
 
-const field = "grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 text-[13px]";
+const field = "grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 text-label";
 const condition = "my-2 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5 border-l border-gray-5 pl-3 max-tablet:pl-[9px]";
-const paragraph = "my-[5px] text-[13px] text-muted-foreground";
+const paragraph = "my-[5px] text-label text-muted-foreground";
 
 export type Resources = { entities: Entity[]; automations: Automation[]; destinations: NotificationDestination[]; functions: AdapterFunction[] };
 export type Context = { document: AutomationDocument; resources: Resources; apply: (path: JsonPath, raw: string | undefined) => void; sequence: (path: JsonPath, update: (children: string[]) => string[]) => void; invalid: Record<string, string>; setInvalid: (key: string, value: string | null) => void };

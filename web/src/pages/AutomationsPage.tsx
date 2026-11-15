@@ -66,7 +66,7 @@ export default function AutomationsPage() {
       {data && (
         <>
           {layout === "cards" ? <div className="my-[18px] grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] items-start gap-4">{data.items.length === 0 && <p className="min-w-0">No automations. Create one here or ask Hearth for a proposal.</p>}{data.items.map(automation => {
-            try { return <AutomationCard key={automation.id} document={readAutomationDocument(automationJsonSource(automation.definition))} automationId={automation.id} compact headingLevel={2}><p className="my-[5px] text-[13px] text-muted-foreground">Revision {automation.revision} · {automation.definition.enabled ? "Enabled" : "Disabled"}</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Open {automation.definition.name}</RouterLink></AutomationCard>; }
+            try { return <AutomationCard key={automation.id} document={readAutomationDocument(automationJsonSource(automation.definition))} automationId={automation.id} compact headingLevel={2}><p className="my-[5px] text-label text-muted-foreground">Revision {automation.revision} · {automation.definition.enabled ? "Enabled" : "Disabled"}</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Open {automation.definition.name}</RouterLink></AutomationCard>; }
             catch { return <Notice key={automation.id} role="alert" className="min-w-0"><p>{automation.definition.name} cannot be shown in this version.</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Inspect {automation.definition.name}</RouterLink></Notice>; }
           })}</div> : <Table className="mt-3">
             <TableHeader>

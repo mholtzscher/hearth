@@ -7,7 +7,7 @@ import { documentValue, type AutomationDocument } from "./document";
 import { Button } from "../../components/ui/button";
 
 const note = "block text-caption leading-normal text-muted-foreground";
-const paragraph = "my-[5px] text-[13px] text-muted-foreground";
+const paragraph = "my-[5px] text-label text-muted-foreground";
 
 /** Same-named Entities, such as several "Power" Entities, are told apart by their Device. */
 export const entityLabelText = (name: string, device?: string) => device ? `${name} (${device})` : name;

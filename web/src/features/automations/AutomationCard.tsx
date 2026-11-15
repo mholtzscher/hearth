@@ -13,7 +13,7 @@ import { automationEntityIds, describeAutomationSteps } from "./definition-tree"
 import { Button } from "../../components/ui/button";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 
-const paragraph = "my-[5px] text-[13px] text-muted-foreground";
+const paragraph = "my-[5px] text-label text-muted-foreground";
 const heading = "m-0 text-body font-semibold";
 const row = "flex flex-wrap items-center justify-between gap-3";
 const action = "max-w-full max-tablet:h-11";

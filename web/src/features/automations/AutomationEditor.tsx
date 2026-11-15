@@ -11,11 +11,11 @@ import { Button } from "../../components/ui/button";
 import { NativeSelect } from "../../components/ui/native-select";
 import { Switch } from "../../components/ui/switch";
 
-const field = "grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 text-[13px]";
+const field = "grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 text-label";
 const fields = "grid grid-cols-[minmax(0,1fr)] gap-2.5";
 const actions = "mt-2.5 flex flex-wrap items-center justify-start gap-3";
 const summary = "min-h-9 cursor-pointer py-2";
-const paragraph = "my-[5px] text-[13px] text-muted-foreground";
+const paragraph = "my-[5px] text-label text-muted-foreground";
 
 type EditorProps = { document: AutomationDocument; onChange: (document: AutomationDocument) => void; onValidityChange?: (valid: boolean) => void };
 
