@@ -8,6 +8,7 @@ import { collection, discoverFunctions, type AdapterFunction } from "./resources
 import { getOperationParametersSchema } from "./operation-parameters";
 import { Condition, Field, Select, StateGuide, conditionSource, entityOptions, firstEntity, q, type Context, type Resources } from "./ConditionEditor";
 import { Button } from "../../components/button";
+import { Card } from "../../components/card";
 import { NativeSelect } from "../../components/native-select";
 import { Switch } from "../../components/switch";
 
@@ -153,8 +154,8 @@ export function AutomationEditor({ document, onChange, onValidityChange }: Edito
   const apply = (path: JsonPath, raw: string | undefined) => { if (path.length && Object.keys(invalid).some(key => { const other = JSON.parse(key) as JsonPath; return path.length <= other.length && path.every((part, i) => part === other[i]); })) { setOperationError("Fix invalid fields before replacing their containing structure."); return; } try { onChange(editAutomationDocument(document, path, raw)); setOperationError(""); } catch (error) { setOperationError(error instanceof Error ? error.message : "Invalid change."); } };
   const sequence = (path: JsonPath, update: (children: string[]) => string[]) => { if (Object.keys(invalid).length) { setOperationError("Fix invalid fields before changing a sequence."); return; } try { onChange(sequenceDocument(document, path, update)); setOperationError(""); } catch (error) { setOperationError(error instanceof Error ? error.message : "Invalid sequence."); } };
   const ctx: Context = { document: valid ?? document, resources, apply, sequence, invalid, setInvalid };
-  if (!valid) return <section className="grid min-w-0 gap-[18px] rounded-card border border-border bg-card p-[18px] text-foreground [overflow-wrap:anywhere] max-tablet:p-3.5" role="alert">This Automation cannot be edited: {validationError}</section>;
-  return <section className="grid min-w-0 gap-[18px] rounded-card border border-border bg-card p-[18px] text-foreground [overflow-wrap:anywhere] max-tablet:p-3.5" aria-label="Automation editor"><h3 className="text-body font-semibold">Stack builder</h3><p className={paragraph}>Changes remain a draft until you save. Edit each path in order.</p>
+  if (!valid) return <Card asChild className="grid gap-[18px] [overflow-wrap:anywhere] max-tablet:p-3.5"><section role="alert">This Automation cannot be edited: {validationError}</section></Card>;
+  return <Card asChild className="grid gap-[18px] [overflow-wrap:anywhere] max-tablet:p-3.5"><section aria-label="Automation editor"><h3 className="text-body font-semibold">Stack builder</h3><p className={paragraph}>Changes remain a draft until you save. Edit each path in order.</p>
     {loadError && <p role="alert" className={`${paragraph} text-destructive`}>Could not load resources: {loadError}. Existing references remain unchanged.</p>}
     {operationError && <p role="alert" className={`${paragraph} text-destructive`}>Change not applied: {operationError}</p>}
     {issues.map(issue => <p role="alert" className={`${paragraph} text-destructive`} key={`${issue.path}-${issue.message}`}>{issue.path}: {issue.message}</p>)}
@@ -162,5 +163,5 @@ export function AutomationEditor({ document, onChange, onValidityChange }: Edito
     <TriggerEditor ctx={ctx}/><section className="min-w-0"><h4 className="text-body font-semibold">Admission Conditions</h4><p className={paragraph}>These Conditions are evaluated before an automatic Run starts.</p>{valid.definition.conditions ? <><Condition ctx={ctx} value={valid.definition.conditions} path={["conditions"]} reached={false}/><Button variant="outline" size="touch" className="max-w-full" onClick={() => apply(["conditions"], undefined)}>Remove admission Condition</Button></> : <Button variant="outline" size="touch" className="max-w-full" disabled={!firstEntity(ctx)} onClick={() => { const source = conditionSource(ctx, "entity_state", newDocumentID(document, "condition")); if (source) apply(["conditions"], source); }}>Add admission Condition</Button>}</section>
     <SequenceEditor ctx={ctx} path={["steps"]} steps={valid.definition.steps} title="Steps"/>
     <details className="border-t border-border py-1"><summary className={summary}>Advanced · exact JSON definition</summary><p className={paragraph}>Changes are validated against the canonical definition. Exact values are retained.</p><Field ctx={ctx} path={[]} label="Exact JSON definition" raw multiline/></details>
-  </section>;
+  </section></Card>;
 }

@@ -41,7 +41,7 @@ import { StatusChip } from "../components/status-chip.tsx";
 import { linkClass } from "../components/link-styles.ts";
 import { problemCode } from "../api/problem.ts";
 import { Button } from "../components/button.tsx";
-import { Card, CardContent } from "../components/card.tsx";
+import { Card } from "../components/card.tsx";
 import { Label } from "../components/label.tsx";
 import { Switch } from "../components/switch.tsx";
 import {
@@ -158,7 +158,7 @@ function AutomationTriggerList({
   return (
     <ul className="mt-1 grid gap-2">
       {triggers.map((trigger) => (
-        <li key={trigger.id} className="rounded-lg border px-3 py-2">
+        <Card asChild size="compact" key={trigger.id} className="py-2"><li>
           <div className="flex flex-wrap items-center gap-2">
             <StatusChip status={trigger.kind} />
             <span className="font-mono text-xs">{trigger.id}</span>
@@ -170,7 +170,7 @@ function AutomationTriggerList({
             )}
           </div>
           <p className="mt-1 font-mono text-xs">{triggerDescription(trigger)}</p>
-        </li>
+        </li></Card>
       ))}
     </ul>
   );
@@ -716,93 +716,89 @@ export default function AutomationDetailPage() {
         <>
           {!editing && authoringDocument && <AutomationCard document={authoringDocument} automationId={automation.id} entityLabels={labels} headingLevel={2} onEdit={workspace ? () => workspace.selectAutomation(automation) : undefined} />}
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
-            <Card size="sm">
-              <CardContent>
-                <Facts
-                  rows={[
-                    ["Name", definition.name],
-                    ["Enabled", definition.enabled ? "yes" : "no"],
-                    ["Revision", String(automation.revision)],
-                    ["Created at", automation.created_at],
-                    ["Updated at", automation.updated_at],
-                    ["Triggers", String(definition.triggers.length)],
-                    ["Defined Steps", String(stepSummary.stepCount)],
-                    ["Commands", String(stepSummary.commandCount)],
-                    ["Notifications", String(stepSummary.notificationCount)],
-                    ["Functions", String(stepSummary.functionCount)],
-                  ]}
+            <Card size="compact">
+              <Facts
+                rows={[
+                  ["Name", definition.name],
+                  ["Enabled", definition.enabled ? "yes" : "no"],
+                  ["Revision", String(automation.revision)],
+                  ["Created at", automation.created_at],
+                  ["Updated at", automation.updated_at],
+                  ["Triggers", String(definition.triggers.length)],
+                  ["Defined Steps", String(stepSummary.stepCount)],
+                  ["Commands", String(stepSummary.commandCount)],
+                  ["Notifications", String(stepSummary.notificationCount)],
+                  ["Functions", String(stepSummary.functionCount)],
+                ]}
+              />
+              <div className="mt-3 flex items-center gap-2">
+                <Switch
+                  id="automation-enabled"
+                  checked={definition.enabled}
+                  // Disabled through the PUT and its authoritative reload
+                  // (`toggling`), and whenever the definition is loading or
+                  // failed: a stale revision must not stay actionable.
+                  disabled={editing || toggling || loading || error !== null}
+                  onCheckedChange={(checked) => void setEnabled(checked)}
                 />
-                <div className="mt-3 flex items-center gap-2">
-                  <Switch
-                    id="automation-enabled"
-                    checked={definition.enabled}
-                    // Disabled through the PUT and its authoritative reload
-                    // (`toggling`), and whenever the definition is loading or
-                    // failed: a stale revision must not stay actionable.
-                    disabled={editing || toggling || loading || error !== null}
-                    onCheckedChange={(checked) => void setEnabled(checked)}
-                  />
-                  <Label htmlFor="automation-enabled" className="text-sm">
-                    Enabled
-                  </Label>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    PUT /v1/automations/{"{id}"}
-                  </span>
-                </div>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Enablement governs automatic Runs; a manual Run works either way.
+                <Label htmlFor="automation-enabled" className="text-sm">
+                  Enabled
+                </Label>
+                <span className="font-mono text-xs text-muted-foreground">
+                  PUT /v1/automations/{"{id}"}
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Enablement governs automatic Runs; a manual Run works either way.
+              </p>
+              {conflictNotice && (
+                <p
+                  role="alert"
+                  className="mt-2 rounded-lg border border-warning/35 bg-warning/10 px-2 py-1.5 text-xs text-warning"
+                >
+                  {conflictNotice}
                 </p>
-                {conflictNotice && (
-                  <p
-                    role="alert"
-                    className="mt-2 rounded-lg border border-warning/35 bg-warning/10 px-2 py-1.5 text-xs text-warning"
-                  >
-                    {conflictNotice}
-                  </p>
-                )}
-                {toggleError && <ErrorBox error={toggleError} />}
-              </CardContent>
+              )}
+              {toggleError && <ErrorBox error={toggleError} />}
             </Card>
 
-            <Card size="sm">
-              <CardContent>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">Manual Run</span>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    POST /v1/automations/{"{id}"}/runs
-                  </span>
-                </div>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Starts one Run from the current definition snapshot. Each accepted request creates a
-                  distinct Run and there is no idempotency key, so an unconfirmed request is never
-                  retried: check the history before running again.
-                </p>
+            <Card size="compact">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Manual Run</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  POST /v1/automations/{"{id}"}/runs
+                </span>
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Starts one Run from the current definition snapshot. Each accepted request creates a
+                distinct Run and there is no idempotency key, so an unconfirmed request is never
+                retried: check the history before running again.
+              </p>
+              <div className="mt-3">
+                <Button size="default" disabled={runStarting || !!editing} onClick={() => void runNow()}>
+                  {runStarting ? "Starting…" : "Run now"}
+                </Button>
+              </div>
+              {runError && (
                 <div className="mt-3">
-                  <Button size="default" disabled={runStarting || !!editing} onClick={() => void runNow()}>
-                    {runStarting ? "Starting…" : "Run now"}
-                  </Button>
+                  <ErrorBox error={runError} />
+                  <p className="text-xs text-muted-foreground">
+                    {manualRunFailure(runError) ??
+                      "No Run outcome was confirmed for this request."}{" "}
+                    The POST was issued once and not retried.
+                  </p>
                 </div>
-                {runError && (
-                  <div className="mt-3">
-                    <ErrorBox error={runError} />
-                    <p className="text-xs text-muted-foreground">
-                      {manualRunFailure(runError) ??
-                        "No Run outcome was confirmed for this request."}{" "}
-                      The POST was issued once and not retried.
+              )}
+              {startedRun && (
+                <div className="mt-3">
+                  <AutomationRunView run={startedRun} labels={labels} />
+                  {startedRun.status === "running" && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Steps continue in the background: refresh the history below to follow them.
                     </p>
-                  </div>
-                )}
-                {startedRun && (
-                  <div className="mt-3">
-                    <AutomationRunView run={startedRun} labels={labels} />
-                    {startedRun.status === "running" && (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Steps continue in the background: refresh the history below to follow them.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </CardContent>
+                  )}
+                </div>
+              )}
             </Card>
           </div>
 
@@ -900,11 +896,11 @@ export default function AutomationDetailPage() {
             </>
           )}
           {selectedEntryId && (
-            <div className="mt-4 rounded-lg border p-3">
+            <Card size="compact" className="mt-4">
               {entryLoading && <p className="text-sm text-muted-foreground">Loading entry…</p>}
               {entryError && <ErrorBox error={entryError} />}
               {entry && <AutomationHistoryEntryView entry={entry} labels={labels} />}
-            </div>
+            </Card>
           )}
         </Section>
       )}

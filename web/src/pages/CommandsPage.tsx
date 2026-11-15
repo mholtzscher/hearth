@@ -11,7 +11,7 @@ import { RawJson } from "../components/raw-json.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
 import { linkClass } from "../components/link-styles.ts";
 import { Button } from "../components/button.tsx";
-import { Card, CardContent } from "../components/card.tsx";
+import { Card } from "../components/card.tsx";
 import { Input } from "../components/input.tsx";
 import { Label } from "../components/label.tsx";
 import { NativeSelect } from "../components/native-select.tsx";
@@ -113,45 +113,43 @@ function CommandDetail({ commandId }: { commandId: string }) {
   const latency = data ? durationMs(data.requested_at, data.completed_at) : null;
 
   return (
-    <Card className="mt-3" size="sm">
-      <CardContent>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs">{commandId}</span>
-          {data && <StatusChip status={data.status} />}
-          <Button size="default" variant="outline" onClick={() => void refresh()}>
-            Refresh
-          </Button>
-          {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
-        </div>
-        {error && <ErrorBox error={error} />}
-        {data && (
-          <>
-            <p className="mt-1.5 text-sm text-muted-foreground">{statusNote(data)}</p>
-            <Facts
-              rows={[
-                [
-                  "Entity",
-                  <RouterLink key="entity" to={`/entities/${data.entity_id}`} className={linkClass}>
-                    {data.entity_id}
-                  </RouterLink>,
-                ],
-                ["Operation", data.operation],
-                ["Parameters", JSON.stringify(data.parameters)],
-                ["Requested at", data.requested_at],
-                ["Accepted at", data.accepted_at ?? "—"],
-                [
-                  "Completed at",
-                  `${data.completed_at ?? "—"}${latency !== null ? ` (${latency} ms after request)` : ""}`,
-                ],
-                ["Deadline at", data.deadline_at],
-                ["Outcome observation", data.outcome_observation_id ?? "—"],
-                ["Failure", data.failure_code ?? "—"],
-              ]}
-            />
-            <RawJson value={data} title="Raw command JSON" />
-          </>
-        )}
-      </CardContent>
+    <Card className="mt-3" size="compact">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-xs">{commandId}</span>
+        {data && <StatusChip status={data.status} />}
+        <Button size="default" variant="outline" onClick={() => void refresh()}>
+          Refresh
+        </Button>
+        {loading && <span className="text-sm text-muted-foreground">Loading…</span>}
+      </div>
+      {error && <ErrorBox error={error} />}
+      {data && (
+        <>
+          <p className="mt-1.5 text-sm text-muted-foreground">{statusNote(data)}</p>
+          <Facts
+            rows={[
+              [
+                "Entity",
+                <RouterLink key="entity" to={`/entities/${data.entity_id}`} className={linkClass}>
+                  {data.entity_id}
+                </RouterLink>,
+              ],
+              ["Operation", data.operation],
+              ["Parameters", JSON.stringify(data.parameters)],
+              ["Requested at", data.requested_at],
+              ["Accepted at", data.accepted_at ?? "—"],
+              [
+                "Completed at",
+                `${data.completed_at ?? "—"}${latency !== null ? ` (${latency} ms after request)` : ""}`,
+              ],
+              ["Deadline at", data.deadline_at],
+              ["Outcome observation", data.outcome_observation_id ?? "—"],
+              ["Failure", data.failure_code ?? "—"],
+            ]}
+          />
+          <RawJson value={data} title="Raw command JSON" />
+        </>
+      )}
     </Card>
   );
 }

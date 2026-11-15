@@ -19,6 +19,19 @@ const RAW_CONTROLS: Record<string, number> = {
   "src/features": 5,
 };
 
+/**
+ * Bordered, card-radius surfaces outside components, by file. The composer, a
+ * sent message, and unsupported view content are not cards (DESIGN.md); the
+ * warning boxes await a warning Notice.
+ */
+const HAND_ROLLED_CARDS: Record<string, number> = {
+  "src/features/conversation/Messages.tsx": 1,
+  "src/features/views/renderer/ViewRenderer.tsx": 1,
+  "src/pages/AgentPage.tsx": 1,
+  "src/pages/AutomationDetailPage.tsx": 1,
+  "src/pages/DeviceFactsPage.tsx": 1,
+};
+
 /** Files outside the low-level wrappers that import radix-ui. */
 const RADIX_IMPORTS: string[] = [];
 
@@ -31,6 +44,7 @@ const RADIX_WRAPPERS = new Set([
   "src/components/accordion.tsx",
   "src/components/badge.tsx",
   "src/components/button.tsx",
+  "src/components/card.tsx",
   "src/components/dialog.tsx",
   "src/components/label.tsx",
   "src/components/popover.tsx",
@@ -93,6 +107,17 @@ function applicationSource(): string[] {
     /\.tsx?$/.test(file) && !/\.(test|stories)\.tsx?$/.test(file));
 }
 
+/**
+ * Counts the quoted class lists that draw a card: a card radius together with a
+ * plain border. Variant-prefixed classes such as `after:rounded-card` do not count.
+ */
+function countCardSurfaces(source: string): number {
+  return (source.match(/"[^"\n]*"|`[^`]*`/g) ?? []).filter(literal => {
+    const classes = literal.slice(1, -1).split(/\s+/);
+    return classes.some(name => /^rounded-(card|lg|xl)$/.test(name)) && classes.includes("border");
+  }).length;
+}
+
 function isWrapper(file: string, rule: "raw-control" | "radix"): boolean {
   return (rule === "raw-control" ? RAW_CONTROL_WRAPPERS : RADIX_WRAPPERS).has(file);
 }
@@ -140,6 +165,16 @@ describe("countClassSelectors", () => {
   });
 });
 
+describe("countCardSurfaces", () => {
+  it("counts each class list with a card radius and a border", () => {
+    expect(countCardSurfaces('<div className="rounded-card border bg-card" /><li className={`rounded-lg border ${x}`} />')).toBe(2);
+  });
+
+  it("ignores controls, variant-prefixed radii, and radii without a border", () => {
+    expect(countCardSurfaces('<input className="rounded-md border" /><span className="after:rounded-card border" /><span className="rounded-card bg-card" />')).toBe(0);
+  });
+});
+
 describe("design system limits", () => {
   it("holds each stylesheet to its class-selector limit", () => {
     const measured = Object.fromEntries([...files("src"), ...files(".storybook")]
@@ -163,6 +198,15 @@ describe("design system limits", () => {
     }
     expect(measured, "Use the field and select components in components. If a count fell, lower its limit to match.")
       .toEqual(RAW_CONTROLS);
+  });
+
+  it("holds hand-rolled card surfaces to their limit", () => {
+    const measured = Object.fromEntries(applicationSource()
+      .filter(file => !file.startsWith("src/components/"))
+      .map(file => [file, countCardSurfaces(read(file))] as const)
+      .filter(([, count]) => count > 0));
+    expect(measured, "Draw a card with Card from components/card.tsx. If a count fell, lower its limit to match.")
+      .toEqual(HAND_ROLLED_CARDS);
   });
 
   it("keeps radix-ui imports inside low-level wrappers", () => {
@@ -206,7 +250,7 @@ describe("Hearth class merging", () => {
     expect(cn("rounded-md", "rounded-card")).toBe("rounded-card");
   });
 
-  it("resolves directional radius overrides on Card headers and footers", () => {
+  it("resolves directional overrides of the card radius", () => {
     expect(cn("rounded-t-xl", "rounded-t-card")).toBe("rounded-t-card");
     expect(cn("rounded-t-card", "rounded-t-xl")).toBe("rounded-t-xl");
     expect(cn("rounded-b-xl", "rounded-b-card")).toBe("rounded-b-card");

@@ -17,7 +17,7 @@ import { RawJson } from "../components/raw-json.tsx";
 import { Section } from "../components/section.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
 import { Button } from "../components/button.tsx";
-import { Card, CardContent } from "../components/card.tsx";
+import { Card } from "../components/card.tsx";
 import { Input } from "../components/input.tsx";
 import {
   Table,
@@ -310,102 +310,96 @@ function ServerInfo() {
 
   return (
     <div className="grid items-start gap-3 xl:grid-cols-2">
-      <Card size="sm">
-        <CardContent>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Server</span>
-            {varz.loading && <span className="text-xs text-muted-foreground">Loading…</span>}
-          </div>
-          {varz.error && <ErrorBox error={varz.error} />}
-          {varz.data && (
-            <Facts
-              rows={[
-                ["Version", varz.data.version],
-                ["Uptime", varz.data.uptime],
-                ["Connections", `${varz.data.connections} current / ${varz.data.total_connections} total`],
-                ["Messages in/out", `${varz.data.in_msgs} / ${varz.data.out_msgs}`],
-                ["Bytes in/out", `${varz.data.in_bytes} / ${varz.data.out_bytes}`],
-                ["Memory", `${varz.data.mem} bytes`],
-              ]}
-            />
-          )}
-          <RawJson value={varz.data} title="Raw /varz JSON" />
-        </CardContent>
+      <Card size="compact">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">Server</span>
+          {varz.loading && <span className="text-xs text-muted-foreground">Loading…</span>}
+        </div>
+        {varz.error && <ErrorBox error={varz.error} />}
+        {varz.data && (
+          <Facts
+            rows={[
+              ["Version", varz.data.version],
+              ["Uptime", varz.data.uptime],
+              ["Connections", `${varz.data.connections} current / ${varz.data.total_connections} total`],
+              ["Messages in/out", `${varz.data.in_msgs} / ${varz.data.out_msgs}`],
+              ["Bytes in/out", `${varz.data.in_bytes} / ${varz.data.out_bytes}`],
+              ["Memory", `${varz.data.mem} bytes`],
+            ]}
+          />
+        )}
+        <RawJson value={varz.data} title="Raw /varz JSON" />
       </Card>
 
-      <Card size="sm">
-        <CardContent>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium">JetStream: HEARTH_OBSERVATIONS_V1</span>
-            <Button size="default" variant="outline" onClick={() => void jsz.refresh()}>
-              Refresh
-            </Button>
-          </div>
-          {jsz.error && <ErrorBox error={jsz.error} />}
-          {observations?.state && (
+      <Card size="compact">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium">JetStream: HEARTH_OBSERVATIONS_V1</span>
+          <Button size="default" variant="outline" onClick={() => void jsz.refresh()}>
+            Refresh
+          </Button>
+        </div>
+        {jsz.error && <ErrorBox error={jsz.error} />}
+        {observations?.state && (
+          <Facts
+            rows={Object.entries(observations.state).map(([k, v]) => [k, JSON.stringify(v)] as [string, string])}
+          />
+        )}
+        {(observations?.consumer_detail ?? []).map((c) => (
+          <div key={String(c.name ?? "consumer")} className="mt-3">
+            <span className="text-sm font-medium">Consumer {String(c.name ?? "?")}</span>
             <Facts
-              rows={Object.entries(observations.state).map(([k, v]) => [k, JSON.stringify(v)] as [string, string])}
+              rows={Object.entries(c).map(([k, v]) => [k, JSON.stringify(v)] as [string, string])}
             />
-          )}
-          {(observations?.consumer_detail ?? []).map((c) => (
-            <div key={String(c.name ?? "consumer")} className="mt-3">
-              <span className="text-sm font-medium">Consumer {String(c.name ?? "?")}</span>
-              <Facts
-                rows={Object.entries(c).map(([k, v]) => [k, JSON.stringify(v)] as [string, string])}
-              />
-            </div>
-          ))}
-          {!jsz.loading && !jsz.error && !observations && (
-            <p className="mt-2 text-sm text-muted-foreground">
-              Stream not found (is hearthd running?).
-            </p>
-          )}
-          <RawJson value={jsz.data} title="Raw /jsz JSON" />
-        </CardContent>
+          </div>
+        ))}
+        {!jsz.loading && !jsz.error && !observations && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Stream not found (is hearthd running?).
+          </p>
+        )}
+        <RawJson value={jsz.data} title="Raw /jsz JSON" />
       </Card>
 
-      <Card size="sm" className="xl:col-span-2">
-        <CardContent>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium">Connections</span>
-            <Button size="default" variant="outline" onClick={() => void conns.refresh()}>
-              Refresh
-            </Button>
-          </div>
-          {conns.error && <ErrorBox error={conns.error} />}
-          <Table className="mt-2">
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-16">CID</TableHead>
-                <TableHead className="w-20">Kind</TableHead>
-                <TableHead className="w-48">Remote</TableHead>
-                <TableHead>Subscriptions</TableHead>
-                <TableHead className="w-32">Msgs in/out</TableHead>
+      <Card size="compact" className="xl:col-span-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium">Connections</span>
+          <Button size="default" variant="outline" onClick={() => void conns.refresh()}>
+            Refresh
+          </Button>
+        </div>
+        {conns.error && <ErrorBox error={conns.error} />}
+        <Table className="mt-2">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-16">CID</TableHead>
+              <TableHead className="w-20">Kind</TableHead>
+              <TableHead className="w-48">Remote</TableHead>
+              <TableHead>Subscriptions</TableHead>
+              <TableHead className="w-32">Msgs in/out</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(conns.data?.connections ?? []).length === 0 && (
+              <EmptyRow colSpan={5} message="No connections reported." />
+            )}
+            {(conns.data?.connections ?? []).map((c) => (
+              <TableRow key={c.cid} className="align-top">
+                <TableCell className="font-mono text-xs">{c.cid}</TableCell>
+                <TableCell>{c.kind}</TableCell>
+                <TableCell className="font-mono text-xs">
+                  {c.ip}:{c.port}
+                </TableCell>
+                <TableCell className="font-mono text-xs break-all whitespace-normal text-muted-foreground">
+                  {c.subscriptions ?? "—"}
+                  {(c.subscriptions_list ?? []).length > 0 && `: ${(c.subscriptions_list ?? []).join(", ")}`}
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {c.in_msgs} / {c.out_msgs}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(conns.data?.connections ?? []).length === 0 && (
-                <EmptyRow colSpan={5} message="No connections reported." />
-              )}
-              {(conns.data?.connections ?? []).map((c) => (
-                <TableRow key={c.cid} className="align-top">
-                  <TableCell className="font-mono text-xs">{c.cid}</TableCell>
-                  <TableCell>{c.kind}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {c.ip}:{c.port}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs break-all whitespace-normal text-muted-foreground">
-                    {c.subscriptions ?? "—"}
-                    {(c.subscriptions_list ?? []).length > 0 && `: ${(c.subscriptions_list ?? []).join(", ")}`}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {c.in_msgs} / {c.out_msgs}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
+            ))}
+          </TableBody>
+        </Table>
       </Card>
     </div>
   );

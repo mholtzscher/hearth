@@ -11,7 +11,7 @@ import { RawJson } from "../components/raw-json.tsx";
 import { Section } from "../components/section.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
 import { Button } from "../components/button.tsx";
-import { Card, CardContent } from "../components/card.tsx";
+import { Card } from "../components/card.tsx";
 import { Input } from "../components/input.tsx";
 import {
   Table,
@@ -90,35 +90,33 @@ function AdapterDetail({ adapterId }: { adapterId: string }) {
     );
   if (!data) return null;
   return (
-    <Card className="mt-3" size="sm">
-      <CardContent>
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{data.id}</span>
-          <StatusChip label="health" status={data.health.status} />
-        </div>
-        <Facts
-          rows={[
-            ["Source", data.health.source],
-            ["Since", data.health.since],
-            ["Evidence at", data.health.evidence_at],
-            ...(data.health.reason ? [["Reason", data.health.reason.code] as [string, ReactNode]] : []),
-            ...(data.health.runtime
-              ? [
-                  ["Runtime", data.health.runtime.id] as [string, ReactNode],
-                  [
-                    "Software",
-                    `${data.health.runtime.software_name} ${data.health.runtime.software_version}`,
-                  ] as [string, ReactNode],
-                  ["Lease expires", data.health.runtime.lease_expires_at] as [string, ReactNode],
-                ]
-              : []),
-          ]}
-        />
-        <Section title="Health history">
-          <AdapterHealthHistory key={adapterId} adapterId={adapterId} />
-        </Section>
-        <RawJson value={data} />
-      </CardContent>
+    <Card className="mt-3" size="compact">
+      <div className="flex items-center gap-2">
+        <span className="font-medium">{data.id}</span>
+        <StatusChip label="health" status={data.health.status} />
+      </div>
+      <Facts
+        rows={[
+          ["Source", data.health.source],
+          ["Since", data.health.since],
+          ["Evidence at", data.health.evidence_at],
+          ...(data.health.reason ? [["Reason", data.health.reason.code] as [string, ReactNode]] : []),
+          ...(data.health.runtime
+            ? [
+                ["Runtime", data.health.runtime.id] as [string, ReactNode],
+                [
+                  "Software",
+                  `${data.health.runtime.software_name} ${data.health.runtime.software_version}`,
+                ] as [string, ReactNode],
+                ["Lease expires", data.health.runtime.lease_expires_at] as [string, ReactNode],
+              ]
+            : []),
+        ]}
+      />
+      <Section title="Health history">
+        <AdapterHealthHistory key={adapterId} adapterId={adapterId} />
+      </Section>
+      <RawJson value={data} />
     </Card>
   );
 }

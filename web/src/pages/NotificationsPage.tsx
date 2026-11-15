@@ -8,6 +8,7 @@ import { Facts } from "../components/facts.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
 import { linkClass } from "../components/link-styles.ts";
 import { Button } from "../components/button.tsx";
+import { Card } from "../components/card.tsx";
 import { Input } from "../components/input.tsx";
 import { Label } from "../components/label.tsx";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/table.tsx";
@@ -15,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 function AttemptDetail({ id }: { id: string }) {
   const { data, error, loading, refresh } = useApi(`notification-${id}`, () => notificationsApi.attempt(id));
   const missing = error instanceof ApiError && error.status === 404;
-  return <section className="mt-4 rounded-lg border p-3">
+  return <Card asChild size="compact" className="mt-4"><section>
     <h2 className="font-semibold">Attempt {id}</h2>
     <Button variant="outline" size="default" onClick={() => void refresh()}>Refresh attempt</Button>
     {loading && <p>Loading…</p>}
@@ -30,7 +31,7 @@ function AttemptDetail({ id }: { id: string }) {
         ["Reason", data.reason_code ?? "—"], ["Provider receipt", data.receipt ?? "—"],
       ]} />
     </>}
-  </section>;
+  </section></Card>;
 }
 
 export default function NotificationsPage() {
