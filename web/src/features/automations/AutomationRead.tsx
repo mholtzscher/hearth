@@ -4,6 +4,10 @@ import type { JsonPath } from "../../api/automation-json";
 import type { AutomationBranchCondition, AutomationComparison, AutomationStep, AutomationTrigger } from "../../api/types";
 import { ExpressionCode, JsonCode } from "./AutomationCode";
 import { documentValue, type AutomationDocument } from "./document";
+import { Button } from "../../components/ui/button";
+
+const note = "block text-caption leading-normal text-muted-foreground";
+const paragraph = "my-[5px] text-label text-muted-foreground";
 
 /** Same-named Entities, such as several "Power" Entities, are told apart by their Device. */
 export const entityLabelText = (name: string, device?: string) => device ? `${name} (${device})` : name;
@@ -23,7 +27,7 @@ const join = (nodes: ReactNode[], separator: string) => nodes.map((node, index) 
 
 /** An Entity reads as its name and Device; the ID stays in the link's tooltip and target. */
 function EntityRef({ ctx, id }: { ctx: ReadContext; id: string }) {
-  return <Link className="automation-ref" to={`/entities/${encodeURIComponent(id)}`} title={id}>{ctx.entityLabel(id) ?? id}</Link>;
+  return <Link className="text-link underline underline-offset-[3px] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-3" to={`/entities/${encodeURIComponent(id)}`} title={id}>{ctx.entityLabel(id) ?? id}</Link>;
 }
 function Named({ id, name }: { id: string; name: string | undefined }) {
   return <span title={id}>{name ?? id}</span>;
@@ -78,28 +82,28 @@ function StepCopy({ ctx, step, path }: { ctx: ReadContext; step: AutomationStep;
 }
 /** Qualifying notes and actions follow the Step's own sentence. */
 function StepAside({ ctx, step }: { ctx: ReadContext; step: AutomationStep }) {
-  if (step.kind === "notification") return <small className="automation-step-note">Provider acceptance is not proof of delivery.</small>;
-  if (step.kind === "sub_automation") return <><small className="automation-step-note">{ctx.childMissing(step.automation_id) ? "Automation not found. It may have been removed." : "Waits for child success."}</small><button className="automation-link" aria-label={`Inspect child ${ctx.childName(step.automation_id) ?? step.automation_id}`} onClick={event => ctx.inspect(step.automation_id, event.currentTarget)}>Inspect child</button></>;
+  if (step.kind === "notification") return <small className={`${note} mt-0.5`}>Provider acceptance is not proof of delivery.</small>;
+  if (step.kind === "sub_automation") return <><small className={`${note} mt-0.5`}>{ctx.childMissing(step.automation_id) ? "Automation not found. It may have been removed." : "Waits for child success."}</small><Button variant="link" size="touch" className="p-0 text-left text-violet-text" aria-label={`Inspect child ${ctx.childName(step.automation_id) ?? step.automation_id}`} onClick={event => ctx.inspect(step.automation_id, event.currentTarget)}>Inspect child</Button></>;
   return null;
 }
 function Branches({ ctx, step, path, mode }: { ctx: ReadContext; step: AutomationStep; path: JsonPath; mode: "sentence" | "steps" }) {
-  if (step.kind === "if") return <><Arm ctx={ctx} title="Then · true" path={[...path, "then"]} steps={step.then} mode={mode}/>{step.else ? <Arm ctx={ctx} title="Else · false" path={[...path, "else"]} steps={step.else} mode={mode}/> : <p className="automation-hint">No Else; continue when false.</p>}</>;
+  if (step.kind === "if") return <><Arm ctx={ctx} title="Then · true" path={[...path, "then"]} steps={step.then} mode={mode}/>{step.else ? <Arm ctx={ctx} title="Else · false" path={[...path, "else"]} steps={step.else} mode={mode}/> : <p className={mode === "sentence" ? "m-0 text-body leading-[1.55] text-foreground" : `${paragraph} ml-7 max-tablet:ml-6`}>No Else; continue when false.</p>}</>;
   if (step.kind === "choose") return <>{step.branches.map((branch, index) => <Arm key={branch.id} ctx={ctx} title={<>Path {index + 1} · <ConditionText ctx={ctx} condition={branch.conditions} path={[...path, "branches", index, "conditions"]}/></>} path={[...path, "branches", index, "steps"]} steps={branch.steps} mode={mode}/>)}{step.default && <Arm ctx={ctx} title="Default" path={[...path, "default"]} steps={step.default} mode={mode}/>}</>;
   return null;
 }
 function Arm({ ctx, title, steps, path, mode }: { ctx: ReadContext; title: ReactNode; steps: AutomationStep[]; path: JsonPath; mode: "sentence" | "steps" }) {
-  return <details className="automation-arm" open><summary>{title}<small> · {steps.length} {steps.length === 1 ? "Step" : "Steps"}</small></summary>{mode === "sentence" ? <SentenceSequence ctx={ctx} steps={steps} path={path}/> : <StackSequence ctx={ctx} steps={steps} path={path}/>}</details>;
+  return <details className="my-2 min-w-0 border-l border-gray-5 pl-3 max-tablet:pl-[9px] group-data-[stack=true]/sequence:ml-7 max-tablet:group-data-[stack=true]/sequence:ml-6" open><summary className="min-h-9 cursor-pointer py-2 marker:text-gray-7 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-3">{title}<small className="text-caption text-muted-foreground"> · {steps.length} {steps.length === 1 ? "Step" : "Steps"}</small></summary>{mode === "sentence" ? <SentenceSequence ctx={ctx} steps={steps} path={path}/> : <StackSequence ctx={ctx} steps={steps} path={path}/>}</details>;
 }
 /** Prose is an outline of sentences; branches remain explicitly owned paths. */
 export function SentenceSequence({ ctx, steps, path }: { ctx: ReadContext; steps: AutomationStep[]; path: JsonPath }) {
-  return <div className="automation-prose" aria-label="Sentence sequence">{steps.map((step, index) => <div className="automation-prose-step" key={step.id}><p><StepCopy ctx={ctx} step={step} path={[...path, index]}/>{step.kind !== "sub_automation" && step.kind !== "if" && step.kind !== "choose" ? "." : ""}</p><StepAside ctx={ctx} step={step}/><Branches ctx={ctx} step={step} path={[...path, index]} mode="sentence"/></div>)}</div>;
+  return <div aria-label="Sentence sequence">{steps.map((step, index) => <div className="py-2" key={step.id}><p className="m-0 text-body leading-[1.55] text-foreground"><StepCopy ctx={ctx} step={step} path={[...path, index]}/>{step.kind !== "sub_automation" && step.kind !== "if" && step.kind !== "choose" ? "." : ""}</p><StepAside ctx={ctx} step={step}/><Branches ctx={ctx} step={step} path={[...path, index]} mode="sentence"/></div>)}</div>;
 }
 /** Numbering restarts inside each owned sequence. */
 export function StackSequence({ ctx, steps, path }: { ctx: ReadContext; steps: AutomationStep[]; path: JsonPath }) {
-  return <ol className="automation-stack" aria-label="Step stack sequence">{steps.map((step, index) => <li key={step.id}><div className="automation-stack-row"><span className="automation-step-number" aria-hidden="true">{index + 1}</span><div><span className="automation-step-meta"><span className="automation-step-kind">{step.kind.replace(/_/g, " ")}</span> · <code>{step.id}</code></span><div className="automation-step-copy"><StepCopy ctx={ctx} step={step} path={[...path, index]}/></div><StepAside ctx={ctx} step={step}/></div></div><Branches ctx={ctx} step={step} path={[...path, index]} mode="steps"/></li>)}</ol>;
+  return <ol className="m-0 list-none p-0" aria-label="Step stack sequence">{steps.map((step, index) => <li key={step.id} data-stack="true" className="group/sequence min-w-0 py-2.5 not-first:border-t not-first:border-border"><div className="grid grid-cols-[18px_minmax(0,1fr)] items-start gap-x-2.5 max-tablet:grid-cols-[14px_minmax(0,1fr)]"><span className="text-right text-caption leading-normal text-muted-foreground tabular-nums" aria-hidden="true">{index + 1}</span><div><span className={note}><span className="capitalize">{step.kind.replace(/_/g, " ")}</span> · <code className="text-caption">{step.id}</code></span><div className="mt-0.5 text-label leading-[1.55]"><StepCopy ctx={ctx} step={step} path={[...path, index]}/></div><StepAside ctx={ctx} step={step}/></div></div><Branches ctx={ctx} step={step} path={[...path, index]} mode="steps"/></li>)}</ol>;
 }
 export function InitialVariables({ ctx }: { ctx: ReadContext }) {
   const definition = ctx.document.definition;
   if (!definition.variables && !definition.variables_expr) return null;
-  return <p className="automation-variables">Initial variables: {join([...Object.keys(definition.variables ?? {}).map(name => <>{name} = {exact(ctx, ["variables", name])}</>), ...Object.entries(definition.variables_expr ?? {}).map(([name, source]) => <>{name} = <ExpressionCode source={source}/></>)], "; ")}</p>;
+  return <p className={paragraph}>Initial variables: {join([...Object.keys(definition.variables ?? {}).map(name => <>{name} = {exact(ctx, ["variables", name])}</>), ...Object.entries(definition.variables_expr ?? {}).map(([name, source]) => <>{name} = <ExpressionCode source={source}/></>)], "; ")}</p>;
 }

@@ -7,6 +7,7 @@ import { ErrorBox, StatusChip, linkClass } from "../components/common.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { Label } from "../components/ui/label.tsx";
+import { Textarea } from "../components/ui/textarea.tsx";
 
 function DestinationDetail({ id }: { id: string }) {
   const { data, error, loading, refresh } = useApi(`notification-destination-${id}`, () => notificationsApi.destination(id));
@@ -43,7 +44,7 @@ function DestinationDetail({ id }: { id: string }) {
         <Label htmlFor="notification-title">Title (optional, up to 256 characters)</Label>
         <Input id="notification-title" value={title} disabled={sending} onChange={(e) => setTitle(e.target.value)} />
         <Label htmlFor="notification-message">Message (required, up to 2000 characters)</Label>
-        <textarea id="notification-message" className="min-h-28 rounded-md border bg-background p-2 text-sm" value={message} disabled={sending} onChange={(e) => setMessage(e.target.value)} />
+        <Textarea id="notification-message" className="min-h-28" value={message} disabled={sending} onChange={(e) => setMessage(e.target.value)} />
         <p className="text-sm text-muted-foreground">Each click sends a new attempt. No automatic retries. An unknown outcome does not prove non-delivery.</p>
         <Button className="justify-self-start" type="submit" disabled={sending || !valid}>{sending ? "Sending…" : "Send test message"}</Button>
       </form>

@@ -52,6 +52,19 @@ export const EditName: Story = {
   },
 };
 
+export const EnableAutomaticRuns: Story = {
+  play: async ({ canvas, userEvent, args }) => {
+    const enabled = canvas.getByRole("switch", { name: "Enable automatic Runs" });
+    await expect(enabled).toHaveAttribute("aria-checked", "true");
+    enabled.focus();
+    await userEvent.keyboard(" ");
+    await expect(enabled).toHaveAttribute("aria-checked", "false");
+    await expect(args.onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      definition: expect.objectContaining({ enabled: false }),
+    }));
+  },
+};
+
 export const Phone: Story = {
   globals: { viewport: { value: "phone", isRotated: false } },
   play: async ({ canvas, canvasElement }) => {

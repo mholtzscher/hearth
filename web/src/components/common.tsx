@@ -8,6 +8,7 @@ import {
   AccordionTrigger,
 } from "./ui/accordion.tsx";
 import { Badge } from "./ui/badge.tsx";
+import { Notice } from "./ui/notice.tsx";
 import { Separator } from "./ui/separator.tsx";
 import { Table, TableBody, TableCell, TableRow } from "./ui/table.tsx";
 
@@ -27,13 +28,13 @@ export function ErrorBox({ error }: { error: Error }) {
       : error.name || "Error";
   const message = error.message || String(error);
   return (
-    <div
+    <Notice
       role="alert"
-      className="my-2 flex flex-wrap items-baseline gap-x-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+      className="flex flex-wrap items-baseline gap-x-2"
     >
       <span className="font-medium">{heading}</span>
       {message !== problem?.title && <span>{message}</span>}
-    </div>
+    </Notice>
   );
 }
 
