@@ -21,6 +21,16 @@ function Harness({ initial = readAutomationDocument(source), validity = vi.fn() 
   return <><AutomationEditor document={doc} onChange={setDoc} onValidityChange={validity}/><output data-testid="source">{doc.source}</output></>;
 }
 describe("Automation cards and editor", () => {
+  it("toggles automatic Runs without changing the remaining exact definition", () => {
+    installFetch(); render(<Harness/>);
+    const enabled = screen.getByRole("switch", { name: "Enable automatic Runs" });
+    expect(enabled.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(enabled);
+    expect(enabled.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("source").textContent).toBe(source.replace('"enabled":false', '"enabled":true'));
+    fireEvent.click(enabled);
+    expect(screen.getByTestId("source").textContent).toBe(source);
+  });
   it("does not strand an invalid Step when the whole-definition inspector replaces its path", () => {
     installFetch(); const validity = vi.fn(); render(<Harness validity={validity}/>);
     fireEvent.change(screen.getByLabelText("Wait · milliseconds"), { target: { value: "0" } });

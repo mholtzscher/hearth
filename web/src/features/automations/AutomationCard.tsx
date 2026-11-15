@@ -10,6 +10,13 @@ import { ConditionText, entityLabelText, InitialVariables, SentenceSequence, Sta
 import { JsonCode } from "./AutomationCode";
 import { collection } from "./resources";
 import { automationEntityIds, describeAutomationSteps } from "./definition-tree";
+import { Button } from "../../components/ui/button";
+import { SegmentedControl } from "../../components/ui/segmented-control";
+
+const paragraph = "my-[5px] text-[13px] text-muted-foreground";
+const heading = "m-0 text-body font-semibold";
+const row = "flex flex-wrap items-center justify-between gap-3";
+const action = "max-w-full max-tablet:h-11";
 
 type Props = { document: AutomationDocument; onEdit?: () => void; children?: ReactNode; automationId?: string; compact?: boolean; entityLabels?: ReadonlyMap<string, string>; headingLevel?: 2 | 3 | 4 };
 type ChildStatus = { status: "loading" } | { status: "missing" } | { status: "error" } | { status: "ready"; name: string };
@@ -37,12 +44,12 @@ function ChildPreview({ id, close, ancestry }: { id: string; close: () => void; 
     });
     return () => controller.abort();
   }, [id, backend]);
-  return <section className="automation-child" aria-label="Referenced Automation" onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
-    <div className="automation-card-heading"><div><h3>Referenced Automation</h3><p>Current definition · read-only</p></div><button autoFocus onClick={close}>Close preview</button></div>
-    <Link to={`/automations/${encodeURIComponent(id)}`}>Open Automation and history</Link>
-    {state.status === "loading" && <p role="status">Loading {id}…</p>}
-    {state.status === "error" && <p role="alert">{state.message}</p>}
-    {state.status === "ready" && <><h4>{state.document.definition.name}</h4><p>{id}</p><CardContent document={state.document} ancestry={[...ancestry, id]}/></>}
+  return <section className="mt-4 border-t border-gray-4 pt-4" aria-label="Referenced Automation" onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
+    <div className={row}><div><h3 className={heading}>Referenced Automation</h3><p className={paragraph}>Current definition · read-only</p></div><Button variant="outline" size="default" className={action} autoFocus onClick={close}>Close preview</Button></div>
+    <Link className="text-violet-text" to={`/automations/${encodeURIComponent(id)}`}>Open Automation and history</Link>
+    {state.status === "loading" && <p className={paragraph} role="status">Loading {id}…</p>}
+    {state.status === "error" && <p className={`${paragraph} text-destructive`} role="alert">{state.message}</p>}
+    {state.status === "ready" && <><h4 className={heading}>{state.document.definition.name}</h4><p className={paragraph}>{id}</p><CardContent document={state.document} ancestry={[...ancestry, id]}/></>}
   </section>;
 }
 function CardContent({ document, ancestry, entityLabels }: { document: AutomationDocument; ancestry: string[]; entityLabels?: ReadonlyMap<string, string> }) {
@@ -96,12 +103,12 @@ function CardContent({ document, ancestry, entityLabels }: { document: Automatio
     childMissing: id => childNames[id]?.status === "missing",
   };
   const definition = document.definition;
-  return <><div className="automation-admission"><span className="automation-kind">When</span><p>{definition.triggers.length ? definition.triggers.map((trigger, index) => <Fragment key={trigger.id}>{index > 0 && "; "}<TriggerText ctx={ctx} trigger={trigger} path={["triggers", index]}/> · Trigger {trigger.id}</Fragment>) : "Manual only · no automatic Triggers"}</p>{definition.conditions && <><span className="automation-kind">Only if</span><p><ConditionText ctx={ctx} condition={definition.conditions} path={["conditions"]}/></p></>}<InitialVariables ctx={ctx}/></div>
-    <div className="automation-view-options"><span>{definition.steps.length} root {definition.steps.length === 1 ? "Step" : "Steps"}</span><div aria-label="Read style" role="group"><button disabled={!!child} aria-pressed={style === "sentence"} onClick={() => setStyle("sentence")}>Sentence</button><button disabled={!!child} aria-pressed={style === "steps"} onClick={() => setStyle("steps")}>Steps</button></div></div>
-    <div className="automation-read-heading">Then</div>
+  return <><div className="mt-5"><span className="block text-caption leading-normal text-muted-foreground">When</span><p className={paragraph}>{definition.triggers.length ? definition.triggers.map((trigger, index) => <Fragment key={trigger.id}>{index > 0 && "; "}<TriggerText ctx={ctx} trigger={trigger} path={["triggers", index]}/> · Trigger {trigger.id}</Fragment>) : "Manual only · no automatic Triggers"}</p>{definition.conditions && <><span className="mt-3 block text-caption leading-normal text-muted-foreground">Only if</span><p className={paragraph}><ConditionText ctx={ctx} condition={definition.conditions} path={["conditions"]}/></p></>}<InitialVariables ctx={ctx}/></div>
+    <div className={`${row} mt-4 border-t border-border pt-3 text-caption text-muted-foreground`}><span>{definition.steps.length} root {definition.steps.length === 1 ? "Step" : "Steps"}</span><SegmentedControl label="Read style" value={style} onValueChange={setStyle} disabled={!!child} size="touch" options={[{value: "sentence", label: "Sentence"}, {value: "steps", label: "Steps"}]}/></div>
+    <div className="mt-[18px] block text-caption leading-normal text-muted-foreground">Then</div>
     {style === "sentence" ? <SentenceSequence ctx={ctx} steps={definition.steps} path={["steps"]}/> : <StackSequence ctx={ctx} steps={definition.steps} path={["steps"]}/>}
-    <details className="automation-advanced"><summary>Exact definition</summary><JsonCode source={formatJsonSource(document.source)} block/></details>
-    {child && (ancestry.includes(child) || ancestry.length >= 8 ? <section className="automation-child"><p>Preview unavailable: recursive or deeply nested reference.</p><button onClick={close}>Close preview</button></section> : <ChildPreview key={child} id={child} close={close} ancestry={ancestry}/>)}
+    <details className="border-t border-border py-1"><summary className="min-h-9 cursor-pointer py-2 marker:text-gray-7">Exact definition</summary><JsonCode source={formatJsonSource(document.source)} block/></details>
+    {child && (ancestry.includes(child) || ancestry.length >= 8 ? <section className="mt-4 border-t border-gray-4 pt-4"><p className={paragraph}>Preview unavailable: recursive or deeply nested reference.</p><Button variant="outline" size="default" className={action} onClick={close}>Close preview</Button></section> : <ChildPreview key={child} id={child} close={close} ancestry={ancestry}/>)}
   </>;
 }
 export function AutomationCard({ document, onEdit, children, automationId, compact = false, entityLabels, headingLevel = 3 }: Props) {
@@ -109,8 +116,8 @@ export function AutomationCard({ document, onEdit, children, automationId, compa
   let valid: AutomationDocument | undefined;
   let message = "Invalid definition";
   try { valid = readAutomationDocument(document.source); } catch (error) { if (error instanceof Error) message = error.message; }
-  return <article className={`automation-card${compact ? " automation-card-compact" : ""}`}>
-    {valid ? <><header className="automation-card-heading"><div><Heading>{valid.definition.name}</Heading><p>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}</p></div>{onEdit && <button onClick={onEdit}>Edit Automation</button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p role="alert">This Automation cannot be shown: {message}</p>}
+  return <article className={`min-w-0 rounded-card border border-border bg-card text-foreground [overflow-wrap:anywhere] max-tablet:p-3.5 ${compact ? "p-3.5" : "p-[18px]"}`}>
+    {valid ? <><header className={row}><div><Heading className={heading}>{valid.definition.name}</Heading><p className={paragraph}>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}</p></div>{onEdit && <Button size="default" variant="outline" className={action} onClick={onEdit}>Edit Automation</Button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p className={`${paragraph} text-destructive`} role="alert">This Automation cannot be shown: {message}</p>}
     {children}
   </article>;
 }

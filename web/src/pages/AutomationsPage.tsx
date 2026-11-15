@@ -16,6 +16,8 @@ import {
   linkClass,
 } from "../components/common.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { Notice } from "../components/ui/notice.tsx";
+import { SegmentedControl } from "../components/ui/segmented-control.tsx";
 import {
   Table,
   TableBody,
@@ -50,7 +52,7 @@ export default function AutomationsPage() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-2 text-lg font-semibold">Automations</h1>
         {workspace ? <Button size="default" onClick={workspace.newAutomation}>New Automation</Button> : <Button size="default" asChild><RouterLink to="/automations/new">New Automation</RouterLink></Button>}
-        <div role="group" aria-label="Library layout"><Button size="default" variant="outline" aria-pressed={layout === "cards"} onClick={() => setLayout("cards")}>Cards</Button><Button size="default" variant="outline" aria-pressed={layout === "table"} onClick={() => setLayout("table")}>Table</Button></div>
+        <SegmentedControl label="Library layout" value={layout} onValueChange={setLayout} options={[{value: "cards", label: "Cards"}, {value: "table", label: "Table"}]}/>
         <Button size="default" variant="outline" onClick={() => void refresh()}>
           Refresh
         </Button>
@@ -63,9 +65,9 @@ export default function AutomationsPage() {
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          {layout === "cards" ? <div className="automation-library">{data.items.length === 0 && <p>No automations. Create one here or ask Hearth for a proposal.</p>}{data.items.map(automation => {
-            try { return <AutomationCard key={automation.id} document={readAutomationDocument(automationJsonSource(automation.definition))} automationId={automation.id} compact headingLevel={2}><p>Revision {automation.revision} · {automation.definition.enabled ? "Enabled" : "Disabled"}</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Open {automation.definition.name}</RouterLink></AutomationCard>; }
-            catch { return <div key={automation.id} className="workspace-notice"><p>{automation.definition.name} cannot be shown in this version.</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Inspect {automation.definition.name}</RouterLink></div>; }
+          {layout === "cards" ? <div className="my-[18px] grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] items-start gap-4">{data.items.length === 0 && <p className="min-w-0">No automations. Create one here or ask Hearth for a proposal.</p>}{data.items.map(automation => {
+            try { return <AutomationCard key={automation.id} document={readAutomationDocument(automationJsonSource(automation.definition))} automationId={automation.id} compact headingLevel={2}><p className="my-[5px] text-[13px] text-muted-foreground">Revision {automation.revision} · {automation.definition.enabled ? "Enabled" : "Disabled"}</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Open {automation.definition.name}</RouterLink></AutomationCard>; }
+            catch { return <Notice key={automation.id} role="alert" className="min-w-0"><p>{automation.definition.name} cannot be shown in this version.</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Inspect {automation.definition.name}</RouterLink></Notice>; }
           })}</div> : <Table className="mt-3">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
