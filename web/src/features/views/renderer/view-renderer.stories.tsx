@@ -12,6 +12,7 @@ import {
 } from "../../../../.storybook/fixtures";
 import { pairedEntityResponse } from "../../../../.storybook/paired-fixtures";
 import { expectNoHorizontalOverflow } from "../../../../.storybook/play";
+import type { ViewDefinition } from "../catalog";
 import { ViewRenderer } from "./view-renderer";
 
 // Controls choose a valid example instead of editing raw definition JSON.
@@ -250,6 +251,195 @@ export const PhoneMeteredToggleGrid: Story = {
     await expectNoHorizontalOverflow(canvasElement);
   },
 };
+
+/** Cards per row, top to bottom, so a 3 + 1 wrap is distinguishable from 2 + 2. */
+const expectGridRows = async (
+  canvasElement: HTMLElement,
+  expected: number[]
+) => {
+  const grid = canvasElement.querySelector('[data-slot="view-grid"]');
+  if (!grid) {
+    throw new Error("Expected the view grid");
+  }
+  const rows = new Map<number, number>();
+  for (const card of grid.children) {
+    const top = Math.round(card.getBoundingClientRect().top);
+    rows.set(top, (rows.get(top) ?? 0) + 1);
+  }
+  await expect([...rows.values()]).toEqual(expected);
+};
+
+// Literal definitions without spreads, so the Storybook manifest can extract complete snippets.
+const fourCardGrid: ViewDefinition = {
+  schema_version: 1,
+  catalog_version: "hearth.dashboard/v1",
+  title: "Weather",
+  spec: {
+    root: "root",
+    elements: {
+      root: {
+        type: "Grid",
+        props: { columns: 4 },
+        children: ["outside", "wind", "rain", "pressure"],
+      },
+      outside: catalogExamples.OutsideNow,
+      wind: catalogExamples.Wind,
+      rain: catalogExamples.Rain,
+      pressure: catalogExamples.Pressure,
+    },
+  },
+};
+
+const fourTileGrid: ViewDefinition = {
+  schema_version: 1,
+  catalog_version: "hearth.dashboard/v1",
+  title: "Quick switches",
+  spec: {
+    root: "root",
+    elements: {
+      root: {
+        type: "Grid",
+        props: { columns: 4 },
+        children: ["plug", "fan", "garage", "purifier"],
+      },
+      plug: {
+        type: "ToggleTile",
+        props: {
+          label: "Office plug",
+          source: catalogExamples.ToggleTile.props.source,
+        },
+      },
+      fan: {
+        type: "ToggleTile",
+        props: {
+          label: "Fan",
+          source: catalogExamples.ToggleList.props.rows[0].source,
+        },
+      },
+      garage: {
+        type: "Cover",
+        props: {
+          layout: "tile",
+          label: "Garage door",
+          source: catalogExamples.Cover.props.source,
+        },
+      },
+      purifier: {
+        type: "AirPurifier",
+        props: {
+          layout: "tile",
+          label: "Living room purifier",
+          power: catalogExamples.AirPurifier.props.power,
+          pm25: catalogExamples.AirPurifier.props.pm25,
+        },
+      },
+    },
+  },
+};
+
+const awaitWeather = async (canvasElement: HTMLElement) => {
+  await expect(
+    await within(canvasElement).findByText("Moderate breeze")
+  ).toBeVisible();
+};
+
+const awaitTiles = async (canvasElement: HTMLElement) => {
+  const canvas = within(canvasElement);
+  await expect(
+    await canvas.findByRole("switch", { name: "Fan power" })
+  ).toBeVisible();
+  await expect(await canvas.findByText("Closed")).toBeVisible();
+};
+
+/** Four regular cards fill one row at exactly 4 × 248px + three gaps. */
+export const FourColumnGridFitsFour: Story = {
+  args: { definition: fourCardGrid },
+  decorators: [
+    (Story) => (
+      <div className="w-[1028px]">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    await awaitWeather(canvasElement);
+    await expectGridRows(canvasElement, [4]);
+  },
+};
+
+/** One pixel narrower, the grid halves to 2 + 2 instead of wrapping 3 + 1. */
+export const FourColumnGridHalves: Story = {
+  args: { definition: fourCardGrid },
+  decorators: [
+    (Story) => (
+      <div className="w-[1027px]">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    await awaitWeather(canvasElement);
+    await expectGridRows(canvasElement, [2, 2]);
+  },
+};
+
+/** The canvas docked beside a conversation is about 830px wide. */
+export const FourColumnGridDocked: Story = {
+  args: { definition: fourCardGrid },
+  decorators: [
+    (Story) => (
+      <div className="w-[828px]">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    await awaitWeather(canvasElement);
+    await expectGridRows(canvasElement, [2, 2]);
+  },
+};
+
+export const PhoneFourColumnGrid: Story = {
+  args: { definition: fourCardGrid },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvasElement }) => {
+    await awaitWeather(canvasElement);
+    await expectGridRows(canvasElement, [1, 1, 1, 1]);
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+/** Tiles use a 160px minimum, so four fit from 4 × 160px + three gaps. */
+export const FourTileGridFitsFour: Story = {
+  args: { definition: fourTileGrid },
+  decorators: [
+    (Story) => (
+      <div className="w-[676px]">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    await awaitTiles(canvasElement);
+    await expectGridRows(canvasElement, [4]);
+  },
+};
+
+export const FourTileGridHalves: Story = {
+  args: { definition: fourTileGrid },
+  decorators: [
+    (Story) => (
+      <div className="w-[675px]">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    await awaitTiles(canvasElement);
+    await expectGridRows(canvasElement, [2, 2]);
+  },
+};
+
 export const Heading: Story = {
   args: { definition: definitionFor(catalogExamples.Heading) },
 };

@@ -2,6 +2,7 @@ import { Component, useContext } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { Button } from "../../../components/button";
+import { cn } from "../../../lib/utils";
 import { BoundAirPurifier } from "../cards/air-purifier/air-purifier";
 import { BoundCover } from "../cards/cover/cover";
 import { DataCard, HeadingLevel } from "../cards/data-card";
@@ -74,6 +75,16 @@ const gridKind = (graph: Graph, id: string) => {
     return "reading";
   }
 };
+
+/**
+ * A four-column grid too narrow for four cards halves to two, so four cards
+ * never wrap as three and one. Each breakpoint is four minimum-width cards plus
+ * three 12px gaps: 4 × 248 + 36 and 4 × 160 + 36.
+ */
+const fourColumnFallback = {
+  regular: "@max-[1028px]/grid:[--view-columns:2]",
+  compact: "@max-[676px]/grid:[--view-columns:2]",
+} as const;
 
 const isCardElement = (node: ViewElement): node is CardElement =>
   node.type !== "Stack" &&
@@ -315,14 +326,23 @@ const ViewNode = ({
     }
     case "Grid": {
       const kind = gridKind(graph, id);
+      const { columns } = node.props;
       return (
         <div
-          data-slot="view-grid"
-          data-grid-kind={kind}
-          className={`grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,max(var(--view-min-card,248px),calc((100%_-_(var(--view-columns)_-_1)_*_12px)_/_var(--view-columns)))),1fr))] gap-3 ${kind ? "[--view-min-card:160px]" : "max-tablet:grid-cols-1"}`}
-          style={{ "--view-columns": node.props.columns } as CSSProperties}
+          className="@container/grid min-w-0"
+          style={{ "--view-columns": columns } as CSSProperties}
         >
-          {children}
+          <div
+            data-slot="view-grid"
+            data-grid-kind={kind}
+            className={cn(
+              "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,max(var(--view-min-card,248px),calc((100%_-_(var(--view-columns)_-_1)_*_12px)_/_var(--view-columns)))),1fr))] gap-3",
+              kind ? "[--view-min-card:160px]" : "max-tablet:grid-cols-1",
+              columns === 4 && fourColumnFallback[kind ? "compact" : "regular"]
+            )}
+          >
+            {children}
+          </div>
         </div>
       );
     }
