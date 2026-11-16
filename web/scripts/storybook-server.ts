@@ -1,8 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { once } from "node:events";
 import {
-  accessSync,
-  constants,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -12,6 +10,8 @@ import {
 import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
+
+import { resolveChromium } from "./storybook-browser.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const directory = path.join(root, ".data/storybook");
@@ -43,23 +43,6 @@ export const resolvePort = (env: NodeJS.ProcessEnv = process.env): number => {
     );
   }
   return parsePort(value);
-};
-
-const findChromium = (): string | undefined => {
-  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
-    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  }
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    for (const name of ["chromium", "chromium-browser"]) {
-      const executable = path.join(dir, name);
-      try {
-        accessSync(executable, constants.X_OK);
-        return executable;
-      } catch {
-        /* Try the next PATH entry. */
-      }
-    }
-  }
 };
 
 export const checkIndex = async (url: string) => {
@@ -195,7 +178,7 @@ const serve = () => {
   const packageFile = require.resolve("storybook/package.json");
   const { bin } = JSON.parse(readFileSync(packageFile, "utf-8"));
   const env: NodeJS.ProcessEnv = { ...process.env };
-  const chromium = findChromium();
+  const chromium = resolveChromium();
   if (chromium) {
     env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = chromium;
   }

@@ -11,14 +11,16 @@ semantics or device compatibility.
 mise run web-install
 ```
 
-For browser tests, also install Chromium once:
+For browser tests outside NixOS, also install Chromium once:
 
 ```sh
 mise run storybook-browser-install
 ```
 
-On NixOS, managed Storybook uses system `chromium` from `PATH` for MCP browser
-tests, or honors `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`.
+On NixOS, install system `chromium` on `PATH` instead. Managed Storybook and the
+test commands discover it automatically; no environment export is needed.
+Elsewhere, both use Playwright's bundled Chromium. On any platform,
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` can select an explicit browser executable.
 
 ## Start and stop
 
@@ -264,12 +266,9 @@ On supported Debian/Ubuntu systems, use:
 mise run storybook-browser-install -- --with-deps
 ```
 
-On NixOS, use the system-packaged Chromium instead of Playwright's downloaded
-Linux binary. Set this in the shell that starts Storybook or runs its tests:
-
-```sh
-export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="$(command -v chromium)"
-```
+On NixOS, Playwright's downloaded Linux binary cannot use the system libraries.
+Install system `chromium` (or `chromium-browser`) on `PATH`; both launch paths
+select it automatically.
 
 Report unavailable browser checks as unverified. Do not substitute jsdom results
 for browser evidence.

@@ -106,7 +106,8 @@ GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
   `mise run --skip-deps web-check` for Ultracite lint and formatting,
   `mise run --skip-deps web-test -- <filter>` and
   `mise run --skip-deps web-build` for typecheck/build.
-- Storybook: install Chromium once with `mise run storybook-browser-install`.
+- Storybook: install Chromium once with `mise run storybook-browser-install`
+  (on NixOS, install system `chromium` on `PATH` instead; selection is automatic).
   Use `mise run --skip-deps storybook-test -- <story-file>` for real-browser
   component, interaction, and accessibility checks. These use synthetic Core HTTP
   fixtures, not production Core, and are not E2E tests. See
