@@ -15,16 +15,21 @@ root.
 mise run web-install
 ```
 
-For browser tests outside NixOS, also install Chromium once:
+If neither `chromium` nor `chromium-browser` is executable on `PATH`, install
+Playwright's bundled Chromium once:
 
 ```sh
 mise run storybook-browser-install
 ```
 
-On NixOS, install system `chromium` on `PATH` instead. Managed Storybook and the
-test commands discover it automatically; no environment export is needed.
-Elsewhere, both use Playwright's bundled Chromium. On any platform,
-`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` can select an explicit browser executable.
+Managed Storybook and the test commands use the same browser selection:
+
+1. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, if set.
+2. The first executable `chromium` or `chromium-browser` on `PATH`.
+3. Playwright's bundled Chromium.
+
+No OS detection or environment export is needed. System Chromium can differ
+from Playwright's bundled version; browser compatibility depends on that version.
 
 ## Start and stop
 
@@ -226,9 +231,8 @@ On supported Debian/Ubuntu systems, use:
 mise run storybook-browser-install -- --with-deps
 ```
 
-On NixOS, Playwright's downloaded Linux binary cannot use the system libraries.
-Install system `chromium` (or `chromium-browser`) on `PATH`; both launch paths
-select it automatically.
+Alternatively, install system `chromium` (or `chromium-browser`) on `PATH`.
+Both launch paths select it automatically, without OS-specific configuration.
 
 Report unavailable browser checks as unverified. Do not substitute jsdom results
 for browser evidence.
