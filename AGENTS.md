@@ -6,7 +6,7 @@
 
 - For focused formatting, generation, module tidying, linting, testing, and vetting, always use the mise tasks below instead of invoking the underlying tools directly.
 - When adding or changing tests, reviewing test boundaries, or choosing validation scope, read [docs/testing.md](docs/testing.md).
-- For dashboard UI development, story authoring, or browser component verification, read [docs/storybook.md](docs/storybook.md) and use the `hearth-storybook` MCP server to discover existing components and verify the affected stories.
+- For dashboard UI development, story authoring, or browser component verification, read [docs/storybook.md](docs/storybook.md) and start this checkout's managed server with `mise run storybook-start`; it writes the MCP endpoint to the ignored `.opencode/opencode.json`. Use the `hearth-storybook` MCP server to discover existing components and verify the affected stories.
 - During iteration, use `GO_PACKAGES='...' mise run test` for focused tests, with the existing focused lint and vet tasks as needed. Tests run without race instrumentation locally; CI enables it. Use `mise run test -- -race` for an optional local race check. After integrating the final changes, unset `GO_PACKAGES`, run `mise run validate`, and review any generated, formatting, or module changes before committing.
 - Review the resulting diff and include intended generated or formatting changes.
 - For changes under `web/`, run `mise run web-fix`, review the diff, and run `mise run web-check`. Fix violations against Ultracite's defaults rather than adding rule exceptions.

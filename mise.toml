@@ -52,6 +52,7 @@ ready_cmd = "curl -fsS http://127.0.0.1:$PORT/ >/dev/null && curl -fsS http://12
 
 [daemons.storybook]
 run = "exec node web/scripts/storybook-server.ts serve >> .data/storybook/server.log 2>&1"
+port = { auto = true, base = 6006 }
 proxy = false
 retry = 0
 ready_cmd = { run = "node web/scripts/storybook-server.ts ready", timeout = "45s" }
@@ -247,15 +248,15 @@ description = "Run the dashboard dev server against a remote hearthd (override w
 run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NATS_MONITOR_URL:-http://wanda:8222}" pnpm --dir web run dev'''
 
 [tasks."storybook"]
-description = "Run isolated dashboard stories and MCP at http://127.0.0.1:6006"
-run = '''pnpm --dir web run storybook'''
+description = "Run foreground Storybook on this checkout's assigned port"
+run = '''node web/scripts/storybook-server.ts dev'''
 
 [tasks."storybook-start"]
-description = "Start/reuse managed Storybook; pass --tailscale for private HTTPS"
+description = "Start or reuse this checkout's managed Storybook"
 run = '''node web/scripts/storybook-server.ts start'''
 
 [tasks."storybook-stop"]
-description = "Stop this worktree's managed Storybook and its owned Tailscale route"
+description = "Stop this checkout's managed Storybook"
 run = '''node web/scripts/storybook-server.ts stop'''
 
 [tasks."storybook-start-test"]

@@ -20,7 +20,7 @@ Use Controls to explore props, the test widget to run interactions and accessibi
 
 ## Build with an agent
 
-Connect to `http://127.0.0.1:6006/mcp`. Discover documented components, inspect their props and examples, update the affected stories, run the test tool, and inspect browser previews. Report the direct story links and actual test results.
+Run `mise run storybook-start` in the checkout. It writes this checkout's MCP endpoint to the ignored `.opencode/opencode.json`; OpenCode reloads the `hearth-storybook` server. Discover documented components, inspect their props and examples, update the affected stories, run the test tool, and inspect browser previews through that server. Use the printed `Local:` URL for direct story links, and report the links and actual test results.
 
 This is an application, not a published component library. Storybook's generated snippets currently use `from 'hearth-dashboard'`; that package has no public component exports. Import from the source module used by the colocated story instead, such as `@/features/views/cards/metric/metric` or `@/components/button`. Fixture helpers in snippets are Storybook-only; use real Entity IDs in application code.
 

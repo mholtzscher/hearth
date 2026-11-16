@@ -1,105 +1,65 @@
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  assertRouteAvailable,
-  exactHost,
-  ownsRoute,
-  parseOptions,
   parsePort,
+  removeOpencodeConfig,
+  resolvePort,
+  writeOpencodeConfig,
 } from "./storybook-server.ts";
 
 describe("storybook server startup", () => {
-  it("startup defaults and custom local/HTTPS ports stay separate", () => {
-    expect(parseOptions([])).toStrictEqual({
-      port: 6006,
-      httpsPort: 6606,
-      tailscale: false,
-    });
-    expect(
-      parseOptions(["--tailscale", "--port", "6016", "--https-port", "6616"])
-    ).toStrictEqual({
-      port: 6016,
-      httpsPort: 6616,
-      tailscale: true,
-    });
-    expect(() => parseOptions(["--tailscale", "--https-port", "6006"])).toThrow(
-      /different ports/u
-    );
-    expect(() => parseOptions(["--https-port", "6616"])).toThrow(
-      /requires --tailscale/u
-    );
-    expect(() => parseOptions(["--unknown"])).toThrow(/Unknown option/u);
-  });
-
-  it("ports and exact hostnames reject unsafe or ambiguous input", () => {
+  it("uses the port mise assigns and rejects missing or unsafe values", () => {
+    expect(resolvePort({ STORYBOOK_PORT: "6016" })).toBe(6016);
+    expect(() => resolvePort({})).toThrow(/STORYBOOK_PORT.*mise/u);
     for (const port of ["0", "80", "-1", "65536", "6006junk", "NaN"]) {
       expect(() => parsePort(port)).toThrow(/Invalid port/u);
-    }
-    expect(exactHost("desktop.example.ts.net.")).toBe("desktop.example.ts.net");
-    for (const host of [
-      "*",
-      ".ts.net",
-      "https://desktop.ts.net",
-      "desktop:6606",
-      "foo/bar",
-      "",
-    ]) {
-      expect(() => exactHost(host)).toThrow(
-        /Invalid Storybook allowed hostname/u
+      expect(() => resolvePort({ STORYBOOK_PORT: port })).toThrow(
+        /Invalid port/u
       );
     }
   });
 });
 
-const config = {
-  port: 6016,
-  tailnet: { host: "desktop.example.ts.net", port: 6616 },
-};
-const status = {
-  TCP: { "6616": { HTTPS: true } },
-  Web: {
-    "desktop.example.ts.net:6616": {
-      Handlers: { "/": { Proxy: "http://127.0.0.1:6016" } },
-    },
-  },
-};
+describe("generated OpenCode config", () => {
+  const directories: string[] = [];
 
-describe("storybook route ownership", () => {
-  it("a preexisting listener is not adopted even if its target happens to match", () => {
-    expect(() => assertRouteAvailable(status, config, null)).toThrow(
-      /already has a service/u
-    );
-    expect(() => assertRouteAvailable({}, config, null)).not.toThrow();
-    expect(() => assertRouteAvailable(status, config, config)).not.toThrow();
+  afterEach(() => {
+    for (const directory of directories.splice(0)) {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
-  it("a retained route must be cleaned up before changing a stopped server's options", () => {
-    expect(() =>
-      assertRouteAvailable({}, { ...config, port: 6017 }, config)
-    ).toThrow(/storybook-stop/u);
-    expect(() =>
-      assertRouteAvailable(
-        {},
-        { ...config, tailnet: { ...config.tailnet, port: 6617 } },
-        config
-      )
-    ).toThrow(/storybook-stop/u);
-    expect(() =>
-      assertRouteAvailable({}, { ...config, tailnet: null }, config)
-    ).toThrow(/storybook-stop/u);
-  });
+  it("publishes only this checkout's MCP endpoint and removes it with the server", () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "hearth-opencode-"));
+    directories.push(directory);
+    const file = path.join(directory, ".opencode/opencode.json");
 
-  it("cleanup ownership requires the unchanged listener, target, and full path set", () => {
-    expect(ownsRoute(status, config)).toBeTruthy();
-    expect(ownsRoute(status, { ...config, port: 6017 })).toBeFalsy();
-    expect(ownsRoute(status, { ...config, tailnet: null })).toBeFalsy();
-    const changed = structuredClone(status);
-    Object.assign(changed.Web["desktop.example.ts.net:6616"].Handlers, {
-      "/other": { Proxy: "http://127.0.0.1:9090" },
-    });
-    expect(ownsRoute(changed, config)).toBeFalsy();
-    expect(() => assertRouteAvailable(changed, config, config)).toThrow(
-      /already has a service/u
-    );
+    writeOpencodeConfig(6016, file);
+    expect(readFileSync(file, "utf-8")).toBe(`{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "hearth-storybook": {
+        "type": "remote",
+        "url": "http://127.0.0.1:6016/mcp"
+      }
+    }
+  }
+}
+`);
+
+    writeOpencodeConfig(6026, file);
+    expect(
+      JSON.parse(readFileSync(file, "utf-8")).mcp.servers["hearth-storybook"]
+        .url
+    ).toBe("http://127.0.0.1:6026/mcp");
+
+    removeOpencodeConfig(file);
+    removeOpencodeConfig(file);
+    expect(existsSync(file)).toBeFalsy();
   });
 });

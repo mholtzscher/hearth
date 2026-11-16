@@ -3,12 +3,6 @@ import path from "node:path";
 import type { StorybookConfig } from "@storybook/react-vite";
 import tailwindcss from "@tailwindcss/vite";
 
-import { exactHost, parsePort } from "../scripts/storybook-server.ts";
-
-const allowedHost = process.env.HEARTH_STORYBOOK_ALLOWED_HOST;
-const allowedHosts = allowedHost ? [exactHost(allowedHost)] : [];
-const httpsPort = process.env.HEARTH_STORYBOOK_HTTPS_PORT;
-
 const config: StorybookConfig = {
   stories: ["../src/**/*.mdx", "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
   addons: [
@@ -81,7 +75,6 @@ const config: StorybookConfig = {
   core: {
     disableTelemetry: true,
     disableWhatsNewNotifications: true,
-    allowedHosts,
   },
   viteFinal(viteConfig) {
     // Prebundle shared dependencies so late discovery cannot reload an active test.
@@ -101,20 +94,6 @@ const config: StorybookConfig = {
     };
     viteConfig.server = {
       ...viteConfig.server,
-      allowedHosts,
-      // The browser must connect through HTTPS, not to Vite's loopback backend port.
-      ...(allowedHost && httpsPort
-        ? {
-            hmr: {
-              ...(typeof viteConfig.server?.hmr === "object"
-                ? viteConfig.server.hmr
-                : {}),
-              host: allowedHost,
-              protocol: "wss",
-              clientPort: parsePort(httpsPort),
-            },
-          }
-        : {}),
       proxy: {},
       fs: { allow: [path.resolve(import.meta.dirname, "../..")] },
     };
