@@ -11,6 +11,7 @@ import { ErrorBox } from "../components/error-box.tsx";
 import { Input } from "../components/input.tsx";
 import { linkClass } from "../components/link-styles.ts";
 import { MonoId } from "../components/mono-id.tsx";
+import { PageHeader } from "../components/page-header.tsx";
 import { RawJson } from "../components/raw-json.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
 import {
@@ -41,8 +42,7 @@ export default function EntitiesPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-2 text-lg font-semibold">Entities</h1>
+      <PageHeader title="Entities">
         <Input
           aria-label="device_id filter"
           placeholder="Filter by device_id…"
@@ -78,13 +78,13 @@ export default function EntitiesPage() {
         {loading && (
           <span className="text-muted-foreground text-sm">Loading…</span>
         )}
-      </div>
+      </PageHeader>
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table className="mt-3">
+          <Table aria-label="Entities">
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Entity id</TableHead>
                 <TableHead>Type</TableHead>

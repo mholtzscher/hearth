@@ -237,6 +237,61 @@ export const PhoneNavigation: Story = {
   },
 };
 
+/** The phone toolbar keeps page switching, Entity jump, and diagnostics reachable. */
+export const PhoneDevelopmentNavigation: Story = {
+  parameters: { appPath: "/devices" },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await expect(
+      await canvas.findByRole("cell", { name: "Weather station" })
+    ).toBeVisible();
+    const pages = canvas.getByRole("combobox", { name: "Development page" });
+    await expect(pages).toHaveValue("/devices");
+    await userEvent.selectOptions(pages, "/entities");
+    await expect(
+      await canvas.findByRole("heading", { name: "Entities", level: 1 })
+    ).toBeVisible();
+    await expect(pages).toHaveValue("/entities");
+    const jump = canvas.getByRole("textbox", { name: "Jump to entity id" });
+    await userEvent.type(jump, `${entityId(4)}{Enter}`);
+    await expect(
+      await canvas.findByRole("heading", { name: "Office plug", level: 1 })
+    ).toBeVisible();
+    await expect(pages).toHaveValue(`/entities/${entityId(4)}`);
+    const settings = canvas.getByRole("button", {
+      name: "Connection settings",
+    });
+    await userEvent.click(settings);
+    const body = within(canvasElement.ownerDocument.body);
+    await expect(await body.findByText("healthz: ok")).toBeVisible();
+    await expect(await body.findByText("readyz: ready")).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await expect(settings).toHaveFocus();
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+export const PhoneDevelopmentReturnToList: Story = {
+  parameters: { appPath: `/entities/${entityId(4)}` },
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await expect(
+      await canvas.findByRole("heading", { name: "Office plug", level: 1 })
+    ).toBeVisible();
+    const pages = canvas.getByRole("combobox", { name: "Development page" });
+    await expect(pages).toHaveValue(`/entities/${entityId(4)}`);
+    await userEvent.selectOptions(pages, "/entities");
+    await expect(
+      await canvas.findByRole("heading", { name: "Entities", level: 1 })
+    ).toBeVisible();
+    await expect(
+      await canvas.findByRole("cell", { name: "Office plug" })
+    ).toBeVisible();
+    await expect(pages).toHaveValue("/entities");
+    await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
 export const LoadedConversation: Story = {
   parameters: { appPath: conversationPath },
   play: async ({ canvas, userEvent }) => {

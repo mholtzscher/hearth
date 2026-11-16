@@ -34,6 +34,7 @@ import { usePolling } from "./api/hooks.ts";
 import { Button } from "./components/button.tsx";
 import { Input } from "./components/input.tsx";
 import { Label } from "./components/label.tsx";
+import { NativeSelect } from "./components/native-select.tsx";
 import {
   Popover,
   PopoverContent,
@@ -181,7 +182,7 @@ const EntityJump = () => {
     <Input
       aria-label="Jump to entity id"
       placeholder="Jump to entity id…"
-      className="w-40 max-w-full shrink transition-[width] focus:w-56 motion-reduce:transition-none"
+      className="w-40 max-w-full shrink"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
@@ -244,6 +245,7 @@ const ConnectionSettings = () => {
             Open OpenAPI JSON
           </a>
         </Button>
+        <HealthBadges />
       </PopoverContent>
     </Popover>
   );
@@ -555,47 +557,63 @@ const HouseholdSidebar = ({
   );
 };
 
-const DevelopmentShell = () => (
-  <div className="flex-1 overflow-auto">
-    <header className="bg-background sticky top-0 z-40 border-b">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
-        {/* The sidebar already names this area, so the page list needs no visible title. */}
-        <nav
-          aria-label="Hearth Debug"
-          className="flex flex-wrap items-center gap-0.5"
-        >
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  "rounded-lg px-2.5 py-1 text-sm transition-colors",
-                  isActive
-                    ? "bg-secondary text-secondary-foreground font-medium"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )
-              }
+const DevelopmentShell = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const currentPage = NAV_ITEMS.find(
+    (item) =>
+      location.pathname === item.to ||
+      location.pathname.startsWith(`${item.to}/`)
+  );
+  return (
+    <div className="flex-1 overflow-auto">
+      <header className="bg-background sticky top-0 z-40 border-b">
+        <div className="max-tablet:px-5 flex flex-wrap items-center gap-2 px-7 py-2">
+          <nav
+            aria-label="Hearth Debug"
+            className="max-desktop:hidden flex flex-wrap items-center gap-1"
+          >
+            {NAV_ITEMS.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={navLinkClass("full")}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="desktop:hidden min-w-32 flex-1">
+            <NativeSelect
+              aria-label="Development page"
+              value={location.pathname}
+              size="touch"
+              onChange={(event) => navigate(event.target.value)}
             >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-        {/* max-w-full + wrap keeps this cluster inside a narrow viewport
-            instead of pushing the page wider; it is unchanged when the
-            header row has room. */}
-        <div className="ms-auto flex max-w-full min-w-0 flex-wrap items-center gap-2">
-          <EntityJump />
-          <HealthBadges />
-          <ConnectionSettings />
+              {currentPage && location.pathname !== currentPage.to && (
+                <option value={location.pathname} disabled>
+                  {currentPage.label} detail
+                </option>
+              )}
+              {NAV_ITEMS.map((item) => (
+                <option key={item.to} value={item.to}>
+                  {item.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <div className="ms-auto flex max-w-full min-w-0 items-center gap-2">
+            <EntityJump />
+            <ConnectionSettings />
+          </div>
         </div>
+      </header>
+      <div className="max-tablet:px-5 max-tablet:pt-4 mx-auto max-w-[1440px] px-7 pt-[22px] pb-10">
+        <Outlet />
       </div>
-    </header>
-    <div className="px-4 py-4">
-      <Outlet />
     </div>
-  </div>
-);
+  );
+};
 
 const HouseholdShell = () => {
   const location = useLocation();

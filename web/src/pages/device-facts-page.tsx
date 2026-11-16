@@ -23,12 +23,14 @@ import type { NatsConnectionLease } from "../api/nats.ts";
 import { fetchAllCollectionPages } from "../api/pagination.ts";
 import type { Collection, Device, Entity } from "../api/types.ts";
 import { Button } from "../components/button.tsx";
+import { EmptyRow } from "../components/empty-row.tsx";
 import { ErrorBox } from "../components/error-box.tsx";
 import { Facts } from "../components/facts.tsx";
 import { Input } from "../components/input.tsx";
 import { JsonCode } from "../components/json-code.tsx";
 import { Label } from "../components/label.tsx";
 import { NativeSelect } from "../components/native-select.tsx";
+import { PageHeader } from "../components/page-header.tsx";
 import { RawJson } from "../components/raw-json.tsx";
 import { Section } from "../components/section.tsx";
 import { SegmentedControl } from "../components/segmented-control.tsx";
@@ -847,7 +849,7 @@ const FactsTable = ({
         aria-describedby="device-facts-summary"
       >
         <TableHeader>
-          <TableRow className="hover:bg-transparent">
+          <TableRow>
             <TableHead className="w-[6.5rem]">Family</TableHead>
             <TableHead className="w-[7.5rem]">Outcome / event</TableHead>
             <TableHead>Entity / device</TableHead>
@@ -860,14 +862,10 @@ const FactsTable = ({
         </TableHeader>
         <TableBody>
           {display.length === 0 && (
-            <TableRow className="hover:bg-transparent">
-              <TableCell
-                colSpan={8}
-                className="text-muted-foreground py-6 text-center"
-              >
-                {emptyFactsMessage(rowsLength, snapshotState)}
-              </TableCell>
-            </TableRow>
+            <EmptyRow
+              colSpan={8}
+              message={emptyFactsMessage(rowsLength, snapshotState)}
+            />
           )}
           {display.map((row, index) => (
             <FactRowView
@@ -1420,8 +1418,19 @@ export default function DeviceFactsPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-2 text-lg font-semibold">Device facts</h1>
+      <PageHeader
+        title="Device facts"
+        description={
+          <>
+            Facts published by Core into{" "}
+            <code className="font-mono">{DEVICE_FACT_STREAM}</code> (subject
+            filter{" "}
+            <code className="font-mono">{DEVICE_FACT_SUBJECT_FILTER}</code>),
+            newest first. The snapshot is a bounded retained read of at most{" "}
+            {DEVICE_FACT_SNAPSHOT_LIMIT} facts and live is off by default.
+          </>
+        }
+      >
         <Button
           size="default"
           variant="outline"
@@ -1430,7 +1439,6 @@ export default function DeviceFactsPage() {
         >
           Refresh snapshot
         </Button>
-        <span className="ms-auto" />
         <StatusChip
           label="snapshot"
           status={snapshotChipText(
@@ -1440,14 +1448,7 @@ export default function DeviceFactsPage() {
           )}
           tone={snapshotTone(snapshotState)}
         />
-      </div>
-      <p className="text-muted-foreground mt-1 text-sm">
-        Facts published by Core into{" "}
-        <code className="font-mono">{DEVICE_FACT_STREAM}</code> (subject filter{" "}
-        <code className="font-mono">{DEVICE_FACT_SUBJECT_FILTER}</code>), newest
-        first. The snapshot is a bounded retained read of at most{" "}
-        {DEVICE_FACT_SNAPSHOT_LIMIT} facts and live is off by default.
-      </p>
+      </PageHeader>
       {snapshotError && <ErrorBox error={snapshotError} />}
 
       <LiveSection

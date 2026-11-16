@@ -10,6 +10,7 @@ import { ErrorBox } from "../components/error-box.tsx";
 import { Input } from "../components/input.tsx";
 import { Label } from "../components/label.tsx";
 import { linkClass } from "../components/link-styles.ts";
+import { PageHeader } from "../components/page-header.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
 import { Textarea } from "../components/textarea.tsx";
 
@@ -63,20 +64,21 @@ const DestinationDetail = ({ id }: { id: string }) => {
       <Link className={linkClass} to="/notification-destinations">
         All destinations
       </Link>
-      <h1 className="mt-3 text-lg font-semibold">
-        {data?.name ?? "Notification destination"}
-      </h1>
-      <p className="font-mono text-xs">{id}</p>
-      <Button
-        className="mt-2"
-        variant="outline"
-        size="default"
-        onClick={async () => {
-          await refresh();
-        }}
+      <PageHeader
+        title={data?.name ?? "Notification destination"}
+        description={
+          <span className="text-caption font-mono break-all">{id}</span>
+        }
       >
-        Refresh destination
-      </Button>
+        <Button
+          variant="outline"
+          onClick={async () => {
+            await refresh();
+          }}
+        >
+          Refresh destination
+        </Button>
+      </PageHeader>
       {loading && <p>Loading…</p>}
       {error && <ErrorBox error={error} />}
       {data && (

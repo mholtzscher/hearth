@@ -19,6 +19,7 @@ import { Facts } from "../components/facts.tsx";
 import { Input } from "../components/input.tsx";
 import { Label } from "../components/label.tsx";
 import { MonoId } from "../components/mono-id.tsx";
+import { PageHeader } from "../components/page-header.tsx";
 import { RawJson } from "../components/raw-json.tsx";
 import { Section } from "../components/section.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
@@ -463,9 +464,9 @@ const CommandHistory = ({ entityId }: { entityId: string }) => {
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table className="mt-3">
+          <Table className="mt-3" aria-label="Command history">
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow>
                 <TableHead>Command id</TableHead>
                 <TableHead>Operation</TableHead>
                 <TableHead>Params</TableHead>
@@ -542,9 +543,9 @@ const AvailabilityHistory = ({ entityId }: { entityId: string }) => {
   }
   return (
     <>
-      <Table>
+      <Table aria-label="Availability history">
         <TableHeader>
-          <TableRow className="hover:bg-transparent">
+          <TableRow>
             <TableHead>Status</TableHead>
             <TableHead>Source</TableHead>
             <TableHead>Reason</TableHead>
@@ -804,29 +805,21 @@ const EntityHeader = ({
   loading: boolean;
   onRefresh: () => void;
 }) => (
-  <>
-    <div className="flex flex-wrap items-center gap-2">
-      <h1 className="mr-1 text-lg font-semibold">{data?.name ?? "Entity"}</h1>
-      {data && (
-        <StatusChip label="availability" status={data.availability.status} />
-      )}
-      {data && (
-        <StatusChip
-          label={data.enabled ? "enabled" : "disabled"}
-          status={data.enabled ? "ok" : "disabled"}
-        />
-      )}
-      <Button size="default" variant="outline" onClick={onRefresh}>
-        Refresh
-      </Button>
-      {loading && (
-        <span className="text-muted-foreground text-sm">Loading…</span>
-      )}
-    </div>
-    <p className="text-muted-foreground mt-1 font-mono text-xs break-all">
-      {entityId}
-    </p>
-  </>
+  <PageHeader
+    title={data?.name ?? "Entity"}
+    description={
+      <span className="text-caption font-mono break-all">{entityId}</span>
+    }
+  >
+    {data && (
+      <StatusChip label="availability" status={data.availability.status} />
+    )}
+    {data && <StatusChip status={data.enabled ? "enabled" : "disabled"} />}
+    <Button size="default" variant="outline" onClick={onRefresh}>
+      Refresh
+    </Button>
+    {loading && <span className="text-muted-foreground text-sm">Loading…</span>}
+  </PageHeader>
 );
 
 const EntityHistorySections = ({

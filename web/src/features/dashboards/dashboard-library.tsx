@@ -8,6 +8,7 @@ import { Button } from "../../components/button";
 import { Card } from "../../components/card";
 import { DecisionDialog } from "../../components/decision-dialog";
 import { Notice } from "../../components/notice";
+import { pageHeadingClass } from "../../components/page-header";
 
 interface LoadedPage {
   page: DashboardSummary[];
@@ -112,9 +113,7 @@ const ConnectedLibrary = () => {
       <p className="text-muted-foreground text-[10px] font-[650] tracking-[.13em] uppercase">
         Your dashboards
       </p>
-      <h1 className="text-headline leading-[1.3] font-medium tracking-[-.03em] text-balance [overflow-wrap:anywhere]">
-        Made for you. Here to stay.
-      </h1>
+      <h1 className={pageHeadingClass}>Made for you. Here to stay.</h1>
       <p className="text-muted-foreground mt-2 mb-[25px]">
         Useful views, kept close and connected to your home.
       </p>

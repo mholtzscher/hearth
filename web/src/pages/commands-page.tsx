@@ -14,6 +14,7 @@ import { Label } from "../components/label.tsx";
 import { linkClass } from "../components/link-styles.ts";
 import { MonoId } from "../components/mono-id.tsx";
 import { NativeSelect } from "../components/native-select.tsx";
+import { PageHeader } from "../components/page-header.tsx";
 import { RawJson } from "../components/raw-json.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
 import {
@@ -247,8 +248,16 @@ const CommandsPage = () => {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-2 text-lg font-semibold">Commands</h1>
+      <PageHeader
+        title="Commands"
+        description={
+          <>
+            Household command audit, newest first (GET /v1/commands). Select a
+            row or look up a <span className="font-mono">cmd_…</span> id for the
+            durable outcome; per-entity history also lives on each entity page.
+          </>
+        }
+      >
         <Input
           aria-label="command_id"
           placeholder="Look up cmd_…"
@@ -276,12 +285,7 @@ const CommandsPage = () => {
         {loading && (
           <span className="text-muted-foreground text-sm">Loading…</span>
         )}
-      </div>
-      <p className="text-muted-foreground mt-1 text-sm">
-        Household command audit, newest first (GET /v1/commands). Select a row
-        or look up a <span className="font-mono">cmd_…</span> id for the durable
-        outcome; per-entity history also lives on each entity page.
-      </p>
+      </PageHeader>
       {recentIds.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <span className="text-muted-foreground text-xs">Recent:</span>
@@ -360,9 +364,9 @@ const CommandsPage = () => {
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table className="mt-3">
+          <Table className="mt-3" aria-label="Commands">
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow>
                 <TableHead>Status</TableHead>
                 <TableHead>Entity</TableHead>
                 <TableHead>Operation</TableHead>
@@ -378,7 +382,7 @@ const CommandsPage = () => {
               {data.items.map((c) => (
                 <TableRow
                   key={c.id}
-                  className={c.id === selectedId ? "bg-muted/50" : undefined}
+                  data-state={c.id === selectedId ? "selected" : undefined}
                 >
                   <TableCell>
                     <StatusChip status={c.status} />
@@ -387,11 +391,8 @@ const CommandsPage = () => {
                     <RouterLink
                       to={`/entities/${c.entity_id}`}
                       className={linkClass}
-                      title={c.entity_id}
                     >
-                      <span className="block truncate font-mono text-xs">
-                        {c.entity_id}
-                      </span>
+                      <MonoId value={c.entity_id} />
                     </RouterLink>
                   </TableCell>
                   <TableCell>{c.operation}</TableCell>

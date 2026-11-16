@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
 
-import { Separator } from "./separator.tsx";
-
 export const Section = ({
   title,
   children,
@@ -9,11 +7,8 @@ export const Section = ({
   title: string;
   children: ReactNode;
 }) => (
-  <section className="mt-6">
-    <h2 className="text-muted-foreground text-sm font-semibold tracking-wide uppercase">
-      {title}
-    </h2>
-    <Separator className="mt-1.5 mb-3" />
+  <section data-slot="section" className="mt-6">
+    <h2 className="text-title mb-3 font-semibold">{title}</h2>
     {children}
   </section>
 );

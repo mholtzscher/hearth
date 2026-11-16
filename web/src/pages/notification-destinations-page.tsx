@@ -5,8 +5,10 @@ import { useBaseUrlVersion } from "../api/client.ts";
 import { useApi } from "../api/hooks.ts";
 import { notificationsApi } from "../api/notifications.ts";
 import { Button } from "../components/button.tsx";
+import { EmptyRow } from "../components/empty-row.tsx";
 import { ErrorBox } from "../components/error-box.tsx";
 import { linkClass } from "../components/link-styles.ts";
+import { PageHeader } from "../components/page-header.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
 import {
   Table,
@@ -32,8 +34,10 @@ export default function NotificationDestinationsPage() {
   );
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">Notification destinations</h1>
+      <PageHeader
+        title="Notification destinations"
+        description="Select an adapter-registered destination to send a test message. Availability is current Core routing evidence, not a provider connection guarantee."
+      >
         <Button
           variant="outline"
           size="default"
@@ -49,17 +53,12 @@ export default function NotificationDestinationsPage() {
         <Link to="/notifications" className={linkClass}>
           Notification history
         </Link>
-      </div>
-      <p className="text-muted-foreground mt-2 text-sm">
-        Select an adapter-registered destination to send a test message.
-        Availability is current Core routing evidence, not a provider connection
-        guarantee.
-      </p>
+      </PageHeader>
       {loading && <p>Loading…</p>}
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table>
+          <Table aria-label="Notification destinations">
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -68,6 +67,12 @@ export default function NotificationDestinationsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {data.items.length === 0 && (
+                <EmptyRow
+                  colSpan={3}
+                  message="No notification destinations registered."
+                />
+              )}
               {data.items.map((d) => (
                 <TableRow key={d.id}>
                   <TableCell>
@@ -88,9 +93,6 @@ export default function NotificationDestinationsPage() {
               ))}
             </TableBody>
           </Table>
-          {data.items.length === 0 && (
-            <p>No notification destinations registered.</p>
-          )}
           {data.next_cursor && (
             <Button
               variant="outline"

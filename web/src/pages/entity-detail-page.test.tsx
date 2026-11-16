@@ -367,14 +367,13 @@ describe(EntityDetailPage, () => {
       );
       renderEntity("ent_voc");
       await screen.findByRole("heading", { name: "VOC Quality" });
-      const stateRow = screen
-        .getByRole("cell", { name: "State" })
-        .closest("tr");
-      if (!stateRow) {
-        throw new Error("State row is missing");
+      const stateValue = screen.getByText("State", {
+        selector: "dt",
+      }).nextElementSibling;
+      if (!stateValue) {
+        throw new Error("State definition is missing");
       }
-      const [, stateCell] = stateRow.querySelectorAll("td");
-      expect(stateCell.textContent).toBe(
+      expect(stateValue.textContent).toBe(
         `${value} obs=obs_voc at 2026-11-04T12:00:00Z`
       );
       expect(screen.getByText("Read-only entity")).toBeTruthy();

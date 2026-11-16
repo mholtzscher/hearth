@@ -44,6 +44,7 @@ import { Facts } from "../components/facts.tsx";
 import { Label } from "../components/label.tsx";
 import { linkClass } from "../components/link-styles.ts";
 import { MonoId } from "../components/mono-id.tsx";
+import { PageHeader } from "../components/page-header.tsx";
 import { RawJson } from "../components/raw-json.tsx";
 import { Section } from "../components/section.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
@@ -1096,13 +1097,14 @@ const AutomationDetailHeader = ({
   onCloseDraft?: () => void;
 }) => (
   <>
-    <div className="flex flex-wrap items-center gap-2">
-      <h1 className="mr-1 text-lg font-semibold">
-        {automation?.definition.name ?? "Automation"}
-      </h1>
+    <PageHeader
+      title={automation?.definition.name ?? "Automation"}
+      description={
+        <span className="text-caption font-mono break-all">{automationId}</span>
+      }
+    >
       {automation && (
         <StatusChip
-          label={automation.definition.enabled ? "enabled" : "disabled"}
           status={automation.definition.enabled ? "enabled" : "disabled"}
         />
       )}
@@ -1115,10 +1117,7 @@ const AutomationDetailHeader = ({
       {loading && (
         <span className="text-muted-foreground text-sm">Loading…</span>
       )}
-    </div>
-    <p className="text-muted-foreground mt-1 font-mono text-xs break-all">
-      {automationId}
-    </p>
+    </PageHeader>
     {error && <ErrorBox error={error} />}
     {editing && <Canvas automationEditing onClose={onCloseDraft} />}
   </>
@@ -1347,9 +1346,9 @@ const AutomationHistorySection = ({
       {historyError && <ErrorBox error={historyError} />}
       {history && (
         <>
-          <Table className="mt-3">
+          <Table className="mt-3" aria-label="Automation history">
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow>
                 <TableHead>Kind</TableHead>
                 <TableHead>Recorded</TableHead>
                 <TableHead>Status / reason</TableHead>

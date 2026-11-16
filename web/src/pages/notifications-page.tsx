@@ -7,11 +7,13 @@ import { notificationsApi } from "../api/notifications.ts";
 import type { NotificationAttempt } from "../api/notifications.ts";
 import { Button } from "../components/button.tsx";
 import { Card } from "../components/card.tsx";
+import { EmptyRow } from "../components/empty-row.tsx";
 import { ErrorBox } from "../components/error-box.tsx";
 import { Facts } from "../components/facts.tsx";
 import { Input } from "../components/input.tsx";
 import { Label } from "../components/label.tsx";
 import { linkClass } from "../components/link-styles.ts";
+import { PageHeader } from "../components/page-header.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
 import {
   Table,
@@ -178,7 +180,7 @@ const NotificationsHistory = ({
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table>
+          <Table aria-label="Notification history">
             <TableHeader>
               <TableRow>
                 <TableHead>Status</TableHead>
@@ -190,6 +192,12 @@ const NotificationsHistory = ({
               </TableRow>
             </TableHeader>
             <TableBody>
+              {data.items.length === 0 && (
+                <EmptyRow
+                  colSpan={6}
+                  message="No notification attempts match."
+                />
+              )}
               {data.items.map((a) => (
                 <TableRow key={a.id}>
                   <TableCell>
@@ -216,7 +224,6 @@ const NotificationsHistory = ({
               ))}
             </TableBody>
           </Table>
-          {data.items.length === 0 && <p>No notification attempts match.</p>}
           {nextCursor && (
             <Button
               variant="outline"
@@ -240,8 +247,10 @@ export default function NotificationsPage() {
   const refreshRef = useRef<(() => void) | null>(null);
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">Notification history</h1>
+      <PageHeader
+        title="Notification history"
+        description="Manual and Automation attempts, newest first. History is independent of Automation retention; terminal attempts are retained for 30 days. All outcomes, including running and failed attempts, are listed."
+      >
         <Link className={linkClass} to="/notification-destinations">
           Destinations and test send
         </Link>
@@ -254,12 +263,7 @@ export default function NotificationsPage() {
         >
           Refresh history
         </Button>
-      </div>
-      <p className="text-muted-foreground mt-2 text-sm">
-        Manual and Automation attempts, newest first. History is independent of
-        Automation retention; terminal attempts are retained for 30 days. All
-        outcomes, including running and failed attempts, are listed.
-      </p>
+      </PageHeader>
       {attemptId && <AttemptDetail key={attemptId} id={attemptId} />}
       <NotificationsHistory
         key={`${baseVersion}:${destination}`}

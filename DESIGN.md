@@ -48,6 +48,12 @@ typography:
     fontWeight: 500
     lineHeight: 1.3
     letterSpacing: "-0.03em"
+  headline-narrow:
+    fontFamily: "Figtree Variable, sans-serif"
+    fontSize: "22px"
+    fontWeight: 500
+    lineHeight: 1.3
+    letterSpacing: "-0.03em"
   title:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "18px"
@@ -174,7 +180,8 @@ The palette is a neutral night ground with sparing, purposeful color.
 Figtree Variable is self-hosted through `@fontsource-variable/figtree`, with sans-serif fallback. It provides a clear, restrained voice throughout; opaque identifiers and raw structured data may use monospace.
 
 The theme's font-size utilities are `text-reading` (40px), `text-reading-narrow`
-(32px), `text-headline` (26px), `text-title` (18px), `text-body` (16px),
+(32px), `text-headline` (26px), `text-headline-narrow` (22px), `text-title` (18px),
+`text-body` (16px),
 `text-label` (14px), `text-compact-reading` (20px), and `text-caption` (12px).
 These utilities set font size; apply line height, weight, and tracking separately.
 
@@ -189,7 +196,15 @@ These utilities set font size; apply line height, weight, and tracking separatel
 
 At desktop widths, a navigation sidebar of `clamp(218px, 22vw, 340px)` sits beside the workspace. When a canvas is present, the conversation column is `clamp(368px, 28vw, 480px)` with 20px gutters, which keeps the composer prompt on one line, and the canvas takes the remaining width. An independent conversation is centered at a maximum width of 960px; reply prose keeps a 720px maximum on the shared left edge. Canvas content has a maximum width of 1080px beside the conversation and 1440px when it has the screen to itself: expanded, or as a dashboard page. Reading grids use 12px gaps; vertical stacks use 8px, 16px, or 24px gaps.
 
-The sidebar narrows to a 104px rail, with recent conversations in a drawer, at 721–980px, and also at 981–1279px while a canvas is open, so the view keeps room for its cards. At 720px and below, a 52px top bar holds a menu button, the page name, and New conversation, and the whole sidebar opens from the menu as one drawer. With a canvas open on Home, the Conversation and Canvas switch takes the page name's place, so one bar is the only chrome above the content. Conversation and Canvas become separate full-width views. Grids collapse to one column except the compact reading and ToggleTile grids described below. Household controls commonly provide a 44px minimum target, with composer padding respecting the phone safe area. The app fills the area the on-screen keyboard leaves visible, so the top bar stays in view and the composer sits on the keyboard, without the home-indicator padding the keyboard covers. Development pages retain compact controls; their page list shares one row with the entity jump field and health badges where the width allows, and wraps otherwise.
+The sidebar narrows to a 104px rail, with recent conversations in a drawer, at 721–980px, and also at 981–1279px while a canvas is open, so the view keeps room for its cards. At 720px and below, a 52px top bar holds a menu button, the page name, and New conversation, and the whole sidebar opens from the menu as one drawer. With a canvas open on Home, the Conversation and Canvas switch takes the page name's place, so one bar is the only chrome above the content. Conversation and Canvas become separate full-width views. Grids collapse to one column except the compact reading and ToggleTile grids described below. Household controls commonly provide a 44px minimum target, with composer padding respecting the phone safe area. The app fills the area the on-screen keyboard leaves visible, so the top bar stays in view and the composer sits on the keyboard, without the home-indicator padding the keyboard covers. Development pages retain compact diagnostic controls. Their page links use the household navigation treatment; below 981px a shared native select replaces the links. The Entity jump field and Connection settings remain alongside navigation. Health and readiness diagnostics live inside Connection settings.
+
+Development content shares the dashboard's 1440px maximum width and 28px gutters
+(20px on phones). `PageHeader` pairs the product's 26px headline (22px on phones)
+with wrapping actions and optional context, separated from content by one rule. Debug sections
+use the 18px title scale without uppercase labels or extra separator rules.
+Metadata uses `Facts` definition lists, which wrap values below their labels when
+space is limited. Tables use the 14px label scale and sentence-case column labels.
+Their named scroll areas enter the Tab order only while content overflows.
 
 The canvas header puts the title and window controls (Expand, Close) on its first row and the view actions on the next. When the canvas is at least 1000px wide, the actions join the title row. One rule separates the header from the view. On phones, Expand is hidden because the Canvas tab already fills the screen, and while there is something to save, Discard, Save as new, and Save move to a bar along the bottom edge, within thumb reach. A disabled Save is not shown on phones.
 

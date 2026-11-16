@@ -93,9 +93,9 @@ const EventHistoryScope = ({
                 ` Supported event names: ${supportedNames.join(", ")}.`}
             </p>
           ) : (
-            <Table className="mt-3">
+            <Table className="mt-3" aria-label="Entity events">
               <TableHeader>
-                <TableRow className="hover:bg-transparent">
+                <TableRow>
                   <TableHead>Event</TableHead>
                   <TableHead>Disposition</TableHead>
                   <TableHead>Rejection</TableHead>

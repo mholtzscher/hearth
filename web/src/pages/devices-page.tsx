@@ -10,6 +10,7 @@ import { EmptyRow } from "../components/empty-row.tsx";
 import { ErrorBox } from "../components/error-box.tsx";
 import { linkClass } from "../components/link-styles.ts";
 import { MonoId } from "../components/mono-id.tsx";
+import { PageHeader } from "../components/page-header.tsx";
 import { RawJson } from "../components/raw-json.tsx";
 import { Section } from "../components/section.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
@@ -51,8 +52,7 @@ export default function DevicesPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-2 text-lg font-semibold">Devices</h1>
+      <PageHeader title="Devices">
         <Button
           size="default"
           variant="outline"
@@ -66,13 +66,13 @@ export default function DevicesPage() {
         {loading && (
           <span className="text-muted-foreground text-sm">Loading…</span>
         )}
-      </div>
+      </PageHeader>
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table className="mt-3">
+          <Table aria-label="Devices">
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Kind</TableHead>
                 <TableHead>Device id</TableHead>
@@ -140,9 +140,9 @@ export default function DevicesPage() {
                   void detail.refresh();
                 }}
               />
-              <Table className="mt-3">
+              <Table className="mt-3" aria-label="Device Entities">
                 <TableHeader>
-                  <TableRow className="hover:bg-transparent">
+                  <TableRow>
                     <TableHead>Entity</TableHead>
                     <TableHead>Entity id</TableHead>
                     <TableHead>Type</TableHead>

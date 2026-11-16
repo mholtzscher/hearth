@@ -5,6 +5,7 @@ export const TEXT_TOKENS = [
   "reading",
   "reading-narrow",
   "headline",
+  "headline-narrow",
   "title",
   "body",
   "label",
