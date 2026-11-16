@@ -206,6 +206,15 @@ Metadata uses `Facts` definition lists, which wrap values below their labels whe
 space is limited. Tables use the 14px label scale and sentence-case column labels.
 Their named scroll areas enter the Tab order only while content overflows.
 
+The dashboard library uses the same width, gutters, and `PageHeader`. Each saved
+dashboard is a card: a 20px `--gray-8` dashboard icon, the 14px weight-500 title,
+and “Updated” with an age under seven days or a short local date after that. The
+title link covers the card, which shows the shared violet focus ring while that link has keyboard focus. A ghost
+44px Delete icon sits level with the icon and follows the title in reading
+order. Its confirmation uses the destructive button. The first load shows empty
+card frames at a ready card's height; a failed load shows only its notice, never
+the empty state.
+
 The stylesheet imports Tailwind and Figtree. Hearth owns the two Accordion
 height animations; Radix state and orientation selectors use Tailwind's native
 attribute variants. Shared controls inherit the global focus outline and

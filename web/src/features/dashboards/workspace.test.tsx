@@ -988,6 +988,62 @@ describe("dashboard workspace", () => {
     );
   });
 
+  it("reports a failed library load without claiming there are no dashboards", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchStub>(() => json({ detail: "Core is unavailable" }, 503))
+    );
+    mount("/dashboards");
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByRole("button", { name: "Reload" })).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", {
+        name: "Your first dashboard starts with a question.",
+      })
+    ).toBeNull();
+  });
+
+  it("locks the delete decision until the request settles", async () => {
+    const deleted = Promise.withResolvers<Response>();
+    let items = [{ ...dashboard, title: "Warm house" }];
+    const fetcher = vi.fn<FetchStub>((_input, init) => {
+      if (init?.method === "DELETE") {
+        return deleted.promise;
+      }
+      return json({ items });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    mount("/dashboards");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete Warm house" })
+    );
+    const dialog = within(screen.getByRole("dialog"));
+    const confirm = dialog.getByRole("button", { name: "Delete dashboard" });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", true));
+    expect(dialog.getByRole("button", { name: "Cancel" })).toHaveProperty(
+      "disabled",
+      true
+    );
+    fireEvent.click(confirm);
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    items = [];
+    await act(() => {
+      deleted.resolve(new Response(null, { status: 204 }));
+    });
+    await expect(
+      screen.findByRole("heading", {
+        name: "Your first dashboard starts with a question.",
+      })
+    ).resolves.toBeTruthy();
+    expect(
+      fetcher.mock.calls.filter(([, init]) => init?.method === "DELETE")
+    ).toHaveLength(1);
+  });
+
   it("preserves unsupported saved JSON and disables editing and copying", async () => {
     vi.stubGlobal(
       "fetch",
