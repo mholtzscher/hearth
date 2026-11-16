@@ -266,7 +266,9 @@ describe("view card structure", () => {
         throw new Error("Expected the view grid");
       }
       expect(grid.dataset.gridKind ?? null).toBe(expected);
-      expect(grid.style.getPropertyValue("--view-columns")).toBe("3");
+      expect(grid.parentElement?.style.getPropertyValue("--view-columns")).toBe(
+        "3"
+      );
     }
   );
 });
