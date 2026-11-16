@@ -1619,6 +1619,8 @@ describe("Automation detail page", () => {
       await expect(screen.findByText("Step executions")).resolves.toBeTruthy();
       expect(requestsFor(requests, "POST", RUNS_PATH)).toHaveLength(1);
       const toggle = screen.getByRole("switch");
+      // The Run renders before its definition refresh releases the switch.
+      await waitFor(() => expect(toggle).not.toHaveProperty("disabled", true));
       fireEvent.click(toggle);
       await waitFor(() =>
         expect(requestsFor(requests, "PUT", DEFINITION_PATH)).toHaveLength(1)

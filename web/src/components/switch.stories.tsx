@@ -125,7 +125,7 @@ export const Keyboard: Story = {
 
 export const Invalid: Story = {
   args: { "aria-invalid": true },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     const control = canvas.getByRole("switch", { name: "Enable automation" });
     const track = control.querySelector<HTMLElement>(
       '[data-slot="switch-track"]'
@@ -134,6 +134,12 @@ export const Invalid: Story = {
       throw new Error("Switch is missing its track");
     }
     await expect(control).toHaveAttribute("aria-invalid", "true");
+    await expect(getComputedStyle(track).borderColor).toBe("rgb(255, 92, 122)");
+    await userEvent.click(control);
+    await expect(control).toHaveAttribute("aria-checked", "true");
+    await waitFor(() =>
+      expect(getComputedStyle(track).backgroundColor).toBe("rgb(167, 123, 255)")
+    );
     await expect(getComputedStyle(track).borderColor).toBe("rgb(255, 92, 122)");
   },
 };

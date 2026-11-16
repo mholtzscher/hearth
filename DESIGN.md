@@ -206,6 +206,12 @@ Metadata uses `Facts` definition lists, which wrap values below their labels whe
 space is limited. Tables use the 14px label scale and sentence-case column labels.
 Their named scroll areas enter the Tab order only while content overflows.
 
+The stylesheet imports Tailwind and Figtree. Hearth owns the two Accordion
+height animations; Radix state and orientation selectors use Tailwind's native
+attribute variants. Shared controls inherit the global focus outline and
+reduced-motion rule instead of restating them. Dark-only component colors are
+unconditional, with no parallel light-mode styles.
+
 The canvas header puts the title and window controls (Expand, Close) on its first row and the view actions on the next. When the canvas is at least 1000px wide, the actions join the title row. One rule separates the header from the view. On phones, Expand is hidden because the Canvas tab already fills the screen, and while there is something to save, Discard, Save as new, and Save move to a bar along the bottom edge, within thumb reach. A disabled Save is not shown on phones.
 
 Recent conversations group under local date headings: Today, Yesterday, Previous 7 days, Previous 30 days, then month names, with the year for an earlier year. Each heading (12px, weight 500, `--gray-7`) stays pinned while its conversations scroll. Headings follow the local calendar day and update at midnight. Once the list holds more than 12 conversations, a search field above it filters previews; Escape clears it, and an empty result says so in words. In the phone drawer, while the search has focus or a query, only Recent remains, so results fit above the keyboard and stay in place when the field loses focus. Rows are 36px with a fine pointer and 44px with touch, and a truncated preview repeats in full as a tooltip.

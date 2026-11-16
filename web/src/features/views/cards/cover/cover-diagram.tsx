@@ -61,7 +61,7 @@ export const CoverDiagram = ({
       {shown !== undefined && (
         <g clipPath={`url(#${clip})`}>
           <g
-            className="transition-transform duration-[900ms] ease-linear motion-reduce:transition-none"
+            className="transition-transform duration-[900ms] ease-linear"
             style={{ transform: `translateY(${(-offset).toFixed(2)}px)` }}
           >
             <rect

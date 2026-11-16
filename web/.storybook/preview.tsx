@@ -70,7 +70,6 @@ const preview: Preview = {
   ],
   beforeEach(context) {
     const { msw } = context;
-    document.documentElement.classList.add("dark");
     const previousBase = localStorage.getItem("hearth.baseUrl");
     setBaseUrl("");
     MockDate.set(fixtureNow);

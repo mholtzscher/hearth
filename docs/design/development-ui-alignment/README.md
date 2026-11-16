@@ -3,7 +3,8 @@
 Captured on November 15, 2026, in system Chromium using the production components
 and Storybook's synthetic household fixtures. Before images use
 `a934319277b0f9cd0b6a7e98c4e198de31a96f93`. After images and the interaction clip
-show this change. These checks do not establish physical-Device effects.
+show the initial alignment at `b6c1d17`. The CSS-cleanup captures below show the
+follow-up. These checks do not establish physical-Device effects.
 
 | Capture | Scenario and viewport |
 | --- | --- |
@@ -37,6 +38,41 @@ template spans counted 4176 recognized utility references before and 4055 after:
 candidates fell from 1100 to 1097. Stories and tests are excluded. This measures
 styling repetition, not generated CSS size or total source lines.
 
+### Emitted CSS cleanup
+
+The follow-up removes `tw-animate-css`, its stylesheet import, and the
+`shadcn/tailwind.css` import. Hearth retains shadcn for authoring and owns the
+two existing 200ms Accordion animations. Accordion, Separator, and Switch use
+native Radix attribute selectors. Unused theme overrides, duplicate Preflight
+resets, 19 repeated focus declarations, six reduced-motion overrides, and
+parallel light/dark branches disappear.
+
+Production builds before (`b6c1d17`) and after the cleanup used the same local
+toolchain and lockfile versions for retained packages. Measurements count the
+emitted `web/dist/assets/*.css` file, not source lines or utility references.
+Gzip uses Node's `gzipSync` defaults.
+
+| Measure | Before | After | Reduction |
+| --- | ---: | ---: | ---: |
+| Minified CSS bytes | 103555 | 98489 | 5066 (4.89%) |
+| Gzip bytes | 19615 | 18939 | 676 (3.45%) |
+| `@property` registrations | 75 | 50 | 25 |
+
+These are artifact-size measurements, not a page-load speed claim.
+
+Follow-up captures use Chromium, synthetic fixtures, and a 1440×1000 viewport.
+Finite transitions settle before capture:
+
+- [Household dashboard](css-cleanup-product.png): retains the product appearance.
+- [Expanded Accordion](css-cleanup-accordion.png): retains the expanded layout.
+- [Keyboard-focused Switch](css-cleanup-switch.png): retains the checked treatment
+  and focus outline.
+
+The initial navigation clip remains applicable: the follow-up changes no
+navigation behavior. Real-browser checks also confirmed dark appearance with a
+light OS preference, a 2px violet focus outline with a 3px offset, and disabled
+animations/transitions under reduced motion.
+
 ## Checks
 
 - Original code: 1051 frontend unit tests and selected Storybook interaction
@@ -50,3 +86,8 @@ styling repetition, not generated CSS size or total source lines.
 - Impeccable detector: no findings in the final changed targets.
 - Independent review: the detail-to-list selector issue and a missing narrow
   headline token were fixed and reviewed again.
+- Follow-up full validation and all 294 MCP browser stories passed without
+  accessibility violations. Independent review caught an invalid checked-Switch
+  border regression; explicit invalid-state precedence and a settled-transition
+  story assertion fix it. A pre-existing Automation test now waits for its switch
+  to become enabled before clicking; production lifecycle behavior is unchanged.

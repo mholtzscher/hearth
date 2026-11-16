@@ -14,7 +14,7 @@ export interface SegmentedControlProps<T extends string> {
 const segmentClasses =
   "min-w-0 rounded-md border-0 bg-transparent px-2 text-label leading-normal text-gray-9 [overflow-wrap:anywhere] " +
   "hover:not-disabled:aria-[pressed=false]:bg-gray-3 hover:not-disabled:aria-[pressed=false]:text-foreground " +
-  "focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring focus-visible:outline-offset-3 disabled:opacity-50 " +
+  "disabled:opacity-50 " +
   "aria-[pressed=true]:bg-violet-soft aria-[pressed=true]:text-violet-text aria-[pressed=true]:shadow-[inset_0_0_0_1px_var(--violet)]";
 
 export const SegmentedControl = <T extends string>({
