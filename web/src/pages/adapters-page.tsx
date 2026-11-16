@@ -11,6 +11,7 @@ import { ErrorBox } from "../components/error-box.tsx";
 import { Facts } from "../components/facts.tsx";
 import { Input } from "../components/input.tsx";
 import { linkClass } from "../components/link-styles.ts";
+import { PageHeader } from "../components/page-header.tsx";
 import { RawJson } from "../components/raw-json.tsx";
 import { Section } from "../components/section.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
@@ -47,9 +48,9 @@ const AdapterHealthHistory = ({ adapterId }: { adapterId: string }) => {
   }
   return (
     <>
-      <Table>
+      <Table aria-label="Adapter health history">
         <TableHeader>
-          <TableRow className="hover:bg-transparent">
+          <TableRow>
             <TableHead>Status</TableHead>
             <TableHead>Source</TableHead>
             <TableHead>Reason</TableHead>
@@ -178,8 +179,7 @@ const AdaptersPage = () => {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-2 text-lg font-semibold">Adapters</h1>
+      <PageHeader title="Adapters">
         <Input
           aria-label="Filter by adapter id"
           placeholder="Filter by id…"
@@ -210,13 +210,13 @@ const AdaptersPage = () => {
         {loading && (
           <span className="text-muted-foreground text-sm">Loading…</span>
         )}
-      </div>
+      </PageHeader>
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table className="mt-3">
+          <Table aria-label="Adapters">
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow>
                 <TableHead>ID</TableHead>
                 <TableHead>Health</TableHead>
                 <TableHead>Source</TableHead>

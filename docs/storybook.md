@@ -93,7 +93,7 @@ tests skip them.
 
 ## Add a story with realistic data
 
-The shared `.storybook/preview.tsx` supplies production CSS, the `dark` class,
+The shared `.storybook/preview.tsx` supplies production dark-only CSS,
 `MemoryRouter`, and a fresh `ViewDataProvider` per story. Radix portals mount into
 the preview document's body. Query portalled content through
 `canvasElement.ownerDocument.body` in a play function.

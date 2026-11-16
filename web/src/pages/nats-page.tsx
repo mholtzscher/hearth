@@ -21,6 +21,7 @@ import { ErrorBox } from "../components/error-box.tsx";
 import { Facts } from "../components/facts.tsx";
 import { Input } from "../components/input.tsx";
 import { JsonCode } from "../components/json-code.tsx";
+import { PageHeader } from "../components/page-header.tsx";
 import { RawJson } from "../components/raw-json.tsx";
 import { Section } from "../components/section.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
@@ -255,9 +256,9 @@ const LiveMessages = () => {
         </span>
       </div>
       {statusError && <ErrorBox error={statusError} />}
-      <Table className="mt-3">
+      <Table className="mt-3" aria-label="NATS messages">
         <TableHeader>
-          <TableRow className="hover:bg-transparent">
+          <TableRow>
             <TableHead className="w-24">Received</TableHead>
             <TableHead className="w-[28rem]">Subject</TableHead>
             <TableHead>Payload</TableHead>
@@ -446,9 +447,9 @@ const ServerInfo = () => {
           </Button>
         </div>
         {conns.error && <ErrorBox error={conns.error} />}
-        <Table className="mt-2">
+        <Table className="mt-2" aria-label="NATS connections">
           <TableHeader>
-            <TableRow className="hover:bg-transparent">
+            <TableRow>
               <TableHead className="w-16">CID</TableHead>
               <TableHead className="w-20">Kind</TableHead>
               <TableHead className="w-48">Remote</TableHead>
@@ -487,11 +488,10 @@ const ServerInfo = () => {
 export default function NatsPage() {
   return (
     <div>
-      <h1 className="text-lg font-semibold">NATS</h1>
-      <p className="text-muted-foreground mt-1 text-sm">
-        Live wire traffic and server introspection. Requires NATS WebSocket and
-        monitoring listeners.
-      </p>
+      <PageHeader
+        title="NATS"
+        description="Live wire traffic and server introspection. Requires NATS WebSocket and monitoring listeners."
+      />
       <Section title="Live messages (websocket)">
         <LiveMessages />
       </Section>

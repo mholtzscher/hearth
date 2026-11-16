@@ -90,7 +90,7 @@ const Compass = ({
       bearing !== undefined && (
         <g
           data-slot="weather-compass-arrow"
-          className="ease-out-expo transition-transform duration-[600ms] motion-reduce:transition-none"
+          className="ease-out-expo transition-transform duration-[600ms]"
           transform={`rotate(${bearing + 180})`}
         >
           <line

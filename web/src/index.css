@@ -1,9 +1,6 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/figtree";
 
-@custom-variant dark (&:is(.dark *));
 @custom-variant short (@media (max-height: 600px));
 
 @theme inline {
@@ -30,7 +27,6 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-info: var(--info);
-  --font-heading: var(--font-sans);
   --font-sans: "Figtree Variable", sans-serif;
   --color-chart-8: var(--chart-8);
   --color-chart-7: var(--chart-7);
@@ -63,14 +59,13 @@
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
   --radius-card: 12px;
   /* Font size only. Line height stays an explicit utility. */
   --text-reading: 40px;
   --text-reading-narrow: 32px;
   --text-headline: 26px;
+  --text-headline-narrow: 22px;
   --text-title: 18px;
   --text-body: 16px;
   --text-label: 14px;
@@ -83,6 +78,8 @@
   --animate-arrival: view-arrival 10s var(--ease-out-expo) forwards;
   --animate-pending: view-pending 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
   --animate-canvas-in: canvas-in 0.24s var(--ease-out-expo);
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
 }
 
 /*
@@ -151,13 +148,6 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    box-sizing: border-box;
-  }
-  button,
-  input,
-  textarea,
-  select {
-    font: inherit;
   }
   button {
     cursor: pointer;
@@ -175,8 +165,6 @@
   }
   html {
     @apply font-sans;
-  }
-  html {
     scrollbar-color: var(--gray-5) transparent;
     caret-color: var(--violet);
   }
@@ -209,5 +197,23 @@
 @keyframes view-arrival {
   to {
     opacity: 0;
+  }
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
   }
 }

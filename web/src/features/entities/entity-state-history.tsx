@@ -713,9 +713,9 @@ const HistoryScope = ({
                 items={data.items}
                 filter={filter}
               />
-              <Table className="mt-3">
+              <Table className="mt-3" aria-label="State history">
                 <TableHeader>
-                  <TableRow className="hover:bg-transparent">
+                  <TableRow>
                     <TableHead>Value</TableHead>
                     <TableHead>Disposition</TableHead>
                     <TableHead>Observation ID</TableHead>

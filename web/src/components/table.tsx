@@ -2,15 +2,41 @@ import * as React from "react";
 
 import { cn } from "../lib/utils.ts";
 
-const Table = ({ className, ...props }: React.ComponentProps<"table">) => (
-  <div data-slot="table-container" className="relative w-full overflow-x-auto">
-    <table
-      data-slot="table"
-      className={cn("w-full caption-bottom text-[13px]", className)}
-      {...props}
-    />
-  </div>
-);
+const Table = ({ className, ...props }: React.ComponentProps<"table">) => {
+  const container = React.useRef<HTMLElement>(null);
+  const table = React.useRef<HTMLTableElement>(null);
+  React.useEffect(() => {
+    const element = container.current;
+    const content = table.current;
+    if (!element || !content || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    // Focusability follows measured overflow, not the table's data or appearance.
+    const measure = () => {
+      element.tabIndex = element.scrollWidth > element.clientWidth ? 0 : -1;
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    observer.observe(content);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <section
+      ref={container}
+      data-slot="table-container"
+      aria-label={props["aria-label"] ?? "Scrollable table"}
+      className="relative w-full overflow-x-auto"
+    >
+      <table
+        ref={table}
+        data-slot="table"
+        className={cn("text-label w-full caption-bottom", className)}
+        {...props}
+      />
+    </section>
+  );
+};
 
 const TableHeader = ({
   className,
@@ -49,7 +75,7 @@ const TableRow = ({ className, ...props }: React.ComponentProps<"tr">) => (
   <tr
     data-slot="table-row"
     className={cn(
-      "hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
+      "hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors in-[thead]:hover:bg-transparent",
       className
     )}
     {...props}
@@ -60,7 +86,7 @@ const TableHead = ({ className, ...props }: React.ComponentProps<"th">) => (
   <th
     data-slot="table-head"
     className={cn(
-      "text-muted-foreground h-8 px-2 text-left align-middle text-xs font-medium tracking-wide whitespace-nowrap uppercase [&:has([role=checkbox])]:pr-0",
+      "text-muted-foreground h-8 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0",
       className
     )}
     {...props}

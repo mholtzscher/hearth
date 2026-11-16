@@ -15,6 +15,7 @@ import { ErrorBox } from "../components/error-box.tsx";
 import { linkClass } from "../components/link-styles.ts";
 import { MonoId } from "../components/mono-id.tsx";
 import { Notice } from "../components/notice.tsx";
+import { PageHeader } from "../components/page-header.tsx";
 import { RawJson } from "../components/raw-json.tsx";
 import { SegmentedControl } from "../components/segmented-control.tsx";
 import { StatusChip } from "../components/status-chip.tsx";
@@ -53,8 +54,10 @@ const AutomationsLibrary = ({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-2 text-lg font-semibold">Automations</h1>
+      <PageHeader
+        title="Automations"
+        description="Current definitions in ID order (GET /v1/automations). Enablement governs automatic Runs; a manual Run from the detail page works either way."
+      >
         {workspace ? (
           <Button size="default" onClick={() => workspace.newAutomation()}>
             New Automation
@@ -85,12 +88,7 @@ const AutomationsLibrary = ({
         {loading && (
           <span className="text-muted-foreground text-sm">Loading…</span>
         )}
-      </div>
-      <p className="text-muted-foreground mt-1 text-sm">
-        Current definitions in ID order (GET /v1/automations). Enablement
-        governs automatic Runs; a manual Run from the detail page works either
-        way.
-      </p>
+      </PageHeader>
       {error && <ErrorBox error={error} />}
       {data && (
         <>
@@ -148,9 +146,9 @@ const AutomationsLibrary = ({
               })}
             </div>
           ) : (
-            <Table className="mt-3">
+            <Table className="mt-3" aria-label="Automations">
               <TableHeader>
-                <TableRow className="hover:bg-transparent">
+                <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Enabled</TableHead>
                   <TableHead>Revision</TableHead>
@@ -181,11 +179,6 @@ const AutomationsLibrary = ({
                       </TableCell>
                       <TableCell>
                         <StatusChip
-                          label={
-                            automation.definition.enabled
-                              ? "enabled"
-                              : "disabled"
-                          }
                           status={
                             automation.definition.enabled
                               ? "enabled"
