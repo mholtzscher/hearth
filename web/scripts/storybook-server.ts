@@ -12,22 +12,11 @@ import {
 import { createRequire } from "node:module";
 import net from "node:net";
 import path from "node:path";
-import { parseArgs } from "node:util";
-
-export interface ServerConfig {
-  port: number;
-  tailnet: { host: string; port: number } | null;
-}
-interface ServeStatus {
-  TCP?: Record<string, unknown>;
-  Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }>;
-}
 
 const root = path.resolve(import.meta.dirname, "../..");
 const directory = path.join(root, ".data/storybook");
-const configFile = path.join(directory, "run.json");
-const routeFile = path.join(directory, "route.json");
 const logFile = path.join(directory, "server.log");
+const opencodeConfigFile = path.join(root, ".opencode/opencode.json");
 
 const command = (program: string, args: string[]) =>
   execFileSync(program, args, {
@@ -46,32 +35,14 @@ export const parsePort = (value: string): number => {
   return Number(value);
 };
 
-export const parseOptions = (args: string[]) => {
-  const { values } = parseArgs({
-    args,
-    options: {
-      tailscale: { type: "boolean", default: false },
-      port: { type: "string", default: "6006" },
-      "https-port": { type: "string", default: "6606" },
-    },
-  });
-  const port = parsePort(values.port ?? "6006");
-  const httpsPort = parsePort(values["https-port"] ?? "6606");
-  if (values.tailscale && port === httpsPort) {
-    throw new Error("Storybook and Tailscale must use different ports.");
+export const resolvePort = (env: NodeJS.ProcessEnv = process.env): number => {
+  const value = env.STORYBOOK_PORT;
+  if (!value) {
+    throw new Error(
+      "STORYBOOK_PORT is not set. Run this through mise so [daemons.storybook] supplies the port."
+    );
   }
-  if (!values.tailscale && values["https-port"] !== "6606") {
-    throw new Error("--https-port requires --tailscale.");
-  }
-  return { port, httpsPort, tailscale: values.tailscale };
-};
-
-export const exactHost = (host: string): string => {
-  const normalized = host.replace(/\.$/u, "");
-  if (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/iu.test(normalized)) {
-    throw new Error(`Invalid Storybook allowed hostname: ${host}`);
-  }
-  return normalized;
+  return parsePort(value);
 };
 
 const findChromium = (): string | undefined => {
@@ -88,85 +59,6 @@ const findChromium = (): string | undefined => {
         /* Try the next PATH entry. */
       }
     }
-  }
-};
-
-const readJSON = (file: string) => {
-  try {
-    return JSON.parse(readFileSync(file, "utf-8"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-};
-
-const readConfig = (): ServerConfig => {
-  const config = readJSON(configFile);
-  if (!config) {
-    throw new Error(
-      "No managed Storybook configuration. Run mise run storybook-start first."
-    );
-  }
-  parsePort(String(config.port));
-  if (config.tailnet) {
-    exactHost(config.tailnet.host);
-    parsePort(String(config.tailnet.port));
-    if (config.port === config.tailnet.port) {
-      throw new Error("Storybook and Tailscale must use different ports.");
-    }
-  }
-  return config;
-};
-
-const localURL = (config: ServerConfig) => `http://127.0.0.1:${config.port}`;
-const browserURL = (config: ServerConfig) =>
-  config.tailnet
-    ? `https://${config.tailnet.host}:${config.tailnet.port}`
-    : localURL(config);
-
-// A route is ours only while the entire HTTPS listener still has the mapping we created.
-export const ownsRoute = (
-  status: ServeStatus,
-  config: ServerConfig
-): boolean => {
-  if (!config.tailnet) {
-    return false;
-  }
-  const handlers =
-    status.Web?.[`${config.tailnet.host}:${config.tailnet.port}`]?.Handlers;
-  return (
-    !!handlers &&
-    Object.keys(handlers).length === 1 &&
-    handlers["/"]?.Proxy === localURL(config)
-  );
-};
-
-export const assertRouteAvailable = (
-  status: ServeStatus,
-  config: ServerConfig,
-  owned: ServerConfig | null
-) => {
-  if (owned && JSON.stringify(owned) !== JSON.stringify(config)) {
-    throw new Error(
-      "An owned Tailscale route has different options. Run storybook-stop before changing startup options."
-    );
-  }
-  if (!config.tailnet) {
-    return;
-  }
-  if (
-    status.TCP?.[config.tailnet.port] &&
-    !(
-      owned &&
-      JSON.stringify(owned) === JSON.stringify(config) &&
-      ownsRoute(status, config)
-    )
-  ) {
-    throw new Error(
-      `Tailscale port ${config.tailnet.port} already has a service. Choose another --https-port; nothing was replaced.`
-    );
   }
 };
 
@@ -196,7 +88,7 @@ export const assertLocalPortAvailable = async (port: number) => {
     await once(server, "listening");
   } catch {
     throw new Error(
-      `Local port ${port} is occupied. Choose --port; no process was stopped.`
+      `Local port ${port} is occupied. Stop the other process or redeclare [daemons.storybook] in a local mise.local.toml; no process was stopped.`
     );
   }
   const closed = once(server, "close");
@@ -204,104 +96,86 @@ export const assertLocalPortAvailable = async (port: number) => {
   await closed;
 };
 
-const daemonRunning = () => {
+const storybookDaemon = () => {
   const daemons = JSON.parse(command("mise", ["daemons", "ls", "--json"])) as {
     name: string;
     pid: number | null;
+    port: number | null;
   }[];
-  return daemons.some(
-    (daemon) => daemon.name === "storybook" && daemon.pid !== null
-  );
+  return daemons.find((daemon) => daemon.name === "storybook") ?? null;
 };
 
-const removeOwnedRoute = () => {
-  const owned = readJSON(routeFile) as ServerConfig | null;
-  if (!owned?.tailnet) {
-    return;
-  }
-  const status = JSON.parse(
-    command("tailscale", ["serve", "status", "--json"])
-  ) as ServeStatus;
-  if (status.TCP?.[owned.tailnet.port]) {
-    if (!ownsRoute(status, owned)) {
-      throw new Error(
-        "The managed Tailscale listener was changed externally; leaving it untouched. Inspect .data/storybook/route.json."
-      );
-    }
-    command("tailscale", ["serve", `--https=${owned.tailnet.port}`, "off"]);
-  }
-  rmSync(routeFile, { force: true });
+const localURL = (port: number) => `http://127.0.0.1:${port}`;
+
+const opencodeConfig = (port: number) => ({
+  $schema: "https://opencode.ai/config.json",
+  mcp: {
+    servers: {
+      "hearth-storybook": {
+        type: "remote",
+        url: `${localURL(port)}/mcp`,
+      },
+    },
+  },
+});
+
+export const writeOpencodeConfig = (
+  port: number,
+  file = opencodeConfigFile
+) => {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(opencodeConfig(port), null, 2)}\n`);
 };
 
-const printResult = (config: ServerConfig) => {
-  console.log(`Local: ${localURL(config)}/`);
-  if (config.tailnet) {
-    console.log(`Tailnet: ${browserURL(config)}/`);
-  }
-  console.log(`MCP: ${localURL(config)}/mcp`);
+export const removeOpencodeConfig = (file = opencodeConfigFile) => {
+  rmSync(file, { force: true });
+};
+
+const printResult = (port: number) => {
+  console.log(`Local: ${localURL(port)}/`);
+  console.log(`MCP: ${localURL(port)}/mcp`);
+  console.log(`MCP config: ${path.relative(root, opencodeConfigFile)}`);
   console.log(`Log: ${logFile}`);
 };
 
-const start = async (args: string[]) => {
-  const options = parseOptions(args);
+const start = async () => {
   if (!existsSync(path.join(root, "web/node_modules/storybook/package.json"))) {
     throw new Error(
       "Web dependencies are missing. Run mise run web-install once, then retry."
     );
   }
-  const config: ServerConfig = { port: options.port, tailnet: null };
-  let status: ServeStatus = {};
-  const owned = readJSON(routeFile) as ServerConfig | null;
-  if (options.tailscale) {
-    const self = JSON.parse(command("tailscale", ["status", "--json"])).Self;
-    if (!self?.DNSName) {
-      throw new Error(
-        "Tailscale has no local DNS name. Connect Tailscale first."
-      );
-    }
-    config.tailnet = { host: exactHost(self.DNSName), port: options.httpsPort };
-    status = JSON.parse(command("tailscale", ["serve", "status", "--json"]));
-  }
-  assertRouteAvailable(status, config, owned);
-  const running = daemonRunning();
-  if (running && JSON.stringify(readConfig()) !== JSON.stringify(config)) {
+  const port = resolvePort();
+  const daemon = storybookDaemon();
+  const running = daemon !== null && daemon.pid !== null;
+  if (running && daemon?.port !== port) {
     throw new Error(
-      "This worktree's Storybook is running with different options. Run storybook-stop first."
+      `This worktree's Storybook is running on ${daemon?.port ?? "an unknown port"}. Run storybook-stop first.`
     );
   }
   if (!running) {
-    await assertLocalPortAvailable(config.port);
+    removeOpencodeConfig();
+    await assertLocalPortAvailable(port);
     mkdirSync(directory, { recursive: true });
-    writeFileSync(configFile, `${JSON.stringify(config, null, 2)}\n`);
     writeFileSync(logFile, "");
   }
-  let routeCreated = false;
   try {
     if (!running) {
       command("mise", ["daemons", "start", "storybook", "--quiet"]);
     }
-    await checkIndex(localURL(config));
-    if (config.tailnet) {
-      if (!ownsRoute(status, config)) {
-        // Save ownership before dispatch so a failed command remains recoverable.
-        writeFileSync(routeFile, `${JSON.stringify(config, null, 2)}\n`);
-        routeCreated = true;
-        command("tailscale", [
-          "serve",
-          "--bg",
-          `--https=${config.tailnet.port}`,
-          localURL(config),
-        ]);
-      }
-      await checkIndex(browserURL(config));
-    }
-    printResult(config);
+    await checkIndex(localURL(port));
+    writeOpencodeConfig(port);
+    printResult(port);
   } catch (error) {
     if (!running) {
       try {
         command("mise", ["daemons", "stop", "storybook"]);
       } catch (error_) {
         console.error(`Daemon cleanup failed: ${error_}`);
+      }
+      try {
+        removeOpencodeConfig();
+      } catch (error_) {
+        console.error(`MCP config cleanup failed: ${error_}`);
       }
       try {
         console.error(
@@ -311,29 +185,16 @@ const start = async (args: string[]) => {
         /* The server may have failed before opening its log. */
       }
     }
-    if (routeCreated) {
-      try {
-        removeOwnedRoute();
-      } catch (error_) {
-        console.error(`Route cleanup failed: ${error_}`);
-      }
-    }
     throw error;
   }
 };
 
 const serve = () => {
-  const config = readConfig();
+  const port = resolvePort();
   const require = createRequire(import.meta.url);
   const packageFile = require.resolve("storybook/package.json");
   const { bin } = JSON.parse(readFileSync(packageFile, "utf-8"));
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    HEARTH_STORYBOOK_ALLOWED_HOST: config.tailnet?.host ?? "",
-    HEARTH_STORYBOOK_HTTPS_PORT: config.tailnet
-      ? String(config.tailnet.port)
-      : "",
-  };
+  const env: NodeJS.ProcessEnv = { ...process.env };
   const chromium = findChromium();
   if (chromium) {
     env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = chromium;
@@ -354,7 +215,7 @@ const serve = () => {
       "--host",
       "127.0.0.1",
       "--port",
-      String(config.port),
+      String(port),
       "--exact-port",
       "--ci",
       "--no-open",
@@ -371,27 +232,31 @@ const serve = () => {
 const main = async (action: string, args: string[]) => {
   switch (action) {
     case "start": {
-      await start(args);
+      if (args.length > 0) {
+        throw new Error(
+          "start takes no options. Set the port in mise.toml or mise.local.toml."
+        );
+      }
+      await start();
       break;
     }
     case "stop": {
       command("mise", ["daemons", "stop", "storybook"]);
-      removeOwnedRoute();
+      removeOpencodeConfig();
       console.log("Stopped this worktree's managed Storybook.");
       break;
     }
     case "ready": {
-      await checkIndex(localURL(readConfig()));
+      await checkIndex(localURL(resolvePort()));
       break;
     }
+    case "dev":
     case "serve": {
       serve();
       break;
     }
     default: {
-      throw new Error(
-        "Use start [--tailscale] [--port 6006] [--https-port 6606], stop, or ready."
-      );
+      throw new Error("Use start, stop, ready, dev, or serve.");
     }
   }
 };

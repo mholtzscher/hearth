@@ -28,51 +28,42 @@ mise run storybook-stop
 ```
 
 Start uses worktree-local mise/pitchfork supervision and waits up to 45 seconds
-for a nonempty story index. It prints the local URL, MCP URL, and log path.
-Repeating the same command reuses the daemon. No installation or tests run
-during startup. The default URL is <http://127.0.0.1:6006>.
+for a nonempty story index. It prints the local URL, MCP URL, MCP configuration
+path, and log path. Repeating the command reuses the daemon. No installation or
+tests run during startup.
 
-For live updates from another device, connect Tailscale, enable tailnet HTTPS,
-then run:
+Each checkout gets its own port from mise. The primary checkout uses 6006 and a
+linked worktree uses a port derived from its path. Storybook binds `127.0.0.1`
+only; the managed launcher does not configure a tunnel. Use your own tunnel if
+you need to reach it from another device.
 
-```sh
-mise run storybook-start -- --tailscale
-```
-
-Storybook binds loopback on port 6006; Tailscale serves HTTPS on port 6606.
-Separate ports avoid restart collisions. Exact host validation stays enabled,
-and HMR uses HTTPS. This also exposes unauthenticated Storybook MCP to devices
-allowed by your tailnet policy.
-
-For parallel worktrees or occupied ports, choose distinct free ports:
-
-```sh
-mise run storybook-start -- --tailscale --port 6016 --https-port 6616
-opencode mcp add hearth-storybook --url http://127.0.0.1:6016/mcp
-```
-
-Keep the project-local MCP URL aligned with the printed endpoint. OpenCode
-watches configuration changes; `opencode mcp list` verifies the connection.
-The checked-in default is <http://127.0.0.1:6006/mcp>. Storybook's MCP and
+Start writes this checkout's MCP endpoint to the ignored
+`.opencode/opencode.json`. OpenCode watches that file and reloads the
+`hearth-storybook` server. Do not add the server with `opencode mcp add` or
+hardcode a port; `opencode mcp list` verifies the connection. Stop removes the
+generated file because the endpoint no longer exists. Storybook's MCP and
 component manifest features are upstream preview features.
 
 Occupied ports fail without replacing services or stopping unrelated processes.
-Run `storybook-stop` before changing options. Stop removes only this worktree's
-unchanged Tailscale mapping; an externally changed mapping is left untouched.
+Stop the process that holds the port, or redeclare `[daemons.storybook]` with a
+fixed `port` in a local `mise.local.toml`, repeating its other keys. Run
+`storybook-stop` before changing the port configuration.
 
-Logs and configuration live in ignored `.data/storybook/`.
-Use `mise daemons status storybook` to inspect the daemon. To restart with the
-HTTPS mapping retained, run `mise daemons stop storybook`, then repeat the start
-command.
+Logs live in ignored `.data/storybook/`. Use `mise daemons status storybook` to
+inspect the daemon.
 
-Foreground usage remains `mise run storybook`, stopped with Ctrl+C.
-Run lifecycle tests with `mise run storybook-start-test`; use the existing
-Storybook tools and browser workflow below for component verification.
+Foreground usage remains `mise run storybook`, stopped with Ctrl+C. It uses the
+same assigned port but does not manage the MCP configuration; use
+`storybook-start` when an agent needs the server. Run lifecycle tests with
+`mise run storybook-start-test`; use the existing Storybook tools and browser
+workflow below for component verification.
 
 ## Work as an agent
 
-1. Start Storybook and confirm `hearth-storybook` is connected. Discover its
-   available tools rather than guessing their names or argument shapes.
+1. Run `mise run storybook-start` and confirm `hearth-storybook` is connected.
+   Start writes this checkout's endpoint to `.opencode/opencode.json`; do not
+   register the server by hand. Discover its available tools rather than guessing
+   their names or argument shapes.
 2. Query its component index and component documentation before composing UI.
    Check the actual props and existing story examples. Read production source
    when a component is not documented yet.
@@ -80,9 +71,11 @@ Storybook tools and browser workflow below for component verification.
    `*.stories.tsx` files with typed args and one clearly named use case per story.
 4. Use the test tool for affected stories. Fix render, interaction, and
    accessibility failures rather than suppressing them.
-5. Open direct story previews in a real browser. Check desktop and phone widths,
-   keyboard interaction, focus, overlays, and the relevant error/loading state.
-   Automated axe checks do not establish complete accessibility.
+5. Open direct story previews in a real browser using the printed `Local:` URL.
+   Do not assume 6006; linked worktrees use a different port. Check desktop and
+   phone widths, keyboard interaction, focus, overlays, and the relevant
+   error/loading state. Automated axe checks do not establish complete
+   accessibility.
 6. Return direct story URLs and the checks actually run. Before delivery, run the
    full repository completion gate described in [testing](testing.md).
 

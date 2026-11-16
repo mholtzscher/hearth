@@ -57,10 +57,10 @@ Use [the Storybook workflow](../docs/storybook.md) to develop dashboard componen
 ```sh
 mise run web-install
 mise run storybook-browser-install
-mise run storybook
+mise run storybook-start
 ```
 
-Open http://127.0.0.1:6006. The same server exposes the agent MCP endpoint at http://127.0.0.1:6006/mcp. Stories use the production dark theme and synthetic HTTP fixtures. `mise run storybook-test` runs browser interaction/accessibility checks; `mise run storybook-build` creates `web/storybook-static`.
+Open the printed `Local:` URL. The primary checkout uses 6006 and each linked worktree gets its own port. The managed start writes this checkout's MCP endpoint to the ignored `.opencode/opencode.json`; use that instead of a fixed URL, and run `mise run storybook-stop` when finished. Stories use the production dark theme and synthetic HTTP fixtures. `mise run storybook-test` runs browser interaction/accessibility checks; `mise run storybook-build` creates `web/storybook-static`.
 
 ## Check and fix web code
 
