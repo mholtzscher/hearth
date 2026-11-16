@@ -24,6 +24,25 @@ but not yet eligible. Once that healthy snapshot arrives, it can make the Entity
 available without another report. Older health updates cannot erase newer reports.
 An accepted request retry retains its original receipt and generation.
 
+Effective availability uses only that Devices projection and eligible reports:
+
+| Devices evidence | Effective availability |
+| --- | --- |
+| No projected Adapter health | `unknown / hearth.awaiting_adapter_projection` |
+| Projected unhealthy | `unavailable` with the Adapter reason |
+| Projected unknown | `unknown` with the Adapter reason |
+| Projected healthy, exact report runtime and revision match | Reported availability and reason |
+| Projected healthy, report ahead of projection | `unknown / hearth.awaiting_adapter_projection` |
+| Projected healthy, no eligible report | `unknown / hearth.awaiting_entity_report` |
+
+A pre-loss report cannot become eligible under a later healthy revision.
+Revisions are Adapter-scoped ordering tokens, not credentials. They continue
+across runtime replacement and Core restart. Heartbeat refreshes do not advance
+them; claims and material health transitions do. A lower revision is obsolete.
+An equal revision with identical canonical bytes is a duplicate; different bytes
+produce permanent `health_revision_conflict`. Neither duplicates nor obsolete
+updates add history.
+
 ## Delivery and readiness
 
 Core publishes immutable full snapshots on
@@ -38,6 +57,14 @@ retains the outbox row. Correct PubAck precedes deletion; Devices commits its
 projection and all availability effects before acknowledgement. Broker duplicate
 suppression is only an optimization. Semantic duplicates remain safe after its
 two-minute window, even with fresh notification IDs.
+
+The consumer has one pending slot, a 30-second acknowledgement wait, and
+unlimited delivery attempts. Permanent wire, identity, corruption, and revision
+conflicts terminate that message without a mutation. Transient storage failure
+uses a one-second delayed negative acknowledgment. Applied results are
+acknowledged after commit; duplicates and obsolete updates after establishing
+that no mutation is needed. Health history, heads, and projections have no age
+expiry, and unpublished outbox rows are never age-pruned.
 
 Adapter health and Device Facts share the [platform relay](outbox-relays.md).
 Both use batches of at most 64, five-second I/O bounds, a one-second retry delay,
@@ -56,6 +83,9 @@ Every Core startup queues a fresh notification of each immutable current head
 before runtime ingress opens. This does not advance health revisions, restamp
 snapshot evidence, change Adapter history, or replay external actions. Duplicate
 snapshots add no Entity history. Older pending outbox rows remain ordered.
+
+Startup notifications receive new `ahu_` identities with the same revision and
+body. Retries of each notification reuse its identity.
 
 NATS reconnect resumes pending SQLite outbox publication and durable consumption.
 It does not queue fresh snapshots or repair manually deleted delivery state.

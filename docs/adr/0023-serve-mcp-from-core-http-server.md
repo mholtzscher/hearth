@@ -16,7 +16,7 @@ Considered alternatives:
 
 **Consequences:** MCP inherits the unauthenticated trusted-network posture with zero new config keys; blocking command tools hold connections up to operation deadlines, which is safe because Core commits before dispatch. Generic SDK registration and prepared-contract mechanics live in `internal/platform/mcpapi`; module adapters own tool arguments, results, and domain failure mapping.
 
-The [protocol-specific contract cutover](../../specs/mcp-tools-and-contract-preparation.md)
-retains this listener and transport decision. It separates module HTTP and MCP
-adapters, removes resources and advertised output schemas, and retains
-server-side success validation. One catalog still serves the endpoint and agent.
+The [MCP result contract](../mcp-errors.md#result-contracts) retains this listener
+and transport decision. Module HTTP and MCP adapters are separate, resources and
+output schemas are not advertised, and Core validates successful results.
+One catalog serves both the endpoint and agent.

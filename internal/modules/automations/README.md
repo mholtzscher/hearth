@@ -48,9 +48,7 @@ remains the narrower definition-management capability; there is no parallel
 store aggregate or generic transaction framework.
 
 Before changing schedule repository capabilities or worker ownership, read the
-[Service and repository boundaries](../../../specs/scheduled-automation-triggers.md#service-and-repository-boundaries)
-and [app lifecycle](../../../specs/scheduled-automation-triggers.md#app-lifecycle)
-contracts.
+[schedule ownership contract](../../../docs/automation-schedules.md#ownership-and-lifecycle).
 
 The devices-facing `AutomationDevices` seam stays in the domain. SQLite never
 executes device Commands, publishes NATS messages, or starts Run workers.
@@ -422,9 +420,8 @@ admitted Run and bypasses nothing else, including branch evaluation. The Service
 turns a committed manual Condition Skip into a typed blocked error only after
 the transaction commits, so the required history is never rolled back.
 
-See [the Conditions specification](../../../specs/automation-conditions.md) for
-the implementation contract and [the operator guide](../../../docs/automation-conditions.md)
-for the definition, manual, and history examples.
+See the [Conditions guide](../../../docs/automation-conditions.md)
+for the evaluation contract, definition, manual, and history examples.
 
 ## Branch execution and evidence
 
@@ -454,8 +451,7 @@ committed evidence and interrupts active Runs without resuming execution.
 Migration 10 originally added separate branch evidence. Migration 22 replaces
 that table with unified Step executions and resets all Automation-owned data.
 Older binaries require their matching database and frontend.
-See the [branching specification](../../../specs/automation-branching.md) and
-[operator guide](../../../docs/automation-branching.md) for bounds and rollback.
+See the [branching guide](../../../docs/automation-branching.md) for bounds and rollback.
 
 ## Delay execution and evidence
 
@@ -501,8 +497,7 @@ evidence only; older binary rollback requires a pre-feature database backup
 because definitions and snapshots still contain delay nodes. Existing HTTP/MCP
 operations and canonical schema support authoring with no new tools. Browser
 definitions and delay history are read-only with manual refresh.
-See the [delay specification](../../../specs/automation-delay-steps.md) and
-[operator guide](../../../docs/automation-delay-steps.md).
+See the [delay guide](../../../docs/automation-delay-steps.md).
 
 ## Transaction boundaries
 
@@ -578,9 +573,9 @@ File boundaries organize related code; they do not divide existing transactions.
 
 Only after successful admission commits does the Service start Run workers.
 Consumer acknowledgement follows durable admission, not worker completion.
-See [the held-state specification](../../../specs/held-state-triggers.md) for
+See the [Held-State Trigger contract](../../../docs/automation-conditions.md#held-state-triggers) for
 the hold cursor, expiry, and restart rules.
-See [the schedule specification](../../../specs/scheduled-automation-triggers.md)
+See the [Scheduled Trigger contract](../../../docs/automation-schedules.md)
 for current-minute admission, household-local matching, and no-replay rules.
 
 Pure domain decisions and snapshot construction operate on domain values. SQL

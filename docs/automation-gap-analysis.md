@@ -49,11 +49,11 @@ Hearth currently supports:
 
 The primary sources for this baseline are:
 
-- [`specs/automations.md`](../specs/automations.md)
-- [`specs/automation-conditions.md`](../specs/automation-conditions.md)
-- [`specs/automation-branching.md`](../specs/automation-branching.md)
-- [`specs/automation-delay-steps.md`](../specs/automation-delay-steps.md)
-- [`specs/scheduled-automation-triggers.md`](../specs/scheduled-automation-triggers.md)
+- [Automation ownership](../internal/modules/automations/README.md)
+- [Conditions and Observation Triggers](automation-conditions.md)
+- [Branching](automation-branching.md)
+- [Delay Steps](automation-delay-steps.md)
+- [Scheduled Triggers](automation-schedules.md)
 - [`internal/modules/automations/automation-definition.schema.json`](../internal/modules/automations/automation-definition.schema.json)
 - [`GLOSSARY.md`](../GLOSSARY.md)
 
@@ -126,7 +126,7 @@ new hold to start after restart. Holds are also cleared by definition
 replacement. This is not a general durable scheduler.
 
 Daily and weekday Time Triggers and clock-field time patterns are implemented
-by the [Cron Trigger](../specs/scheduled-automation-triggers.md). Its restricted
+by the [Cron Trigger](automation-schedules.md). Its restricted
 five-field expression supports minute, hour, and weekday rules; day-of-month
 and month must be literal `*`. It uses a separate calendar worker with durable
 UTC progress, not Held-State expiry or a queue of missed occurrences. Coincident
@@ -386,7 +386,7 @@ also need support for:
 ## Historical State Transitions implementation handoff
 
 This handoff's scope is now implemented by
-[Observation Trigger transitions](../specs/observation-trigger-transitions.md).
+[Observation Trigger transitions](automation-conditions.md#observation-transitions).
 The original requirements below record that feature's scope, not remaining work
 or branching's implementation scope.
 
@@ -413,6 +413,6 @@ Requirements:
   definition replacement races.
 - Update the domain model, strict JSON schema, persistence and history DTOs,
   HTTP and OpenAPI contracts, documentation, and tests.
-- Follow `GLOSSARY.md`, `specs/automations.md`, `specs/automation-conditions.md`,
-  and `AGENTS.md`.
+- Follow [GLOSSARY.md](../GLOSSARY.md), the [Conditions guide](automation-conditions.md),
+  the [module ownership guide](../internal/modules/automations/README.md), and `AGENTS.md`.
 - Run `mise run validate` and review the resulting diff.

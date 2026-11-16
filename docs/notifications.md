@@ -13,6 +13,11 @@ registration updates the name without changing the identity; omitted entries are
 not removed. A successor runtime must register its own routes. Moving a key or
 adapter creates a different identity, not a migration.
 
+Registration can refuse with `invalid_registration` or `stale_runtime`; the
+latter fences and terminates the Session. Transient persistence failure returns
+no success and permits retry with the same request identity. Existing
+registrations survive Core restart for a still-active same-runtime route.
+
 With Core on a trusted loopback listener:
 
 ```sh
@@ -32,10 +37,17 @@ Do not automatically repeat a send after an ambiguous HTTP/MCP error: another
 invocation may deliver another message. An admitted attempt continues after the
 client disconnects and can be inspected through history.
 
+Admission atomically snapshots destination identity and name, Adapter/local key,
+and route runtime. Later registration or runtime changes cannot retarget that
+attempt.
+
 Availability is current Core routing evidence, not a provider connectivity probe.
 Graceful release, supervisor-owned expiry, unhealthy health, or a successor that
 has not registered a route makes it unavailable. Discovery can briefly lag a
 transport disconnect. Destination identities remain visible indefinitely.
+
+Unknown Adapter health still permits an attempt. A route the Adapter no longer
+recognizes returns `rejected / destination_unknown` without an external request.
 
 ## Read the evidence
 
@@ -55,6 +67,18 @@ waiting queue or ordering guarantee. Each send retains its own ten-second deadli
 After possible dispatch, timeout records `unknown / outcome_timeout`; late
 responses do not revise terminal evidence. An opaque accepted receipt is stored
 but never used to query or retry the provider.
+
+Reason codes are lowercase ASCII slugs of at most 64 characters:
+
+| Outcome | Allowed reason codes |
+| --- | --- |
+| `accepted` | None; an opaque receipt is optional |
+| `rejected` | `destination_unknown`, `invalid_message`, `provider_forbidden`, `provider_rate_limited`, `provider_rejected` |
+| `not_sent` | `destination_unavailable`, `adapter_busy`, `deadline_expired` |
+| `unknown` | `outcome_timeout`, `invalid_response`, `transport_error`, `core_restarted`, `provider_error` |
+
+`adapter_busy` is Adapter evidence, not a Core or SDK in-flight concurrency cap.
+Only accepted evidence can carry a receipt.
 
 The external-work deadline is ten seconds from admission. Outcome persistence
 has its own five-second context, so synchronous completion can take longer.

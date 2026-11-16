@@ -230,5 +230,6 @@ evidence deletion; running Runs retain their existing protection.
 
 State waits, calculated durations, resumable suspended Runs, loops, parallel
 Steps, retries, compensation, and durable continuation scheduling remain out of
-scope. See the [feature specification](../specs/automation-delay-steps.md) and
-[gap analysis](automation-gap-analysis.md) for the contract and remaining work.
+scope. See the [module ownership guide](../internal/modules/automations/README.md)
+for implementation boundaries and [gap analysis](automation-gap-analysis.md)
+for the household migration inventory.

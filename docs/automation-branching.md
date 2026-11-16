@@ -287,7 +287,6 @@ definitions byte-for-byte. It does not manufacture prior value evidence. Restore
 matching backup for binary rollback; see [the expression guide](automation-expressions.md).
 
 Loops, parallel groups, Run queues, cancellation APIs, and resumption remain out
-of scope. See the
-[implemented branching specification](../specs/automation-branching.md) for the
-implementation contracts and [gap analysis](automation-gap-analysis.md) for
-remaining household migration work.
+of scope. See the [module ownership guide](../internal/modules/automations/README.md)
+for implementation boundaries and [gap analysis](automation-gap-analysis.md)
+for the household migration inventory.

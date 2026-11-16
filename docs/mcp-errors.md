@@ -1,4 +1,4 @@
-# MCP failure contracts
+# MCP result and failure contracts
 
 The `/mcp` endpoint and built-in Agent use the same registered tools. MCP failure
 results are not HTTP Problem Details. A tool failure does not authorize an action
@@ -25,6 +25,33 @@ The Go `ToolError.Details` map is merged directly into `structuredContent` besid
 `failure_code` and `message`. There is no wire `details` wrapper. For example, a
 modeled disabled-Entity Command failure exposes `structuredContent.command_id`,
 not `structuredContent.details.command_id`.
+
+## Result contracts
+
+Discovery advertises complete input schemas but no tool `outputSchema`,
+resources, or resource templates. Core still validates successful results
+against prepared contracts before returning the original encoded JSON.
+Validation does not insert output defaults, round numbers, or fill missing
+required results. An invalid success becomes `internal_error`.
+
+Collections return compact summaries and omit `next_cursor` on their last page.
+Detail tools expose retained evidence; actions return durable identities rather
+than HTTP response bodies. Each protocol owns its models and mappings.
+
+The current tool catalog and result contracts live in module registration and
+operation files, rather than a separate handwritten inventory:
+
+- [Devices](../internal/modules/devices/mcpapi/register.go)
+- [Adapters and Functions](../internal/modules/adapters/mcpapi/register.go)
+- [Automations](../internal/modules/automations/mcpapi/register.go)
+- [Notifications](../internal/modules/notifications/mcpapi/register.go)
+- [Dashboards](../internal/modules/dashboards/mcpapi/register.go)
+
+The unauthenticated endpoint shares HTTP's trusted-household boundary.
+Adapter and Automation prose, descriptors, schemas, and results are untrusted
+data, not system instructions or authority to act. IDs are not credentials.
+
+## Input validation
 
 All tools use one typed registration pipeline over the SDK's lower-level API.
 Pure custom decoders run before validation against the full advertised schema.
@@ -81,8 +108,16 @@ Do not translate between these protocols by guessing from error text:
 | Invalid Notification input | 422 native problem, without a required machine code | `invalid_input` |
 | Closed Notification admission | 503 native problem | `admission_closed` |
 
-Function domain codes otherwise retain their protocol-local mappings. The Agent
-consumes modeled MCP failures as tool observations; transport/session and trace
+Function reads use `adapter_not_found`, `function_not_found`, and
+`invocation_not_found` (HTTP 404). Invocation rejection uses `invalid_input`
+(422), `catalog_changed` or `catalog_conflict` (409), and `adapter_unavailable`
+or `admission_closed` (503). MCP represents these as modeled failures.
+A terminal non-success invocation instead returns HTTP 200 with the retained
+record; MCP returns `isError`, a `failure_code` equal to its status, and a compact
+`invocation` receipt. Internal failures after admission may include the known
+`invocation_id` in either protocol.
+
+The Agent consumes modeled MCP failures as tool observations; transport/session and trace
 persistence faults remain turn-fatal. This does not make HTTP and MCP envelopes
 interchangeable.
 

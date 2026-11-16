@@ -2,7 +2,8 @@
 
 **Status:** Complete
 
-**Implementation spec:** [`../../specs/first-light.md`](../../specs/first-light.md)
+**Current contracts:** [architecture](../architecture.md), [testing](../testing.md),
+and [Entity-type contracts](../../entitytypes/README.md).
 
 ## Outcome
 
@@ -62,6 +63,8 @@ The slice must deliver visible household utility and meaningful NATS learning wh
 - Require the simulator to prove duplicate, delayed-source-time, future-clock-skew, malformed, unavailable-adapter, upstream-rejection, no-op-refresh, overlapping-opposite-command, outcome-timeout, and core-restart-before-ack cases.
 - Verify receive-order projection and source-time diagnostics with pure `devices` module tests, plus temporary-SQLite repository/migration tests, Huma transport tests, SDK tests against in-process NATS, and a small process-level simulator suite.
 
-## Task breakdown
+## Completion
 
-The approved implementation contract, acceptance criteria, test strategy, ordered deliverables, and relative estimates are defined in [`specs/first-light.md`](../../specs/first-light.md). The complete first-light slice, including the unified Entity-support amendment, runtime OpenAPI checks, recovery coverage, simulator matrix, and disposable Home Assistant adapter, is implemented.
+The first-light slice shipped with unified Entity support, runtime OpenAPI
+checks, recovery coverage, a simulator matrix, and a disposable Home Assistant
+adapter. This plan records that historical slice, not the current feature limits.

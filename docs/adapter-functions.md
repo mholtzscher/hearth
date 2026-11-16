@@ -125,6 +125,36 @@ Core preserves the observed times without clamping them, and repeated recovery
 does not rewrite terminal evidence. Execution bounds, absolute deadlines, and
 late-response policy still apply.
 
+The catalog's `timeout_ms` bounds execution from Core's recorded start time,
+including preparation, admission, transport, and handler work. Preliminary
+catalog discovery is outside that bound. Admission persistence also has a
+five-second cap; terminal-evidence persistence has a separate five-second
+context and can outlast the execution deadline. Core makes at most one
+runtime-pinned application request after admission. Takeover cannot retarget it,
+and a later completion cannot replace committed terminal evidence.
+
+Non-success reason codes match `^[a-z0-9][a-z0-9_.-]{0,127}$`. Common Core and
+SDK outcomes are:
+
+| Condition | Evidence |
+| --- | --- |
+| Deadline after admission but before dispatch | `not_executed / deadline_expired` |
+| Disconnected NATS before dispatch or confirmed no-responders | `not_executed / adapter_unavailable` |
+| SDK key missing or Session unavailable | `not_executed / function_unavailable` |
+| SDK catalog revision mismatch | `not_executed / catalog_changed` |
+| SDK argument validation failure | `not_executed / invalid_input` |
+| Timeout or ambiguous transport failure | `unknown / outcome_timeout` or `transport_error` |
+| Invalid or mismatched response | `unknown / invalid_response` |
+| Handler panic | `unknown / handler_panic` |
+| Core restart with unfinished evidence | `unknown / core_restarted` |
+
+These are retained outcomes after admission. An ineligible runtime at admission
+instead returns HTTP 503 `adapter_unavailable` without creating an invocation.
+A deadline during admission can also end the request without an invocation.
+
+Adapters can define additional bounded codes. Only `succeeded` carries arbitrary
+result data; other outcomes carry safe codes rather than upstream error objects.
+
 ## MCP and the built-in agent
 
 The fixed tools are:
@@ -223,6 +253,20 @@ Session. Closing a server does not unregister its persisted catalog. Discovery
 can briefly remain callable until Session release or supervisor expiry. A live
 runtime's unhealthy upstream report does not by itself make Functions non-callable.
 
+The SDK reuses the revision, normalized descriptors, request identity, and trace
+metadata when retrying catalog registration. For one runtime, the same catalog
+is idempotent; a changed revision or descriptor set is `catalog_conflict`.
+A revision already owned by another runtime or Adapter also conflicts. A new
+Session registers a complete replacement, so omitted keys disappear from current
+discovery while retained invocation descriptors and history remain unchanged.
+An old function-list cursor returns `catalog_changed`; history cursors remain valid.
+
+Permanent refusal returns `FunctionRegistrationRejectedError`; stale-runtime
+refusal returns `ErrRuntimeFenced` and terminates the Session. Invalid local
+descriptors use `ValidationError`; a closed Session uses `ErrClosed`.
+A failed start unsubscribes and joins callbacks it already admitted, including
+when registration's reply was ambiguous.
+
 ## Schema and size limits
 
 Both Core and SDK use `contracts/functionschema` and `jsonschema/v6`. Values have
@@ -256,8 +300,9 @@ points; `enum`, `required`, and `type` arrays allow 64 entries.
 The optional `$schema` must identify draft 2020-12. References, definitions,
 composition, patterns, custom formats, defaults, and network/file loading are
 unsupported. Unknown keywords reject at schema positions; property names and
-literal `const`/`enum` objects remain data. For full wire and validation rules,
-read the [implementation contract](../specs/adapter-functions.md).
+literal `const`/`enum` objects remain data. The strict wire envelopes live in
+`contracts/v1/adapter-function-*.schema.json`; `contracts/functionschema` owns
+the compilation, normalization, and value limits shared by Core and the SDK.
 
 ## Upgrade and rollback
 

@@ -1,8 +1,7 @@
 # Testing and validation
 
 Choose the smallest boundary that can expose a plausible defect, with an explicit
-expected result. Keep tests with the behavior's owner. Migration history lives in
-[test boundaries](../specs/test-boundaries.md).
+expected result. Keep tests with the behavior's owner.
 
 ## Test boundaries
 

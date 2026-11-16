@@ -125,4 +125,5 @@ has completion before start; it never rewrites or drops that evidence. Rolling
 back to a binary that requires chronological evidence needs a compatible backup.
 
 See [Adapter Functions](adapter-functions.md) for invocation guarantees and
-[the implementation contract](../specs/automation-function-steps.md) for details.
+the [module ownership guide](../internal/modules/automations/README.md)
+for implementation boundaries.

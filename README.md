@@ -67,7 +67,7 @@ HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
 
 The three adapters and simulator use the same flag > environment > YAML precedence. Their environment prefixes are `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only. The simulator validates its resolved configuration on every startup before connecting to NATS; it has no validation-only CLI mode.
 
-The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers nineteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device, Entity, notification destination, and Adapter Function is declared under its Adapter in YAML; the `sim-healthy` Functions exercise success, failure, not-executed, unknown, and one held invocation released over the loopback control channel. For a minimal first-light example, see `configs/simulator.example.yaml`. See `specs/simulator-harness.md` for scripted output, Command, and control behavior and `specs/simulator-functions.md` for the Function contract. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
+The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers nineteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device, Entity, notification destination, and Adapter Function is declared under its Adapter in YAML; the `sim-healthy` Functions exercise success, failure, not-executed, unknown, and one held invocation released over the loopback control channel. For a minimal first-light example, see `configs/simulator.example.yaml`. See the [simulator reference](docs/simulator.md) for scripted output, Commands, notifications, Functions, and loopback controls. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
 The scripted garage door emits an independent position/motion series. Its
 `set` links the current State once without applying position parameters. A
@@ -205,8 +205,8 @@ restart interrupts unfinished work without replay. Earlier development cutovers
 21/22 reset Automation data; expression migration 23 preserves post-22 data.
 Keep a matching pre-upgrade backup for binary rollback. See the
 [branching guide](docs/automation-branching.md) for a complete nested definition,
-bounds, and history, and the [variants specification](specs/automation-variants.md)
-for the historical cutover contract.
+bounds, and history, and the [revision guide](docs/automation-definition-revisions.md)
+for the development cutover and rollback constraints.
 
 ### Automation delay Steps
 
@@ -223,7 +223,7 @@ for v3 HTTP examples, bounds, history, failure handling, and rollback constraint
 
 Core serves stateless Streamable HTTP at `/mcp` on its existing listener.
 The implementation version remains `1.0.0`. The external endpoint and built-in
-agent use one catalog of 34 tools. Tool discovery publishes complete input
+agent use one shared tool catalog. Tool discovery publishes complete input
 schemas, but no output schemas, resources, or resource templates. Core still
 validates every successful result before sending its original JSON bytes.
 
@@ -246,7 +246,7 @@ independent models, mappings, errors, and service interfaces, with one public
 [the transport operation standard](CODING_STANDARDS.md#keep-transport-operations-in-operation-local-files).
 The typed MCP framework and prepared contracts live in
 `internal/platform/mcpapi`. See the
-[result catalog and validation contract](specs/mcp-tools-and-contract-preparation.md#tool-to-result-catalog).
+[result and validation contracts](docs/mcp-errors.md#result-contracts).
 See [MCP failure contracts](docs/mcp-errors.md) for argument rejection, modeled
 failures, receipt details, and intentional differences from HTTP errors.
 HTTP routes, payloads, and published schema names are unchanged.
@@ -330,6 +330,10 @@ Caller cancellation and shutdown still cancel and join turns. Failed trace write
 For adding device capabilities, see [Extending Zigbee2MQTT capabilities](docs/zigbee2mqtt-capabilities.md): typed mapping tables for repetitive sensors/settings, with family planning and conversions kept in Go.
 
 `hearth-adapter-zigbee2mqtt` connects an operator-managed Zigbee2MQTT service to Hearth. Tested versions are Zigbee2MQTT 2.13.0 and 2.14.1 with Mosquitto 2.0.22. Other versions are not runtime-blocked, but must provide the same retained MQTT payloads and behavior.
+
+The adapter uses a clean MQTT 3.1.1 session. Its deterministic client ID is
+`hearth-z2m-` followed by the first twelve lowercase hexadecimal characters of
+SHA-256(`adapter_id`). Reconnect does not depend on broker session state.
 
 Configure Zigbee2MQTT to use MQTT 3.1.1 and to publish explicit availability while global optimistic updates are disabled. The effective `bridge/info` settings must contain:
 
@@ -646,6 +650,12 @@ are never used as this cache.
 
 `hearth-adapter-zwavejs` connects an operator-managed Z-Wave JS UI service to Hearth through the embedded Z-Wave JS server's WebSocket API. It targets API schema 29, and its wire shapes are derived from Z-Wave JS server 3.10.1 sources (driver 15.x, schema range 0–50). Read-only discovery and State projection have been smoke-tested against a live Home Assistant Z-Wave JS app; physical Commands have not yet been validated. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its Home ID agrees with the `start_listening` snapshot. The Adapter never reads or receives S0/S2 keys, never changes network membership, and never sends inclusion, exclusion, SmartStart, interview, healing, route-rebuild, association, configuration, firmware, or controller-backup operations.
 
+The checked-in [wire fixtures](internal/adapters/zwavejs/testdata/README.md) are
+synthetic and source-derived, not household captures. Physical verification still
+requires a sanitized capture of schema-29 `node.set_value` and `node.poll_value`
+frames and explicitly approved switch off/on and dimmer 0/mid/99 trials.
+Protocol tests alone do not establish physical-device compatibility.
+
 Enable the Z-Wave JS server in Z-Wave JS UI (including the Z-Wave JS UI bundled with the Home Assistant Z-Wave JS app) and expose its WebSocket port only on a trusted private network. Keep the USB controller with the existing server. The Z-Wave adapter is an optional daemon alongside the simulator. It shares the simulator's Core, NATS, database, and dashboard:
 
 ```sh
@@ -724,13 +734,14 @@ See [the logging guide](docs/logging.md) for startup/failure diagnosis and safet
 - [`docs/product.md`](./docs/product.md): audience, goals, boundaries, and success
 - [`docs/architecture.md`](./docs/architecture.md): current accepted architectural constraints
 - [`docs/automation-conditions.md`](./docs/automation-conditions.md): Automation Conditions contract and operator examples
+- [`docs/automation-schedules.md`](./docs/automation-schedules.md): restricted cron syntax, household time, and no-replay admission
 - [`docs/automation-branching.md`](./docs/automation-branching.md): Nested If/Choose authoring, decision evidence, and rollback
 - [`docs/automation-delay-steps.md`](./docs/automation-delay-steps.md): Delay authoring, elapsed waiting, interruption evidence, and rollback
 - [`docs/automation-expressions.md`](./docs/automation-expressions.md): Bindings, Run values, exact evidence, limits, and preserving upgrades
 - [`docs/logging.md`](./docs/logging.md): application logging and operator diagnosis
 - [`docs/adapter-functions.md`](./docs/adapter-functions.md): Adapter-owned capabilities, invocation evidence, and SDK serving
+- [`docs/simulator.md`](./docs/simulator.md): scripted Device, notification, Function, and control configuration
 - [`docs/adr/`](./docs/adr/): durable architectural decisions and their rationale
 - [`docs/plans/`](./docs/plans/): implementation plans
-- [`specs/`](./specs/): approved implementation-ready specifications
 
-The approved first-slice contract is [`specs/first-light.md`](./specs/first-light.md).
+The [first-light plan](docs/plans/0001-first-light.md) records the completed first slice.

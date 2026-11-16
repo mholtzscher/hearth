@@ -19,8 +19,7 @@ State changes do not start an Automation except when an eligible Observation sta
 Held-State Trigger; a later State change never re-opens a decision that already
 committed.
 
-This guide is the operator-facing contract for the feature specified in
-[Automation Conditions](../specs/automation-conditions.md) and decided in
+This guide documents the evaluation and admission contract decided in
 [ADR 0022](adr/0022-evaluate-conditions-from-state-snapshots.md). It
 assumes a running `hearthd` and at least one registered Adapter; see the
 [README](../README.md) for the simulator, Zigbee2MQTT, and Ecowitt recipes.
@@ -77,25 +76,31 @@ operand. Missing pointers and incompatible types do not match, even with `ne`.
 An `unchanged` report can match if the Trigger permits that disposition. The
 preceding value comes from the Devices projection transaction, while Conditions
 still read current State at admission time. Automatic Run and Skip history
-includes `fact.previous_state_value` when that predecessor exists; a real JSON
+includes `cause.fact.previous_value` when that predecessor exists; a real JSON
 null appears as `null`, and absent evidence omits the field.
 
-See [Observation Trigger transitions](../specs/observation-trigger-transitions.md)
-for delivery and redelivery behavior.
+`previous_value` is an additive optional field in the v1 Observation Fact.
+Older queued Facts without it remain valid but cannot match a nonempty
+`previous_comparisons` group. Devices captures the predecessor inside the
+projection transaction before applying the Observation. Relay retry,
+redelivery, and Core restart reuse that evidence rather than rereading history.
+
+Previous pointers receive structural validation at save time: current State is
+not necessarily a future Observation's predecessor. A matched outcome writes a
+receipt that suppresses redelivery. An unmatched evaluation writes none, so
+redelivery can evaluate the same Fact against a replacement definition.
 
 ### Held-State Triggers
 
 A `held_state` Trigger uses one to eight comparisons against the accepted State
 value, all of which must match, and a `for_seconds` duration from 1 second to 30
 days. A matching Observation starts a hold only when its Device Fact is at most
-30 seconds old and its Core receive time is later than both the current
+30 seconds old and its Core `emitted_at` is later than both the current
 definition's update time and Core's startup time. The hold starts at that
-receive time; matching re-reports, including `unchanged`, do not restart it. A
+emission time; matching re-reports, including `unchanged`, do not restart it. A
 processed accepted nonmatching value ends a pending hold. A held Trigger is not an
 immediate Device Fact match: after the deadline, a worker rechecks the current
-State and starts one admission decision only if it still matches. See the
-[Held-State Triggers specification](../specs/held-state-triggers.md) for
-eligibility, persistence, and timing details.
+State and starts one admission decision only if it still matches.
 
 After confirming current State still matches at expiry, Hearth applies the
 ordinary busy check. If the Automation is busy, it records an `automation_busy`
@@ -104,11 +109,27 @@ using the same coherent current-State snapshot semantics described below. A
 false or unknown root records the corresponding Condition Skip; a true or absent
 root admits the Run. Any such outcome consumes the hold, so a Conditions Skip
 does not retry at the next scheduler tick. No `stale_fact` Skip is created for
-an expired hold.
+an expired hold. A consumed hold cannot fire again until a later accepted
+nonmatching Observation returns it to idle.
 
-Holds are intentionally limited. Core restart clears pending deadlines, so a
-subsequent eligible matching Observation must begin a full new hold; consumed
-holds remain consumed. Definition replacement, including a Step-only edit or
+At expiry, the worker re-reads the definition, hold, and held Entity's State in
+one transaction. Missing or nonmatching State, a changed revision, a removed
+Trigger, or a disabled Automation ends the hold without a Run or Skip.
+Admission Conditions use the separately prepared coherent State snapshot.
+
+Each Fact with retained Observation history advances the hold's receive-order
+cursor, so duplicate or older Facts cannot rewind or reopen it. A stale
+nonmatching Fact still ends a pending hold when it advances the cursor; a stale
+matching Fact cannot start one. If the Observation history has already been
+pruned, the cursor cannot advance, but ordinary immediate Fact admission still
+proceeds.
+
+Holds are intentionally limited. Before Fact producers start, Core restart
+clears pending deadlines while retaining receive-order cursors. A subsequent
+eligible matching Observation, including `unchanged`, must begin a full new
+hold; consumed holds remain consumed until a later nonmatch. Facts emitted before
+startup cannot start a replacement hold. Definition replacement, including a
+Step-only edit or
 enablement change, clears that Automation's holds. The expiry check verifies
 current State, not every Observation since the hold began, so a brief
 nonmatching value hidden by Fact-delivery backlog can be missed. Availability or
@@ -496,8 +517,8 @@ Fact. Ordinary snapshot acquisition and storage failures keep the existing safe
 ## Related documentation
 
 - [Automation branching guide](automation-branching.md)
-- [Automation Conditions specification](../specs/automation-conditions.md)
+- [Scheduled Triggers](automation-schedules.md)
 - [ADR 0022: Evaluate Conditions from coherent State snapshots](adr/0022-evaluate-conditions-from-state-snapshots.md)
-- [Fact-driven automations specification](../specs/automations.md)
+- [Automation module ownership](../internal/modules/automations/README.md)
 - [Canonical project language](../GLOSSARY.md)
 - [README](../README.md)
