@@ -7,7 +7,7 @@ Both sides use production `db.Open`: WAL, one connection, foreign keys on,
 host cache flush. These are local descriptive results, not deployment forecasts.
 
 The [measurement record](media/history-rollups/measurements.json) contains every
-HTTP timing, append block result, binary hash, and source-fixture hash.
+HTTP timing, Core binary hash, and source-fixture hash.
 
 ## Query and migration results
 
@@ -43,44 +43,6 @@ Migration 30 produced 959,920 cells from 1,440,004 Observations in **15.965 s**,
 below the 60-second target. This is one startup measurement, from process start
 to the `database_migrated` log event, with no concurrent benchmark workload.
 
-## Append results and accepted exception
-
-The original `dbload compare` produced no baseline measurements. Its provenance
-lookup discovered candidate SQL files and tried to read them at the old
-revision, where `history_rollups.sql` does not exist. The failed campaign was
-retained, not counted as an ingest result.
-
-The approved replacement uses five alternating standalone `dbload run` blocks
-per side, 200 attempts per case per block, concurrency one, and each binary's
-own `-source-root`. Every block starts from a fresh prepared fixture copy;
-the tool runs three warmup operations before the timed attempts. The baseline
-is clean `f529c1a` (`0c0f976` plus measurement-only numeric workload code), and
-the candidate is clean `ea4dd4e`. The numeric workload source is byte-identical
-on both sides (SHA-256 `32fa7cf89987bb52675027295cf8ecd5f4842da468c1d350a6cac9a551494b48`).
-
-All 4,000 attempts completed with the expected work and returned State projection
-and pending Device Fact IDs, with zero errors or timeouts. The numeric case
-checked the committed operation result; the campaign did not independently
-recount its persisted rows. The final tooling also applies the existing untimed
-Observation-count oracle to that case. Values below are the median
-of five block p95 values and their full range, in ms.
-
-| Case | Baseline | Candidate | Original ≤10% gate |
-| --- | --- | --- | --- |
-| Boolean append | 7.80 (5.44–8.35) | 6.66 (3.73–7.89) | Pass |
-| Numeric append | 5.70 (3.84–6.89) | 7.80 (6.74–7.98) | **Fail: +36.9%** |
-
-The user explicitly accepted the numeric exception, retaining transactional
-exact accumulation instead of changing durability or adding asynchronous work.
-The original numeric threshold did not pass. These noisy block results do not
-establish statistical equivalence or a precise causal regression.
-
-Excluded diagnostics support storage synchronization as the dominant elapsed
-cost: the candidate CPU profile recorded 160 ms CPU over 2.17 s elapsed.
-Separate syscall traces recorded 216 `fsync` calls on each side, totaling
-2.174 s candidate versus 1.081 s baseline. Those totals include untimed setup
-and verification, so they are diagnostic, not a replacement latency comparison.
-
 ## Browser evidence
 
 The real old/new Vite dashboards proxy isolated task-owned Core instances and
@@ -109,8 +71,7 @@ and screenshots are the reviewable subset; raw host artifacts are not public.
 
 After cleanup, `mise run validate` passed, including all 453 frontend tests,
 the web build, lint, vet, generation, and the default Go unit/integration/E2E
-levels. Some unchanged Go packages used the test cache. The separate
-`mise run dbload-test` passed, including the numeric append count oracle.
+levels. Some unchanged Go packages used the test cache.
 Local Go tests ran without race instrumentation; CI enables it.
 
 Independent correctness review confirmed the arithmetic redesign. Cleanup
