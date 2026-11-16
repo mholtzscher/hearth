@@ -3,8 +3,8 @@
 Status: Implemented: N0–N4 Core notification foundation; not a merge or deployment claim.
 Original planning effort: XL.
 Includes the minimum runtime/session work required for notification adapters.
-Separately planned consumers: [Discord](discord-notification-adapter.md) and
-[Automation notification Steps](automation-notification-steps.md).
+Consumers: [Discord](../docs/discord.md) and
+[Automation notification Steps](../docs/notifications.md#automation-notification-steps).
 
 ## Purpose and scope
 

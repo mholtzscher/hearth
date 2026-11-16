@@ -95,7 +95,7 @@ prefix-based naming proposal; it does not change the selected wire contracts.
 
 These decisions supersede mixed-package adapter ownership, resource support,
 HTTP-handler reuse, response-payload parity, and MCP output-schema publication
-in [the original MCP spec](mcp.md),
+in the original MCP spec (removed),
 [Automation variants](automation-variants.md), and
 [Adapter Functions](adapter-functions.md). Canonical input validation, exact
 JSON, domain safety, and HTTP schema requirements remain binding.

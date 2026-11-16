@@ -39,7 +39,7 @@ The module already uses a sealed `ConditionDecision` interface. Its implementati
 
 ## Boundaries and behavioral constraints
 
-The [module ownership document](../internal/modules/automations/README.md) and [validation boundaries](automation-validation-boundaries.md) remain the authority for transactions and input ownership. This migration changes representations, not Automation behavior.
+The [module ownership document](../internal/modules/automations/README.md) and [coding standards](../CODING_STANDARDS.md) remain the authority for transactions and input ownership. This migration changes representations, not Automation behavior.
 
 Preserve these contracts:
 

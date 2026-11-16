@@ -5,7 +5,7 @@ supersedes the Go type listings and definition/history JSON shapes below. Curren
 authoring examples are in the [branching guide](../docs/automation-branching.md).
 
 **Status:** Implementation-ready; approved for task breakdown on 2026-09-13.
-**Supersedes:** [Entity Event automations](entity-event-automations.md).
+**Supersedes:** the earlier Entity Event automations spec (removed).
 **Baseline:** `1f9a2b0`; Device Facts are implemented. Do not restore the automation module removed in `423addb` wholesale.
 **Effort:** XL, split into four ordered deliverables.
 **Follow-on:** [Automation Conditions](automation-conditions.md) specifies optional current-State Conditions, explicit manual bypass, and condition-blocked automatic/manual Skips. It amends §3.1's definition field list, §3.4–§3.5's admission contracts, §4's current-State lookup exclusion (history lookups remain excluded), and the `Skip`/`SkipReason` and manual-admission type/interface listings below. The original implementation baseline is retained here; use the follow-on spec for those changed contracts.
@@ -554,7 +554,7 @@ func StartDeviceFactConsumer(
 ) (*platformnats.Consumer, error)
 ```
 
-The returned platform consumer supplies `Active`, `Stop`, `Drain(context.Context) error`, and `Closed`; see [Managed durable consumer](managed-consumer.md).
+The returned platform consumer supplies `Active`, `Stop`, `Drain(context.Context) error`, and `Closed`; see `internal/platform/nats/managed_consumer.go`.
 
 Expected JetStream consumer configuration:
 

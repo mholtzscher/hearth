@@ -13,6 +13,7 @@
 - When reviewing a change, read `CODING_STANDARDS.md` before reporting findings.
 - For simulator development, start worktree-local NATS with `mise run simulator-start`; stop it with `mise run simulator-stop`.
 - Real-Mosquitto integration tests always require a reachable Docker daemon and fail without one.
+- Keep verification evidence and one-off reports off `main`. Screenshots, recordings, measurement dumps, capture scripts, review notes, and point-in-time analyses belong in the PR, not the tree. To show media in a PR, commit it on the PR branch, link it by commit SHA, then remove it in a later commit before merge. Put lasting conclusions in the living doc they change.
 - Before adding complexity for a speculative or vanishingly unlikely race or security edge case, explain the concrete failure mode, likelihood, and complexity cost to the user and get their buy-in. Do not silently expand scope for theoretical robustness.
 
 ## Commands
