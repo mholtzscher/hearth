@@ -83,6 +83,8 @@ const respond = (body: unknown, status = 200) =>
 const core = (
   values: Entity[],
   options: {
+    deviceName?: string;
+    failDevice?: boolean;
     failChanges?: boolean;
     failGet?: number;
     historyValue?: boolean;
@@ -94,7 +96,8 @@ const core = (
   const posts: Post[] = [];
   const histories: string[] = [];
   const gets: string[] = [];
-  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+  const deviceGets: string[] = [];
+  const fetchEntity: typeof fetch = (input, init) => {
     const url = String(input);
     const { 3: rawEntityId } = url.split("/");
     const [entityId] = rawEntityId.split("?");
@@ -178,6 +181,20 @@ const core = (
       entity ? pairedEntityResponse(entity, entity) : {},
       options.failGet ?? (entity ? 200 : 404)
     );
+  };
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const url = String(input);
+    if (url.includes("/v1/devices/")) {
+      deviceGets.push(url);
+      return options.failDevice
+        ? respond({ detail: "Device unavailable" }, 503)
+        : respond({
+            id: deviceId,
+            name: options.deviceName ?? "Desk lamp",
+            entities: values,
+          });
+    }
+    return fetchEntity(input, init);
   });
   const satisfy = (post: Post) => {
     const entity = entities.get(post.id);
@@ -204,6 +221,7 @@ const core = (
     posts,
     histories,
     gets,
+    deviceGets,
     satisfy,
     fail: (post: Post, status = 502) =>
       post.respond(response({ status, detail: "Rejected" }, status)),
@@ -244,6 +262,50 @@ describe("ToggleTile and ToggleList", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.useRealTimers();
+  });
+
+  it("names an unlabeled tile after its Device rather than its generic power Entity", async () => {
+    const api = core([{ ...power(), name: "Power" }], {
+      deviceName: "Desk lamp",
+    });
+    await mount(<BoundToggleTile source={source()} />);
+
+    const tile = screen.getByRole("article", { name: "Desk lamp" });
+    const control = within(tile).getByRole("switch", {
+      name: "Desk lamp power",
+    });
+    expect(within(tile).getByText("On")).toBeTruthy();
+    expect(within(tile).getByRole("button", { name: "Source" })).toBeTruthy();
+    fireEvent.click(control);
+    await flush();
+    expect(api.posts[0]).toMatchObject({
+      id: id(1),
+      body: { operation: "set", parameters: { value: false } },
+    });
+    await act(() => api.satisfy(api.posts[0]));
+    await flush();
+    expect(within(tile).getByText("Off")).toBeTruthy();
+  });
+
+  it("preserves a custom tile label without reading its Device", async () => {
+    const api = core([power()]);
+    await mount(<BoundToggleTile source={source()} label="My lamp" />);
+
+    expect(screen.getByRole("article", { name: "My lamp" })).toBeTruthy();
+    expect(api.deviceGets).toStrictEqual([]);
+  });
+
+  it("keeps the tile usable when its Device name cannot be read", async () => {
+    core([power()], { failDevice: true });
+    await mount(<BoundToggleTile source={source()} />);
+
+    expect(screen.getByRole("article", { name: "Power 1" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("switch", { name: "Power 1 power" })
+        .hasAttribute("disabled")
+    ).toBeFalsy();
+    expect(screen.getByText("On")).toBeTruthy();
   });
 
   it("renders the portable ToggleTile and ToggleList through the shared renderer without sending Commands", async () => {
