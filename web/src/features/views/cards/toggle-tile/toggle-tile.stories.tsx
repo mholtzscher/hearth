@@ -2,8 +2,11 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { http, HttpResponse } from "msw";
 import { expect, waitFor, within } from "storybook/test";
 
-import { entityId } from "../../../../../.storybook/fixtures";
-import { entityScenario } from "../../../../../.storybook/msw-handlers";
+import { createEntities, entityId } from "../../../../../.storybook/fixtures";
+import {
+  createCoreHandlers,
+  entityScenario,
+} from "../../../../../.storybook/msw-handlers";
 import { BoundToggleTile } from "./toggle-tile";
 
 const meta = {
@@ -45,6 +48,25 @@ const meta = {
 } satisfies Meta<typeof BoundToggleTile>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const DeviceName: Story = {
+  args: { label: undefined, metric: undefined },
+  beforeEach: ({ msw }) => {
+    const entity = createEntities().find((item) => item.id === entityId(4));
+    if (!entity) {
+      throw new Error("Missing power Entity fixture");
+    }
+    msw.use(...createCoreHandlers([{ ...entity, name: "Power" }]));
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("article", { name: "Office plug" })
+    ).toBeVisible();
+    await expect(
+      canvas.getByRole("switch", { name: "Office plug power" })
+    ).toHaveAttribute("aria-checked", "false");
+  },
+};
 
 export const MeteredPlug: Story = {
   play: async ({ canvas, userEvent }) => {

@@ -1,13 +1,15 @@
 import type { ReactNode } from "react";
 import type { z } from "zod";
 
+import { deviceRequest } from "../../bindings/device";
+import type { FieldDevice } from "../../bindings/device";
 import { usePowerReadings } from "../../bindings/power";
 import type { PowerData, PowerReading } from "../../bindings/power";
 import { useNumericReads } from "../../bindings/registry";
 import type { MetricData, Resolved, SeriesData } from "../../bindings/types";
 import { ControlStatus } from "../../controls/control-status";
 import { supportsOperation } from "../../controls/support";
-import { useControl } from "../../data/provider";
+import { useControl, useRead } from "../../data/provider";
 import { StatusList } from "../data-card";
 import { Trend, trendMethod } from "../metric/trend";
 import { Reading } from "../reading";
@@ -347,8 +349,18 @@ const renderMetricDetails = ({
   );
 };
 
+const useTileTitle = (label: string | undefined, power: PowerReading) => {
+  const device = useRead(
+    label === undefined && power.entity?.device_id
+      ? deviceRequest(power.entity.device_id)
+      : null
+  ).data as FieldDevice | undefined;
+  return label ?? device?.name ?? power.resource.metadata?.label ?? "Power";
+};
+
 export const BoundToggleTile = ({ source, label, metric }: ToggleTileProps) => {
   const [power] = usePowerReadings([source]);
+  const title = useTileTitle(label, power);
   const numeric = useNumericReads(numericBindings(metric));
   const [current, history, detail] = numeric;
   const reading = metricData(current);
@@ -362,7 +374,6 @@ export const BoundToggleTile = ({ source, label, metric }: ToggleTileProps) => {
   const metricStatus = reading && cardStatus(reading);
   const data = status.value === "empty" ? undefined : power.resource.data;
   const measured = metricStatus?.value === "empty" ? undefined : reading?.data;
-  const title = label ?? power.resource.metadata?.label ?? "Power";
   const canSet = !!power.entity && supportsOperation(power.entity, "set");
   const on = data?.on;
   const rows = buildRows({
