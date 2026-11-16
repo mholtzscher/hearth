@@ -34,11 +34,6 @@ summaries. Integer metrics and decimal extrema match; decimal means meet the
 relative `1e-12` tolerance. Regression tests cover exact sums beyond int64,
 large-value cancellation, live/backfill agreement, and long overall ranges.
 
-An excluded CPU profile identified cell decoding and numeric comparisons as
-the candidate read costs. Selecting fewer repeated columns and comparing like
-numeric representations natively reduced those costs. Queries still read and
-merge every selected minute cell, but no longer decode every raw report.
-
 Migration 30 produced 959,920 cells from 1,440,004 Observations in **15.965 s**,
 below the 60-second target. This is one startup measurement, from process start
 to the `database_migrated` log event, with no concurrent benchmark workload.
@@ -63,7 +58,7 @@ ranges instead.
 | --- | --- |
 | ![Baseline 24h and 7d charts](media/history-rollups/before.png) | ![Rollup-backed 24h and 7d charts](media/history-rollups/after.png) |
 
-Raw logs, HARs, profiles, fixtures, and failed-campaign evidence remain under
+Raw HTTP logs, HARs, and query/migration fixtures remain under
 `/tmp/opencode/rollups` on the measurement host. The linked measurement record
 and screenshots are the reviewable subset; raw host artifacts are not public.
 
