@@ -451,7 +451,7 @@ describe(App, () => {
     await waitFor(() => expect(background.getSignal()).toBeDefined());
     fireEvent.click(screen.getByRole("link", { name: "Dashboards" }));
     await expect(
-      screen.findByRole("heading", { name: "Made for you. Here to stay." })
+      screen.findByRole("heading", { level: 1, name: "Dashboards" })
     ).resolves.toBeTruthy();
     expect(background.getSignal()?.aborted).toBeFalsy();
   });
@@ -464,7 +464,7 @@ describe(App, () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(background.getSignal()).toBeDefined());
     fireEvent.click(screen.getByRole("link", { name: "Dashboards" }));
-    await screen.findByRole("heading", { name: "Made for you. Here to stay." });
+    await screen.findByRole("heading", { level: 1, name: "Dashboards" });
     await background.finish();
     expect(window.location.hash).toBe("#/dashboards");
     const recent = within(screen.getByRole("region", { name: "Recent" }));

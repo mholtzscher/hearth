@@ -846,8 +846,60 @@ export const DashboardLibrary: Story = {
       await canvas.findByRole("heading", { name: "Morning overview" })
     ).toBeVisible();
     await expect(
-      canvas.getByRole("link", { name: "Open dashboard →" })
+      canvas.getByRole("link", { name: "Morning overview" })
     ).toHaveAttribute("href", dashboardPath);
+    const remove = canvas.getByRole("button", {
+      name: "Delete Morning overview",
+    });
+    await expect(remove.getBoundingClientRect().height).toBe(44);
+  },
+};
+
+export const DashboardLibraryLoading: Story = {
+  parameters: { appPath: "/dashboards" },
+  beforeEach({ msw }) {
+    msw.use(
+      http.get("/v1/dashboards", async ({ request }) => {
+        const aborted = Promise.withResolvers<undefined>();
+        request.signal.addEventListener(
+          "abort",
+          () => aborted.resolve(undefined),
+          { once: true }
+        );
+        await aborted.promise;
+        return HttpResponse.error();
+      })
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByText("Loading dashboards…")
+    ).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("heading", {
+        name: "Your first dashboard starts with a question.",
+      })
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const DashboardLibraryLoadFailure: Story = {
+  parameters: { appPath: "/dashboards" },
+  beforeEach({ msw }) {
+    msw.use(
+      http.get("/v1/dashboards", () =>
+        HttpResponse.json({ detail: "Core is unavailable" }, { status: 503 })
+      )
+    );
+  },
+  play: async ({ canvas }) => {
+    const alert = within(await canvas.findByRole("alert"));
+    await expect(alert.getByRole("button", { name: "Reload" })).toBeVisible();
+    await expect(
+      canvas.queryByRole("heading", {
+        name: "Your first dashboard starts with a question.",
+      })
+    ).not.toBeInTheDocument();
   },
 };
 
