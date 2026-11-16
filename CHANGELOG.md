@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.26.0](https://github.com/mholtzscher/hearth/compare/v0.25.0...v0.26.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** return paired readings by default ([#364](https://github.com/mholtzscher/hearth/issues/364))
+
+### Features
+
+* **api:** return paired readings by default ([#364](https://github.com/mholtzscher/hearth/issues/364)) ([2e108e1](https://github.com/mholtzscher/hearth/commit/2e108e12b6834cd870bb270f64cc45738577bd49))
+* **storybook:** cover application workspaces ([#360](https://github.com/mholtzscher/hearth/issues/360)) ([dbc69af](https://github.com/mholtzscher/hearth/commit/dbc69aff3aabdffc7174c44f56b15f534fa916c6))
+* **storybook:** generate per-checkout MCP config ([#388](https://github.com/mholtzscher/hearth/issues/388)) ([57d8e65](https://github.com/mholtzscher/hearth/commit/57d8e650ba540da586d288cb206b8a38153e0b3a))
+* **storybook:** manage startup and live tailnet previews ([#383](https://github.com/mholtzscher/hearth/issues/383)) ([7bb72d4](https://github.com/mholtzscher/hearth/commit/7bb72d491c3be2551aeb317825631378507349e3))
+* **web:** add shared dialog and household popover ([#376](https://github.com/mholtzscher/hearth/issues/376)) ([8f483e4](https://github.com/mholtzscher/hearth/commit/8f483e4939e3ae525192e029b59c1bfc8c93efbd))
+* **web:** add shared household notice ([#372](https://github.com/mholtzscher/hearth/issues/372)) ([500be45](https://github.com/mholtzscher/hearth/commit/500be4520297da73c0896a8f2853142a41d9345f))
+* **web:** add shared segmented control ([#374](https://github.com/mholtzscher/hearth/issues/374)) ([3efed63](https://github.com/mholtzscher/hearth/commit/3efed632dfa1ee2b72ee7dce4e505d3bf8f4a09c))
+* **web:** unify Button treatment and sizes ([#370](https://github.com/mholtzscher/hearth/issues/370)) ([a3d5cfb](https://github.com/mholtzscher/hearth/commit/a3d5cfbdc88fc1905ebe131da833c1bd5b3cc219))
+* **web:** unify shared fields and add native select ([#371](https://github.com/mholtzscher/hearth/issues/371)) ([9e5f6d0](https://github.com/mholtzscher/hearth/commit/9e5f6d0d3285b69067741263ef85702d1197b612))
+* **web:** unify shared switch treatment ([#373](https://github.com/mholtzscher/hearth/issues/373)) ([38fb412](https://github.com/mholtzscher/hearth/commit/38fb412179c63a15c7ea4abb9709a1b0ebdd93a1))
+
+
+### Bug Fixes
+
+* **test:** pin Testcontainers reaper recovery ([#375](https://github.com/mholtzscher/hearth/issues/375)) ([ca3d545](https://github.com/mholtzscher/hearth/commit/ca3d5458d756c385516cb70c3c0b6020b947228c))
+* **views:** identify unlabeled power tiles by device name ([#387](https://github.com/mholtzscher/hearth/issues/387)) ([134252f](https://github.com/mholtzscher/hearth/commit/134252f64aadea8e791200d00f995fb567144a30))
+* **views:** keep weather updates on one observation ([#359](https://github.com/mholtzscher/hearth/issues/359)) ([0ad325f](https://github.com/mholtzscher/hearth/commit/0ad325fbf9f8afd246376487f423a0580079d5eb))
+
 ## [0.25.0](https://github.com/mholtzscher/hearth/compare/v0.24.2...v0.25.0) (2026-11-14)
 
 
