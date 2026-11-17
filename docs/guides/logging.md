@@ -35,43 +35,24 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 
 ## Find startup and failure evidence
 
-| Event | Meaning |
-| --- | --- |
-| `process.starting`, `process.config_loaded` | Process identity and successful configuration load |
-| `core.startup_stage_completed` | A startup step succeeded; no interruption count is implied |
-| `core.http_listening` | HTTP socket successfully bound, not a health assessment |
-| `adapter.session_claimed`, `adapter.registration_completed` | Claimed runtime and canonical registered identities |
-| `adapter.commands_listening` | Command subscription ready, not upstream health |
-| `simulator.initialized` | Scenario initialization and canonical Entity ID |
-| `command.created` | Durable creation, including immediate rejection; deferred until execution returns for running Commands, not a startup or success signal |
-| `command.execution_failed` | Unexpected execution/persistence failure, not a terminal status summary |
-| `observation.invalid`, `observation.processing_failed` | Invalid input or processing/acknowledgement failure |
-| `entity_event.invalid`, `entity_event.processing_failed` | Invalid Entity Event input or processing/acknowledgement failure, including a failed termination of a permanently uninterpretable report |
-| `entity_event.recorded`, `entity_event.identity_conflict` | Committed Entity Event disposition, or changed input for an already recorded event ID (Debug and Warn) |
-| `entity_event.clock_skew` | Adapter Entity Event publication time is ahead of Core receive time; diagnostic only, never a rejection reason |
-| `core.devices_history_prune_failed` | The startup or hourly devices history retention pass failed (`module=devices`); one safe app-owned record per failed pass, no raw error text |
-| `automation.created`, `automation.replaced`, `automation.deleted` | A definition mutation committed; includes identity and revision, never definition JSON |
-| `automation.run_started`, `automation.run_completed`, `automation.run_interrupted` | A Run was admitted or reached a durable terminal outcome |
-| `automation.skipped` | An admission decision started no Run; `source` is `device_fact`, `manual`, `held_state`, or `schedule`, and `reason` is `automation_busy`, `stale_fact`, `conditions_false`, or `conditions_unknown`. Only Device Facts use `stale_fact` |
-| `automation.fact_invalid`, `automation.fact_processing_failed` | The automation consumer rejected malformed input or could not durably admit valid input |
-| `automation.executor_fault` | Command ownership or Automation progress could not be established safely; only that Run stops, with one atomic scoped interruption attempt |
-| `automation.run_interruption_failed` | The single scoped cleanup attempt failed; that Automation may remain busy until startup recovery, while independent Automations remain eligible |
-| `core.automation_history_prune_failed` | The startup or hourly Automation history retention pass failed (`module=automations`); one safe app-owned record per failed pass, no raw error text |
-| `core.automation_schedule_failed` | Unexpected calendar worker failure closes Automation admission and fails readiness; Error-level record with fixed `error_code=automation_schedule_failed`, no raw error text. Normal shutdown cancellation does not emit it |
-| `agent.turn_failed` | One unexpected household agent turn failure, with the canonical `conversation_id`, a fixed `stage` (`queue`, `history`, `persist`, `model`, `tool`, `runner`), and a fixed `error_code` (`conversation_not_found`, `admission_unavailable`, `model_call_failed`, `model_response_invalid`, `tool_call_failed`, `trace_persist_failed`, or `turn_failed`); expected caller/Drain cancellation or caller expiry produces no failure record. Dependency context errors retain their origin. A model-stage failure adds a fixed `model_failure` (`provider_status` with the integer `provider_status`, `provider_stream_error`, `response_incomplete`, `inconsistent_tool_completion`, `invalid_function_call`, `malformed_response`, `empty_response`, `deadline_exceeded`, `canceled`, or `unclassified`); a transient status is logged only after its single retry also fails. Provider, tool, and persistence error text is never logged |
-| `agent.model_usage` | Debug-only provider-reported token counts for one completed model call, including tool-calling calls: `conversation_id`, `provider`, `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, and `output_tokens`. A count the provider omits is logged as 0. OpenCode Go does not report cache writes. See [Measure agent prompt caching](#measure-agent-prompt-caching) |
-| `mcp.tool_internal_failure` | One retained unexpected MCP handler failure, with the tool name, fixed `error_code`, and Go error type; no raw cause text. A single-cause wrapping chain ending in the canceled or expired request's context error produces no failure record. Dependency cancellation with an active caller and joined or unrelated faults remain diagnostic, even after caller cancellation. Tool result codes and SDK disconnect behavior are unchanged |
-| `notification.http_internal_failure` | Unexpected Notification HTTP failure, with the fixed operation ID, `error_code=internal_error`, and Go error type; no raw error text or retained data. Caller cancellation alone does not emit it; joined persistence failures still do |
-| `notification.registration_failed` | Notification registration persistence fault, with `stage=persist`, `error_code=registration_write_failed`, and validated registration, Adapter, and runtime identities. The request still receives no reply. No destination name, local key, body, subject, or cause text is logged |
-| `session.claim_failed`, `session.heartbeat_failed`, `session.release_failed` | Unexpected Adapter session operation fault, with `stage=claim`, `heartbeat`, or `release` and the corresponding `error_code=claim_failed`, `heartbeat_failed`, or `release_failed`. Records retain request and Adapter identities; heartbeat/release also retain runtime identity. The server sends no reply on a fault; modeled rejections keep their existing response |
-| `adapter_health.retry`, `adapter_health.poison` | The Adapters health outbox reporter retains Warn/Error severity and adds precise relay `stage` and `error_code`. Stages are `list`, `map`, `publish`, `ack`, or `delete`; codes are `list_failed`, `invalid_row`, `invalid_message`, `publish_failed`, `ack_missing`, `unexpected_stream`, or `delete_failed`. These replace coarse `delivery_failed`/`invalid_outbox` codes. The Devices projection consumer also uses `adapter_health.retry`; its `projection_failed` code remains unchanged. Event names, readiness, retry, and poison retention are unchanged; no outbox fields or cause text are logged |
-| `device.http_internal_failure`, `adapter.http_internal_failure`, `automation.http_internal_failure`, `agent.http_internal_failure` | Unexpected HTTP operation failure not already diagnosed by its service or worker. Includes a fixed operation ID, `stage=service`, `mapping`, or `preflight`, `error_code=internal_error`, and Go error type. No raw cause text or payload fields. Expected request cancellation stays silent; dependency context failures and joined faults remain diagnostic |
-| `device_fact.retry` | Warn-level relay retry: a pending fact was not published and its durable outbox row was kept, with `stage` (`list`, `publish`, `ack`, `delete`) and a fixed `error_code` (`list_failed`, `publish_failed`, `ack_missing`, `unexpected_stream`, `delete_failed`), plus `family` and the safe source ID (`observation_id` or `event_id`) when the failing stage identified a row |
-| `device_fact.poison` | Error-level relay fault: a deterministic row Core cannot map or decode stopped publication, with `stage` (`list`, `map`, `encode`), fixed `error_code` (`invalid_row`, `fact_invalid`, `subject_invalid`, `unknown_family`, `encode_failed`) and the `fact_id`, plus `family` and the safe source ID when the row decoded that far; the row is preserved and readiness fails until an operator resolves it |
-| `dependency.retrying` | Debug-level retry attempt with safe diagnostic code |
-| `dependency.connected`, `dependency.disconnected`, `dependency.reconnected`, `dependency.operation_failed`, `dependency.closed` | NATS connection lifecycle for the one shared Core connection, which carries subscriptions, JetStream ingestion and Device Fact publication |
-| `process.cleanup_failed` | An otherwise ignored cleanup operation failed |
-| `process.failed` | Fatal configuration or runtime failure, with safe stage/code |
+Filter by `event`, canonical IDs, `stage`, and fixed `error_code`, not message
+text. For the current event fields, inspect the owning emission site rather than
+a copied catalog:
+
+```sh
+git grep -n '"agent.turn_failed"' -- internal
+git grep -n '"device_fact.poison"' -- internal
+```
+
+`core.http_listening` proves a bound socket, not readiness. Likewise, Adapter
+registration and Command subscriptions do not prove upstream health.
+`agent.turn_failed` diagnoses unexpected turns without provider/tool/persistence
+error text. Expected caller/Drain cancellation and caller expiry stay silent;
+dependency context errors retain their failure origin rather than implying caller
+cancellation. A transient provider status is reported after its single retry
+fails. See [Agent failure semantics](../reference/agent-skills.md#public-turn-failures).
+Registration and Session persistence faults remain no-reply outcomes, not modeled
+rejections.
 
 In a third terminal, set `log_dir` to that same printed directory before filtering:
 
@@ -87,12 +68,10 @@ Debug adds routine transport/Observation progress and retry attempts. There is n
 
 ## Use APIs for outcomes and health
 
-Use the registered canonical Entity ID with the existing HTTP API:
+Use read APIs with canonical IDs from the operation you are investigating.
+These examples do not submit new Commands or Notifications:
 
 ```sh
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
-  -H 'content-type: application/json' \
-  -d '{"operation":"set","parameters":{"value":true}}'
 curl http://127.0.0.1:8080/v1/commands/cmd_...
 curl http://127.0.0.1:8080/v1/entities/ent_.../commands
 curl 'http://127.0.0.1:8080/v1/entities/ent_.../events?limit=50'
@@ -103,13 +82,29 @@ curl http://127.0.0.1:8080/v1/adapters/simulator
 curl http://127.0.0.1:8080/v1/entities/ent_...
 ```
 
-`GET /v1/entities/{entity_id}/events` is the durable Entity Event history for one Entity: it shows whether Core recorded a report and why Core rejected it, and it never contains State. A missing row does not prove that no physical event happened, and the code does not execute work. `entity_event.recorded` and `entity_event.identity_conflict` are diagnostics only; the history endpoint is authoritative for what Core retained.
+Entity Event history records accepted and rejected reports, never State. Missing
+history does not prove that no physical event happened. Clock skew is diagnostic,
+not a rejection reason. See
+[Entity Event history](../architecture/architecture.md#entity-event-durable-history).
 
-Device Facts follow the same rule. `device_fact.retry` reports a transient failure whose durable outbox row is kept and retried, and `device_fact.poison` reports the deterministic row that stopped the relay and failed readiness; neither contains State values, raw envelopes or full subjects, and neither reconstructs durable fact delivery. Command status transitions have no fact to diagnose: Command outcomes appear only in durable HTTP/SQLite history. The stream `HEARTH_DEVICE_FACTS_V1` stores what Core published, and the durable SQLite record and HTTP read APIs stay authoritative, so a missing fact — a reader that never chose a durable consumer, a fact evicted past the seven-day or one-GiB bound, or a poison row an operator has not resolved — is expected under the documented durability limits, not a logging failure. Investigate `device_fact.poison` first: it means the relay stopped and every later pending fact is queued behind the preserved row.
+Investigate `device_fact.poison` first: a preserved deterministic row stops the
+relay, fails readiness, and queues later Facts. `device_fact.retry` keeps the row
+for another publication attempt. Logs cannot reconstruct delivery. Durable readers
+and retention limits belong to
+[Device Fact delivery](../architecture/architecture.md#device-fact-delivery-and-recovery);
+Command outcomes have no Fact and remain in HTTP/SQLite history.
 
-Automation logs are likewise diagnostics rather than execution history. Use the Automation history endpoints for immutable Run snapshots, matched Trigger IDs, Fact summaries, Step outcomes, Skips, and verified Command links. Automation records may include canonical IDs, family, disposition or event name, revision, status, and fixed reason/error codes; they never include definition JSON, Observation values, Command parameters, full subjects, raw envelopes, or upstream error text.
+Use Automation history for immutable snapshots, matched Triggers, Steps, Skips,
+and Command links. An executor fault stops only its Run with one scoped
+interruption attempt; failed cleanup can leave that Automation busy until startup
+recovery. A calendar-worker fault instead closes Automation admission and fails
+readiness. Missed schedule occurrences have no history or replay, and no-match
+ticks have no per-second logs. See [schedules](../reference/automation-schedules.md)
+and [Automation ownership](../../internal/modules/automations/README.md).
 
-[Scheduled admission](../reference/automation-schedules.md) uses the ordinary Run/Skip logs with `source=schedule`, without Fact or Held-State evidence. Missed occurrences have no history entries or dedicated logs, and no-match ticks produce no per-second logs. A failed calendar worker is not silently restarted and does not replay missed minutes.
+Decision logs may carry canonical IDs, family, disposition/event, revision,
+status, and fixed codes. Never include definition JSON, Fact/Observation values,
+Command parameters, full subjects, raw envelopes, or upstream error text.
 
 `command.created` supplies an ID for lookup when the HTTP caller disconnects or gets an error. For running Commands it is deferred until execution returns, so diagnostic output cannot delay dispatch or the caller's cancellation handling; it may follow other Command records. Immediately rejected creations are logged before returning. Command history supplies the durable satisfied/rejected/timeout/interrupted outcome and linked Observation ID; no terminal log record is promised. Acceptance is **not** satisfaction: only committed linked Observation evidence satisfies a Command.
 
@@ -137,6 +132,8 @@ Sum the tokens rather than averaging per-call percentages. The first call in a
 conversation usually reports no hits. These counts cover completed responses only,
 so use provider billing for total charges. The same counts are also stored in each
 assistant message's `response_meta.usage` in `agent_messages.message_json`.
+`agent.model_usage` is Debug-only and includes completed tool-calling responses.
+Missing provider counts are zero; OpenCode Go does not report cache writes.
 
 ## Developer conventions and safety
 

@@ -1,140 +1,6 @@
 ---
 name: Hearth
 description: A dark, evidence-led workspace for a connected household.
-colors:
-  gray-0: "#000000"
-  gray-1: "#0c0c0c"
-  gray-2: "#151515"
-  gray-3: "#1f1f1f"
-  gray-4: "#2c2c2c"
-  gray-5: "#3d3d3d"
-  gray-6: "#575757"
-  gray-7: "#7d7d7d"
-  gray-8: "#a6a6a6"
-  gray-9: "#d1d1d1"
-  gray-10: "#f4f4f4"
-  violet: "#a77bff"
-  violet-text: "#c4a8ff"
-  violet-soft: "color-mix(in oklch, #a77bff 16%, transparent)"
-  orange: "#ff8a3d"
-  orange-hover: "#ffa366"
-  on-orange: "#1f0d00"
-  ok: "#5ad19a"
-  warn: "#f2c94c"
-  error: "#ff5c7a"
-  chart-orchid: "#ef8fd0"
-  info: "#7fb4ff"
-  chart-pale-gold: "#f2d38a"
-  chart-ice: "#9fe3f0"
-  chart-sand: "#c9b38f"
-typography:
-  reading:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "40px"
-    fontWeight: 350
-    lineHeight: 1.15
-    letterSpacing: "-0.03em"
-    fontFeature: "tabular-nums"
-  reading-narrow:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "32px"
-    fontWeight: 350
-    lineHeight: 1.15
-    letterSpacing: "-0.03em"
-    fontFeature: "tabular-nums"
-  headline:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "26px"
-    fontWeight: 500
-    lineHeight: 1.3
-    letterSpacing: "-0.03em"
-  headline-narrow:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "22px"
-    fontWeight: 500
-    lineHeight: 1.3
-    letterSpacing: "-0.03em"
-  title:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "18px"
-    fontWeight: 600
-  body:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "16px"
-    lineHeight: 1.7
-  label:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "14px"
-    lineHeight: 1.5
-  compact-reading:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "20px"
-    fontWeight: 400
-    lineHeight: 1.3
-    letterSpacing: "-0.02em"
-  caption:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "12px"
-rounded:
-  xs: "4px"
-  sm: "6px"
-  editor: "8px"
-  control: "8px"
-  card: "12px"
-  modal: "14px"
-spacing:
-  small: "8px"
-  medium: "16px"
-  large: "24px"
-  card: "18px"
-components:
-  button:
-    sizes: ["default: 32px", "touch: 44px", "icon: 32px", "icon-touch: 44px"]
-    rounded: "{rounded.control}"
-  input:
-    sizes: ["default: 32px", "touch: 44px", "auto: pointer-dependent"]
-    rounded: "{rounded.editor}"
-  textarea:
-    minHeight: "44px"
-    rounded: "{rounded.editor}"
-  native-select:
-    sizes: ["default: 32px", "touch: 44px", "auto: pointer-dependent"]
-    rounded: "{rounded.editor}"
-  switch:
-    sizes: ["default: 32px", "touch: 44px"]
-    track: "44px × 24px"
-  segmented-control:
-    sizes: ["default: 32px minimum", "touch: 44px minimum"]
-    rounded: "{rounded.control}"
-  dialog:
-    rounded: "{rounded.modal}"
-  popover:
-    rounded: "{rounded.card}"
-  notice:
-    rounded: "{rounded.control}"
-    padding: "12px"
-  button-primary:
-    backgroundColor: "{colors.orange}"
-    textColor: "{colors.on-orange}"
-    rounded: "{rounded.control}"
-    height: "44px"
-    padding: "10px 12px"
-  button-primary-hover:
-    backgroundColor: "{colors.orange-hover}"
-  button-primary-disabled:
-    backgroundColor: "{colors.gray-3}"
-    textColor: "{colors.gray-7}"
-  button-outline:
-    backgroundColor: "{colors.gray-1}"
-    textColor: "{colors.gray-10}"
-    rounded: "{rounded.control}"
-    height: "44px"
-    padding: "10px 12px"
-  reading-card:
-    backgroundColor: "{colors.gray-1}"
-    textColor: "{colors.gray-10}"
-    rounded: "{rounded.card}"
-    padding: "18px"
 ---
 
 # Design System: Hearth
@@ -143,449 +9,310 @@ components:
 
 **Creative North Star: "Afterglow"**
 
-Hearth is a quiet, dark-only household workspace: true black ground, untinted gray structure, and small deliberate signals of voice, action, and freshness. Readings and their evidence lead; ornament stays subordinate to the work.
+Hearth is a quiet, dark-only household workspace: true black ground, untinted
+gray structure, and small, deliberate signals of voice, action, and freshness.
+Readings and their evidence lead; ornament stays subordinate to the work.
+The household workspace has room to read at a glance. Development uses the same
+visual language and controls at a higher information density.
 
-The household workspace is spacious enough to read at a glance. Development uses the same tokens and controls at a higher information density. Follow [GLOSSARY.md](GLOSSARY.md): State, Entity availability, and Command outcome are distinct facts, not interchangeable status labels.
+Afterglow makes a change visible without pretending that old data is bad data.
+Some sensors report only on change or at long intervals, so age alone does not
+establish freshness or availability. A changed reading briefly lights an orange
+edge; separate text explains its age and availability.
 
-**Key Characteristics:**
-- True black ground with a numbered, neutral gray ramp.
-- Violet for Hearth's voice; orange for the primary action and arrival signals.
-- A changed reading arrives as an afterglow: the card's top edge lights orange and fades over ten seconds. Text states each reading's age and availability.
-- A shared reading scale with a narrow-card step; compact diagnostics share the same tokens.
-- One card frame and one state table for every data card in a view.
+Follow [GLOSSARY.md](GLOSSARY.md): State, Entity availability, and Command
+outcome are distinct facts, not interchangeable status labels. The
+[dashboard coding standards](CODING_STANDARDS.md#dashboard-design-system)
+govern implementation. The source of truth for current palette, type, radius,
+and motion tokens is [the theme](web/src/index.css); shared controls and their
+examples live in [components](web/src/components/).
 
 ## Colors
 
-The palette is a neutral night ground with sparing, purposeful color.
+Use the untinted gray ramp for ground, surfaces, borders, and text. Cards sit
+above true black; fields, popovers, and dialogs can use a raised gray. Keep
+supporting text quieter than the reading without making it illegible.
 
-### Primary
-- **Hearth violet** (`--violet`) marks the agent, focus, selection, links, and the selected part of a control (an On switch, a slider's level); the lighter `--violet-text` is used for readable text, including the selected view and unsaved state. `--violet-soft` backs small selected-view marks.
-- **Action orange** (`--orange`, `--orange-hover`, `--on-orange`) highlights Save dashboard, Send, a Development page's primary action, and the afterglow on a changed reading. Hover uses the lighter orange and action text uses the dark on-orange color.
+Violet is Hearth's voice: agent identity, focus, links, selection, and the
+selected part of a control. Use the lighter violet text color for readable
+selected text. Orange identifies the primary action and the afterglow on a
+changed reading. Primary action text is dark for contrast. Disabled primary
+actions turn gray rather than dim orange. Use outline controls for filters,
+pagination, and secondary actions.
 
-### Secondary
-- **Status green, amber, red-pink, and dusk blue** (`--ok`, `--warn`, `--error`, `--info`) communicate success, warning, error, and in-progress or informational states (dispatched Commands, running Runs) without borrowing either brand hue. Always accompany color with a meaningful status label.
+Status colors communicate success, warning, error, and informational or
+in-progress states without borrowing the brand hues. Pair every status color
+with meaningful words. Chart series have their own ordered palette; orange is
+not a series color. Charts and trends draw no now marker; the time axis ends at
+the window's end.
 
-### Tertiary
-- **Chart series** use `--chart-1` through `--chart-8`: ink (`--gray-10`), violet, orchid, dusk blue (`--info`), pale gold, gray (`--gray-7`), ice, and sand, respectively. The view contract allows eight series, so each has its own color. The `chart-*` color entries above name the independent series colors; dusk blue is shared with the info status. Orange is not a data series.
-
-### Neutral
-- **Untinted gray ramp** (`--gray-0` through `--gray-10`) covers background, surfaces, borders, secondary text, and ink. The black ground is `--gray-0`; cards use `--gray-1`, raised fields and popovers use `--gray-2`, borders commonly use `--gray-3` or `--gray-4`, quiet text uses `--gray-8`, and primary text uses `--gray-10`.
-
-**The One Action Rule.** Reserve orange for the primary action and the afterglow on a changed reading. Charts and trends draw no now marker: the time axis ends at the window's end. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.
-
-**The Evidence Rule.** The afterglow marks newer data that changed what a card shows. It says nothing about a reading's age, Entity availability, or Command outcome; text states those. Never rely on brand color alone to communicate status.
+**The Evidence Rule.** Afterglow marks newer data that changes what a card
+shows. It does not assert age, availability, or Command success. Never rely on
+brand color or a status dot alone to convey those facts.
 
 ## Typography
 
-Figtree Variable is self-hosted through `@fontsource-variable/figtree`, with sans-serif fallback. It provides a clear, restrained voice throughout; opaque identifiers and raw structured data may use monospace.
+Figtree Variable is self-hosted, with a sans-serif fallback. Opaque identifiers
+and raw structured data may use monospace. Use the theme's named type sizes
+rather than copying a scale into individual components.
 
-The theme's font-size utilities are `text-reading` (40px), `text-reading-narrow`
-(32px), `text-headline` (26px), `text-headline-narrow` (22px), `text-title` (18px),
-`text-body` (16px),
-`text-label` (14px), `text-compact-reading` (20px), and `text-caption` (12px).
-These utilities set font size; apply line height, weight, and tracking separately.
-
-### Hierarchy
-- **Reading:** 40px, weight 350, line-height 1.15, tabular figures; units remain smaller and quieter. Metric, State, and ToggleTile step down to 32px below a 200px content width.
-- **Headline:** canvas and library titles use 26px, weight 500; canvas titles become 22px on phones. The empty conversation heading uses 28px.
-- **Title:** view headings use 18px, weight 600.
-- **Body:** conversation text uses 16px with 1.7 line-height; the workspace base is 14px.
-- **Label:** reading metadata, chart legends, and editor details use 14px with 1.5 line-height. Supporting copy is quieter rather than competing with readings.
+Readings lead the hierarchy, with tabular figures and smaller, quieter units.
+Compact rows use a separate reading step, not a shrunken single-reading card.
+Metric, State, and ToggleTile use the narrow reading step below 200px of content
+width. Long words wrap rather than forcing the reading scale smaller.
+Headlines identify canvases and libraries; labels and supporting copy remain
+subordinate. The workspace base is denser than conversation prose.
 
 ## Layout
 
-At desktop widths, a navigation sidebar of `clamp(218px, 22vw, 340px)` sits beside the workspace. When a canvas is present, the conversation column is `clamp(368px, 28vw, 480px)` with 20px gutters, which keeps the composer prompt on one line, and the canvas takes the remaining width. An independent conversation is centered at a maximum width of 960px; reply prose keeps a 720px maximum on the shared left edge. Canvas content has a maximum width of 1080px beside the conversation and 1440px when it has the screen to itself: expanded, or as a dashboard page. Reading grids use 12px gaps; vertical stacks use 8px, 16px, or 24px gaps.
+On desktop, navigation sits beside the workspace. A conversation column shares
+the page with an open canvas; on its own, the conversation is centered while
+reply prose keeps a shorter measure. Canvas and Development content have a
+bounded width rather than spreading indefinitely.
 
-The sidebar narrows to a 104px rail, with recent conversations in a drawer, at 721–980px, and also at 981–1279px while a canvas is open, so the view keeps room for its cards. At 720px and below, a 52px top bar holds a menu button, the page name, and New conversation, and the whole sidebar opens from the menu as one drawer. With a canvas open on Home, the Conversation and Canvas switch takes the page name's place, so one bar is the only chrome above the content. Conversation and Canvas become separate full-width views. Grids collapse to one column except the compact reading and ToggleTile grids described below. Household controls commonly provide a 44px minimum target, with composer padding respecting the phone safe area. The app fills the area the on-screen keyboard leaves visible, so the top bar stays in view and the composer sits on the keyboard, without the home-indicator padding the keyboard covers. Development pages retain compact diagnostic controls. Their page links use the household navigation treatment; below 981px a shared native select replaces the links. The Entity jump field and Connection settings remain alongside navigation. Health and readiness diagnostics live inside Connection settings.
+At 721–980px, and at 981–1279px when a canvas is open, navigation becomes a
+rail with recent conversations in a drawer. At 720px and below, one top bar
+opens the full navigation drawer. On Home with a canvas open, the Conversation
+and Canvas switch replaces the page name; the two views occupy the available
+width separately. The phone canvas hides Expand and moves available save and
+discard actions to a bottom bar; it does not show a disabled Save.
 
-Development content shares the dashboard's 1440px maximum width and 28px gutters
-(20px on phones). `PageHeader` pairs the product's 26px headline (22px on phones)
-with wrapping actions and optional context, separated from content by one rule. Debug sections
-use the 18px title scale without uppercase labels or extra separator rules.
-Metadata uses `Facts` definition lists, which wrap values below their labels when
-space is limited. Tables use the 14px label scale and sentence-case column labels.
-Their named scroll areas enter the Tab order only while content overflows.
+The phone layout respects safe areas and the space left by the on-screen
+keyboard. Keep the top bar visible and the composer above the keyboard without
+adding home-indicator padding under it. Household controls commonly provide a
+44px minimum touch target. Development retains compact diagnostic controls;
+below 981px a native select replaces its page links, while Entity jump and
+Connection settings remain available.
 
-The dashboard library uses the same width, gutters, and `PageHeader`. Each saved
-dashboard is a card: a 20px `--gray-8` dashboard icon, the 14px weight-500 title,
-and “Updated” with an age under seven days or a short local date after that. The
-title link covers the card, which shows the shared violet focus ring while that link has keyboard focus. A ghost
-44px Delete icon sits level with the icon and follows the title in reading
-order. Its confirmation uses the destructive button. The first load shows empty
-card frames at a ready card's height; a failed load shows only its notice, never
-the empty state.
+Reading grids normally keep a 248px minimum card width and become one column
+on phones. Grids consisting only of Metric and State cards, or only of
+ToggleTiles and tile-layout AirPurifiers and Covers, may use a 160px minimum,
+including on phones. Requested columns are a ceiling. Metering tiles span the
+full phone row so their history and additional readings remain legible.
 
-The stylesheet imports Tailwind and Figtree. Hearth owns the two Accordion
-height animations; Radix state and orientation selectors use Tailwind's native
-attribute variants. Shared controls inherit the global focus outline and
-reduced-motion rule instead of restating them. Dark-only component colors are
-unconditional, with no parallel light-mode styles.
+Development and the dashboard library share the dashboard's bounded content
+width and page-header treatment. Diagnostic facts wrap values below labels when
+space is limited; tables use sentence-case headings. A named scroll area enters
+the Tab order only when it overflows. Library loading frames retain ready-card
+height; a load failure shows its notice rather than an empty state.
 
-The canvas header puts the title and window controls (Expand, Close) on its first row and the view actions on the next. When the canvas is at least 1000px wide, the actions join the title row. One rule separates the header from the view. On phones, Expand is hidden because the Canvas tab already fills the screen, and while there is something to save, Discard, Save as new, and Save move to a bar along the bottom edge, within thumb reach. A disabled Save is not shown on phones.
-
-Recent conversations group under local date headings: Today, Yesterday, Previous 7 days, Previous 30 days, then month names, with the year for an earlier year. Each heading (12px, weight 500, `--gray-7`) stays pinned while its conversations scroll. Headings follow the local calendar day and update at midnight. Once the list holds more than 12 conversations, a search field above it filters previews; Escape clears it, and an empty result says so in words. In the phone drawer, while the search has focus or a query, only Recent remains, so results fit above the keyboard and stay in place when the field loses focus. Rows are 36px with a fine pointer and 44px with touch, and a truncated preview repeats in full as a tooltip.
+Recent conversations group by local calendar date and update at midnight.
+Long lists offer search; Escape clears it and an empty result says so. On
+phones, search keeps Recent visible above the keyboard while focused or while
+a query exists. Truncated conversation previews have full-text tooltips.
 
 ## Elevation & Depth
 
-Surfaces are mostly flat: tonal separation and fine borders establish hierarchy against black. Overlay contexts are exceptions: the modal uses `0 18px 60px #0008` and the navigation and Recent drawers use `12px 0 40px #0006` against a dark backdrop. The canvas enters with a short 240ms eased transition; drawer movement takes 180ms. Reduced-motion preference removes workspace animation and transitions.
+Surfaces are flat by default. Tonal separation and fine borders establish
+hierarchy against black. Modal dialogs and navigation drawers are exceptions:
+their shadows and dark backdrops separate them from the workspace.
+
+Canvas and drawer transitions are short and eased. Honor reduced motion by
+removing workspace transitions and animation. Afterglow has a specific
+reduced-motion alternative described below.
 
 ## Shapes
 
-Cards use a 12px radius, a 1px neutral border, the `--gray-1` card surface, and 18px padding. Development pages use the compact card, with 12px padding and 14px `label` text. Shared buttons, fields, and household navigation use 8px corners; the workspace modal uses 14px. The `rounded-xs` token is 4px, `rounded-sm` is 6px, `rounded-md` is 8px, `rounded-card` is 12px, and `rounded-xl` is 14px. Gradients appear only as one- or two-pixel horizon lines, not as large decorative fills.
+Cards share a neutral border, rounded corners, and a near-black surface.
+Development cards use tighter padding. Controls and household navigation use
+smaller corners, and dialogs use a slightly larger radius. Gradients are
+reserved for thin horizon lines, not broad decorative fills.
 
 ## Components
 
-### Buttons
+Use the shared [controls](web/src/components/) and their colocated stories for
+current variants and dimensions. Use [Card](web/src/components/card.tsx) for
+card-shaped surfaces and [DataCard](web/src/features/views/cards/data-card.tsx)
+for the view-card frame. The composer, sent messages, and unsupported view
+content are not cards. Feature-specific card implementations and examples live
+with [view cards](web/src/features/views/cards/).
 
-Both surfaces use `Button` from `components/button.tsx` with 8px corners and 14px text. The `default` size is 32px high; `touch` is 44px. Icon-only buttons use the square `icon` (32px) or `icon-touch` (44px) size and have an accessible name.
+### Buttons, fields, and selection
 
-Primary buttons are orange with dark, semibold text. Hover uses solid `orange-hover`; disabled primary buttons use `gray-3` background and border with `gray-7` text at full opacity. Outline buttons use the card surface, a neutral border, and regular-weight foreground text; hover uses `gray-3`. Use outline for filters, paging, and secondary workspace actions. The secondary, ghost, destructive, and link variants remain available. Disabled non-primary buttons use 50% opacity.
+Shared controls offer compact sizes for fine pointers and larger touch sizes.
+Icon-only buttons need accessible names. Focus is a 2px violet outline with a
+3px offset, including when a shared button renders a link. Invalid fields use a
+destructive border; disabled non-primary controls use reduced opacity.
 
-Every variant uses a 2px violet focus outline with a 3px offset. The shared Button supplies its own styling, including when `asChild` renders a link.
-
-### Switches
-
-`Switch` from `components/switch.tsx` uses the household 44×24px pill track and 18px thumb. Its target is 32px high by default or 44px with `size="touch"`. The target has 8px corners and the shared 2px violet focus outline with a 3px offset; the visible track remains pill-shaped.
-
-Off uses a `gray-3` track, `gray-7` border, and `gray-8` thumb. On uses a violet track and a `gray-10` thumb. Disabled switches keep those state colors at 50% opacity.
-
-### Segmented controls
-
-`SegmentedControl` from `components/segmented-control.tsx` renders native `aria-pressed` buttons in an accessibly named group. The caller supplies the current value; a value that matches no option leaves every segment unselected. Each enabled segment remains in the Tab order.
-
-Segments have a 32px minimum height by default or 44px with `size="touch"`. Long labels wrap and increase the height. The frame adds 2px padding and a 1px border on each side. Selected segments use violet-soft, violet-text, and a 1px inset violet line. Shared segments have 8px corners, the shared 2px violet focus outline with a 3px offset, and 50% disabled opacity.
-
-### Fields
-
-`Input`, `Textarea`, and `NativeSelect` in `components` share a card background, a 1px `gray-4` border, 8px corners, and 14px text with a 21px line height. Horizontal padding is 8px. Focus uses a 2px violet outline with a 3px offset; invalid fields use a destructive-colour border, and disabled fields use 50% opacity.
-
-Input and NativeSelect default to 32px high with 4px vertical padding. The `touch` size is 44px with 8px vertical padding; `auto` uses 32px with a fine pointer and 44px with a coarse pointer. These size names replace the native numeric `size` attribute. NativeSelect keeps the browser's selection behavior and arrow.
-
-Textarea has a 44px minimum height and 8px vertical padding. Its native `rows` prop controls the initial multiline height; it does not auto-grow with content. Caller typography overrides remain available for diagnostic JSON and identifiers. The brightness range and the light color picker's range and exact-value inputs remain specialized native controls rather than shared text fields.
+Segmented controls use individually focusable, native pressed buttons in a
+named group. Long labels wrap. A value matching no option leaves every segment
+unselected. Native selects keep browser selection behavior; textareas use their
+native rows for initial height and do not automatically grow. Brightness and
+color picker inputs remain specialized native controls.
 
 ### Dialogs and popovers
 
-`Dialog` from `components/dialog.tsx` uses the household gray-2 surface, 14px corners, dim backdrop, and centered decision layout. `placement="bottom"` becomes a viewport-bounded sheet at 720px and below, with 14px top corners, square bottom corners, and safe-area padding. Short desktop viewports allow the dialog body to scroll.
+Decision dialogs use the shared [Dialog](web/src/components/dialog.tsx).
+Modal dialogs contain focus, dismiss on Escape, and return focus to their
+registered trigger. Programmatically opened dialogs must preserve their own
+return target. Non-modal dialogs do not trap focus or use an overlay. A bottom
+placement becomes a safe-area-aware, scrollable sheet on phones; short desktop
+viewports can scroll the dialog body.
 
-For modal dialogs, Radix owns focus containment, Escape dismissal, and focus return to a registered trigger. Programmatically opened adopters must preserve their own return-focus target. Non-modal dialogs do not trap focus or render an overlay.
+Use modal `forceMount` only during an intentional exit transition. A closed,
+force-mounted modal still retains its overlay, scroll lock, and assistive
+technology hiding; `hidden` on the content does not release them. Remove
+`forceMount` or unmount when the transition ends.
 
-Use modal `forceMount` only while an exit transition intentionally retains a blocking modal. It retains the closed portal, content, and overlay, including scroll locking and hiding the rest of the page from assistive technology. Setting `hidden` on the content does not dismiss that overlay or release those effects. End the transition by removing `forceMount` or unmounting the dialog; do not leave a closed modal mounted indefinitely.
+The expanded canvas is an exception to the shared dialog: it stays in place
+and retains `useModalFocus`. Moving its editor into a dialog portal remounts
+the editor and loses invalid, unsaved input.
 
-The expanded canvas stays in place and retains `useModalFocus`. Moving its editor
-into a Dialog portal remounts the editor and loses invalid, unsaved input.
-Decision dialogs use the shared Dialog; this exception applies only to the
-expanded canvas.
-
-`Popover` from `components/popover.tsx` uses the Source popover's gray-2 surface, 12px corners, 22px padding, and available-height scrolling. Its 10px flex gap serves Development Connection Settings; Source adoption supplies its own inner spacing.
-
-### Notices
-
-`Notice` from `components/notice.tsx` uses the household error tint: a 45% destructive-colour border, an 8% destructive-colour background, foreground text, 8px corners, and 12px padding. Its text uses the 12px caption step with an 18px line height. Notices grow with their content rather than taking a control height.
-
-Callers choose `role="alert"` for errors or `role="status"` for non-urgent feedback. Recovery actions remain caller-owned shared Buttons.
+Notices grow with their contents. Use `role="alert"` for errors and
+`role="status"` for non-urgent feedback; the caller owns recovery actions.
 
 ### View cards
 
-State cards show boolean and text fields in words at the reading scale.
-Power reads On/Off, color modes use readable names, and adapter choices retain
-their text. Boolean labels may come from the definition. Long words wrap rather
-than shrinking the reading scale.
+Every data card in a view uses one frame, regardless of card type. A named
+article contains a heading, status entries, body, and a footer with time and
+Source where applicable. Its title is one heading level below the view
+heading. The host sets the hierarchy; cards are not landmarks.
 
-Metric may add a trend window (1 h, 6 h, 24 h, 7 d), a declared range, or both.
-The 44px trend uses a neutral mean line, a faint min–max band, and preserved
-gaps. Its range sentence is the text equivalent; the
-drawing is hidden from assistive technology. Method belongs in Source. A range
-uses a thin neutral track, end labels, and a marker, never a radial gauge. Values
-outside it pin the marker and state Above/Below the range in words.
+Status entries wrap beneath the title when needed. Each entry pairs a tone dot
+with words. A ready card from an available Entity has no status entry unless
+another condition, such as a failed refresh, applies.
+The footer stays at the bottom of stretched cards. Time and Source share a
+non-wrapping row; opening Source does not change the grid height.
 
-ReadingList and Device cards use 20px, weight 400, tabular row values with 14px
-labels and units. This compact-reading step is distinct from the 40px single
-reading. Each row carries its own statuses. A changed row lights its bottom rule
-orange with the same afterglow as the card's top edge. Their footer states the
-oldest displayed reading, never the latest. Source lists every contributing
-Entity. Lists hold 1–12 rows; Device membership follows its readable Entities,
-shows up to 12 additional rows, and names truncation. A light with one power and
-one brightness Entity uses a composite On/Off reading, brightness, and a swatch
-of its active color. Off uses a hollow swatch. Color temperature stays in mireds.
-A light whose Entities support `set` also carries controls (see Controls).
+A single reading states its observation age. A multi-reading card states the
+oldest displayed reading, not the newest, and keeps individual row statuses.
+Charts do not invent a card-level observation time: their interval and method
+are the timing evidence. Narrow cards may omit the visible Observed or Oldest
+prefix while retaining the full accessible time label.
 
-ToggleTile is a single whole-card power switch, with no separate toggle. Its
-observed On reading selects an 11 % violet mix on the card surface and a 38 %
-violet border mix. Pending text names the request; neither the reading nor the
-surface changes before observed State. Source stays an independent control
-above the card's press target. A read-only power Entity has no press target.
-Its optional metering reading shares one explicitly selected numeric source
-with a standard Trend; an optional additional numeric row can show total energy.
-All readings retain their own statuses and the footer states the oldest.
-
-ToggleList uses 1–12 power rows at the 20px compact scale with a switch and
-reserved since/pending/failure line per row. An optional outline Turn all off
-action sits above the footer. Its feedback counts observed Off values and
-per-Entity failures, not a transactional multi-Device result. Since lines use
-recorded State changes, never the age of an observation.
-
-AirPurifier cards bind each purifier role explicitly. The card layout leads
-with Power at the 40px reading scale and the switch at the end of its row, with
-the mode (and the manual fan level) in 14px `--gray-9` beneath. PM2.5 and
-Filter life follow as 20px compact rows. PM2.5 names its air category in words
-beside the value, after a 6px dot: Good takes `--ok`; Moderate and Unhealthy
-for sensitive groups take `--warn`; Unhealthy and worse take `--error`. Good's
-words stay `--gray-9`; warn and error words take their tone. The category is a
-reading, never a Status entry, and dims with an unavailable or disabled PM2.5.
-Filter life at or below 10 % adds **Replace the filter soon** in `--warn`.
-Mode is a segmented control: a 1px `--gray-4` frame on the card's `--gray-1` with 2px
-padding and 44px minimum segments, the shown choice in `--violet-soft` with a 1px violet
-inset and `--violet-text`. Fan level is a stepper: 44px outline minus and plus
-buttons around the 20px level and one 14 × 6px pip per level, violet up to the
-level. When another mode drives the fan, the pips draw hollow in `--gray-6`
-and the row says **Level N kept for Manual**. Display and Child lock share a
-two-column row of switches. Only PM2.5 and Filter life light the afterglow.
-The tile layout is a ToggleTile with the mode word after On at the 20px
-compact scale and a line naming PM2.5 and its category.
-
-Cover cards lead with a drawing of the cover beside the State in words. The
-88px drawing (64px below a 250px card) is a slatted panel in its opening on
-the neutral ramp: `--gray-4` face, `--gray-6` slats and frame, a `--gray-8`
-bottom seal, and a `--gray-5` roller. The panel rolls up to the reported
-position; while a position Command is pending, a dashed 1.5px violet line
-marks the requested position. Unavailable and disabled covers draw a dashed
-frame and a `--gray-3` face. The reading is Closed, Partly open, Open, Opening,
-or Closing at the 40px scale, with **N % open** beneath in 14px `--gray-9`.
-Open, Stop, and Close are equal 44px outline buttons with 16px icons; a
-pending target's button takes the violet selected treatment. When opening
-asks for a second press, Open becomes an orange **Confirm**, the primary action
-for those 4 seconds. A reserved status line follows. Stop's line says
-**Sending Stop…**, then **Stop sent.**, and turns warn when the cover still
-reports motion after 3 seconds.
-The Cover tile is a ToggleTile whose press opens, closes, or stops. It
-reads **Open** for a partly open cover and has three fixed 21px rows: the
-position, what a press does (**Press to stop**), and the status line. Status
-words are short (**Rejected.**, **Press again.**) and keep the full sentence in
-a tooltip and for screen readers, so the tile never changes height while in
-use. An open cover takes the On surface.
-
-Grids made only of ToggleTiles, tile-layout AirPurifiers, and tile-layout Covers,
-or made only of Metric and State cards, use a 160px minimum, including on phones. Requested columns
-remain a ceiling. Other grids keep their 248px minimum and single-column phone layout.
-Metering variants span the full grid row on phones, so the history range and
-additional reading stay readable instead of wrapping into tall, narrow tiles.
-Their 16px padding and 8px frame gaps keep the card compact; a 21px status line
-reserves one line and grows for longer messages. The power State and selected
-measurement share a reading row, with the measurement at the 20px compact scale
-and its unit at 14px. Ordinary quick switches keep two compact columns where
-space permits.
-Below a 200px content width, ToggleTile, Metric, and State use a 32px reading and omit the visual
-Observed/Oldest prefix while retaining the full accessible time label. Grid
-column counts remain a ceiling, now 1–4. ToggleTiles reserve one 21px status line
-at every width; longer pending or failure messages grow the tile while shown.
-Cover tiles are the exception: their rows never grow (see Cover cards).
-
-State timeline cards show when yes/no and text fields changed over one window,
-in one of three styles. **Lanes** put every row on one time axis: an 18px track
-per row in its chart series color, the name and current value on the left and
-totals on the right (`Open 43 min · 7×`, or time per value for text fields).
-True spans are solid; false and absent time is the thin baseline; text values
-rank by duration as solid, 32 % and 16 % mixes with their words inside when they
-fit. Time with no earlier record is a dashed box reading “No history”. Below a
-600px card the name and totals move above each lane, and below 420px the totals
-take their own line under the name. **Ledger** rows lead with
-the current value at the 20px compact-reading scale, a “since” time and totals,
-over a 6px neutral strip; one axis sits below the last row. **Feed** lists
-changes newest first under part-of-day headings (“This morning”, “Overnight”),
-each with a quiet time, a series-colored dot on a rail, and words such as
-“Front door open for 6 min”. More than three changes of one row in one part of
-the day fold into one line with a count and a pulse strip; text changes pulse as
-ticks. It shows 12 entries and an outline **Show earlier changes** button. Axes
-use 13px labels because 14px labels overlap at a 440px width. Labels may still
-overlap at narrower widths. The axis ends with a quiet “Now” label and no marker.
-Each row carries its own statuses;
-the feed lists them in the header. An unavailable or disabled row draws at 60 %
-with a dashed baseline.
-
-Week pattern cards shade one yes/no field over 7 local days by 24 hours. Cells
-are 2px-rounded squares on the neutral ramp at five levels (0, 1–5, 6–15, 16–30
-and over 30 minutes true); future hours are outlined and hours with no known
-value are dashed. Each day states its changes into true and time true, hidden
-below a 420px card. A key names the levels.
-
-Weather cards (Outside now, Rain, Wind and Pressure) lead with one reading at
-the 40px scale. Conditions follow in words at 14px `--gray-9`, such as
-`Rain · Breezy` or `Moderate breeze`, and derived values follow in quiet 14px
-text, such as the 24 h high and low. They describe
-only what the station measures, never sky conditions. Further readings use
-compact rows or one inline sentence. A reading with no row of its own states
-its statuses on a named line. Rain totals that share one status share one
-line. While a storm total is above zero, Rain leads with it; a zero rate reads
-**Dry**. Wind draws a 104px compass rose, 76px below a 290px card: neutral
-ring and ticks, N E S W letters, and a `--gray-10` arrow pointing where the
-wind blows. Calm draws a small ring instead. An unavailable or disabled direction
-keeps its last arrow, dashed in `--gray-7`; without a value there is no arrow.
-Derived values and words dim when any reading they use is dimmed. Pressure states its three-hour tendency with a
-16px arrow icon and the signed change, or says why there is no tendency.
-Method and thresholds belong in Source.
-
-A weather card with at least 460px of content width uses its width rather
-than its height. The lead reading and its words fill the left half; rows, the
-trend, or Wind's gusts and direction take the right half, 24px away, so the
-right halves line up down a grid column. The trend there grows to a 72px plot.
-Wind keeps its compass to the left of the reading and reserves enough width
-for the displayed value before allocating space to details. Rain's totals
-sentence spans both halves below. Narrower cards keep the single column;
-the card's available width, not its grid's column count, chooses the layout.
-
-Wind may add a sustained-speed trend over 1 h, 6 h, 24 h, or 7 d, using the
-same speed Entity and Core's household units. Direction stays current-only.
-With a trend on a wide card, Wind groups its current readings beside an 88px
-compass on the left and a neutral 72px trend with its range on the right.
-The reading group reserves its intrinsic width before allocating space to
-the trend. Narrow cards stack the trend below the current readings and keep
-their usual compass size. Without a trend, Wind keeps its existing layout.
-
-Live Rain trends use dusk blue (`--chart-4`), and Pressure uses pale gold
-(`--chart-5`). Their lines mix equal parts of that color and `--gray-9` in
-OKLCH; the min–max band uses the chart color at 8% opacity. Readings, labels,
-and card backgrounds stay neutral. Unavailable or disabled trends retain the
-shared dashed-gray treatment. Other Metric trends keep their neutral lines.
-
-Forecast cards show modeled predictions, not station readings, and are the
-only cards that draw sky conditions. Daily rows are 44px tall: the day at 14px
-(**Today** first), a 28px condition icon, the precipitation chance at 14px
-`--info`, the low at the 20px compact scale in `--gray-8`, a 4px `--gray-3`
-track with a `--gray-9` span from low to high on the shown days' range, and the
-high at 20px in `--gray-10`. Hourly keeps a 216px plot height and draws at its
-container's measured width, so text, icons, and strokes do not scale on desktop.
-Each hour requires at least 22px within a 264px minimum plot; narrower containers
-scroll horizontally. Hourly draws a 2px `--gray-10` temperature line,
-precipitation-chance bars in `--info` at 55 % opacity, icons and 14px
-temperature labels above the line, hour labels below the axis, and a dashed
-`--gray-5` midnight rule with the weekday beneath it. Chance below 10 % is not
-shown, and its column keeps its space. Condition icons are 1.6px line drawings in
-`--gray-9`; only here, the sun and lightning take pale gold (`--chart-5`) and
-drops and flakes take dusk blue (`--info`). An unavailable or disabled forecast
-keeps its last periods with values, icons, and bars in `--gray-8`.
-
-Every data card in a view uses one frame. Future card types follow this contract rather than copying an existing card.
-
-The frame is the card surface (`--gray-1`, a 1px `--gray-3` border, 12px corners, 18px padding) with these slots, in order:
-
-| Slot | Content | Style |
-|---|---|---|
-| Title | The card's label, as a heading one level below the view's headings. | 14px, weight 500, `--gray-10` |
-| Unit | A chart's unit, beside its title. A reading's unit stays attached to its value. | 14px `--gray-8` |
-| Status | Zero or more status entries opposite the title, wrapping beneath it in a narrow card. Each entry is a 6px tone dot and words, separated by `·`. A ready card from an available Entity has none. | 14px; warn and error words take their tone, neutral words are `--gray-9` |
-| Body | A reading with its unit, or a chart's legend, notes, and plot. | See Typography and Charts |
-| Time | Compact age: `Observed just now`, `Observed 2m ago`, `Observed 3h ago`, or `Observed 2d ago`. Multi-reading cards say `Oldest 2m ago`, with “Oldest reading” in the accessible label. | 14px `--gray-8`, tabular figures |
-| Source | An action named **Source** opens reading details in a desktop popover or a phone bottom sheet, outside the grid flow. It links each Entity to its detail page and shows its ID; a chart adds its interval and method. | 14px `--gray-8`, 44px target on phones and coarse pointers |
-| Afterglow | A 2px orange top edge when newer data changes what the card shows while it is on screen. | See Afterglow |
-
-The footer, holding Time and Source, sits on the card's bottom edge. When a grid row stretches a card, the spare height falls between the body and the footer. Cards are named articles, never landmarks. A view's host sets its heading level: the canvas title is `h2`, so view headings are `h3` and card titles `h4`; in conversation the artifact title is `h3`, so they are `h4` and `h5`.
-
-Time and Source share one non-wrapping footer row. Opening Source never changes a card or grid row's height. A Grid treats its requested column count as a ceiling and reduces columns when cards would be narrower than 248px, including beside a conversation. The details show the local observation date and time (with seconds and timezone), its age in full words, and Entity availability and enablement when known. The original full timestamp remains on the time element's `datetime` attribute. Multiple sources carry those Entity facts beside their own links; a card-level timestamp on a multi-reading card remains the oldest displayed reading. Charts do not invent a card-level observation time: their interval and method remain the timing evidence.
-
-The compact-grid exceptions above use a 160px minimum. Source uses a 28px layout
-row at every width. On phones and coarse pointers, its press target extends 8px
-above and below that row to remain 44px tall without increasing the card height.
-
-At 720px and below, Source uses a modal bottom sheet with a dim backdrop, a 44px close target, safe-area padding, and scrolling within 85% of the viewport height. At larger widths it uses an anchored, viewport-bounded nonmodal popover. Escape and Close return focus to Source; links close the details before route navigation, so the dashboard's unsaved-changes dialog remains usable.
+Source gives the exact local observation time, age, Entity links and IDs, and
+availability and enablement when known. For multiple sources, it identifies
+each Entity's facts; for charts, it also explains interval and method. Source
+opens in an anchored non-modal popover on larger screens and a modal bottom
+sheet on phones. Escape and Close return focus to Source. Links close the
+details before navigation so an unsaved-changes dialog can open. Its touch
+target expands without increasing card height. See
+[CardSource](web/src/features/views/cards/card-source.tsx) and its
+[story](web/src/features/views/cards/card-source.stories.tsx).
 
 #### Card states
 
-A card shows every state that applies, in this order of precedence. Status, State, and Entity availability stay separate facts (see GLOSSARY.md).
+Show all applicable entries in precedence order. Keep status, State, and
+availability separate. The exact entries, tones, and ordering are owned by
+[card status](web/src/features/views/cards/status.ts).
 
-| State | Status entry | Tone | Value | Afterglow |
-|---|---|---|---|---|
-| Loading | Loading… | neutral | `—` in `--gray-6` | none |
-| Missing | Entity not found. It may have been removed. | error | `—` | none |
-| Request error | Couldn't load this reading, with the error | error | `—` | none |
-| Unavailable | Unavailable | warn | last value in `--gray-8` | none |
-| Disabled | Disabled | neutral | last value in `--gray-8` | none |
-| Refresh failed | Couldn't refresh. Showing the last reading. | warn | last value | on arrival |
-| Availability unknown | Availability unknown | neutral | last value | none |
-| Never observed | Never observed | neutral | `—` | none |
-| Absent | No value. The field isn't in the current State. | neutral | `—` | none |
-| Ready and available | none | — | value in `--gray-10` | on arrival |
+| Situation | Treatment |
+| --- | --- |
+| Loading, missing Entity, or request error | Show the relevant status and an empty value. Missing and error are errors; loading is neutral. |
+| Unavailable or disabled | Name the condition and retain the last value in a dimmed treatment. Neither glows. |
+| Refresh failed | Warn that the last reading is shown. An eligible changed arrival can still glow. |
+| Availability unknown | State that availability is unknown; do not imply it is available. |
+| Never observed or field absent | Explain the difference in words and show an empty value. |
+| Ready and available | Show the value without an entry for readiness. Other applicable statuses remain; eligible changes can glow. |
 
-Tones map to tokens: error to `--error`, warn to `--warn`, neutral to `--gray-7`. Every entry carries words; color is never the only signal. In a chart, entries attach to the series' legend item, and an unavailable or disabled series draws a dashed mean line at 60% opacity without its band.
-
-#### Blocks that are not cards
-
-- A **Heading** sits one level below the host title. A **Note** that follows a Heading sits 4px below it, whatever the stack gap.
-- A **failed card** keeps the frame and its title, with the error entry "This card couldn't be shown" and the recovery "Edit the view or ask Hearth to change it."
-- **Unsupported content** is not a card: a 1px dashed `--gray-4` outline, no surface, and `--gray-8` text.
-- A **loading placeholder** has the card surface, border, and the height of a ready reading card.
+In charts, statuses belong to their series' legend entries. Unavailable or
+disabled series use a dimmed, dashed line without a band. A failed card keeps
+its frame, title, error, and recovery guidance. Unsupported content instead uses
+a dashed outline without a card surface; a loading placeholder keeps the
+height of a ready card.
 
 #### Controls
 
-A light composite adds controls when its Entities support `set`: a power switch
-at the end of the reading row and a brightness slider below it. Cards derive
-controls from Entity support; definitions never declare them.
+Offer controls based on Entity support, not on declarations in the card
+definition. A read-only Entity has no press target. Display observed State as
+the reading; a pending control may show the requested value, but must not
+present it as observed. A whole-card ToggleTile keeps Source as an independent
+control and changes its selected surface only after observed State changes.
 
-- The switch is 44 × 24px with a 44px-tall target. Off is a `--gray-3` track
-  with a `--gray-7` border and a `--gray-8` thumb; On is a violet track with a
-  `--gray-10` thumb.
-- The slider spans the body below a row naming **Brightness** and its level. Its
-  4px track is `--gray-4`, its level violet, and its 18px thumb `--gray-10`,
-  with a 44px-tall target. It runs from 1 to 100 %; only the switch turns a
-  light off.
-- Disabled switches use the shared 50% opacity treatment. The card's **Disabled**
-  status says why the control is unavailable.
-- The reading keeps showing observed State. While a Command is pending, the
-  control shows the requested value and a line beneath it, with a dusk-blue dot,
-  says **Turning on…** or **Setting brightness to 40 %…**. Each control reserves
-  that line's row, empty while idle, so a Command that settles in milliseconds
-  doesn't move the card. A failure uses the same row.
-- A card with more than two controls, such as AirPurifier, reserves one shared
-  line at the end of its body instead. It shows the most recently changed
-  control: its pending words, or its failure after the control's name, such as
-  **Fan level: Change rejected. Try again.**
-- A failure returns the control to observed State. A line with a red-pink dot
-  names the problem, such as **The light rejected the change.**, until the next
-  attempt. After a timeout or a lost connection, it says the change may still
-  apply.
-- Focus uses the 2px violet outline, on the slider's thumb rather than its
-  whole track.
+Reserve feedback space so a fast Command does not move the card. Cards with
+more than two controls use one shared line for the most recently changed
+control. On failure, return the control to observed State and name the problem.
+After a timeout or lost connection, say the change may still apply. Slider
+focus appears on its thumb. Brightness ranges from 1 to 100%; only the power
+switch turns a light off.
+
+For an AirPurifier, name the PM2.5 category in words as a reading, not a
+status; dim it with unavailable or disabled data. Warn when filter life is at
+or below 10%. When a mode other than Manual drives the fan, retain the manual
+level and say so rather than presenting it as active.
+Only PM2.5 and Filter life light an AirPurifier's afterglow.
+
+Cover opening can require a second press: its temporary Confirm is the primary
+orange action. Stop reports **Sending Stop…**, then **Stop sent.** If the cover
+still reports motion after three seconds, warn that Stop was sent but motion
+continues. Cover tiles are an exception to growing status rows: they keep
+fixed-height rows, with full status text in a tooltip and for screen readers.
+ToggleList's bulk-off feedback counts observed Off values and individual
+failures; it does not claim a transactional multi-Device result. Its since
+lines describe recorded State changes, not observation age.
 
 ### Afterglow
 
-When newer data changes what a card shows while the card is on screen, a 2px orange line lights the card's top edge and fades out over 10 seconds with an exponential ease-out. Each later change restarts it. A Metric compares the formatted value and unit of successive observations. A chart compares the latest plotted value of each live series when its history interval refreshes; State refreshes alone never trigger it. A sensor re-reporting the same displayed value stays dark, and a unit-system change without newer data does not glow. Same-value reports do not extend an existing glow. Opening a view lights nothing: the first reading a card shows is not an arrival. Only ready data from an available, enabled Entity glows. Under reduced motion, the line stays lit for those 10 seconds without fading, then disappears.
+When newer data changes what an on-screen card shows, an orange top edge fades
+over ten seconds. Each later change restarts it. The first displayed reading,
+a same-value report, or a unit-system change without newer data does not glow.
+Same-value reports do not extend a glow. Only ready data from an available,
+enabled Entity qualifies. A chart compares the latest plotted values on a
+history refresh; State refreshes alone do not trigger its glow. A changed row
+in a ReadingList or Device card lights its bottom rule by the same rule.
 
-The afterglow needs no key, because the card lights as its value changes. Age is stated in compact text that advances each minute, including day-old readings; the exact date and time live in Source. Neither age nor the absence of glow implies that an Entity is unavailable or that a sensor is stale: some report on change or at long intervals. The afterglow replaced an earlier line that cooled from orange to violet with age. Age alone misled for those sensors, and that line needed a key on every view.
+Under reduced motion, the edge remains visible for ten seconds without fading,
+then disappears. Observation age advances in text; Source gives the exact time.
+Neither an old age nor the absence of glow means an Entity is unavailable.
+This replaced an age-based orange-to-violet line, which misled readers about
+infrequently reporting sensors and required a key on every view.
+The [arrival implementation](web/src/features/views/cards/observation.ts)
+owns the comparison and timing details.
 
 ### Charts
 
-- Series use the eight chart tokens in order, with a 2px mean line, small dots, and a translucent min–max band. Preserve gaps instead of implying samples exist.
-- Y-axis ticks fall on round steps of 1, 2, or 5 × 10ⁿ. Time ticks fall on round local times; when a window crosses midnight, the first tick of each day names the weekday.
-- The tooltip uses the axis time format, with the weekday when the bucket isn't today, and plain words per series: `Living room avg 21.5 °C (21.4–21.6)`.
-- When history starts more than 10% of the way into the window, a note says "History since 6:41 PM". The axis still spans the whole window.
-- A chart is one tab stop: the plot region, with a text summary per series ("Living room: latest 21.5 °C, range 19.8 to 21.6 over the last 24 hours."). The drawn plot is hidden from assistive technology.
-- The method (bucket length, mean, min–max band, what a gap means) lives in **Source**, not in a caption on the card.
+Preserve gaps rather than implying samples exist. Use round value and local
+time ticks; identify the first tick of a day when a window crosses midnight.
+When history begins well into a window, say when it starts without shortening
+the axis. Tooltips use plain words and units.
+
+A chart is one Tab stop with a text summary per series; the drawing is hidden
+from assistive technology. Explain aggregation, ranges, and gaps in Source,
+not in a repeated card caption. Metric trends remain neutral; the Rain and
+Pressure trend treatments are exceptions. See the
+[time-series implementation and stories](web/src/features/views/cards/time-series/).
+
+Metric ranges use a linear track, not a radial gauge. Pin an out-of-range
+marker to the end and state Above or Below in words. The trend's range sentence
+is its text equivalent, and its drawing is hidden from assistive technology.
+
+Station weather cards describe measured conditions, not inferred sky conditions.
+Forecast cards show modeled predictions and are the exception that depicts sky
+conditions. Wind's arrow points in the direction the wind blows; calm uses a
+ring, and unavailable direction retains its last arrow in a dashed treatment.
+Derived words and values dim when their source reading dims. State timelines
+and week patterns distinguish missing history from an observed false value.
+Their compact layouts retain words and status evidence when space is limited.
+Weather cards use available card width, not grid column count, to choose
+between side-by-side details and a narrow stacked layout.
 
 ### Conversation
 
-Every reply shares one left edge. Reply text, view cards, tables, and the composer start on it; metadata rows (the Hearth label, tool activity, Copy) place a 16px icon on that edge and their text 24px in, with any hover padding hanging outside the edge. User messages are content-width bubbles aligned to the column's right edge. Text inside user bubbles, view cards, tables, and the composer starts at a 16px inset. Blocks within a reply are 12px apart, a reply starts 24px below its prompt, and a new turn starts 32px below the previous reply. Markdown tables use the card treatment: 12px radius, 1px border, and row rules only.
+Replies, inline views, tables, and the composer share a left edge; user messages
+are content-width bubbles aligned right. Inline views have no outer card frame.
+Their title and Open in canvas action share a header; on narrow containers the
+visible action may shorten to Open while its accessible name stays complete.
+Pending and Showing in canvas previews retain their bordered treatment.
 
-An inline view has no outer card frame or padding. Its icon, title and summary,
-and Open in canvas action share one header row above the view's own cards.
-Below a 440px container the visible action reads Open; its accessible name stays
-Open in canvas. A view has 12px extra space above it to separate successive
-views. The compact Showing in canvas preview and pending placeholder keep their
-bordered treatment.
+The composer places Send in a row below the text, alongside the selected view
+and editor note rather than floating between lines. A selected view or Automation
+chip opens the canvas; its close action follows the canvas's unsaved-change
+confirmation. Both parts have touch targets. Sent messages retain a plain,
+non-interactive record of the attached view.
 
 ### Inputs and navigation
 
-The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled and sits in its own row below the text, so it never floats between lines. The selected view and any editor note share that row, to the left of Send, rather than adding rows of their own. The selected view or Automation is a chip on the composer's 8px inset, mirroring Send: a 1px violet border, its icon on the text's edge, and the name truncating to one line. The name shows the canvas, on phones by switching to the Canvas tab; its close button closes the view like the canvas's own Close, asking first when there are unsaved changes. Both parts have 44px touch targets. The revision and saved state stay in the canvas header rather than repeating in the chip. Sent messages keep a plain, non-interactive record of the view they carried. Development uses the shared fields described above. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it moves into the drawer, and while the server is not ready the menu button carries a status dot in its tone, with the status in its accessible name and in words inside the drawer. Status chips pair words with their tone.
+Navigation uses quiet text, neutral active backgrounds, and a violet active
+icon. On phones it moves into the drawer. When the server is not ready, the
+menu's status dot is accompanied by a status in its accessible name and by
+words inside the drawer. Status chips likewise pair words with tone.
 
 ## Do's and Don'ts
 
-### Do:
-- **Do** use the neutral gray ramp for surfaces and preserve true black as the ground.
-- **Do** pair arrival, status, and availability signals with explicit text.
-- **Do** use violet for Hearth's voice and orange for the main action and arrival signals.
-- **Do** use the defined reading scales and outline buttons for filters and paging.
-- **Do** use glossary terms precisely when presenting State, availability, and Command outcomes.
-
-### Don't:
-- **Don't** turn orange into a series color or a disabled brown primary button.
-- **Don't** tint the neutral gray ramp or replace status colors with brand hues.
-- **Don't** use the afterglow for anything but a changed reading: not age, availability, or successful Commands.
-- **Don't** use broad decorative gradients or depend on color alone for meaning.
+- **Do** preserve true black, neutral grays, and the shared reading hierarchy.
+- **Do** use violet for Hearth's voice and orange for the main action and
+  changed-reading arrival.
+- **Do** state status, availability, age, and Command outcomes in words.
+- **Don't** use orange for chart series or tint disabled primary actions orange.
+- **Don't** treat age, absence of glow, and availability as the same fact.
+- **Don't** rely on color alone or add broad decorative gradients.

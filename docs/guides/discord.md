@@ -62,6 +62,28 @@ and history details. The same no-retry rule applies: an ambiguous outcome is
 not permission to retry, since a repeat creates another invocation and may
 duplicate the message.
 
+## Deploy the companion
+
+Use your own supervisor or container configuration with existing Core/NATS;
+no Compose file is provided. The release image is
+`ghcr.io/mholtzscher/hearth/hearth-adapter-discord`. Pin a release tag in production.
+
+Copy [the config example](../../configs/discord.example.yaml) to an
+operator-managed `discord.yaml`. Set `nats_url` to a reachable trusted-private
+address: container localhost does not point at the host. Mount the config
+read-only at `/etc/hearth/discord.yaml` and pass `--config /etc/hearth/discord.yaml`.
+Mount the separate webhook secret read-only at its configured `webhook_url_file`,
+such as `/run/secrets/discord-household-webhook`. The
+[non-secret example](../../deployments/discord-household-webhook.example) shows
+the file shape. Restrict permissions but keep it readable by the process user.
+Neither private file belongs in Git.
+
+Allow outbound HTTPS to `discord.com` and twenty seconds for termination to
+cancel/join handlers and release the runtime. The companion needs no inbound
+port, writable persistent volume, or delivery queue. A read-only filesystem and
+no-new-privileges are supported. Restarting never replays sends; Core retains
+attempt history.
+
 ## Operator-only A4 smoke check
 
 **Not executed as part of automated validation: requires an operator-provided
@@ -85,5 +107,4 @@ test webhook.** Run Core and this companion against the same trusted NATS, then:
 
 An ambiguous outcome is not permission to retry. Inspect Core history and the
 channel first; every new invocation creates a new attempt and may duplicate a
-message. See [Core notifications](../reference/notifications.md) for outcome/history details
-and [deployment guidance](../../deployments/README.md) for the companion container.
+message. See [Core notifications](../reference/notifications.md) for outcome/history details.

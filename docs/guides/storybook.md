@@ -139,76 +139,32 @@ contracts; do not use styling classes as test selectors. For example, use
 
 ## Choose a component, editor, or page story
 
-The sidebar includes the catalog's bound cards, their shared frame and Source
-details, light and power controls, and reusable UI components. Direct editor
-stories cover Metric, ToggleTile, AirPurifier, and TimeSeries. Each holds a local
-draft so you can make several edits in the canvas. Changing the initial value in
-Controls resets that draft; canvas edits do not update Controls. Other card
-editors have no direct stories. ViewEditor mounts Device and OutsideNow editors
-inside collapsed sections, but its stories do not interact with those sections.
+Use the live sidebar or MCP index as the component catalog, not a copied list.
+Choose a direct component story for props, `Pages` for isolated screen reads,
+or `Application` for navigation and provider lifecycles. Stories and tests stay
+with their source owner; shared components do not import features.
 
-The `Components` catalog includes colocated stories for Button, Input, Textarea,
-NativeSelect, Switch, SegmentedControl, Dialog, Popover, Notice, Accordion,
-Badge, Card, ChartContainer, Label, Separator, and Table. ChartContainer also
-appears in TimeSeries stories.
+Read the exported story before relying on its coverage. Editor fixtures hold
+local drafts: changing Controls resets them, while canvas edits do not update
+Controls. A mounted editor or visible control is not proof that its interaction
+is tested. Page-read fixtures do not mock Rename or enablement PATCH requests;
+those actions fail as unhandled requests. Direct control stories can update
+synthetic observed State, but do not establish physical effects.
 
-Shared controls and compositions live in `src/components` and do not import
-features. Feature-specific stories and tests live alongside their owning feature.
-Shared status and error UI may use common Hearth vocabulary without becoming
-feature-owned.
+For application scenarios, use [the exported stories](../../web/src/app.stories.tsx)
+and [application fixtures](../../web/.storybook/application-fixtures.ts).
+Set `parameters: { application: true }` to let the application supply its shell,
+providers, and isolated router instead of the shared wrapper. `appPath` selects
+the initial route; `applicationScenario` selects the fixture. Reset mutable
+history and revisions between stories, and cancel open streams on unmount.
+Keep application stories fullscreen without inline Autodocs so live applications
+do not share mocked endpoints. Sending, saving, and Automation editing affect
+synthetic data only; these scenarios neither execute Automations nor prove
+backend persistence or model behavior.
 
-The sidebar groups reusable cards under `Components/Cards`, feature controls
-under `Components/Controls`, and editors under `Components/Editors`.
-AutomationCard appears with the other cards and AutomationEditor with the other
-editors. Components has no Features, Views, or Automations subgroup.
-ViewRenderer is a composition directly under `Components`. `Pages` and
-`Application` hold screen and whole-application scenarios.
-
-The `Application/Workspace` group runs the real application shell, conversation,
-and full dashboard canvas together. It includes desktop, tablet, and phone
-navigation, readiness states, conversation history and tool activity, synthetic
-streamed replies, send failure/retry, and dashboard editing, save conflicts,
-discard confirmation, expansion, and phone panel switching. It also covers the
-dashboard library (loaded, empty, deletion, and phone layout), conversation search,
-pending views, selected-view messages, invalid drafts, and reading older messages.
-Its Commands story verifies status filtering and clearing the filter on the
-Development page. Automations have their own application group.
-
-The `Application/Automations` group covers the Automation library and new-draft
-canvas, including a 390px phone layout. Direct AutomationCard and AutomationEditor
-stories cover prose, step stacks, exact definitions, referenced-child inspection,
-editing, and invalid input. These fixtures do not execute Automations.
-
-Application stories set `parameters: { application: true }` to bypass the shared
-component router and theme wrapper. The application supplies its own production
-shell and providers. Each story owns an isolated memory router over `appRoutes`
-and creates fresh HTTP/SSE handlers from `.storybook/application-fixtures.ts`.
-Mutable history and saved revisions reset between stories. The pending-reply
-story deliberately leaves its stream open; the conversation provider cancels
-the request when the story unmounts.
-
-Use `appPath` to select the initial route and `applicationScenario` for the named
-server, turn, history-failure, and save-conflict fixtures. Application stories
-are fullscreen and omit inline Autodocs, so multiple live applications do not
-share a Docs page's mocked endpoints. Sending and saving affect synthetic data
-only. These scenarios do not establish model behavior, backend persistence, or
-Device effects.
-
-The generated App snippets show the shared render function, not each story's
-`appPath`, `applicationScenario`, or play function. They are not standalone
-examples. To reproduce one of these composition scenarios, use its exported
-story and the shared setup in `src/app.stories.tsx`, together with
-`.storybook/application-fixtures.ts`. The manifest check verifies snippet
-presence and extraction errors; it cannot verify those omitted scenario inputs.
-
-The `Pages` group runs EntitiesPage, DevicesPage, and EntityDetailPage against the
-same synthetic household. Use its loaded, empty, and failed-read stories to
-inspect the page without Core. The Entity detail's `NeverObserved` story also
-empties retained history. Device selection and Entity filtering have interaction
-tests; this is not full application navigation or a backend E2E test.
-These page-read scenarios do not mock Rename or enablement PATCH requests. Using
-those controls produces an unhandled-request error rather than changing Core.
-Direct control stories do refresh their synthetic observed State after Commands.
+Generated App snippets omit scenario args and play functions. They are not
+standalone reproductions. Use the exported story and shared fixture setup;
+manifest checks verify extraction, not omitted scenario inputs.
 
 For a page that reads route params, set a `route` parameter on its meta:
 
@@ -225,9 +181,9 @@ The preview mounts a fresh MemoryRouter at `entry` and matches `path` with a
 Route. Without `route`, stories keep the bare router. Do not add a second router
 inside a story.
 
-These three pages take no props, so docgen emits no API metadata for them. The
-manifest check allows that specific diagnostic for their three IDs while still
-checking snippets. Every reusable component must publish nonempty prop docs.
+Prop-less pages have explicit exceptions in
+[the manifest checker](../../web/scripts/check-storybook-manifest.ts), which still
+checks their snippets. Every reusable component must publish nonempty prop docs.
 Native and Radix prop filtering in `.storybook/main.ts` must retain the props a
 new story demonstrates.
 

@@ -1,249 +1,232 @@
 # Hearth glossary
 
-Hearth is a home automation system intended to operate independently of Home Assistant while remaining compatible with specialist protocol services.
+Hearth is a home automation system intended to operate independently of Home
+Assistant while remaining compatible with specialist protocol services.
 
 ## Language
 
-**View artifact**:
-An immutable, validated interface definition returned by `present_view`, identified
-by `view_<UUIDv7>`. A committed agent tool result retains it in conversation history;
-presentation does not save a dashboard.
-_Avoid_: Saved dashboard, reading snapshot
+**View artifact**: An immutable, validated interface definition returned by
+`present_view` and retained in a committed agent tool result. It is not a saved
+dashboard.
 
-**Dashboard draft**:
-The browser's working view definition, optionally based on a saved dashboard and
-revision. Manual edits and generated revisions remain drafts until explicitly saved.
-_Avoid_: Automatic save, execution plan
+**Dashboard draft**: The browser's working view definition. Manual edits and
+generated revisions remain drafts until explicitly saved.
 
-**Saved dashboard**:
-An independently persisted view definition identified by `dash_<UUIDv7>`, with a
-revision checked on replacement or deletion. It stores resource references and
-renders current data without its source conversation or a model request.
-_Avoid_: Conversation attachment, captured readings
+**Saved dashboard**: An independently persisted view definition with resource
+references and a revision checked on replacement or deletion. It renders current
+data without its source conversation or a model request.
 
-**Read binding**:
-A declarative resource identity and bounded read requirement inside a view card.
-It is separate from the Adapter Binding that establishes canonical Device identity,
-and cannot execute effects.
-_Avoid_: URL, query expression, Command
+**Read binding**: A declarative resource identity and bounded read requirement
+in a view card. It cannot execute effects and is distinct from an Adapter Binding.
+See [dashboards](docs/reference/dashboards.md).
 
-**State field**:
-A scalar projection of an Entity's State at a JSON Pointer, derived from its
-State schema. The empty pointer selects the root. Fields may be numeric, boolean
-or string; schema-required ancestors determine whether a field is always present.
-_Avoid_: Manifest reading, Observation, captured value
+**State field**: A scalar projection of Entity State at a JSON Pointer, derived
+from its schema. The empty pointer selects the root.
 
-**Quantity field**:
-A numeric State field with a canonical unit (dimensionless `1` by default).
-State-schema `hearth` annotations declare the unit and optional quantity kind,
-either fixed or referenced from support. Referenced units are immutable on
-re-registration; a missing kind can become known once, then cannot change or
-disappear. Brightness uses canonical integer percentages.
-Current Metric and TimeSeries cards accept only Quantity fields.
-_Avoid_: Device class, statistical class, display unit
+**Quantity field**: A numeric State field with a canonical unit and optional
+quantity kind. Schema annotations may fix these or reference Entity support.
+See [units](docs/reference/units.md).
 
-**Household unit system**:
-The household-wide choice, `metric` or `us`, of which units people see.
-The backend projects ordinary numeric read responses into these units and returns
-formatting metadata; clients render without reconversion. Explicit
-`units=canonical` reads, stored State, Commands, and Automation operands remain
-canonical. See [read units](docs/reference/units.md).
-_Avoid_: Display unit per card, locale
+**Household unit system**: The household-wide `metric` or `us` display choice.
+The backend projects ordinary numeric reads; stored State, Commands and
+Automation operands remain canonical. See [read units](docs/reference/units.md).
 
-**Functional replacement**:
-A Hearth installation that provides all required household behavior with Home Assistant eliminated from operation. It may continue to depend on specialist protocol services.
-_Avoid_: Full-stack replacement, Home Assistant parity
+**Functional replacement**: A Hearth installation providing required household
+behavior without Home Assistant in operation. Specialist protocol services may
+remain.
 
-**Adapter**:
-A process that translates between one configured external system and Hearth's wire protocol.
-_Avoid_: Integration, plugin
+**Adapter**: A process translating between one configured external system and
+Hearth's wire protocol. An **Adapter instance** is one configured occurrence
+identified by a stable household-scoped slug.
 
-**Adapter instance**:
-One configured occurrence of an adapter, identified by a stable subject-safe slug within a household.
-_Avoid_: Adapter type, process ID
+**Adapter health**: The assessment of whether an Adapter instance has a live
+process that can use its configured external system: `unknown` without current
+evidence, `healthy` when both are usable, and `unhealthy` when either is not.
 
-**Adapter health**:
-The current assessment of whether an Adapter instance has a live Adapter process that can use its configured external system. It is `unknown` without current evidence, `healthy` only when both are usable, and `unhealthy` when either is unavailable.
-_Avoid_: Adapter status, runtime health, upstream health
+**Binding**: The durable association between an Adapter's external object and
+its canonical Hearth Device and Entities. An Adapter-scoped stable key preserves
+the association across external ID changes; ambiguous conflicts require explicit
+reconciliation.
 
-**Binding**:
-The durable association between an adapter's external object and its canonical Hearth Device and Entities. An adapter-scoped stable binding key preserves the association when an external identifier changes; ambiguous identity conflicts require explicit reconciliation.
-_Avoid_: Discovery result, entity name
+**Adapter Function**: An Adapter-defined capability outside the canonical Entity
+Operation model. The Adapter defines its arguments, results and behavior; Core
+owns discovery, validation, routing and durable Invocation evidence.
 
-**Adapter Function**:
-An Adapter-defined named capability outside the canonical Entity Operation model. The Adapter defines accepted arguments, results, and behavior. Core owns discovery, structural validation, runtime-scoped routing, bounded invocation, and durable evidence.
-_Avoid_: Entity Operation, Command, MCP Tool, background job
+**Function catalog**: The immutable set of Functions registered by one Adapter
+runtime, identified by a revision.
 
-**Function catalog**:
-The complete immutable set of Functions one Adapter runtime registers. Its revision identifies descriptors, schemas, and deadlines for that Session.
-_Avoid_: Dynamic MCP tool list, historical catalog archive
+**Function Invocation**: A recorded attempt to execute an Adapter Function
+against a selected runtime and catalog revision. It is evidence, not queued or
+replayable work. See [Adapter Functions](docs/reference/adapter-functions.md).
 
-**Function Invocation**:
-One recorded attempt to execute an Adapter Function against a selected runtime and catalog revision. Its record is evidence, not queued or replayable work.
-_Avoid_: Command, retry, queued job
+**Migration adapter**: A disposable Adapter for moving a household from Home
+Assistant to native ownership without introducing Home Assistant dependencies
+into Core. Hearth's migration adapter has been removed.
 
-**Migration adapter**:
-A disposable adapter that keeps a household operational while devices move from Home Assistant to native ownership in Hearth. It must not introduce Home Assistant concepts or dependencies into the core and is removed after migration.
-_Avoid_: Compatibility layer, foundational integration
+**Household**: The single home automation environment administered by one
+Hearth installation.
 
-**Household**:
-The single home automation environment administered by one Hearth installation.
-_Avoid_: Site, tenant
+**Device**: A physical or virtual thing represented in Hearth that groups
+related Entities.
 
-**Device**:
-A physical or virtual thing represented in Hearth that groups related entities.
-_Avoid_: Accessory, node
+**Entity**: An independently addressable State or control point belonging to a
+Device. An event-source Entity instead has no State or Operations and reports
+named Entity Events.
 
-**Entity**:
-One independently addressable state or control point belonging to a device. State reads and commands target entities. An event-source entity is the exception: it carries no State and no Operations and instead reports named Entity Events.
-_Avoid_: Device capability, endpoint
+**Display name**: The human-readable name of a Device or Entity, supplied by
+its Adapter unless a Hearth name override takes precedence. It is not identity.
 
-**Display name**:
-The human-readable name of a Device or Entity, supplied by its Adapter unless a Hearth name override takes precedence. Device and Entity display names are independent and do not determine canonical identity.
-_Avoid_: Canonical ID, binding key, entity key
+**Name override**: A household-chosen display name that survives Adapter name
+updates. Removing it restores the latest Adapter-supplied name without renaming
+the external object or changing canonical identity.
 
-**Name override**:
-A household-chosen display name for one Device or Entity that takes precedence over its current Adapter-supplied name and survives Adapter name updates. Removing the override restores the latest Adapter-supplied name; neither setting nor removing it renames the external object or changes canonical identity.
-_Avoid_: Upstream rename, identity change
+**Entity availability**: The Devices-owned projection of whether an Entity can
+be reached through its owner. It is `unknown` without eligible health and report
+evidence, `available` with a matching available report from a healthy owner, and
+`unavailable` when eligible evidence says so. It can lag authoritative Adapter
+health and is distinct from enablement and State freshness.
 
-**Entity availability**:
-The Devices-owned projected assessment of whether an Entity can be reached through its owning Adapter, distinct from Entity enablement and State freshness. It is `unknown` without eligible projected health and report evidence, `available` when the projected healthy owner has a matching available report, and `unavailable` when projected health or an eligible report says so. It may lag authoritative Adapter health; Command admission still checks authoritative health. New availability history records applied effective changes, not every source health transition.
-_Avoid_: Entity health, Device health
+**Entity enablement**: Core's reversible choice of whether an Entity participates
+in normal control and State projection. New Entities default to enabled;
+registration may set only their initial value. Management and the owning Adapter
+may change it idempotently, with the last committed change taking effect.
+Disablement retains identity, history and
+last State, rejects new Commands and ordinary Observations, and rejects Events.
+Only a linked Observation for an active pre-disable Command can still project
+State and satisfy that Command. See [architecture](docs/architecture/architecture.md#health-availability-and-enablement).
 
-**Entity enablement**:
-Whether an Entity participates in normal control and State projection. An enabled Entity accepts valid Commands and Observations. Disabling immediately rejects new Commands, while Commands already requested or accepted retain their normal lifecycle; only Observations linked to those active Commands may still update State and satisfy them. A disabled event-source Entity rejects Entity Events with `entity_disabled` and has no Command-linked exception. A disabled Entity retains its canonical identity, Binding, history, and last accepted State, while other incoming Observations do not update State or satisfy Commands. The management API and owning Adapter may each explicitly enable or disable an Entity, with the last accepted change taking effect. Registration may choose a newly created Entity's initial enablement, which defaults to enabled; subsequent registration reconciles identity and descriptors without changing existing enablement. Disablement is reversible and distinct from temporary unavailability or removal from the household.
-_Avoid_: Retirement, availability
+**Entity support**: A type-specific statement of supported State and Operations.
+An Operation is supported when present in support. Event-source support instead
+lists the names it may report. Support changes do not change Entity identity or
+the meaning of active Commands.
 
-**Entity support**:
-An Entity's type-specific statement of its supported State space and Operations. An Operation is supported exactly when it is present in Entity support; support may change without changing the Entity's identity or the meaning of active Commands. An event-source Entity's support instead states its supported Entity Event names, and only a listed name is a supported name; an Entity Event whose name is not listed is rejected as `unsupported_event`.
-_Avoid_: Constraints, capability list
+**Entity Event**: A named occurrence identified by its event ID. Redelivery of one
+ID is the same event; a new ID is a new occurrence even when the name repeats.
+Acceptance means Core's processing-time rules passed, not
+that physical truth or causation is proven. It has no State, Command link,
+arbitrary payload or claimed source time and does not change State or availability.
+It is not the outbound `enumaction.trigger` Operation.
 
-**Entity Event**:
-One named occurrence an Adapter durably reports for an Entity, identified by its event ID so redelivery of one ID is the same event while a new ID is a new occurrence even when the name repeats. Acceptance means the report passed Core's processing-time rules, not that it proves physical truth or causation. An Entity Event carries no State, Command link, arbitrary payload, or claimed source time, and recording one changes no State, Commands, bindings, enablement, health, or availability. Distinct from the outbound `enumaction.trigger` Operation, which requests a device action rather than reporting one.
-_Avoid_: State change, Trigger, Observation
+**Operation**: A named Entity-type command capability with a support shape,
+parameters, deadline and observed or dispatched outcome policy. Invoking a
+supported Operation creates a Command.
 
-**Operation**:
-A named command capability within an Entity type. The type defines its support shape, valid parameters, deadline, and outcome policy — observed with an outcome-matching rule, or dispatched without one; invoking a currently supported Operation creates a Command.
-_Avoid_: Command, service call
+**Observation**: An Adapter's value report, identified once despite redelivery.
+Accepted history contains a normalized value; rejected history contains a code
+without the value. Neither the report nor acceptance proves physical truth or
+causation. Levoit explicitly reports acknowledged control requests optimistically,
+not as measurements.
 
-**Observation**:
-A fresh value report Hearth durably receives from an Adapter, identified once despite redelivery and carrying Hearth receive time, Adapter acquisition time, and optional upstream change time. Its retained record includes the normalized value when accepted or rejection metadata without the value when rejected; neither the report nor its acceptance proves physical truth or causation. The Levoit Adapter explicitly reports acknowledged control requests optimistically; those reports are not device measurements.
-_Avoid_: Physical confirmation, proof of causation
+**State**: The current value accepted for an Entity, determined by Core receive
+order of first-seen valid Observations. A same-value report advances its evidence
+and timestamps. State is not a desired-state queue. Levoit's explicitly
+optimistic control State also enters history and Automations until later reports
+replace it.
 
-**State**:
-The current value Hearth has accepted for an entity. It is the latest first-seen valid Observation from the owning adapter by core-assigned receive order; a same-value Observation advances its evidence and timestamps. State is not a desired-state queue. As an explicit Adapter-specific exception, Levoit control State includes optimistic requested values after cloud acceptance, until later cloud reports replace them. These values also enter history and automations.
-_Avoid_: Desired state, target
+**Forecast**: A State snapshot predicting conditions for future periods. It
+records what the source predicted, not the conditions themselves; a later
+Observation replaces the snapshot.
 
-**Forecast**:
-An Entity State that predicts conditions for consecutive future periods, held as one snapshot of hourly or daily periods. Each Observation of a forecast Entity is evidence of what the source predicted when the Adapter acquired it, not of the conditions themselves; a newer snapshot replaces the older one as State by receive order, and periods that have ended remain in the snapshot until it is replaced.
-_Avoid_: Reading, measurement
+**Command**: A deadline-bounded request for an Entity Operation. An observed
+Operation is satisfied only by its own matching linked Observation; acceptance
+alone is not satisfaction. A dispatched Operation completes on durable
+acceptance without an Observation or State. Commands can overlap, and Core
+records outcomes but never replays unfinished Commands after restart. An
+unhealthy owner prevents dispatch; an unavailable Entity with a healthy owner is
+still attempted.
 
-**Command**:
-A request to change one controllable entity before a deadline. For observed operations, its outcome is satisfied only after a fresh post-dispatch observation linked to that Command matches the requested value; dispatch or acceptance alone is not satisfaction, and an unhealthy owning Adapter causes failure rather than deferred delivery, while an unavailable Entity with a healthy owner is still attempted. A dispatched operation on a stateless entity instead terminates as `dispatched` once acceptance is durably recorded; it requests no observation and stores no state. Commands for one entity may overlap, each with an independent outcome; a satisfied outcome may be immediately superseded by another observation. The core durably records each attempt and outcome for history, but the record is not executable work: unfinished attempts become interrupted after restart and are never replayed.
-_Avoid_: Action, service call, queued job
+**Device Fact**: A Core statement queued atomically with a first-seen accepted
+Observation or Entity Event and published at least once to a bounded stream.
+Consumers must tolerate duplicates and eviction. A Fact records Core evidence,
+not physical truth; Command lifecycle has no Fact and remains authoritative in
+durable Command history. See [outbox relays](docs/architecture/outbox-relays.md).
 
-**Device Fact**:
-One Core-verified statement Core durably queues in the same devices transaction that establishes an accepted Observation or accepted Entity Event, then publishes to one bounded JetStream stream, so it has exactly two sources: accepted Observation evidence and accepted Entity Events. Publication is at-least-once from that durable queue with broker-side deduplication bounded by the stream's duplicate window, so a consumer may see a duplicate and must stay idempotent; a fact can still be evicted by the stream's age or size bound, and a consumer that chooses no durable recovery policy can still miss facts published while it was absent. A fact reports what Core recorded, not physical truth, and Command status transitions, including startup interruption, publish no fact: Command lifecycle remains authoritative in durable HTTP/SQLite history, and Observations are not its substitute.
-_Avoid_: Entity Event, Observation, Command, Command lifecycle, event sourcing, change log
+**Automation**: A named definition with zero or more alternative Triggers,
+optional Conditions and an ordered Step sequence. An empty Trigger list permits
+explicit invocation only. Disablement prevents automatic execution, not manual
+or Step invocation.
 
-**Automation**:
-A named definition containing zero or more Triggers, optional Conditions, and an ordered sequence of Steps. Any Trigger can initiate an admission decision; an empty Trigger list permits explicit invocation only. Enablement governs automatic execution, not manual or Step invocation.
-_Avoid_: Rule, workflow, scene
+**Trigger**: An identified reason for automatic Automation admission: a matching
+Device Fact, a completed held-State requirement or a scheduled occurrence.
+Manual invocation does not have a Trigger. The Entity Operation named `trigger`
+is separate.
 
-**Trigger**:
-One identified reason that can automatically start an Automation by matching a Device Fact, completing a held-State requirement, or reaching an eligible scheduled occurrence. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept.
-_Avoid_: Command, invocation, condition
+**Condition**: A composable requirement over Entity State or a Run's matched
+Triggers. Its result is true, false or unknown; it does not initiate execution.
+See [Conditions](docs/reference/automation-conditions.md).
 
-**Condition**:
-A requirement over Entity State or the Triggers that admitted a Run, composable with all, any, or not. Its result is true, false, or unknown when the required evidence is unusable; a Condition does not initiate execution.
-_Avoid_: Trigger, State Trigger, Step
+**Admission Condition**: A State Condition that must be true before a Run starts,
+unless an operator explicitly bypasses it for manual invocation.
 
-**Admission Condition**:
-A Condition over current Entity State that must be true before a Run can start. Manual invocation applies Admission Conditions unless the operator explicitly bypasses them.
-_Avoid_: Branch Condition, Trigger
+**Branch Condition**: A Condition evaluated at a reached branching Step. An
+unknown root result fails the Run instead of choosing a fallback.
 
-**Branch Condition**:
-A Condition evaluated when a Run reaches a branching Step to select which sequence executes. It may inspect current Entity State and the Run's matched Triggers; an unknown root result stops the Run as failed rather than selecting a fallback.
-_Avoid_: Admission Condition, Trigger
+**Branch decision**: Recorded evidence of a reached branch evaluation and its
+selection, no-match outcome or failure. Selection does not prove that Commands
+executed or succeeded.
 
-**Branch decision**:
-The recorded outcome of evaluating a reached branching Step, including the evidence considered and the selected sequence, no-match outcome, or failure. Selecting a sequence does not establish that its Commands executed or succeeded.
-_Avoid_: Automation Skip, Command outcome
+**Entity Event Trigger**: A Trigger matching an accepted Entity Event Fact by
+Entity and event name.
 
-**Entity Event Trigger**:
-A Trigger that matches one accepted Entity Event fact by exact Entity and event name.
-_Avoid_: Entity Event, event handler
+**Observation Trigger**: A Trigger matching an accepted Observation Fact by
+Entity, disposition and configured value comparisons, optionally including
+preceding State. An `unchanged` Observation can match.
 
-**Observation Trigger**:
-A Trigger that matches one accepted Observation fact by exact Entity, accepted disposition, and configured comparisons against its reported value and, optionally, the State immediately preceding that Observation's acceptance. Same-value Observations may match when their `unchanged` disposition is allowed.
-_Avoid_: State Trigger, State query
+**Held-State Trigger**: A Trigger requesting one admission decision when accepted
+State satisfies a predicate for a duration. It tracks a **Hold**, not a queued
+Run. Facts can lag, restart resets pending holds, and an admission decision
+consumes a hold even when it produces a Skip. See
+[Held-State Triggers](docs/reference/automation-conditions.md#held-state-triggers) for the hold and
+re-arming rules.
 
-**Held-State Trigger**:
-A Trigger that starts an Automation once when an Entity's accepted State has satisfied a configured value predicate for a specified duration. An eligible matching Observation Fact begins a hold at its Core-owned `emitted_at` commit time, not the later Automation admission time or an upstream timestamp; matching re-reports preserve its start, and a later processed nonmatching accepted State ends it. At the deadline, current State is checked before one admission decision; Conditions and the ordinary busy rule still apply, and that decision consumes the hold even if it produces a Skip. Availability and enablement alone do not end a hold. Holds are not verified against every intervening Observation, so Fact backlog can hide a brief nonmatch. Definition replacement removes its holds, and Core restart resets pending holds; either requires a subsequent eligible matching Observation to begin a new hold. A consumed hold requires a later accepted nonmatching Observation to re-arm.
-_Avoid_: Duration Condition, delayed Observation Trigger
+**Scheduled Trigger**: A Trigger requesting automatic admission for an eligible
+household-local clock occurrence. A **Cron Trigger** matches minute, hour and
+weekday rather than measuring elapsed time.
 
-**Hold**:
-One stretch of matching accepted State tracked for a Held-State Trigger from the first eligible Observation Fact's Core-owned `emitted_at` commit time, not its later admission time or an upstream timestamp. A nonmatching accepted State or Core restart cancels a pending hold; reaching the duration while current State still matches permits one admission decision, which consumes the hold even if it produces an Automation Skip. Pending time is not recovered after restart, and Fact backlog can conceal an intervening nonmatching State.
-_Avoid_: Timer, delay, queued Run
+**Scheduled occurrence**: One distinct due instant of a Scheduled Trigger,
+whether or not it results in a Run. An occurrence missed while Core is offline
+is not replayed. See [Automation schedules](docs/reference/automation-schedules.md).
 
-**Scheduled Trigger**:
-A Trigger that requests automatic admission of an Automation when a recurring household-local clock rule is due on an eligible weekday. The Cron Trigger is the supported Scheduled Trigger; it respects Automation enablement, Conditions, and the rule that an Automation may have only one active Run.
-_Avoid_: Timer, delay, elapsed interval, time Condition
+**Step**: An instruction in an Automation's ordered sequence. A branching Step
+selects a nested sequence, then execution continues after the branch unless the
+Run fails or is interrupted.
 
-**Cron Trigger**:
-A Scheduled Trigger expressing minute, hour, and weekday matches in one recurring clock rule, without calendar-date restrictions. It follows household-local clock boundaries rather than measuring elapsed time.
-_Avoid_: Clock-Time Trigger, Time-Pattern Trigger, elapsed interval, periodic timer
+**Command Step**: An instruction requesting one Entity Operation. It is distinct
+from the Command attempt and its outcome.
 
-**Scheduled occurrence**:
-One distinct due instant of a Scheduled Trigger, whether or not it results in a Run; repeated autumn local times represent separate occurrences when their instants differ. An occurrence missed while Core is offline does not request admission when Core returns.
-_Avoid_: Run, queued Run
+**Delay Step**: An unconditional elapsed wait beginning when the Run reaches
+it. The Run remains active; shutdown or restart interrupts it.
 
-**Step**:
-A command, notification, Function, invocation, data, branching, or delay instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
-_Avoid_: Action, Command
+**Notification Step**: An instruction requesting one immediate notification at
+a destination. Success means provider acceptance, not delivery or readership.
 
-**Command Step**:
-A Step requesting one Entity Operation with specified parameters. Attempting it creates a Command only if validation and durable creation succeed; the Step is the instruction, not the Command attempt or its outcome.
-_Avoid_: Command, Branch decision
+**SubAutomation Step**: An instruction admitting a separate Run of a statically
+referenced Automation and waiting for durable child success. It passes no values,
+produces no output and fails immediately if the target is busy.
 
-**Delay Step**:
-A Step that waits unconditionally for a fixed elapsed duration from when the Run reaches it, after preceding Steps succeed, including within a selected branch. The Run remains active during the wait, and Core shutdown or restart interrupts it without continuing its remaining Steps.
-_Avoid_: Held-State Trigger, Scheduled Trigger, State wait
+**Function Step**: An instruction invoking an Adapter Function with fixed
+arguments and an expected contract fingerprint. It advances only on retained
+success; matching contracts can survive a Session change.
 
-**Notification Step**:
-A Step requesting one immediate notification with a fixed title and message at a Notification Destination. It succeeds on provider acceptance, not proof of delivery or readership.
-_Avoid_: Command Step, queued notification, delivery confirmation
+**Function execution**: A reached Function Step's reserved Invocation link and
+retained evidence. Reservation alone does not establish dispatch or success.
 
-**SubAutomation Step**:
+**Notification execution**: A reached Notification Step's reserved Attempt link
+and acceptance, failure or interruption evidence. It is not a delivery receipt
+or permission to replay.
 
-A Step that admits a separate Run of a statically referenced Automation and waits for durable child success before continuing. It applies the child's Conditions, permits disabled targets, and fails immediately when the target is busy. It passes no values and produces no output.
+**Delay execution**: Evidence of a reached Delay Step's start, expected finish
+and completion or interruption. It is not permission to resume after restart.
+See [Step executions](docs/reference/automation-step-executions.md).
 
-_Avoid_: Function Step, scene, queued job
+**Run**: One recorded Automation execution using a definition snapshot, started
+automatically, manually or by a SubAutomation Step. Success means its selected
+sequence and child Runs completed with required Command outcomes and provider
+acceptances, not that physical effects or notification delivery were verified.
 
-**Function Step**:
-A Step invoking one Adapter Function with fixed JSON arguments and an expected declared-contract fingerprint. It advances only after retained invocation success. The fingerprint permits a new Adapter Session with the same declared contract, not automatic adoption of changed schemas or deadlines.
-_Avoid_: Command Step, generic HTTP call, replayable job
+**Automation Skip**: A recorded admission decision that starts no Run, for
+example because of Conditions, freshness or concurrency. A missed scheduled
+occurrence is not a Skip, and a Skip does not queue execution.
 
-**Function execution**:
-One reached Function Step's reserved invocation link and retained execution evidence within an Automation Run. A reserved identity does not establish dispatch or success, and Automation evidence survives independently of Function Invocation retention.
-_Avoid_: Command attempt, Function Invocation, retry
-
-**Notification execution**:
-The recorded execution of one reached Notification Step in a Run, linking its reserved Notification Attempt identity to established acceptance, failure, or interruption evidence. It is not proof of delivery or permission to replay a send after restart.
-_Avoid_: Command attempt, delivery receipt, Branch decision
-
-**Delay execution**:
-The recorded wait for one reached Delay Step in a Run, including when it started, when it was expected to finish, and whether it completed or was interrupted. It is evidence of elapsed waiting, not a Command or permission to continue a Run after restart.
-_Avoid_: Command attempt, Branch decision, scheduled occurrence
-
-**Run**:
-One recorded execution of an Automation using a snapshot of its definition, started automatically, manually, or by a SubAutomation Step, which may execute no Commands. A successful Run means its selected Step sequence completed, including invoked child Runs, reached Commands attained their Operations' required outcomes, and reached notifications were accepted by their providers, not that physical effects, notification delivery, or readership were confirmed.
-_Avoid_: Command, occurrence
-
-**Automation Skip**:
-One recorded outcome in which a matching Device Fact, a completed held-State requirement, an eligible scheduled occurrence, or a manual invocation started no Run; automatic admission may be prevented by freshness or concurrency rules, and any source may be prevented by false or unknown Conditions. A missed scheduled occurrence is not an admission decision or a Skip. A Skip never queues execution.
-_Avoid_: Run, failure, ignored fact
-
-**Canonical ID**:
-An immutable Hearth-assigned identity for a device or entity that remains stable when names, external identifiers, or owning adapters change.
-_Avoid_: Name, external ID
+**Canonical ID**: An immutable Hearth-assigned Device or Entity identity that
+survives changes to names, external identifiers or owning Adapters.
