@@ -13,6 +13,11 @@ no fabricated external identity; provider success followed by unusable output
 retains that success while failing Step/Run progress. There is no parallel Step
 journal. See [Automation expressions](automation-expressions.md).
 
+A `sub_automation` row links a parent Step to the child Run it admitted, or
+records why no child Run started. The child keeps its own trace; the parent row
+holds only the link and outcome. See
+[Reusable Automations](../guides/reusable-automations.md).
+
 The immutable definition revision owns configuration. Native columns own kind,
 phase, sequence, and lifecycle timestamps. Strict typed JSON owns only execution
 evidence: reserved identities, verified links, provider/Invocation outcomes, and
@@ -27,8 +32,12 @@ wall-clock order nor timestamp monotonicity defines execution order.
 
 Every reached Step uses a closed kind-specific execution state. Command,
 Notification, and Function states distinguish running, succeeded, failed, and
-interrupted; Delay distinguishes running, succeeded, and interrupted. Branch
-decisions already form a closed instantaneous selection/failure family.
+interrupted; Delay distinguishes running, succeeded, and interrupted.
+SubAutomation distinguishes running, succeeded, rejected (`automation_not_found`,
+`automation_busy`, or a Condition Skip), child failed, and interrupted; rejected
+and child-failed rows both use the `failed` phase. Branch decisions, `read_state`,
+`set_variables`, and value-resolution failures are instantaneous: each inserts
+one `succeeded` or `failed` row whose completion time equals its start time.
 
 Only terminal variants carry a completion timestamp. Command reservations and
 verified success evidence remain distinct; Notification failures distinguish
@@ -39,10 +48,8 @@ failure derive from these variants. They are not independently mutable fields.
 Runtime helpers pass reserved identities and typed terminal states directly to
 the common recording inputs. Terminal-state interfaces exclude running values
 from completion evidence; independent repository and codec validation still
-reject malformed identities, times, reasons, and contradictory links. No generic
-executor or callback registry is introduced. The lifecycle-only refactor changed
-neither SQL nor public HTTP/MCP JSON; migration 23 separately adds the value-flow
-contract described above.
+reject malformed identities, times, reasons, and contradictory links. There is
+no generic executor or callback registry.
 
 ### Persistence checks
 
@@ -58,17 +65,24 @@ They never hold the transaction during external execution or a Delay.
 | `RecordStep` / `FunctionStarted` | Valid identity/time and Invocation reservation; retained Function is next; no duplicate reach or active sibling; preserve globally unique Invocation reservation |
 | `RecordStep` / `BranchDecided` | Valid typed decision against retained branch configuration and Run matches; branch is next, insert-once; selection commits before child traversal; unknown/error also fails parent atomically |
 | `RecordStep` / `CommandStopped` | Fixed interruption reason and valid time; retained Command is next; insert terminal evidence without fabricated reservation and interrupt parent atomically |
+| `RecordStep` / `ValuesAssigned` | Retained `set_variables` Step is next; assigned values agree with the Step's literal assignments; insert-once terminal row |
+| `RecordStep` / `StateRead` | Retained `read_state` Step is next; read output, Observation evidence, or unusable reason; insert-once terminal row |
+| `RecordStep` / `ValueResolutionFailed` | Retained Step of the named kind is next; insert a failed row with a safe value failure and no fabricated reservation; fail parent atomically |
+| `AdmitSubAutomationRun` | Retained SubAutomation is next; in one transaction, either reject (`automation_not_found`, `automation_busy`, or a Condition Skip with its `skip_id`) and fail parent, or persist the child Run and a running row linking `child_run_id` |
 | `CompleteStep` / `CommandFinished` | Running target and parent; retained instruction kind; exact Command/correlation reservation and any verified link; typed result; failure/interruption terminalizes parent in the same transaction |
 | `CompleteStep` / `DelayFinished` | Running Delay and parent; retained instruction kind; terminal time and optional fixed interruption reason; interruption terminalizes parent atomically |
 | `CompleteStep` / `NotificationFinished` | Running target and parent; retained instruction kind; exact Attempt reservation; provider evidence or established pre-admission/interruption reason; non-success terminalizes parent atomically |
 | `CompleteStep` / `FunctionFinished` | Running target and parent; retained instruction kind; exact Invocation reservation; typed terminal state and matching completion time; non-success terminalizes parent atomically |
+| `CompleteSubAutomationStep` | Running SubAutomation and parent; linked child is terminal and names this parent Run, Step, and target Automation; copy child failure code on failure or interruption; non-success fails parent atomically |
+| `CompleteStep` / `SubAutomationStopped` | Running SubAutomation; local `core_stopping` only; interrupt the row and parent atomically |
 | `CompleteRun` | Valid terminal outcome and running parent; load and validate complete trace once; success requires every selected instruction's successful result |
 | Scoped cleanup/startup | Update running trace rows before running parents in one transaction; preserve terminal evidence and uncertain reservations; scoped cleanup leaves unrelated Runs untouched |
 
 Ordinary starts read only bounded identity, order, kind, phase, and branch
 outcome/selection labels, never prior Condition, Command, provider, or Function
 payloads. Completion reads only its target payload. The single-running partial
-unique index and reservation expression indexes remain final database guards.
+unique index and the unique Attempt, Invocation, and child Run expression
+indexes remain final database guards.
 There is no process-global definition or progress cache.
 
 Unrelated pre-existing evidence corruption is detected on detail reconstruction
@@ -117,3 +131,7 @@ Migration 24 removes aggregate value-history counters and converts retained fail
 targets to logical fields or Condition IDs. It preserves revisions, execution
 values and exact number tokens. Core performs the conversion transactionally;
 Down refuses to recreate discarded spans or counters.
+
+Migration 25 rebuilds `automation_step_executions` to admit the `sub_automation`
+kind and its child Run index. It copies existing rows unchanged. Down always
+refuses; restore the pre-upgrade backup with its matching binary.

@@ -8,22 +8,23 @@ account has `superuser` access are supported. Select each by its exact 32-digit
 hexadecimal ID, not its name; similarly named or other account records are not
 selected automatically.
 
-**Controls are blocked.** `commands_enabled` must remain false; the current
-runtime refuses to start if any binding enables it. Direct live evidence,
-command implementation, and a supervised trial remain prerequisites for control.
-This guide does not authorize any physical operation.
+**Controls are blocked.** Lock Entities expose no `set` Operation, and the
+runtime refuses to start if any binding sets `commands_enabled`. This guide does
+not authorize any physical operation.
 
-**Monitoring is not yet deployment-validated.** The synthetic production-Core
-journey covers restart, retained identity, enablement, history, missing Devices,
-and offline replacements. Native Go framing and actual lock/push behavior still
-need the deferred live checks below before rollout.
+**Monitoring is proven only against synthetic tests.** They cover restart,
+retained identity, enablement, history, missing Devices, and offline
+replacements. Compatibility with the live August service and PubNub push is
+unverified; see [Limits of the evidence](#limits-of-the-evidence).
 
 ## Configure and authorize
 
 1. Copy `configs/august.example.yaml` to a private deployment location. Set a
    unique Adapter ID and NATS URL, then list 1–64 locks with unique stable
-   `binding_key` values and exact IDs. Names are optional presentation overrides;
-   otherwise a bounded cloud name is used. Do not reuse the example IDs.
+   `binding_key` values and exact `lock_id` values. Hearth does not list the
+   account's locks, so copy each 32-digit ID from an existing tool that reads
+   your August account. Names are optional presentation overrides; otherwise a
+   bounded cloud name is used. Do not reuse the example IDs.
 2. Generate a new UUID once, for example with `uuidgen`, and place it in
    `installation_id`. Preserve the same UUID across authorization and every
    restart; replacing it can require another verification email.
@@ -33,6 +34,9 @@ need the deferred live checks below before rollout.
    limited to 16 KiB, and password whitespace is preserved. Never put the
    password or verification code in flags or environment variables.
 4. Explicitly run `hearth-adapter-august authorize --config /path/to/august.yaml`.
+   From a source checkout, run `go run ./cmd/hearth-adapter-august` in place of
+   `hearth-adapter-august`; the release image is
+   `ghcr.io/mholtzscher/hearth/hearth-adapter-august`.
    If the installation is not already validated, this sends at most one email
    and prompts for its six-digit code on stdin; it does not connect to Core or
    PubNub, save a token, or modify files. Ctrl-C interrupts terminal input. An
@@ -92,7 +96,7 @@ reports a path-free `reason`; malformed files do not echo rejected input.
 | `throttled` | Wait for the account cooldown; do not run repeated authorization attempts. |
 | `session_expired`, `upstream_rejected` | The service refused that authorization request. Check the installation and account before retrying. |
 | `provider_unavailable`, `invalid_response` | Investigate service reachability or unofficial API compatibility. |
-| `commands_blocked` | Leave every `commands_enabled` setting false until the live evidence and implementation gates pass. |
+| `commands_blocked` | Set every `commands_enabled` to false. Lock control is not implemented. |
 
 Unknown runtime failures keep the fixed `run_failed` classification rather than
 printing dependency messages, credentials, file paths, or verification codes.
@@ -114,33 +118,11 @@ operator overrides remain Core records, not new evidence from a replacement.
 Push disconnects fall back to scheduled reads and reconnection/resynchronization;
 there is no durable push replay or imported activity history.
 
-## Evidence and live gates
+## Limits of the evidence
 
-Synthetic tests do not prove August compatibility. Earlier read-only research
-established account and inventory/detail access and a passive PubNub handshake,
-but no push event was observed. Live push payloads, transition delivery, response
-fields and timestamp comparability remain unverified. Go's HTTP transport omits
-`Content-Length: 0` on GET despite the request header; an external read-only
-probe stopped at 1Password before making HTTP requests. Actual native-Go framing
-compatibility has **not** been verified.
-
-Before any future control work, obtain separate permission for manual transitions
-on each lock and record sanitized push/time evidence. With further explicit
-permission, inspect direct synchronous lock and unlock responses on both firmware
-versions, including noncached acceptance, matching lock identity, terminal State,
-and operation-start versus report timestamp comparability. Check unchanged
-DoorSense independently. If the contract is not established, stop and revise it;
-do not weaken the checks. These tests have not been run.
-
-Only after that gate and implementation/tests pass could a separately authorized,
-supervised, one-binding-at-a-time Core trial be planned with safe access and an
-agreed restoration procedure. The normal configuration stays read-only. Stop
-and join the trial process, resume monitoring, and verify `set` is absent; only
-recorded passing trial results could support a later operator rollout decision.
-Do not infer permission to unlock from a restoration request. No trial has run.
-
-The planned command contract does not use optimistic confirmation, mutation
-retries, queued replay, or token reuse across processes. Acceptance alone would
-not mean satisfaction: only retained, linked matching direct-result evidence
-could satisfy a Command. Lost/indeterminate responses can leave physical effect
-uncertain; never automatically retry. Current monitoring exposes no `set`.
+Synthetic tests do not prove August compatibility. Read-only research reached
+account, inventory, and detail access and a passive PubNub handshake, but
+observed no push event. Live push payloads, transition delivery, response
+fields, timestamp comparability, and native Go request framing are unverified.
+Lock control needs its own live evidence, implementation, and a supervised
+trial before any binding can enable it.
