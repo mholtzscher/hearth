@@ -1,16 +1,11 @@
 # Hearth
 
-Hearth is a home automation system for technical self-hosters, designed to
-replace Home Assistant functionally for one household per deployment. It keeps
+Hearth is a home automation system for technical self-hosters. It keeps
 mature specialist services, such as Zigbee2MQTT and Z-Wave JS, where useful.
-
-Useful household behavior comes first. Every production use of NATS must solve
-a real durability, isolation, routing, or observability need.
 
 ## What it does
 
-- Native companion Adapters connect devices and services to Core without a
-  Home Assistant bridge.
+- Native companion Adapters connect devices and services to Core.
 - Typed Entities separate reported State, availability, and Command outcomes.
   Acceptance is not proof of a physical effect.
 - Automations run bounded Trigger, Condition, and Step definitions, retaining
