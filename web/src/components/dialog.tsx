@@ -18,6 +18,17 @@ type DialogContentProps = React.ComponentProps<
   placement?: "center" | "bottom";
 };
 
+/**
+ * Modal dialogs contain focus, close on Escape, and return focus to a
+ * registered trigger; a dialog opened programmatically must restore focus
+ * itself.
+ *
+ * Pass `forceMount` only while an exit transition retains a blocking modal. It
+ * keeps the closed portal, content, and overlay mounted, including scroll
+ * locking and hiding the rest of the page from assistive technology; `hidden`
+ * on the content releases neither. End the transition by removing `forceMount`
+ * or unmounting the dialog.
+ */
 const DialogContent = ({
   className,
   placement = "center",

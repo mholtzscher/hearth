@@ -390,7 +390,14 @@ controls, dialogs, popovers, and notices. Add a needed size or state to the shar
 component rather than recreating its focus, hover, and disabled treatments.
 
 A bare `<button>` is allowed for a press target without button appearance, such
-as a whole-card tile press. Existing raw controls are migration candidates.
+as a whole-card tile press. The expanded canvas stays in place with
+`useModalFocus` instead of using `Dialog`, because moving its editor into a
+Dialog portal remounts the editor and loses invalid, unsaved input. Existing raw
+controls are migration candidates. **Source:** stated.
+
+Shared controls inherit the global `:focus-visible` outline and reduced-motion
+rule from [`index.css`](web/src/index.css) instead of restating them. Hearth is
+dark-only, so write colors unconditionally, with no light-mode variants.
 **Source:** stated.
 
 ### Draw a card with `Card`
