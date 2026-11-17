@@ -4,23 +4,23 @@ Hearth is a home automation system for technical self-hosters. It is being desig
 
 **Naming:** Hearth is the product and user-facing namespace. `hearthd` is reserved for the core daemon; companion processes use `hearth-` names.
 
-The project has two equal gates: work must advance a useful home automation system and meaningful NATS learning, while every production use of NATS must solve a real system need.
+Useful household behavior is the primary goal; meaningful, production-grounded NATS experience is secondary. Every production use of NATS must solve a real system need.
 
 ## Status
 
-Hearth's first vertical slice observes and controls one Home Assistant-managed light; the simulator exercises recovery and the complete failure matrix against the same contracts.
+Hearth connects native companions to household devices and specialist services. The disposable Home Assistant migration adapter has been removed. The simulator exercises scripted scenarios and recovery through the same Core contracts; simulation does not establish physical-device compatibility.
 
-The [Pirate Weather Adapter](docs/pirateweather.md) adds modeled current-condition
+The [Pirate Weather Adapter](docs/guides/pirateweather.md) adds modeled current-condition
 Entities and fresh hourly and daily forecast Functions for one configured location.
 It runs as the separate `hearth-adapter-pirateweather` companion using a secret-file
 API key; see `configs/pirateweather.example.yaml` for configuration.
 
-The [Levoit Adapter](docs/levoit.md) discovers Core 400S and 600S air purifiers
+The [Levoit Adapter](docs/guides/levoit.md) discovers Core 400S and 600S air purifiers
 through a US VeSync account. The separate `hearth-adapter-levoit` companion
 exposes power, mode, manual fan level, display, child lock, PM2.5, and filter life.
 Credentials stay in a private file; see `configs/levoit.example.yaml`.
 
-The [August Adapter](docs/august.md) monitors explicitly configured US August
+The [August Adapter](docs/guides/august.md) monitors explicitly configured US August
 Wi-Fi locks without a Home Assistant runtime. The `hearth-adapter-august`
 companion reports bolt State, DoorSense, and estimated battery percentage.
 Lock control is blocked pending separately authorized live evidence checks.
@@ -33,17 +33,17 @@ Install tools with `mise install`. Use `mise run simulator-start` for local NATS
 
 The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https://github.com/maratori/golangci-lint-config) at the version of golangci-lint locked by mise. Existing findings are baselined at the commit recorded in the lint task, while validation rejects findings introduced afterward. To upgrade, run `mise upgrade golangci-lint`, compare `.golangci.yml` with the matching upstream version, preserve the local `gci` formatter and Hearth import sections, then review the diff and run `mise run validate`.
 
-For routine iteration, use `GO_PACKAGES='./path/to/package' mise run test` for focused tests without preparation. Use the existing focused lint and vet tasks as needed. See [Testing and validation](docs/testing.md) for test boundaries, technique policy, and scope selection.
+For routine iteration, use `GO_PACKAGES='./path/to/package' mise run test` for focused tests without preparation. Use the existing focused lint and vet tasks as needed. See [Testing and validation](docs/guides/testing.md) for test boundaries, technique policy, and scope selection.
 
 `mise run test` defaults to untagged unit tests locally. Add `-- -tags=integration` for real-boundary tests or `-- -tags=integration,e2e` for every level. Local tests are non-race; `CI=true` selects every level with race instrumentation. Use `mise run test -- -race` for an optional local race check, or `mise run test -- -count=1` to force a fresh run. Tests use cached passing results and skip generation, formatting, and module tidying. Unset `GO_PACKAGES` and run `mise run validate` after integrating the final change; it runs every default level locally without race detection. Selected Mosquitto tests require Docker.
 
 Run `mise run test-profile` to collect race-enabled Core test timings, a CPU profile, an execution trace, a trace-derived blocking profile, and the test binary under `.data/test-profile`. Set `TEST_PACKAGE` to profile another package and `PROFILE_DIR` to keep separate captures. The task prints the CPU summary; `mise exec -- go tool pprof .data/test-profile/tests.test .data/test-profile/cpu.pprof` opens the interactive profiler. Use `block.pprof` to inspect waits and `tests.jsonl` for individual test timings. Profiling adds overhead, so compare ordinary uncached runs for wall-clock improvements.
 
-`hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart. Optional `household_unit_system` (`metric`, the default, or `us`) chooses numeric read-response units, including dashboards and agents; changing it also requires a restart. Use `units=canonical` to read stored-unit values. See [quantity metadata and read units](docs/units.md) for the breaking default-read change, canonical writes, and coordinated deployment/rollback requirements.
+`hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart. Optional `household_unit_system` (`metric`, the default, or `us`) chooses numeric read-response units, including dashboards and agents; changing it also requires a restart. Use `units=canonical` to read stored-unit values. See [quantity metadata and read units](docs/reference/units.md) for the breaking default-read change, canonical writes, and coordinated deployment/rollback requirements.
 
 SQLite timestamp normalization in #248 requires a fresh development database;
-there is no retained-row backfill. See [SQLite timestamps](docs/sqlite-timestamps.md)
-for the reset procedure, column inventory, and compatibility limits.
+there is no retained-row backfill. See [SQLite timestamp compatibility](docs/reference/sqlite-mapping-standards.md#make-timestamp-compatibility-explicit)
+for reset and compatibility policy.
 
 Migration 29 removes unused receipt outcome/history metadata and the obsolete
 raw Entity availability history pointer. It preserves receipt deduplication keys,
@@ -65,9 +65,9 @@ HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
   go run ./cmd/hearthd
 ```
 
-The three adapters and simulator use the same flag > environment > YAML precedence. Their environment prefixes are `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only. The simulator validates its resolved configuration on every startup before connecting to NATS; it has no validation-only CLI mode.
+Companions and the simulator use the same flag > environment > YAML precedence. Environment prefixes include `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`; each companion's setup guide names its prefix. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only. The simulator validates its resolved configuration on every startup before connecting to NATS; it has no validation-only CLI mode.
 
-The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers nineteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device, Entity, notification destination, and Adapter Function is declared under its Adapter in YAML; the `sim-healthy` Functions exercise success, failure, not-executed, unknown, and one held invocation released over the loopback control channel. For a minimal first-light example, see `configs/simulator.example.yaml`. See the [simulator reference](docs/simulator.md) for scripted output, Commands, notifications, Functions, and loopback controls. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
+The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers nineteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device, Entity, notification destination, and Adapter Function is declared under its Adapter in YAML; the `sim-healthy` Functions exercise success, failure, not-executed, unknown, and one held invocation released over the loopback control channel. For a minimal first-light example, see `configs/simulator.example.yaml`. See the [simulator reference](docs/reference/simulator.md) for scripted output, Commands, notifications, Functions, and loopback controls. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
 The scripted garage door emits an independent position/motion series. Its
 `set` links the current State once without applying position parameters. A
@@ -138,7 +138,7 @@ mise run simulator-stop
 
 The registration log reports both canonical Entity IDs. The event history response shows the schema-constrained reported name together with whether Core recorded the report (`accepted`) or why Core rejected it (`stale_runtime`, `unknown_entity`, `wrong_adapter`, `entity_disabled`, or `unsupported_event`). It never proves that a physical press happened, and it is not State history: `GET /v1/entities/{entity_id}/state/history` never contains events. Readiness covers the session, the Observation consumer, the Entity Event stream and consumer configuration, and both consumers' activity; it never waits for unread backlog. The guarantee covers broker-acknowledged input only while NATS and JetStream remain available and the Adapter process is alive: initial claim and registration need Core, an Adapter restart during a Core outage loses unacknowledged work, a NATS process loss is not covered, and stream limits can discard old input during a long outage. Reports are not replayed into Commands, and nothing in this path executes work.
 
-For rollup-backed numeric summaries over retained State reports, see the [history query guide](docs/history-queries.md). The existing GET remains the audit view.
+For rollup-backed numeric summaries over retained State reports, see the [history query guide](docs/reference/history-queries.md). The existing GET remains the audit view.
 
 ### Device Facts
 
@@ -165,13 +165,13 @@ A plain subscription is live-only: it receives only facts published while it is 
 - acknowledge only after your side effect commits, and stay idempotent on the fact `id` because a duplicate is possible;
 - remember the seven-day/one-GiB bound: a reader that falls further behind than the stream's retention loses the evicted facts.
 
-Core provisions the stream and no consumer, and never resumes or repairs a reader's position for it. Readiness requires the shared NATS connection, the validated fact stream and an active relay, but never a subscriber and never a fact consumer Core does not own.
+The Device Fact publishing foundation provisions the stream without a reader. Core's Automations module provisions its own durable consumer and recovery policy; other subscribers own their positions. Publishing readiness requires the shared NATS connection, compatible fact stream and active healthy relay. Overall Core readiness also checks its Automation consumer, but does not depend on external subscribers.
 
 The Hearth Debug dashboard exposes `#/device-facts`. It reads a bounded recent snapshot directly from JetStream over the configured NATS websocket, and live streaming remains off until explicitly enabled. Its temporary `DeliverNew` consumer is advisory and non-durable: switching live off or leaving the page deletes it, and reconnecting resumes at the current tail rather than recovering missed facts.
 
 Subjects are `hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>` with Entity-first routing, where `<family>` is `observation` or `entity-event`. Each fact validates against one strict `contracts/v1` schema — `urn:hearth:schema:observation-fact:v1` or `urn:hearth:schema:entity-event-fact:v1` — carries a stable `fct_<uuidv7>` `id` that is also published as `Nats-Msg-Id`, and keeps the durable `obs_`/`evt_` source ID as `causation_id`. `emitted_at` is Core's commit time, not publication time, and the inbound W3C `traceparent`/`tracestate` are restored on every (re)publication. Subscribers must reject a payload whose Entity, family or variant disagrees with its subject, and must not sort by UUID or envelope time to invent a global order.
 
-When a pending fact cannot be mapped to a valid message, the relay preserves the row, stops, logs `device_fact.poison` and fails readiness instead of discarding durable evidence. A transient outbox, publish, acknowledgement or delete failure keeps the row and retries, logging `device_fact.retry`. Neither event contains State values, raw envelopes or full subjects. See [the logging guide](docs/logging.md).
+When a pending fact cannot be mapped to a valid message, the relay preserves the row, stops, logs `device_fact.poison` and fails readiness instead of discarding durable evidence. A transient outbox, publish, acknowledgement or delete failure keeps the row and retries, logging `device_fact.retry`. Neither event contains State values, raw envelopes or full subjects. See [the logging guide](docs/guides/logging.md).
 
 Anyone with broker access can read canonical State values, forge a fact or publish directly into `HEARTH_DEVICE_FACTS_V1`. Facts are unsigned, Hearth adds no fact authentication or authorization, and this feature widens no deployment boundary: trust the broker exactly as for the rest of Hearth's trusted network, and reserve `hearth.v1.core.fact.>` publish permission for Core when NATS authorization exists.
 
@@ -179,18 +179,18 @@ Anyone with broker access can read canonical State values, forge a fact or publi
 
 An Automation may require current Entity State before it runs. A Trigger decides *when* an Automation is considered; an optional `conditions` tree decides *whether* that consideration may admit a Run, evaluated once at admission against a coherent batch of retained State. Nodes compose with `all`, `any`, and `not` under three-valued (`true`/`false`/`unknown`) logic, and only a true root admits. Missing, expired, or incompatible evidence is `unknown`, so absence is not permission; a false or unknown decision records an explainable Skip rather than silently doing nothing.
 
-Admission Conditions are optional, and a definition without them keeps its existing unconditional-after-Trigger admission behavior. Manual invocation applies Admission Conditions unless the operator explicitly requests `{"bypass_conditions": true}`. That bypass never bypasses branch evaluation, admission gates, busy checks, or execution-time Command validation. See [the Automation Conditions guide](docs/automation-conditions.md) for the definition field contract, a complete create request, manual and bypass requests, and history inspection.
+Admission Conditions are optional, and a definition without them keeps its existing unconditional-after-Trigger admission behavior. Manual invocation applies Admission Conditions unless the operator explicitly requests `{"bypass_conditions": true}`. That bypass never bypasses branch evaluation, admission gates, busy checks, or execution-time Command validation. See [the Automation Conditions guide](docs/reference/automation-conditions.md) for the definition field contract, a complete create request, manual and bypass requests, and history inspection.
 
 ### Automation expressions
 
-Definition/history v3 supports Run-local variables, explicit retained-State reads,
+The current definition/history contract supports Run-local variables, explicit retained-State reads,
 verified Function outputs and pure Expr calculations for fixed-target inputs and
 branch Conditions. Values are retained with the unified Step timeline, not a
 second journal. Ordinary literal fields stay unchanged; explicit `*_expr` fields
 use native Expr semantics, including nil, optional access and coalescing. Delay
 remains a plain literal integer. Evaluation has no hard timeout.
 Migration 23 preserves post-refactor revisions/history; back up before upgrade.
-See [Automation expressions](docs/automation-expressions.md) for authoring,
+See [Automation expressions](docs/reference/automation-expressions.md) for authoring,
 limits, sensitive history and rollback.
 
 ### Automation branching
@@ -204,8 +204,8 @@ History retains branch decisions and effects in one sparse execution timeline;
 restart interrupts unfinished work without replay. Earlier development cutovers
 21/22 reset Automation data; expression migration 23 preserves post-22 data.
 Keep a matching pre-upgrade backup for binary rollback. See the
-[branching guide](docs/automation-branching.md) for a complete nested definition,
-bounds, and history, and the [revision guide](docs/automation-definition-revisions.md)
+[branching guide](docs/guides/automation-branching.md) for a complete nested definition,
+bounds, and history, and the [revision guide](docs/reference/automation-definition-revisions.md)
 for the development cutover and rollback constraints.
 
 ### Automation delay Steps
@@ -216,8 +216,8 @@ author the same bounded definitions, including delay-only sequences with zero
 Commands. The browser displays definitions and reached wait evidence with
 manual history refresh. Waiting retains the busy slot; shutdown and restart
 interrupt rather than resume or replay work. Due timestamps are diagnostic UTC
-wall times, not scheduling promises. See the [delay guide](docs/automation-delay-steps.md)
-for v3 HTTP examples, bounds, history, failure handling, and rollback constraints.
+wall times, not scheduling promises. See the [delay guide](docs/guides/automation-delay-steps.md)
+for HTTP examples, bounds, history, failure handling, and rollback constraints.
 
 ### MCP tools
 
@@ -246,8 +246,8 @@ independent models, mappings, errors, and service interfaces, with one public
 [the transport operation standard](CODING_STANDARDS.md#keep-transport-operations-in-operation-local-files).
 The typed MCP framework and prepared contracts live in
 `internal/platform/mcpapi`. See the
-[result and validation contracts](docs/mcp-errors.md#result-contracts).
-See [MCP failure contracts](docs/mcp-errors.md) for argument rejection, modeled
+[result and validation contracts](docs/reference/mcp-errors.md#result-contracts).
+See [MCP failure contracts](docs/reference/mcp-errors.md) for argument rejection, modeled
 failures, receipt details, and intentional differences from HTTP errors.
 HTTP routes, payloads, and published schema names are unchanged.
 
@@ -286,11 +286,9 @@ The equivalent sources are `--agent-provider` / `HEARTHD_AGENT_PROVIDER`,
 `https://opencode.ai/inference/go/openai/v1` by default. Hearth identifies itself
 as `hearth/1.0` and sends each conversation ID in `x-opencode-session`.
 OpenCode's [Go usage guidance](https://opencode.ai/v2/docs/console/go#where-can-i-use-it)
-targets coding agents; household-assistant eligibility is unconfirmed. A
-[live read-only tool and restart-continuation check](docs/agent-skills.md#recorded-go-validation-2026-11-05)
-passed with DeepSeek V4.1 Flash after an earlier provider-overload failure.
-That scenario does not establish availability, household-task quality, or policy
-eligibility. Protocol failure tests use synthetic peers.
+targets coding agents; household-assistant eligibility is unconfirmed. See
+[OpenCode Go provider connection](docs/reference/agent-skills.md#opencode-go)
+for connection details. Protocol failure tests use synthetic peers.
 
 Restart Core after changing provider settings. Start a new conversation when
 switching providers: existing history remains readable, but attempts to continue
@@ -299,7 +297,7 @@ message or calling the model. Legacy conversations belong to OpenAI.
 
 Conversations are durable in Core's SQLite. `POST /v1/agent/conversations` opens one, `POST /v1/agent/conversations/{id}/messages` runs one turn synchronously, `GET /v1/agent/conversations/{id}/messages` reads it back, and `POST /v1/agent/conversations/{id}/messages/stream` streams the same turn as SSE (`turn.started`, `tool.preparing`, `tool.started`, `tool.finished`, `view.presented`, `turn.finished`/`turn.failed`). `tool.preparing` names a call the model has begun writing, before its arguments are complete; `tool.started` follows only when the model's response completes. The stream route is a plain Echo handler and stays out of `openapi.json`. The agent's tools are the `/mcp` catalog, so a turn executes the same Commands REST and MCP do. `/readyz` requires open agent admission, and shutdown closes admission, cancels and joins running turns, then closes the agent's MCP sessions before SQLite. The shared history pruning worker deletes whole conversations past `agent.history_retention` in the same pass as Devices and Automations retention.
 
-The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. Each turn rebuilds recent turns inside a fixed history budget. Eino ADK owns the loop, native call IDs, instruction composition, and generation-cycle limit. The built-in `hearth-automations` skill supplies automation guidance on demand through the agent-only `skill` tool. Loading is instruction-led. See [agent skills and isolated model evaluation](docs/agent-skills.md).
+The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. Each turn rebuilds recent turns inside a fixed history budget. Eino ADK owns the loop, native call IDs, instruction composition, and generation-cycle limit. The built-in `hearth-automations` skill supplies automation guidance on demand through the agent-only `skill` tool. Loading is instruction-led. See [agent skills and provider continuation](docs/reference/agent-skills.md).
 
 Rename `agent.max_steps` to `agent.max_iterations` (also `--agent-max-iterations`
 and `HEARTHD_AGENT_MAX_ITERATIONS`). The old YAML key is rejected with a migration
@@ -323,11 +321,11 @@ Blocking turns distinguish model failures from internal faults:
 
 Once SSE headers are committed, unexpected failures end with the opaque `turn.failed` text, `agent turn failed`. Actual caller/Drain cancellation or caller expiry keeps `agent turn canceled`. A provider cancellation or deadline with an active caller remains a model failure, not caller cancellation. Fatal tool faults retain fixed failure text in tool history and `tool.finished`, never the raw infrastructure cause. Modeled MCP tool failures remain recoverable observations with their original payloads.
 
-Caller cancellation and shutdown still cancel and join turns. Failed trace writes leave no partial call/result pair, and turns do not retry or replay effects. See [Application logging](docs/logging.md) for safe diagnostic stages and codes.
+Caller cancellation and shutdown still cancel and join turns. Failed trace writes leave no partial call/result pair, and turns do not retry or replay effects. See [Application logging](docs/guides/logging.md) for safe diagnostic stages and codes.
 
 ### Zigbee2MQTT adapter
 
-For adding device capabilities, see [Extending Zigbee2MQTT capabilities](docs/zigbee2mqtt-capabilities.md): typed mapping tables for repetitive sensors/settings, with family planning and conversions kept in Go.
+For adding device capabilities, see [Extending Zigbee2MQTT capabilities](docs/guides/zigbee2mqtt-capabilities.md): typed mapping tables for repetitive sensors/settings, with family planning and conversions kept in Go.
 
 `hearth-adapter-zigbee2mqtt` connects an operator-managed Zigbee2MQTT service to Hearth. Tested versions are Zigbee2MQTT 2.13.0 and 2.14.1 with Mosquitto 2.0.22. Other versions are not runtime-blocked, but must provide the same retained MQTT payloads and behavior.
 
@@ -411,14 +409,14 @@ curl http://127.0.0.1:8080/v1/adapters/zigbee2mqtt/function-invocations
 Success means one MQTT `/get` received PUBACK, not that fresh State arrived.
 Read-only gettable and Core-disabled Entities can refresh without becoming
 commandable. Do not retry an unknown outcome automatically. See
-[Adapter Functions](docs/adapter-functions.md) for discovery, evidence, non-secret
+[Adapter Functions](docs/reference/adapter-functions.md) for discovery, evidence, non-secret
 payloads, SDK usage, and upgrade order.
 
 ### Discord notification adapter
 
 `hearth-adapter-discord` registers YAML-configured destinations and sends one bounded
 Discord incoming-webhook request per notification, without retries or a queue.
-Credentials stay in separate secret files. See [Discord setup](docs/discord.md)
+Credentials stay in separate secret files. See [Discord setup](docs/guides/discord.md)
 for configuration, deployment and the explicit operator-only smoke procedure.
 
 ### Ecowitt adapter
@@ -601,7 +599,7 @@ used to validate this implementation.
 Climate entities expose `hearth.thermostat/v1`: separate mode and reported
 activity, single or paired temperature targets, exact fan choices, and optional
 humidity readings/control. Numbers and selects expose the existing numeric-setting
-and enum-setting types. See [ESPHome thermostats](docs/esphome-thermostat.md)
+and enum-setting types. See [ESPHome thermostats](docs/guides/esphome-thermostat.md)
 for canonical operation parameters, Rheem humidity settings, and the Home
 Assistant feature comparison.
 
@@ -666,7 +664,7 @@ mise daemons status zwave-adapter
 # When finished: mise run zwave-stop; mise run simulator-stop
 ```
 
-`zwave-start` checks for `configs/zwavejs.yaml` and runs `simulator-start`, which requires a nonempty `HEARTH_OPENAI_API_KEY` in its environment. The Z-Wave daemon substitutes the worktree's assigned NATS port into a runtime copy under `.data/simulator-stack/`; leave the source file's `nats_url` at its example value. Both files are ignored by Git. The adapter is not in the default simulator daemon group: `mise run simulator-start` runs without it, and `mise run zwave-stop` stops only the adapter. Use `mise env --json | jq '{SIM_CORE_PORT, SIM_WEB_PORT}'` to print only those ports, never the full environment; the dashboard runs at `http://127.0.0.1:$SIM_WEB_PORT/`. Physical and simulated Devices share the simulator database. Their records remain after the adapter stops. Starting the Adapter discovers eligible nodes but sends no device Commands until one is explicitly requested.
+`zwave-start` checks for `configs/zwavejs.yaml` and runs `simulator-start`, whose checked-in Core configuration requires a nonempty `HEARTH_OPENCODE_GO_API_KEY` in its environment. If you explicitly change the provider, supply that provider's credential instead. The Z-Wave daemon substitutes the worktree's assigned NATS port into a runtime copy under `.data/simulator-stack/`; leave the source file's `nats_url` at its example value. Both files are ignored by Git. The adapter is not in the default simulator daemon group: `mise run simulator-start` runs without it, and `mise run zwave-stop` stops only the adapter. Use `mise env --json | jq '{SIM_CORE_PORT, SIM_WEB_PORT}'` to print only those ports, never the full environment; the dashboard runs at `http://127.0.0.1:$SIM_WEB_PORT/`. Physical and simulated Devices share the simulator database. Their records remain after the adapter stops. Starting the Adapter discovers eligible nodes but sends no device Commands until one is explicitly requested.
 
 When running the binary directly, settings resolve in this order: CLI flags, `HEARTH_ADAPTER_ZWAVEJS_` environment variables, optional `configs/zwavejs.yaml`, then built-in defaults. An explicit `--config` or `HEARTH_ADAPTER_ZWAVEJS_CONFIG` path must exist. The settings flags are `--adapter-id`, `--nats-url`, `--zwave-js-url`, `--log-level`, and `--log-format`; for example, `--zwave-js-url` corresponds to `HEARTH_ADAPTER_ZWAVEJS_ZWAVE_JS_URL` and YAML `zwave_js.url`. The default YAML file can be omitted when the required settings come from flags or environment variables.
 
@@ -726,22 +724,10 @@ go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>"$log_dir
 jq -c 'select(.event == "command.created")' "$log_dir/core.log"
 ```
 
-See [the logging guide](docs/logging.md) for startup/failure diagnosis and safety rules. Use Command-history APIs for durable outcomes, and `/readyz` plus Adapter/Entity reads for current health; logs do not reconstruct those lifecycles. Entity availability can lag authoritative Adapter health even when readiness passes. Commands still check authoritative health. See the [health projection guide](docs/adapter-health-projection.md) for history, recovery, and upgrade semantics.
+See [the logging guide](docs/guides/logging.md) for startup/failure diagnosis and safety rules. Use Command-history APIs for durable outcomes, and `/readyz` plus Adapter/Entity reads for current health; logs do not reconstruct those lifecycles. Entity availability can lag authoritative Adapter health even when readiness passes. Commands still check authoritative health. See the [health projection guide](docs/architecture/adapter-health-projection.md) for history, recovery, and upgrade semantics.
 
 ## Documentation
 
-- [`GLOSSARY.md`](./GLOSSARY.md): canonical project language
-- [`docs/product.md`](./docs/product.md): audience, goals, boundaries, and success
-- [`docs/architecture.md`](./docs/architecture.md): current accepted architectural constraints
-- [`docs/automation-conditions.md`](./docs/automation-conditions.md): Automation Conditions contract and operator examples
-- [`docs/automation-schedules.md`](./docs/automation-schedules.md): restricted cron syntax, household time, and no-replay admission
-- [`docs/automation-branching.md`](./docs/automation-branching.md): Nested If/Choose authoring, decision evidence, and rollback
-- [`docs/automation-delay-steps.md`](./docs/automation-delay-steps.md): Delay authoring, elapsed waiting, interruption evidence, and rollback
-- [`docs/automation-expressions.md`](./docs/automation-expressions.md): Bindings, Run values, exact evidence, limits, and preserving upgrades
-- [`docs/logging.md`](./docs/logging.md): application logging and operator diagnosis
-- [`docs/adapter-functions.md`](./docs/adapter-functions.md): Adapter-owned capabilities, invocation evidence, and SDK serving
-- [`docs/simulator.md`](./docs/simulator.md): scripted Device, notification, Function, and control configuration
-- [`docs/adr/`](./docs/adr/): durable architectural decisions and their rationale
-- [`docs/plans/`](./docs/plans/): implementation plans
-
-The [first-light plan](docs/plans/0001-first-light.md) records the completed first slice.
+- [Documentation index](docs/README.md): guides, references, architecture and decision records, organized by reader and question.
+- [Glossary](GLOSSARY.md): canonical project language.
+- [Specs](specs/): unfinished work and a superseded proposal awaiting an owner decision.

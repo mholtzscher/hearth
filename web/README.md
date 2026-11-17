@@ -52,7 +52,7 @@ Only the dashboard port needs to be reachable: `hearthd` stays on `127.0.0.1:808
 
 ## Develop components with Storybook
 
-Use [the Storybook workflow](../docs/storybook.md) to develop dashboard components without Core, NATS, model credentials, or devices:
+Use [the Storybook workflow](../docs/guides/storybook.md) to develop dashboard components without Core, NATS, model credentials, or devices:
 
 ```sh
 mise run web-install
@@ -99,7 +99,7 @@ The `HEARTHD_URL` hostname must resolve when the container starts (nginx resolve
 - **Adapters**: list + detail with runtime evidence, health history, raw JSON.
 - **Commands**: household history newest-first (`GET /v1/commands`) with entity/status filters, lookup by `cmd_…` id (`GET /v1/commands/{id}`) with shareable `?command_id=` links and recent IDs, outcome timeline with latency, and links to entity pages and automation step attempts.
 - **Automations**: switchable Sentence/Step stack cards, stack authoring, retained Run/Skip history, manual Runs, and revision-checked enablement. Notification leaves have structured destination/title/message editing. Run notification evidence is separate from Commands and links to independent attempt detail. Missing/pruned detail never changes a retained Step outcome.
-- **Destinations / Notifications**: destination discovery, one-shot manual test sends and paginated attempt history. Unknown outcomes are ambiguous, never automatically retried. See [Core notification usage](../docs/notifications.md).
+- **Destinations / Notifications**: destination discovery, one-shot manual test sends and paginated attempt history. Unknown outcomes are ambiguous, never automatically retried. See [Core notification usage](../docs/reference/notifications.md).
 - **NATS**: live wire traffic (`hearth.v1.adapter.>` over websocket) with subject presets, pause/clear, and subject filter; plus server info from the NATS monitoring endpoint (connections with subscriptions, JetStream stream `HEARTH_OBSERVATIONS_V1` state and consumer lag).
 - **Device facts**: reads Core's `HEARTH_DEVICE_FACTS_V1` JetStream stream over the same websocket. A bounded retained snapshot (newest 200, newest-first, `hearth.v1.core.fact.>`) is read through a short-lived ephemeral consumer that is deleted as soon as the read completes; live streaming is off by default and adds a separate ephemeral `DeliverNew` tail that sees only facts published after it is created. Both consumers are page-owned and deleted on completion or disable, with `inactive_threshold` as orphan safety for a closed tab. Entity and device names are enrichment from the HTTP read API; the payload and subject carry only the canonical entity id. Neither path offers durable recovery.
 

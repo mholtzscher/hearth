@@ -1,6 +1,6 @@
 # Discord companion
 
-See [Discord setup and operator smoke validation](../docs/discord.md).
+See [Discord setup and operator smoke validation](../docs/guides/discord.md).
 Deploy `hearth-adapter-discord` with your existing Core/NATS using your own
 process supervisor or container configuration; no Compose file is provided.
 The release image is `ghcr.io/mholtzscher/hearth/hearth-adapter-discord`.

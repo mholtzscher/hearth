@@ -138,8 +138,8 @@ remaining enforcement point, then preserves safety and existing error semantics.
 Preserve public statuses, codes, durable outcomes, retry policy, and cancellation
 behavior unless changes to them are explicitly agreed before implementation.
 
-Use the [logging conventions](docs/logging.md#developer-conventions-and-safety)
-for diagnostic fields and safety, and the [testing guide](docs/testing.md) for
+Use the [logging conventions](docs/guides/logging.md#developer-conventions-and-safety)
+for diagnostic fields and safety, and the [testing guide](docs/guides/testing.md) for
 test placement and validation. Error naming and mechanical error-handling checks
 remain the responsibility of the configured linters.
 
@@ -332,7 +332,7 @@ response decision, retaining a private cause until that owner can classify it.
 **Why:** Discarding causes before diagnosis makes failures opaque; logging the same
 failure at every layer creates noise without additional evidence.
 **Applies to:** Runtime failure paths, including HTTP failures without an existing
-service or worker diagnostic. Follow [docs/logging.md](docs/logging.md) for safe
+service or worker diagnostic. Follow [docs/guides/logging.md](docs/guides/logging.md) for safe
 fields, levels, operation contexts, and prohibited data. Do not add deduplication
 state or repository reads solely for logging.
 **Source:** observed + stated
@@ -388,7 +388,7 @@ the wrapped, ambiguous, and unexpected cases the change can affect.
 **Why:** An isolated mapping test or schema digest cannot prove that production
 returns the documented status, structured details, or safe diagnostic.
 **Applies to:** New and changed error behavior or publication. Follow
-[docs/testing.md](docs/testing.md) for levels and fixtures; keep complete matrices
+[docs/guides/testing.md](docs/guides/testing.md) for levels and fixtures; keep complete matrices
 at their owner instead of repeating them across every integration layer.
 **Source:** observed + stated
 
@@ -410,7 +410,7 @@ tool result, structured identities, and agreement with its published schema.
 ## SQLite persistence mappings
 
 For new or changed handwritten SQLite conversions, apply the
-[SQLite mapping standards](docs/sqlite-mapping-standards.md): explicit stored-row
+[SQLite mapping standards](docs/reference/sqlite-mapping-standards.md): explicit stored-row
 validation contracts, resource-specific mapping files, consistent row-decoder
 names, and timestamp compatibility. These rules also apply when persistence
 conversions live in a module's root package rather than a `sqlite` subpackage.
@@ -459,7 +459,7 @@ registries, per-operation subpackages, or empty scaffolding.
 
 Operation-specific tests normally use the operation stem, such as
 `get_entity_test.go` or `get_entity_integration_test.go`; choose the boundary and
-build tags from [the testing guide](docs/testing.md). Keep cohesive catalog,
+build tags from [the testing guide](docs/guides/testing.md). Keep cohesive catalog,
 cross-operation, and lifecycle tests together under behavioral names rather
 than forcing every test file to mirror a production file. Shared fixture-only
 files remain recognizable as support code.
@@ -568,13 +568,13 @@ package unless the approved shared contract assigns those decisions to it.
 Identical code alone is not a reason to extract owner-specific policy.
 **Source:** observed + stated
 
-The [platform guide](docs/platform.md) assigns cancellation and joining to
+The [platform guide](docs/reference/platform.md) assigns cancellation and joining to
 [`WorkerHandle`](internal/platform/lifecycle/worker_handle.go), while
 [history pruning](internal/app/hearthd/history_pruning.go) owns its schedule and
 failure policy. Reconnect jitter remains Adapter-owned in
 [Ecowitt](internal/adapters/ecowitt/connection.go) and
 [Zigbee2MQTT](internal/adapters/zigbee2mqtt/connection.go).
-The [outbox relay contract](docs/outbox-relays.md) explicitly standardizes delivery
+The [outbox relay contract](docs/architecture/outbox-relays.md) explicitly standardizes delivery
 retry, polling, poison handling, and delivery faults across Device Facts and
 Adapter health. Their storage, wire mapping, domain-error classification, and
 consumer recovery remain module-owned.
@@ -653,7 +653,7 @@ cancel admitted work.
 cancellation, but its completion signal closes only after the worker returns.
 [Core shutdown](internal/app/hearthd/shutdown.go) joins admitted work in dependency
 order before withdrawing shared resources; see the
-[platform guide](docs/platform.md#joining-and-cancellation-are-different).
+[platform guide](docs/reference/platform.md#joining-and-cancellation-are-different).
 
 Bad:
 
@@ -1130,7 +1130,7 @@ dependency direction, and transaction or lifecycle ownership across that boundar
 
 Compare new or changed lifecycle and transport machinery with the nearest platform
 primitive and sibling-module implementation, starting with the
-[platform guide](docs/platform.md).
+[platform guide](docs/reference/platform.md).
 
 **Why:** A per-file inventory alone cannot establish that shared machinery has
 the right owner or semantics.

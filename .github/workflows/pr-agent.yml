@@ -46,7 +46,7 @@ jobs:
           CONFIG__RESTRICTED_MODE: "true"
           # Keep configuration in the base-branch workflow, not a PR's settings file.
           CONFIG__USE_REPO_SETTINGS_FILE: "false"
-          CONFIG__REPO_CONTEXT_FILES: '["CODING_STANDARDS.md", "docs/testing.md"]'
+          CONFIG__REPO_CONTEXT_FILES: '["CODING_STANDARDS.md", "docs/guides/testing.md"]'
           CONFIG__REPO_CONTEXT_MAX_LINES: "1200"
           GITHUB_ACTION_CONFIG__AUTO_REVIEW: "true"
           GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "false"

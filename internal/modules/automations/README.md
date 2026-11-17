@@ -27,7 +27,7 @@ stops the parent; the active-Run rule also prevents recursive-call deadlocks.
 
 Parent/child links do not cascade history deletion. Startup interrupts all
 unfinished evidence without resuming a wait. See the
-[operator guide](../../../docs/reusable-automations.md) for wire shapes and outcomes.
+[operator guide](../../../docs/guides/reusable-automations.md) for wire shapes and outcomes.
 
 ## Package boundaries
 
@@ -48,7 +48,7 @@ remains the narrower definition-management capability; there is no parallel
 store aggregate or generic transaction framework.
 
 Before changing schedule repository capabilities or worker ownership, read the
-[schedule ownership contract](../../../docs/automation-schedules.md#ownership-and-lifecycle).
+[schedule ownership contract](../../../docs/reference/automation-schedules.md#ownership-and-lifecycle).
 
 The devices-facing `AutomationDevices` seam stays in the domain. SQLite never
 executes device Commands, publishes NATS messages, or starts Run workers.
@@ -167,12 +167,9 @@ codec registry or dynamic handler registration.
 ## File responsibilities
 
 SQLite conversions follow the
-[mapping standards](../../../docs/sqlite-mapping-standards.md). History operations
+[mapping standards](../../../docs/reference/sqlite-mapping-standards.md). History operations
 load retained definitions and Steps; mapping files reconstruct and validate domain
 evidence without executing SQL.
-
-The [complete file-purpose map](../../../docs/automation-file-map.md) inventories
-every module file, including tests, fixtures, schemas, SQL, and generated code.
 
 - `definition.go`, `definition_codec.go`, `definition_validation.go`, and
   `definition_management.go` own definition types, encoding, validation, and
@@ -318,7 +315,7 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   Run detail and execution reads resolve their retained revision, not the current
   head. Skips keep compact inline snapshots. Existing history maintenance collects
   unreferenced revisions in bounded batches. See
-  [revision storage and migration](../../../docs/automation-definition-revisions.md).
+  [revision storage and migration](../../../docs/reference/automation-definition-revisions.md).
 - `automation-definition.schema.json` and `automation-history.schema.json` own
   the v1 public contracts. `httpapi/schema_publication.go` and transport-local
   contract files publish recursive schemas for HTTP and MCP. Both transports use canonical encoders;
@@ -361,7 +358,7 @@ expression migration 20 are a separate lineage and must not be silently adopted.
 Migration 24 converts retained failure targets using immutable revisions and
 drops aggregate counters without rewriting value number tokens. Runtime failures
 identify logical fields or root-local Condition IDs; syntax diagnostics keep locations.
-See [Automation expressions](../../../docs/automation-expressions.md).
+See [Automation expressions](../../../docs/reference/automation-expressions.md).
 
 Migrations 21 and 22 intentionally clear existing Automation definitions, history,
 held state, receipts, and schedule progress while leaving other modules' data
@@ -370,12 +367,12 @@ current authoring uses v1, with migration 23 preserving post-22 definitions/hist
 Public schema identifiers were reset to v1 before release; the frozen migration
 schema retains its historical v2 identifier.
 There is no compatibility decoder or replay for data discarded by the earlier
-cutovers. See [upgrade guidance](../../../docs/automation-definition-revisions.md#upgrade-and-rollback).
+cutovers. See [upgrade guidance](../../../docs/reference/automation-definition-revisions.md#upgrade-and-rollback).
 All Command Steps require `kind: "command"`; comparisons accept only
 `value_pointer`. Public provenance is a required `cause` object, and Condition
 leaves include `kind`. Devices-owned NATS envelopes retain their existing format.
 
-See [Step execution storage](../../../docs/automation-step-executions.md) for the
+See [Step execution storage](../../../docs/reference/automation-step-executions.md) for the
 unified transition checklist, targeted-read boundaries, and public projection.
 
 ## Conditions
@@ -420,7 +417,7 @@ admitted Run and bypasses nothing else, including branch evaluation. The Service
 turns a committed manual Condition Skip into a typed blocked error only after
 the transaction commits, so the required history is never rolled back.
 
-See the [Conditions guide](../../../docs/automation-conditions.md)
+See the [Conditions guide](../../../docs/reference/automation-conditions.md)
 for the evaluation contract, definition, manual, and history examples.
 
 ## Branch execution and evidence
@@ -451,7 +448,7 @@ committed evidence and interrupts active Runs without resuming execution.
 Migration 10 originally added separate branch evidence. Migration 22 replaces
 that table with unified Step executions and resets all Automation-owned data.
 Older binaries require their matching database and frontend.
-See the [branching guide](../../../docs/automation-branching.md) for bounds and rollback.
+See the [branching guide](../../../docs/guides/automation-branching.md) for bounds and rollback.
 
 ## Delay execution and evidence
 
@@ -497,7 +494,7 @@ evidence only; older binary rollback requires a pre-feature database backup
 because definitions and snapshots still contain delay nodes. Existing HTTP/MCP
 operations and canonical schema support authoring with no new tools. Browser
 definitions and delay history are read-only with manual refresh.
-See the [delay guide](../../../docs/automation-delay-steps.md).
+See the [delay guide](../../../docs/guides/automation-delay-steps.md).
 
 ## Transaction boundaries
 
@@ -573,9 +570,9 @@ File boundaries organize related code; they do not divide existing transactions.
 
 Only after successful admission commits does the Service start Run workers.
 Consumer acknowledgement follows durable admission, not worker completion.
-See the [Held-State Trigger contract](../../../docs/automation-conditions.md#held-state-triggers) for
+See the [Held-State Trigger contract](../../../docs/reference/automation-conditions.md#held-state-triggers) for
 the hold cursor, expiry, and restart rules.
-See the [Scheduled Trigger contract](../../../docs/automation-schedules.md)
+See the [Scheduled Trigger contract](../../../docs/reference/automation-schedules.md)
 for current-minute admission, household-local matching, and no-replay rules.
 
 Pure domain decisions and snapshot construction operate on domain values. SQL

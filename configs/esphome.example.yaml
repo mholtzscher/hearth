@@ -33,4 +33,4 @@ devices:
 # Overrides also accept exact climate, number, and select names, for example:
 #    include: ["number/Relative Humidity Offset"]
 #    exclude: ["select/Humidity Smart Control"]
-# See docs/esphome-thermostat.md for paired targets and humidity semantics.
+# See docs/guides/esphome-thermostat.md for paired targets and humidity semantics.

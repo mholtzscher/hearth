@@ -36,7 +36,7 @@
 //   - HTTP exposes assistant text, tool calls and results, committed view
 //     artifacts, and selected-view context; full Eino message JSON and private
 //     provider metadata stay server-side.
-//   - Eino is outside the fixed implementation stack docs/architecture.md
+//   - Eino is outside the fixed implementation stack docs/architecture/architecture.md
 //     names, and checkpoint state is not persisted: a dropped turn leaves the
 //     persisted user message and whatever streamed messages completed, and the
 //     next turn rebuilds from those rows.

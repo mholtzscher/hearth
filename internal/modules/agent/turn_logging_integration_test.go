@@ -18,7 +18,7 @@ import (
 )
 
 // TestLogTurnFailureRecordsFixedCodesOnly protects the logging posture in
-// docs/logging.md: an unknown error string can carry a prompt, rejected value,
+// docs/guides/logging.md: an unknown error string can carry a prompt, rejected value,
 // or credential, so agent.turn_failed records a fixed stage and error code
 // instead. It fails if the raw model error text reaches the log.
 func TestLogTurnFailureRecordsFixedCodesOnly(t *testing.T) {

@@ -1,6 +1,6 @@
 # Entity Event automations
 
-**Status:** Superseded by [Fact-driven automations](automations.md). Retained only as historical rationale for the earlier Entity Event-only proposal; do not implement this design.
+**Status:** Superseded by [Fact-driven automations](https://github.com/mholtzscher/hearth/blob/e9dcdd2786f86d635300ba6791f541bcde5c1ded/specs/automations.md). Retained only as historical rationale for the earlier Entity Event-only proposal; do not implement this design.
 **Baseline:** `d9760b8`. Do not restore the automation module removed in `423addb` wholesale.
 **Effort:** Superseded.
 
@@ -28,7 +28,7 @@ This spec owns:
 - immutable Run snapshots, recorded skips and truthful execution history;
 - automation durable fact consumer, subscription, lifecycle and application assembly after Device Facts exist.
 
-This spec does **not** own Entity Event identity, registration, wire ingestion, validation, duplicate detection, history or retention. Those are implemented by `devices` and specified in [Entity Events](entity-events.md).
+This spec does **not** own Entity Event identity, registration, wire ingestion, validation, duplicate detection, history or retention. Those are implemented by `devices` and specified in the [historical Entity Events proposal](https://github.com/mholtzscher/hearth/blob/e9dcdd2786f86d635300ba6791f541bcde5c1ded/specs/entity-events.md).
 
 **Non-goals:** State or Observation Triggers, Command-outcome Triggers, timers or schedules, conditions, branching, retries, compensation, cancellation, replay, history-scan catch-up, deletion, configurable history retention, manual idempotency keys, definition-count quotas, and a privileged event-injection endpoint.
 

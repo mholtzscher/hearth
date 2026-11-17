@@ -8,7 +8,7 @@ Scheduled Automations request physical actions whose usefulness can expire befor
 
 Cron Triggers use the household timezone, skip nonexistent spring times without shifting them, and allow both distinct UTC instants of repeated autumn local times. Patterns continue through both passes of the repeated hour. Coincident matching Triggers share one admission decision; enablement, Conditions, and the ordinary busy rule still apply, without queues or retries.
 
-The current contract is [Scheduled automation triggers](../automation-schedules.md). [GLOSSARY.md](../../GLOSSARY.md) defines Scheduled Trigger, Cron Trigger, and scheduled occurrence.
+The current contract is [Scheduled automation triggers](../reference/automation-schedules.md). [GLOSSARY.md](../../GLOSSARY.md) defines Scheduled Trigger, Cron Trigger, and scheduled occurrence.
 
 ## Consequences
 

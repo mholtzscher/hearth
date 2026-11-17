@@ -41,7 +41,7 @@ without turning arrays into scalar history fields. Canonical reads retain numeri
 tokens; metadata uses identical concrete period-index pointers in either mode.
 
 SQLite row decoders and column encoders follow the
-[mapping standards](../../../docs/sqlite-mapping-standards.md). Resource mapping
+[mapping standards](../../../docs/reference/sqlite-mapping-standards.md). Resource mapping
 files own conversion; operation files retain SQL and transaction-dependent checks.
 
 ## Atomic operations
@@ -83,7 +83,7 @@ Current availability reads use only Devices-owned effective rows. They may lag
 behind authoritative Adapter health. Commands and report admission retain their
 transaction-local authoritative fencing and health checks. No transaction or
 generated query row crosses the Adapters boundary. See the
-[health projection operator guide](../../../docs/adapter-health-projection.md).
+[health projection operator guide](../../../docs/architecture/adapter-health-projection.md).
 
 ## Tests and generation
 

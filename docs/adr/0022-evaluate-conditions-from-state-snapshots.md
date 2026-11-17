@@ -1,6 +1,6 @@
 # Evaluate Conditions from coherent State snapshots
 
-**Status:** Accepted and implemented. [Automation Conditions](../automation-conditions.md) documents the evaluation and admission contract.
+**Status:** Accepted and implemented. [Automation Conditions](../reference/automation-conditions.md) documents the evaluation and admission contract.
 
 Automations evaluate Conditions once at admission using a coherent batch of current State evidence read through the devices module before the final admission transaction, rather than reading devices tables directly, maintaining another State projection, or calling devices while holding an automation transaction. Final admission still uses transaction-loaded current definitions and atomically commits every matching Fact's Run-or-Skip outcomes and receipts; if the evidence lacks any newly required Entity, admission writes nothing and requests a bounded complete re-snapshot outside the transaction. This preserves module ownership and avoids nested reads on the shared single-connection SQLite pool, while explicitly accepting that coherent State evidence is not atomic with admission, subsequent Commands, or physical effects.
 
