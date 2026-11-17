@@ -148,6 +148,13 @@ serialization contracts. Do not rewrite them merely to match SQLite scalar TEXT.
 Receive order and retained lifecycle evidence, not diagnostic wall-clock order,
 govern State advancement and execution progress.
 
+The [unused-column migration](../../internal/platform/db/migrations/00029_unused_columns.sql)
+removes explanatory receipt outcome/history metadata and the obsolete raw
+availability history pointer, not receipt deduplication keys, effective history,
+or timestamps. Its Down deliberately refuses lossless conversion: removed
+metadata cannot be reconstructed. Downgrade requires the pre-upgrade backup and
+its matching binary.
+
 Bad:
 
 ```text

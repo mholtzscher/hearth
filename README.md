@@ -1,733 +1,155 @@
 # Hearth
 
-Hearth is a home automation system for technical self-hosters. It is being designed to replace Home Assistant functionally for one household per deployment while retaining mature specialist protocol services where useful.
+Hearth is a home automation system for technical self-hosters, designed to
+replace Home Assistant functionally for one household per deployment. It keeps
+mature specialist services, such as Zigbee2MQTT and Z-Wave JS, where useful.
 
-**Naming:** Hearth is the product and user-facing namespace. `hearthd` is reserved for the core daemon; companion processes use `hearth-` names.
+Useful household behavior comes first. Every production use of NATS must solve
+a real durability, isolation, routing, or observability need.
 
-Useful household behavior is the primary goal; meaningful, production-grounded NATS experience is secondary. Every production use of NATS must solve a real system need.
+## What it does
 
-## Status
+- Native companion Adapters connect devices and services to Core without a
+  Home Assistant bridge.
+- Typed Entities separate reported State, availability, and Command outcomes.
+  Acceptance is not proof of a physical effect.
+- Automations run bounded Trigger, Condition, and Step definitions, retaining
+  execution evidence without automatic effect replay.
+- The browser offers conversation, live views, saved dashboards, and inspection.
+  Agent-generated drafts require an explicit browser Save.
 
-Hearth connects native companions to household devices and specialist services. The disposable Home Assistant migration adapter has been removed. The simulator exercises scripted scenarios and recovery through the same Core contracts; simulation does not establish physical-device compatibility.
+Core uses NATS/JetStream for messaging and SQLite for canonical records and
+history. `hearthd` names the Core daemon; companions use `hearth-` names.
+See [product direction](docs/architecture/product.md) and
+[architecture](docs/architecture/architecture.md) for boundaries and ownership.
 
-The [Pirate Weather Adapter](docs/guides/pirateweather.md) adds modeled current-condition
-Entities and fresh hourly and daily forecast Functions for one configured location.
-It runs as the separate `hearth-adapter-pirateweather` companion using a secret-file
-API key; see `configs/pirateweather.example.yaml` for configuration.
+## Before you start
 
-The [Levoit Adapter](docs/guides/levoit.md) discovers Core 400S and 600S air purifiers
-through a US VeSync account. The separate `hearth-adapter-levoit` companion
-exposes power, mode, manual fan level, display, child lock, PM2.5, and filter life.
-Credentials stay in a private file; see `configs/levoit.example.yaml`.
+- **Use loopback or a trusted private network.** Hearth's HTTP API has no
+  authentication. Broker access also exposes household data and control;
+  individual Adapter guides describe their upstream security limits.
+- **Core requires a model credential.** Model requests can incur provider
+  charges. Keep credentials out of YAML, command arguments, shell history,
+  logs, and committed files.
+- **Simulation is not hardware acceptance.** Check each Adapter's compatibility
+  and evidence limitations before connecting physical devices. Physical
+  Commands need deliberate authorization, not an automated smoke check.
+- **Back up before upgrades.** Development cutovers can reset data or prevent
+  lossless downgrade. Use a consistent SQLite backup, including its WAL where
+  applicable, and restore with its matching binary. See
+  [timestamp compatibility](docs/reference/sqlite-mapping-standards.md#make-timestamp-compatibility-explicit)
+  and [Automation upgrades](docs/reference/automation-definition-revisions.md#upgrade-and-rollback).
 
-The [August Adapter](docs/guides/august.md) monitors explicitly configured US August
-Wi-Fi locks without a Home Assistant runtime. The `hearth-adapter-august`
-companion reports bolt State, DoorSense, and estimated battery percentage.
-Lock control is blocked pending separately authorized live evidence checks.
-Native Go transport compatibility also remains unverified; see the guide before
-deployment and `configs/august.example.yaml` for monitoring configuration.
+## Try it with simulated devices
 
-## Development
-
-Install tools with `mise install`. Use `mise run simulator-start` for local NATS/JetStream and simulated Devices; it needs no Mosquitto broker. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, tests including runtime OpenAPI and recovery, and vetting. Tests are race-enabled in CI, not by default locally. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
-
-The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https://github.com/maratori/golangci-lint-config) at the version of golangci-lint locked by mise. Existing findings are baselined at the commit recorded in the lint task, while validation rejects findings introduced afterward. To upgrade, run `mise upgrade golangci-lint`, compare `.golangci.yml` with the matching upstream version, preserve the local `gci` formatter and Hearth import sections, then review the diff and run `mise run validate`.
-
-For routine iteration, use `GO_PACKAGES='./path/to/package' mise run test` for focused tests without preparation. Use the existing focused lint and vet tasks as needed. See [Testing and validation](docs/guides/testing.md) for test boundaries, technique policy, and scope selection.
-
-`mise run test` defaults to untagged unit tests locally. Add `-- -tags=integration` for real-boundary tests or `-- -tags=integration,e2e` for every level. Local tests are non-race; `CI=true` selects every level with race instrumentation. Use `mise run test -- -race` for an optional local race check, or `mise run test -- -count=1` to force a fresh run. Tests use cached passing results and skip generation, formatting, and module tidying. Unset `GO_PACKAGES` and run `mise run validate` after integrating the final change; it runs every default level locally without race detection. Selected Mosquitto tests require Docker.
-
-Run `mise run test-profile` to collect race-enabled Core test timings, a CPU profile, an execution trace, a trace-derived blocking profile, and the test binary under `.data/test-profile`. Set `TEST_PACKAGE` to profile another package and `PROFILE_DIR` to keep separate captures. The task prints the CPU summary; `mise exec -- go tool pprof .data/test-profile/tests.test .data/test-profile/cpu.pprof` opens the interactive profiler. Use `block.pprof` to inspect waits and `tests.jsonl` for individual test timings. Profiling adds overhead, so compare ordinary uncached runs for wall-clock improvements.
-
-`hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart. Optional `household_unit_system` (`metric`, the default, or `us`) chooses numeric read-response units, including dashboards and agents; changing it also requires a restart. Use `units=canonical` to read stored-unit values. See [quantity metadata and read units](docs/reference/units.md) for the breaking default-read change, canonical writes, and coordinated deployment/rollback requirements.
-
-SQLite timestamp normalization in #248 requires a fresh development database;
-there is no retained-row backfill. See [SQLite timestamp compatibility](docs/reference/sqlite-mapping-standards.md#make-timestamp-compatibility-explicit)
-for reset and compatibility policy.
-
-Migration 29 removes unused receipt outcome/history metadata and the obsolete
-raw Entity availability history pointer. It preserves receipt deduplication keys,
-effective availability history, and all timestamps, including `registered_at`.
-Back up SQLite before upgrading. Downgrade requires restoring that backup with
-its matching binary; removed metadata cannot be reconstructed.
-
-`hearthd` also requires the household agent's model API key: `HEARTH_OPENAI_API_KEY` for the default OpenAI provider, or `HEARTH_OPENCODE_GO_API_KEY` for OpenCode Go. Core fails startup when the selected provider's variable is missing, empty, or whitespace-only; see [Agent](#agent).
-
-`hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
-
-Non-secret Core settings can come from `--` flags, `HEARTHD_` environment variables, or YAML, in that order of precedence; built-in defaults apply last. Every key in `configs/hearthd.example.yaml` has a corresponding flag and environment variable: for example, `nats_url` maps to `--nats-url` and `HEARTHD_NATS_URL`, while `agent.model` maps to `--agent-model` and `HEARTHD_AGENT_MODEL`. Durations use Go syntax such as `720h`. Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` and `--log-format` / `HEARTHD_LOG_FORMAT` are not YAML keys.
-
-Core reads `configs/hearthd.yaml` by default if it exists; without it, supply all required settings through flags or environment variables. An explicit `--config` or `HEARTHD_CONFIG` path must exist and contain valid YAML, even when its settings are overridden. Supply the selected provider's key through your process supervisor or secret manager before launch; keep the value out of YAML, CLI arguments, shell history, and diagnostic captures. With that variable already set:
+Install [Mise](https://mise.jdx.dev/) and have `curl` and `jq` available.
+Run from the repository root:
 
 ```sh
-HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
-  HEARTHD_NATS_URL=nats://127.0.0.1:4222 HEARTHD_SQLITE_PATH=.data/hearthd.db \
-  go run ./cmd/hearthd
+mise install
+mise run web-install
 ```
 
-Companions and the simulator use the same flag > environment > YAML precedence. Environment prefixes include `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`; each companion's setup guide names its prefix. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only. The simulator validates its resolved configuration on every startup before connecting to NATS; it has no validation-only CLI mode.
-
-The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers nineteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device, Entity, notification destination, and Adapter Function is declared under its Adapter in YAML; the `sim-healthy` Functions exercise success, failure, not-executed, unknown, and one held invocation released over the loopback control channel. For a minimal first-light example, see `configs/simulator.example.yaml`. See the [simulator reference](docs/reference/simulator.md) for scripted output, Commands, notifications, Functions, and loopback controls. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
-
-The scripted garage door emits an independent position/motion series. Its
-`set` links the current State once without applying position parameters. A
-nonmatching target times out: later ticks and manual reports are unlinked and
-cannot complete that Command. Its `stop` accepts without publishing State.
-The production ESPHome journey tests use a separate synthetic Native API peer
-to verify command wire shapes and outcomes.
-
-For automated simulator validation, run `mise run simulator-start`.
-Mise/Pitchfork supervises an isolated local NATS/JetStream, Core, scripted
-simulator, and dashboard stack; Docker and Mosquitto are
-not needed. Mise passes worktree-specific addresses directly as CLI flags;
-no simulator config is generated. Run `mise run simulator-stop` to stop
-only this worktree's daemons while preserving configs and data.
-
-The simulator's checked-in Core configuration uses OpenCode Go with
-`deepseek-v4.1-flash` and low reasoning. Supply `HEARTH_OPENCODE_GO_API_KEY` to
-Core's environment. Core outside the simulator still defaults to OpenAI.
-
-### PR reviews
-
-[PR-Agent](https://docs.pr-agent.ai/) reviews non-draft pull requests when they
-open, reopen, become ready for review, or receive new commits. Bot-triggered
-events are ignored. Automatic runs review only; they do not rewrite descriptions
-or run `/improve`.
-
-To activate the workflow:
-
-1. Add an OpenAI API key as the repository Actions secret `OPENAI_KEY`.
-2. Merge `.github/workflows/pr-agent.yml` into `main`.
-3. Open a non-draft PR and check the **PR Agent** workflow and its review comment.
-
-Repository owners, members, and collaborators can post a new PR conversation
-comment beginning with `/review`, `/ask "your question"`, or `/improve` to request
-those tools. Commands on ordinary issues and comments from other users are ignored.
-
-The workflow uses OpenAI `gpt-6.1-sol`, with `gpt-6-luna` as its fallback. PR content
-and review context are sent to OpenAI and incur API charges. Set usage limits in
-the OpenAI project that owns the key. Configuration lives in the workflow;
-PR-supplied `.pr_agent.toml` files are not loaded. Coding standards and testing
-guidance are read from the default branch as review context.
-
-The pinned container reads PRs through GitHub's API, including fork PRs, without
-checking out or executing PR code. Its token can post comments and reviews but
-cannot push code. To stop reviews, disable **PR Agent** in GitHub Actions.
-
-### Entity Event recovery recipe
-
-Entity Events are named occurrences, not State. The scripted `simulated-button` Device in `configs/scripted.simulator.yaml` registers an `events` Entity beside the `simulated-light` power Device; `power` still accepts `set` Commands and reports State, while `events` advertises `single_press` and `double_press` and reads `state: null` forever. This is the proof recipe for the Core-offline guarantee and requires no hardware and no automations. Start the stack, discover the worktree ports, then stop **only** Core while leaving NATS and the simulator running:
+The [simulator Core configuration](configs/hearthd.simulator.yaml) selects OpenCode Go. Supply a
+nonempty `HEARTH_OPENCODE_GO_API_KEY` through your supervisor or secret manager
+before starting. Household-assistant eligibility for Go remains unconfirmed;
+review the [provider notes](docs/reference/agent-skills.md#opencode-go).
+If you explicitly select OpenAI instead, supply `HEARTH_OPENAI_API_KEY`.
+Neither provider's key substitutes for the other's.
 
 ```sh
 mise run simulator-start
-sim_port=$(mise env --json | jq -r .SIMULATOR_PORT)
-core_port=$(mise env --json | jq -r .SIM_CORE_PORT)
-mise daemons stop sim-core
+mise env --json | jq '{SIM_CORE_PORT, SIM_WEB_PORT}'
 ```
 
-Each loopback control-channel request publishes one report for the `events` Entity and returns its canonical publication ID. Publish a few reports while Core is stopped, then run `mise daemons start sim-core` with the same SQLite path. After the restart, Core records the backlog and the history endpoint returns each report exactly once:
+Open `http://127.0.0.1:<SIM_WEB_PORT>/` using the printed dashboard port.
+The managed stack runs worktree-local NATS/JetStream, Core, scripted Devices,
+and the browser. It does not start MQTT or optional physical-device Adapters.
+Do not print the complete environment; it can contain credentials.
+
+Check the selected Core's readiness:
 
 ```sh
-curl -X POST "http://127.0.0.1:$sim_port/v1/sim/entities/<events_ent_id>/publish" -d '{"name":"single_press"}'
-mise daemons start sim-core
-curl "http://127.0.0.1:$core_port/v1/entities/<power_ent_id>"
-curl "http://127.0.0.1:$core_port/v1/entities/<events_ent_id>"
-curl "http://127.0.0.1:$core_port/v1/entities/<events_ent_id>/events?limit=50"
+core_port=$(mise env --json | jq -er .SIM_CORE_PORT)
+curl -fsS "http://127.0.0.1:$core_port/readyz"
+```
+
+Readiness describes Core dependencies, not device health or physical outcomes.
+Use the browser's Adapter, Entity, and Command reads for their separate evidence.
+The [simulator reference](docs/reference/simulator.md) describes scenarios,
+fault controls, notifications, and Functions.
+
+When finished:
+
+```sh
 mise run simulator-stop
 ```
 
-The registration log reports both canonical Entity IDs. The event history response shows the schema-constrained reported name together with whether Core recorded the report (`accepted`) or why Core rejected it (`stale_runtime`, `unknown_entity`, `wrong_adapter`, `entity_disabled`, or `unsupported_event`). It never proves that a physical press happened, and it is not State history: `GET /v1/entities/{entity_id}/state/history` never contains events. Readiness covers the session, the Observation consumer, the Entity Event stream and consumer configuration, and both consumers' activity; it never waits for unread backlog. The guarantee covers broker-acknowledged input only while NATS and JetStream remain available and the Adapter process is alive: initial claim and registration need Core, an Adapter restart during a Core outage loses unacknowledged work, a NATS process loss is not covered, and stream limits can discard old input during a long outage. Reports are not replayed into Commands, and nothing in this path executes work.
+This stops only the worktree's simulator stack and preserves its data.
 
-For rollup-backed numeric summaries over retained State reports, see the [history query guide](docs/reference/history-queries.md). The existing GET remains the audit view.
+## Run Core with native Adapters
 
-### Device Facts
-
-Core publishes **Device Facts** for accepted Observations and accepted Entity Events. The devices SQLite transaction that records the evidence also writes a pending fact row in the same commit, and one relay publishes pending facts oldest-first into the JetStream stream `HEARTH_DEVICE_FACTS_V1` (`hearth.v1.core.fact.>`), deleting each row only after the broker acknowledges it. The durable SQLite record and the HTTP read APIs stay authoritative: a fact reports what Core recorded, not physical truth, and it never turns an HTTP history read into automatic catch-up.
-
-Publication is at-least-once from that durable outbox. A broker outage, a relay restart or a Core restart delays publication but does not lose a queued fact, and a retry reuses the same fact identity, subject and payload bytes. The broker collapses a repeated fact identity only inside the stream's two-hour duplicate window, so a retry after a long outage can store the same fact twice: treat the fact `id` as an idempotency key. The stream retains facts for seven days or one GiB, whichever comes first, and evicts the oldest first, so a reader that falls further behind than that permanently misses the evicted facts.
-
-Command lifecycle is deliberately not a fact family. Requested, accepted, satisfied, dispatched and every failure or interrupted status are exposed only through durable Command history (`GET /v1/commands/{command_id}` and `GET /v1/entities/{entity_id}/commands`), never as a fact, and a linked Observation fact is not a substitute for a Command's status transition. A stateless `dispatched` or a failure outcome has no fact at all.
-
-With NATS and `hearthd` running, subscribe live with any NATS client while driving the Entity Event or simulator paths above:
+For a non-simulator deployment, provision NATS/JetStream and any upstream
+specialist services separately. Loopback addresses in examples are defaults,
+not provisioned brokers.
 
 ```sh
-nats sub 'hearth.v1.core.fact.>'                              # every Device Fact
-nats sub 'hearth.v1.core.fact.entity.<ent_id>.>'              # one Entity, every family
-nats sub 'hearth.v1.core.fact.entity.*.entity-event.>'        # accepted Entity Events
-nats sub 'hearth.v1.core.fact.entity.*.observation.applied'   # state-changing Observations
-```
-
-A plain subscription is live-only: it receives only facts published while it is connected, and it can neither acknowledge nor recover one. When a missed fact is unacceptable, read the stream `HEARTH_DEVICE_FACTS_V1` with a **named durable JetStream consumer** created in your own client library:
-
-- choose `DeliverAll` with an explicit acknowledgement policy to resume from your own acknowledgement floor after a restart, which is the choice that does not miss a stored fact;
-- choose `DeliverNew` when a new consumer should see only facts published after it asked;
-- narrow the consumer's filter subject to one family or one Entity when that is all you need;
-- acknowledge only after your side effect commits, and stay idempotent on the fact `id` because a duplicate is possible;
-- remember the seven-day/one-GiB bound: a reader that falls further behind than the stream's retention loses the evicted facts.
-
-The Device Fact publishing foundation provisions the stream without a reader. Core's Automations module provisions its own durable consumer and recovery policy; other subscribers own their positions. Publishing readiness requires the shared NATS connection, compatible fact stream and active healthy relay. Overall Core readiness also checks its Automation consumer, but does not depend on external subscribers.
-
-The Hearth Debug dashboard exposes `#/device-facts`. It reads a bounded recent snapshot directly from JetStream over the configured NATS websocket, and live streaming remains off until explicitly enabled. Its temporary `DeliverNew` consumer is advisory and non-durable: switching live off or leaving the page deletes it, and reconnecting resumes at the current tail rather than recovering missed facts.
-
-Subjects are `hearth.v1.core.fact.entity.<entity_id>.<family>.<variant>` with Entity-first routing, where `<family>` is `observation` or `entity-event`. Each fact validates against one strict `contracts/v1` schema — `urn:hearth:schema:observation-fact:v1` or `urn:hearth:schema:entity-event-fact:v1` — carries a stable `fct_<uuidv7>` `id` that is also published as `Nats-Msg-Id`, and keeps the durable `obs_`/`evt_` source ID as `causation_id`. `emitted_at` is Core's commit time, not publication time, and the inbound W3C `traceparent`/`tracestate` are restored on every (re)publication. Subscribers must reject a payload whose Entity, family or variant disagrees with its subject, and must not sort by UUID or envelope time to invent a global order.
-
-When a pending fact cannot be mapped to a valid message, the relay preserves the row, stops, logs `device_fact.poison` and fails readiness instead of discarding durable evidence. A transient outbox, publish, acknowledgement or delete failure keeps the row and retries, logging `device_fact.retry`. Neither event contains State values, raw envelopes or full subjects. See [the logging guide](docs/guides/logging.md).
-
-Anyone with broker access can read canonical State values, forge a fact or publish directly into `HEARTH_DEVICE_FACTS_V1`. Facts are unsigned, Hearth adds no fact authentication or authorization, and this feature widens no deployment boundary: trust the broker exactly as for the rest of Hearth's trusted network, and reserve `hearth.v1.core.fact.>` publish permission for Core when NATS authorization exists.
-
-### Automation Conditions
-
-An Automation may require current Entity State before it runs. A Trigger decides *when* an Automation is considered; an optional `conditions` tree decides *whether* that consideration may admit a Run, evaluated once at admission against a coherent batch of retained State. Nodes compose with `all`, `any`, and `not` under three-valued (`true`/`false`/`unknown`) logic, and only a true root admits. Missing, expired, or incompatible evidence is `unknown`, so absence is not permission; a false or unknown decision records an explainable Skip rather than silently doing nothing.
-
-Admission Conditions are optional, and a definition without them keeps its existing unconditional-after-Trigger admission behavior. Manual invocation applies Admission Conditions unless the operator explicitly requests `{"bypass_conditions": true}`. That bypass never bypasses branch evaluation, admission gates, busy checks, or execution-time Command validation. See [the Automation Conditions guide](docs/reference/automation-conditions.md) for the definition field contract, a complete create request, manual and bypass requests, and history inspection.
-
-### Automation expressions
-
-The current definition/history contract supports Run-local variables, explicit retained-State reads,
-verified Function outputs and pure Expr calculations for fixed-target inputs and
-branch Conditions. Values are retained with the unified Step timeline, not a
-second journal. Ordinary literal fields stay unchanged; explicit `*_expr` fields
-use native Expr semantics, including nil, optional access and coalescing. Delay
-remains a plain literal integer. Evaluation has no hard timeout.
-Migration 23 preserves post-refactor revisions/history; back up before upgrade.
-See [Automation expressions](docs/reference/automation-expressions.md) for authoring,
-limits, sensitive history and rollback.
-
-### Automation branching
-
-Automations support nested `if` and
-ordered `choose` Steps over current State and recorded Trigger IDs. Core reads
-coherent State when each branch is reached, commits selection evidence before
-selected Commands, and fails an unknown root without fallback or retry. Manual
-Runs have no matched Trigger IDs, and admission bypass does not bypass branches.
-History retains branch decisions and effects in one sparse execution timeline;
-restart interrupts unfinished work without replay. Earlier development cutovers
-21/22 reset Automation data; expression migration 23 preserves post-22 data.
-Keep a matching pre-upgrade backup for binary rollback. See the
-[branching guide](docs/guides/automation-branching.md) for a complete nested definition,
-bounds, and history, and the [revision guide](docs/reference/automation-definition-revisions.md)
-for the development cutover and rollback constraints.
-
-### Automation delay Steps
-
-Fixed elapsed Delay Steps pause an
-active Run at top level or inside selected If/Choose sequences. HTTP and MCP
-author the same bounded definitions, including delay-only sequences with zero
-Commands. The browser displays definitions and reached wait evidence with
-manual history refresh. Waiting retains the busy slot; shutdown and restart
-interrupt rather than resume or replay work. Due timestamps are diagnostic UTC
-wall times, not scheduling promises. See the [delay guide](docs/guides/automation-delay-steps.md)
-for HTTP examples, bounds, history, failure handling, and rollback constraints.
-
-### MCP tools
-
-Core serves stateless Streamable HTTP at `/mcp` on its existing listener.
-The implementation version remains `1.0.0`. The external endpoint and built-in
-agent use one shared tool catalog. Tool discovery publishes complete input
-schemas, but no output schemas, resources, or resource templates. Core still
-validates every successful result before sending its original JSON bytes.
-
-Collections return compact summaries in `items`, with `next_cursor` omitted on
-the last page. Use the corresponding detail tool for Entity support, Automation
-definitions, Function schemas, or retained execution evidence. Actions return
-receipts, not HTTP response bodies. Follow a Command's `command_id` with
-`get_command`, an Automation's `run_id` with `get_automation_history_entry` as
-`entry_id`, and a Function's `invocation_id` with
-`get_adapter_function_invocation`. Pass a notification receipt's
-`notification_id` as the existing `id` argument to `get_notification`.
-Admission is not completion, and notification acceptance is not verified
-delivery. Repeating an action can repeat its effects; do not retry it to obtain
-a different receipt.
-
-Devices, Automations, Adapters including Functions, and Notifications each own
-sibling `httpapi` and `mcpapi` packages over domain services. Each protocol has
-independent models, mappings, errors, and service interfaces, with one public
-`Register`. Registration explicitly composes operation-local files under
-[the transport operation standard](CODING_STANDARDS.md#keep-transport-operations-in-operation-local-files).
-The typed MCP framework and prepared contracts live in
-`internal/platform/mcpapi`. See the
-[result and validation contracts](docs/reference/mcp-errors.md#result-contracts).
-See [MCP failure contracts](docs/reference/mcp-errors.md) for argument rejection, modeled
-failures, receipt details, and intentional differences from HTTP errors.
-HTTP routes, payloads, and published schema names are unchanged.
-
-### Agent
-
-The household agent is a required Core module beside Devices and Automations: Core always constructs it, serves `/v1/agent` on the same listener, and fails startup rather than running without it. Configure it in `configs/hearthd.yaml`:
-
-```yaml
-agent:
-  provider: openai                     # default; or opencode-go
-  model: gpt-5.6-luna                 # default
-  base_url: ""                        # provider default; absolute http(s) when set
-  reasoning_effort: none              # none, minimal, low, medium, or high; empty selects none for this default model
-  service_tier: ""                    # openai only; for example fast. Empty uses the OpenAI project's default tier
-  max_iterations: 10                  # model-generation cycles per turn; zero selects 10
-  history_retention: 720h             # conversation retention (default 30d, minimum 24h)
-```
-
-Supply the model API key only through the selected provider's variable: `HEARTH_OPENAI_API_KEY` for `openai`, or `HEARTH_OPENCODE_GO_API_KEY` for `opencode-go`. The key is read once at the `start_agent` stage, trimmed, and passed directly to the model configuration; it never enters serializable Core configuration and is never logged, persisted, or echoed in diagnostics. A missing, empty, or whitespace-only variable fails startup with a variable-name-only error. There is no credential CLI flag, YAML field, file fallback, or fallback to another provider's key. Non-secret configuration validation does not read the credential. `reasoning_effort: none` matters for OpenAI's default model, which rejects function tools at higher reasoning levels.
-
-`service_tier` sends OpenAI's `service_tier` with every agent request. Set it to `fast` to use [Fast mode](https://developers.openai.com/api/docs/guides/fast-mode), which costs twice the standard per-token rate. Core accepts `auto`, `default`, `flex`, `scale`, `priority`, `fast`, and `ultrafast`, and rejects the setting for `opencode-go`. OpenAI decides which tiers each model supports, so an unsupported combination fails the first turn with the provider's error. The equivalent sources are `--agent-service-tier` and `HEARTHD_AGENT_SERVICE_TIER`.
-
-To use an OpenCode Go subscription, replace the model settings with:
-
-```yaml
-agent:
-  provider: opencode-go
-  model: deepseek-v4.1-flash
-  reasoning_effort: ""  # provider default; explicit low, high, or max
-```
-
-The equivalent sources are `--agent-provider` / `HEARTHD_AGENT_PROVIDER`,
-`--agent-model` / `HEARTHD_AGENT_MODEL`, and `--agent-reasoning-effort` /
-`HEARTHD_AGENT_REASONING_EFFORT`. An omitted Go model selects
-`deepseek-v4.1-flash`. Go uses Chat Completions at
-`https://opencode.ai/inference/go/openai/v1` by default. Hearth identifies itself
-as `hearth/1.0` and sends each conversation ID in `x-opencode-session`.
-OpenCode's [Go usage guidance](https://opencode.ai/v2/docs/console/go#where-can-i-use-it)
-targets coding agents; household-assistant eligibility is unconfirmed. See
-[OpenCode Go provider connection](docs/reference/agent-skills.md#opencode-go)
-for connection details. Protocol failure tests use synthetic peers.
-
-Restart Core after changing provider settings. Start a new conversation when
-switching providers: existing history remains readable, but attempts to continue
-it return `agent provider changed; start a new conversation` without appending a
-message or calling the model. Legacy conversations belong to OpenAI.
-
-Conversations are durable in Core's SQLite. `POST /v1/agent/conversations` opens one, `POST /v1/agent/conversations/{id}/messages` runs one turn synchronously, `GET /v1/agent/conversations/{id}/messages` reads it back, and `POST /v1/agent/conversations/{id}/messages/stream` streams the same turn as SSE (`turn.started`, `tool.preparing`, `tool.started`, `tool.finished`, `view.presented`, `turn.finished`/`turn.failed`). `tool.preparing` names a call the model has begun writing, before its arguments are complete; `tool.started` follows only when the model's response completes. The stream route is a plain Echo handler and stays out of `openapi.json`. The agent's tools are the `/mcp` catalog, so a turn executes the same Commands REST and MCP do. `/readyz` requires open agent admission, and shutdown closes admission, cancels and joins running turns, then closes the agent's MCP sessions before SQLite. The shared history pruning worker deletes whole conversations past `agent.history_retention` in the same pass as Devices and Automations retention.
-
-The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. Each turn rebuilds recent turns inside a fixed history budget. Eino ADK owns the loop, native call IDs, instruction composition, and generation-cycle limit. The built-in `hearth-automations` skill supplies automation guidance on demand through the agent-only `skill` tool. Loading is instruction-led. See [agent skills and provider continuation](docs/reference/agent-skills.md).
-
-Rename `agent.max_steps` to `agent.max_iterations` (also `--agent-max-iterations`
-and `HEARTHD_AGENT_MAX_ITERATIONS`). The old YAML key is rejected with a migration
-error; its graph-step count is not interchangeable with model-generation cycles.
-Native assistant batches and results are retained as conversation evidence.
-The OpenAI connection uses Responses; Go uses Chat Completions with private
-DeepSeek reasoning continuation. Custom endpoints must implement the selected
-protocol. See the provider notes in the linked agent-skills guide.
-Interrupted calls receive unknown-outcome placeholders only in later model input,
-without automatic replay. Historical conversation compatibility is not provided.
-
-Blocking turns distinguish model failures from internal faults:
-
-| Failure | HTTP status | Problem detail |
-| --- | --- | --- |
-| Provider call failure or nil model response | 502 | `agent model call failed` |
-| Caller/Drain cancellation or caller deadline | 503 | `agent turn canceled` |
-| Tool transport/session fault | 500 | `internal error` |
-| Tool-trace persistence fault | 500 | `internal error` |
-| Other graph/setup failure | 500 | `internal error` |
-
-Once SSE headers are committed, unexpected failures end with the opaque `turn.failed` text, `agent turn failed`. Actual caller/Drain cancellation or caller expiry keeps `agent turn canceled`. A provider cancellation or deadline with an active caller remains a model failure, not caller cancellation. Fatal tool faults retain fixed failure text in tool history and `tool.finished`, never the raw infrastructure cause. Modeled MCP tool failures remain recoverable observations with their original payloads.
-
-Caller cancellation and shutdown still cancel and join turns. Failed trace writes leave no partial call/result pair, and turns do not retry or replay effects. See [Application logging](docs/guides/logging.md) for safe diagnostic stages and codes.
-
-### Zigbee2MQTT adapter
-
-For adding device capabilities, see [Extending Zigbee2MQTT capabilities](docs/guides/zigbee2mqtt-capabilities.md): typed mapping tables for repetitive sensors/settings, with family planning and conversions kept in Go.
-
-`hearth-adapter-zigbee2mqtt` connects an operator-managed Zigbee2MQTT service to Hearth. Tested versions are Zigbee2MQTT 2.13.0 and 2.14.1 with Mosquitto 2.0.22. Other versions are not runtime-blocked, but must provide the same retained MQTT payloads and behavior.
-
-The adapter uses a clean MQTT 3.1.1 session. Its deterministic client ID is
-`hearth-z2m-` followed by the first twelve lowercase hexadecimal characters of
-SHA-256(`adapter_id`). Reconnect does not depend on broker session state.
-
-Configure Zigbee2MQTT to use MQTT 3.1.1 and to publish explicit availability while global optimistic updates are disabled. The effective `bridge/info` settings must contain:
-
-```yaml
-mqtt:
-  version: 4
-availability:
-  enabled: true
-device_options:
-  optimistic: false
-```
-
-Every Zigbee2MQTT `friendly_name` considered by the adapter must be a single MQTT topic level: 1 to 255 bytes of valid UTF-8 containing no `/`, `+`, `#`, or NUL, and never `bridge`. Spaces, uppercase, punctuation, and non-ASCII text are supported. `mqtt.base_topic` remains a subject-safe slug matching `^[a-z0-9][a-z0-9_-]{0,62}$`. Set a human-readable Zigbee2MQTT `description` when a display name distinct from the routed friendly name is wanted.
-
-NATS and the Zigbee2MQTT MQTT broker are separate operator-managed services; the simulator task does not start an MQTT broker.
-
-Run Zigbee2MQTT separately under the operator's normal supervision. For a manual deployment, copy the example configs and replace their loopback broker addresses with the approved NATS and MQTT endpoints before starting Core or the adapter; localhost defaults are not a provisioned broker. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port. It has no MQTT username, password, TLS, or certificate settings. The NATS listener, Mosquitto MQTT, Hearth HTTP, and Zigbee2MQTT management endpoints must remain on loopback or a trusted private network; exposing this configuration to an untrusted network is unsupported.
-
-The adapter remains `unknown` until it has claimed a Hearth session, connected and subscribed to MQTT, received retained `bridge/state`, `bridge/info`, and `bridge/devices`, and completed registration. It becomes healthy after an online bridge and compatible configuration are reconciled. Device availability comes only from explicit `<friendly_name>/availability` messages; State does not imply availability.
-
-Use the HTTP API to discover the registered power, brightness, color-temperature, color, color-mode, ambient-temperature, humidity, illuminance, battery, occupancy, smart-plug electrical, smart-plug setting, and reset-action Entity IDs, inspect adapter health and Entity availability, and send typed commands. Lights, relays, and sensors register as Device kinds `light`, `relay`, and `sensor`; one IEEE address produces one Device, with temperature, humidity, illuminance, battery, and occupancy Entities supplementing either actuator family (a light or relay that also reports occupancy keeps its actuator kind, so an occupancy-only Device is a sensor), and with electrical sensors, numeric settings, power-on behavior, and the reset action supplementing the relay family on smart plugs.
-
-Color temperature uses Zigbee2MQTT's native integer mired unit and each Entity reports its discovered range in `support` (for example, 153–500 mireds). Color-capable lights add native `hearth.colorxy/v1` and/or `hearth.colorhs/v1` Entities plus a read-only `hearth.colormode/v1` Entity reporting `xy`, `hs`, or `color_temp`. XY State uses scaled integers in ten-thousandths (`3125` means `0.3125`); HS State uses whole degrees `0..359` and whole percentage points. Color-temperature State is the object form `{"active":true,"value":370}`: this unreleased type changed from scalar State, so operators with databases holding the old contract discard them explicitly. Each coordinate Entity carries an `active` flag for the mode selected by the same-message `color_mode`.
-
-Ambient temperature is read-only `hearth.temperature/v1` with integer milli-Celsius State (for example, `21.5` °C reports `21500`). Its State schema declares `mCel`; support is `{"state":{},"operations":{}}`, with empty operations keeping it read-only. Relative humidity, battery level, and ambient illuminance are read-only `hearth.numericsensor/v1` Entities whose support declares a per-Entity unit and bounds and whose operations are empty: humidity and battery report percent State in 0–100 (unit `%`) and illuminance reports lux State (unit `lx`, 0–1000000000 validation envelope), with fractional readings preserved in each. Occupancy is a read-only `hearth.binarysensor/v1` Entity with support `{"state":{},"operations":{}}`: its boolean State decodes only the expose's declared `value_on` and `value_off` scalars (for example Zigbee2MQTT `true`/`false`), and any other value is rejected rather than coerced:
-
-```sh
-curl http://127.0.0.1:8080/v1/adapters/zigbee2mqtt
-curl http://127.0.0.1:8080/v1/entities
-curl http://127.0.0.1:8080/v1/entities/ent_...
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
-  -H 'content-type: application/json' \
-  -d '{"operation":"set","parameters":{"value":true}}'
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
-  -H 'content-type: application/json' \
-  -d '{"operation":"set","parameters":{"value":50}}'
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
-  -H 'content-type: application/json' \
-  -d '{"operation":"set","parameters":{"value":370}}'
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
-  -H 'content-type: application/json' \
-  -d '{"operation":"set","parameters":{"x":3125,"y":3291}}'
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
-  -H 'content-type: application/json' \
-  -d '{"operation":"trigger","parameters":{"name":"blink"}}'
-```
-
-A color-temperature set publishes `{"color_temp":370}` to the Device's Zigbee2MQTT `/set` topic, then requests `{"color_temp":""}` from `/get`. The HTTP request succeeds only after a fresh, non-retained report returns exactly 370 mireds with temperature mode active. A color set publishes `{"color":{"x":0.3125,"y":0.3291}}` (HS: `{"color":{"hue":120,"saturation":80}}`), then requests `{"color":""}` from `/get`. Set payloads never include power, brightness, transition, or unrelated properties. Color commands succeed only on active, within-tolerance evidence: ±1 per XY axis, ±2° hue and ±1 saturation point. Satisfaction means `active:true` plus a within-tolerance value under the existing freshness gates, an operational contract rather than a promise of exact physical color. Zigbee2MQTT caching or `color_sync` conversions may carry cached fields into a fresh publication, and Hearth receives no per-field provenance. Ambient-temperature, humidity, illuminance, battery, and occupancy Entities never create command routes. Startup `/get` covers only Entities whose expose grants get access, so a publish-only sensor refreshes from live reports while a gettable sensor also receives active `/get`.
-
-Bulbs exposing the Third Reality `3RCB01057Z` attributes add four more Entities: read-only link quality as generic `hearth.numericsensor/v1` (integer 0–255, unit `lqi`), power-restore behavior as observable `hearth.enumsetting/v1` (`set {"value": ...}`), startup color temperature as observable `hearth.numericsetting/v1` (`set {"mode":"value","value":N}` or `{"mode":"choice","choice":"previous"}`), and effects as stateless `hearth.enumaction/v1` (`trigger {"name": ...}`, for example `"blink"`). Setting commands complete as `satisfied` only after a fresh matching observation, as usual. An effect trigger instead completes as `dispatched`: adapter MQTT acceptance is durably recorded, but no observation is requested, no state is stored (effect Entities always read `state: null`), and dispatch alone makes no claim about any physical effect. MQTT QoS 1 may deliver duplicates and Hearth performs no automatic retry. Command reads therefore distinguish `dispatched` from `satisfied` results. The current inventory fixture covering these exposes is synthetic and Wanda-shaped; startup on-wire values and effect dispatch outcomes are unobserved until separately authorized live validation, so real-hardware behavior is not guaranteed.
-
-Smart plugs exposing the Third Reality `3RSP02028BZ` attributes register relay power plus twelve more Entities. Relay power shares the light power constructor, so `set {"value":true}` publishes the discovered `ON` scalar and succeeds only on fresh matching evidence under the unchanged command-evidence gates. Power-on behavior is the shared observable `hearth.enumsetting/v1` (`set {"value": ...}`). Six read-only `hearth.numericsensor/v1` electrical sensors report AC frequency (`Hz`), electrical power (`W`, key `electricalpower` to distinguish it from boolean relay power), power factor (empty upstream unit mapped explicitly to `ratio`), energy (`kWh`), current (`A`), and voltage (`V`); fractional readings are preserved and get access alone controls startup refresh. Three observable `hearth.numericsetting/v1` settings cover LED brightness (`%`, 0–100) and both turn on/off countdowns (`s`, 0–65535) in numeric value mode (`set {"mode":"value","value":N}`), with decimals preserved and generated `SetSatisfied` matching. Reset Total Energy is a stateless `hearth.enumaction/v1` (`trigger {"name":"Reset"}`) that completes as `dispatched` with no observation, like an effect trigger. Because `hearth.numericsensor/v1` requires finite min/max while Zigbee2MQTT omits electrical bounds, sensors use conservative validation envelopes (not claimed operating ranges) unless the expose carries both valid finite bounds, which are then preferred. All plug attributes attach only under surviving relay power and isolate malformed siblings individually.
-
-For diagnostics, check adapter logs together with the adapter and Entity reads:
-
-- `hearth.external_system_unavailable` indicates that the MQTT broker cannot be reached or the connection was lost; verify the listener, URL, and network boundary.
-- `adapter.hearth-adapter-zigbee2mqtt.bridge_offline` indicates an explicit offline `bridge/state`; check Zigbee2MQTT and its coordinator.
-- `adapter.hearth-adapter-zigbee2mqtt.incompatible_configuration` indicates an MQTT version other than 4, disabled availability, or optimistic behavior not explicitly false.
-- `adapter.hearth-adapter-zigbee2mqtt.invalid_inventory` indicates malformed retained bridge information or Device inventory. Republish valid retained `bridge/info` and `bridge/devices` data by correcting or restarting Zigbee2MQTT.
-- Invalid friendly names, groups, disabled or unsupported Devices, incomplete interviews, ambiguous endpoint exposes, and unsupported capabilities are isolated and logged rather than registered. Correct Zigbee2MQTT Device metadata and expose definitions.
-- An Entity that stays unknown is missing an explicit availability message. Unavailable reasons distinguish `adapter.hearth-adapter-zigbee2mqtt.device_offline`, `adapter.hearth-adapter-zigbee2mqtt.device_missing`, `adapter.hearth-adapter-zigbee2mqtt.device_disabled`, and `adapter.hearth-adapter-zigbee2mqtt.capability_missing`.
-- A Command timeout means no fresh, non-retained matching State arrived after dispatch. Verify the Device can answer Zigbee2MQTT `/get` requests and that the reported property and value match its discovered expose.
-
-The Adapter also exposes `refresh_entity` through Adapter Functions. Discover its
-current revision before invoking it with an owned canonical Entity ID:
-
-```sh
-curl http://127.0.0.1:8080/v1/adapters/zigbee2mqtt/functions/refresh_entity
-curl -X POST http://127.0.0.1:8080/v1/adapters/zigbee2mqtt/functions/refresh_entity/invocations \
-  -H 'Content-Type: application/json' \
-  -d '{"catalog_revision":"afc_<discovered-UUIDv7>","arguments":{"entity_id":"ent_<owned-UUIDv7>"}}'
-curl http://127.0.0.1:8080/v1/adapters/zigbee2mqtt/function-invocations
-```
-
-Success means one MQTT `/get` received PUBACK, not that fresh State arrived.
-Read-only gettable and Core-disabled Entities can refresh without becoming
-commandable. Do not retry an unknown outcome automatically. See
-[Adapter Functions](docs/reference/adapter-functions.md) for discovery, evidence, non-secret
-payloads, SDK usage, and upgrade order.
-
-### Discord notification adapter
-
-`hearth-adapter-discord` registers YAML-configured destinations and sends one bounded
-Discord incoming-webhook request per notification, without retries or a queue.
-Credentials stay in separate secret files. See [Discord setup](docs/guides/discord.md)
-for configuration, deployment and the explicit operator-only smoke procedure.
-
-### Ecowitt adapter
-
-`hearth-adapter-ecowitt` connects an operator-managed Ecowitt GW2000 gateway to Hearth through the gateway's **Customized Server** MQTT upload. The adapter targets a `GW2000`-prefixed station with a WS90 outdoor array; the captured household firmware it is validated against is a GW2000B running V3.3.2. The station PASSKEY prevents accidental cross-station ingestion on a shared broker.
-
-V1 uses plain MQTT 3.1.1 with no username, password, TLS, or WebSocket transport, and it never publishes to MQTT. The MQTT listener must bind to loopback or a trusted private network, and the gateway, broker, adapter, and native NATS connection must stay inside that boundary; exposing this configuration to an untrusted network is unsupported. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port, normalizes `mqtt://` to `tcp://`, subscribes at QoS 1 to exactly one two-segment topic, and uses a clean session with a deterministic 23-character client ID so reconnects create no durable adapter state.
-
-Configure the GW2000 Customized Server to match the adapter configuration:
-
-```text
-Enabled:         yes
-Protocol:        MQTT
-Broker host:     trusted-private address of the MQTT listener
-Broker port:     1883
-Topic:           exact value from mqtt.topic
-Upload interval: exact value from station.upload_interval_seconds
-```
-
-Store the 32-character hexadecimal PASSKEY in a separate secret file and point `station.passkey_file` at it. The adapter reads the PASSKEY only at startup, compares it in constant time, and never logs, exports, persists, or writes it into Device or Entity identity. The gateway chooses its own MQTT client ID and keepalive; a subscriber cannot observe those portably, so v1 does not gate them, and gateway publish QoS and retain behavior are otherwise not assumed.
-
-The Ecowitt gateway must reach an operator-managed MQTT listener on a trusted private network; a loopback-only broker cannot receive its uploads. Copy the examples, replace the loopback NATS and MQTT URLs with approved endpoints, and keep the example topic and non-secret placeholders until configured:
-
-```sh
-cp configs/hearthd.example.yaml configs/hearthd.yaml
-cp configs/ecowitt.example.yaml configs/ecowitt.yaml
-mkdir -p .secrets
-printf '%s\n' '<32-hex-passkey>' > .secrets/ecowitt-passkey   # ignored; never commit a real PASSKEY
+cp -n configs/hearthd.example.yaml configs/hearthd.yaml
 mkdir -p .data
-# Supply HEARTH_OPENAI_API_KEY through your supervisor or secret manager before launch.
-# edit configs/ecowitt.yaml: set station.passkey_file to .secrets/ecowitt-passkey
-# edit configs/hearthd.yaml and configs/ecowitt.yaml: use the approved NATS URL
-# edit configs/ecowitt.yaml: use the operator-managed MQTT URL and gateway topic
-# start the operator-managed brokers and gateway through their own supervision
+```
+
+Edit the private config for your household timezone, trusted HTTP bind address,
+NATS endpoint, SQLite path, and model provider. Supply the selected provider's
+credential before launch: `HEARTH_OPENAI_API_KEY` for the default OpenAI provider,
+or `HEARTH_OPENCODE_GO_API_KEY` for OpenCode Go.
+
+```sh
 go run ./cmd/hearthd --config configs/hearthd.yaml
-go run ./cmd/hearth-adapter-ecowitt --config configs/ecowitt.yaml
 ```
 
-The adapter registers both Device slots before it connects MQTT, so identity exists before any report arrives:
+Core settings resolve from CLI flags, `HEARTHD_` environment variables, YAML,
+then defaults. An explicitly selected config must exist. Use
+`go run ./cmd/hearthd --help` and the
+[example config](configs/hearthd.example.yaml) for current settings; see
+[provider continuation](docs/reference/agent-skills.md) before switching providers.
 
-| Device slot (Binding key and external ID) | Kind | Entities |
-| --- | --- | --- |
-| `gateway` | `sensor` | indoor temperature, indoor humidity, relative pressure, absolute pressure |
-| `outdoor-array` | `sensor` | outdoor temperature, outdoor humidity, wind direction, wind speed, wind gust, maximum daily gust, solar radiation, UV index, rain rate, event rain, hourly rain, daily rain, weekly rain, monthly rain, yearly rain |
+Choose the setup guide for your companion:
 
-Entity external IDs are `<device external ID>/<entity key>` (for example `gateway/indoor-temperature`), and each Entity is read-only with empty operations. Fixed canonical units belong to State schemas: temperature `hearth.temperature/v1` in milli-Celsius (`mCel`, for example `22.2` °C reports `22200`), indoor and outdoor humidity `hearth.relativehumidity/v1` in percent (`%`), relative and absolute pressure `hearth.pressure/v1` in hPa, and wind speed, gust, and maximum daily gust `hearth.speed/v1` in m/s. These types use support `{"state":{},"operations":{}}`; each State and Observation value stays a bare number. Wind direction, solar radiation, UV index, and the seven rain Entities use `hearth.numericsensor/v1`, whose support declares a per-Entity unit and validation envelope. Fahrenheit, inches of mercury, miles per hour, and inches normalize with fixed constants, and an out-of-envelope value is rejected rather than clamped.
+| Adapter | Setup and limitations |
+| --- | --- |
+| Zigbee2MQTT | [Lights, plugs, sensors, and event sources](docs/guides/zigbee2mqtt.md) |
+| Z-Wave JS | [Switches and dimmers through an existing server](docs/guides/zwavejs.md) |
+| ESPHome | [Native API discovery and static devices](docs/guides/esphome.md) |
+| Ecowitt | [GW2000/WS90 weather measurements over MQTT](docs/guides/ecowitt.md) |
+| Pirate Weather | [Current conditions and forecasts](docs/guides/pirateweather.md) |
+| Levoit | [VeSync air purifiers and optimistic Command evidence](docs/guides/levoit.md) |
+| Discord | [Notification destinations and one-shot sends](docs/guides/discord.md) |
+| August | [Read-only lock monitoring; controls remain blocked](docs/guides/august.md) |
 
-Because Ecowitt reports no stable attached-sensor identifiers, the adapter models configured slots rather than replaceable radio hardware. PASSKEY, MQTT topic, station MAC, firmware, and display name do not participate in Binding or Entity identity, so replacing hardware in a configured slot preserves canonical IDs; reusing one adapter configuration for different physical hardware is an explicit operator statement that it is the same household station, and a separately meaningful station requires a different `adapter_id`.
+## Development
 
-The adapter remains `unknown` until it has positive or negative external-system evidence. It becomes healthy only after a live, non-retained, non-duplicate, structurally valid, compatible report arrives on the exact topic. Use the HTTP API to inspect adapter health, the registered slot Devices and Entity IDs, and current typed State:
+Choose focused checks using the [testing guide](docs/guides/testing.md), then
+run the completion gate with `GO_PACKAGES` unset:
 
 ```sh
-curl http://127.0.0.1:8080/v1/adapters/ecowitt
-curl http://127.0.0.1:8080/v1/devices
-curl http://127.0.0.1:8080/v1/entities
-curl http://127.0.0.1:8080/v1/entities/ent_...
+GO_PACKAGES='./contracts/functionschema' mise run test
+mise run validate
 ```
 
-Entity availability comes only from explicit measurement evidence, never from State. A valid field in an accepted report reports its Entity available; an Entity without a valid measurement for three configured upload intervals becomes unavailable, and a never-observed Entity stays unknown until its first valid measurement or three intervals after the first accepted report. Every unhealthy transition clears availability, so recovery requires a fresh live report, a healthy acknowledgement, and fresh availability before Observations.
+Local Go tests are non-race by default; CI enables race detection. Full validation
+also generates and formats code, tidies modules, checks frontend code, and runs
+browser stories/builds. Real-Mosquitto tests need Docker; browser checks need
+the platform-specific setup in the [Storybook guide](docs/guides/storybook.md).
 
-For diagnostics, check adapter logs together with the adapter and Entity reads:
-
-- `hearth.external_system_unavailable` indicates that the MQTT broker cannot be reached or the connection was lost; verify the listener, URL, and trusted-network boundary.
-- `adapter.hearth-adapter-ecowitt.station_silent` indicates an established subscription with no accepted fresh report before three upload intervals; check gateway power, its Customized Server settings, and the configured topic and upload cadence.
-- `adapter.hearth-adapter-ecowitt.measurement_stale` indicates one Entity's field has not produced a valid value for three upload intervals; an absent or malformed field is isolated and never fails a valid sibling or station health.
-- An Entity that stays unknown is missing its first valid measurement. A retained, wrong-topic, wrong-PASSKEY, wrong-station-type, malformed, oversized, or over-field-limit report produces no evidence; fix the gateway destination or firmware and confirm the PASSKEY matches.
-- Runtime diagnostics log fixed codes and payload lengths only and never include the configured topic (whose second segment is commonly a station MAC), raw payload, PASSKEY, secret-file contents, or weather values.
-
-Real evidence compatibility: the checked-in fixture `internal/adapters/ecowitt/testdata/gw2000-ws90-report.txt` preserves the field names and representative value shapes of a captured 712-byte GW2000B V3.3.2 report for a WS90 array, with the PASSKEY and source timestamp sanitized. The capture arrived roughly every eight seconds, unretained, at effective QoS 0 while the subscriber requested QoS 1; the example's 16-second upload interval is an operator cadence choice, and unknown firmware works only when it keeps the specified field semantics.
-
-### ESPHome adapter
-
-`hearth-adapter-esphome` connects directly to ESPHome Native API devices,
-using mDNS discovery or static addresses. TCP encryption is the default.
-No Home Assistant bridge is needed.
-Home Assistant can remain connected during device-by-device migration, subject
-to the firmware's API connection limit (normally five on ESP32; configurable
-with `api.max_connections`). Device Builder remains responsible for firmware
-configuration and updates.
-
-```sh
-cp -n configs/esphome.example.yaml configs/esphome.yaml
-# Configure discovery, the MAC blocklist, and any encryption keys or overrides.
-mise run esphome-start
-mise daemons status esphome-adapter
-# Stop only the adapter: mise run esphome-stop
-# Stop the simulator stack afterwards: mise run simulator-stop
-```
-
-The optional daemon shares this worktree's simulator Core, NATS, database, and
-dashboard. It is not part of the default simulator group. `esphome-start` calls
-`simulator-start`, whose Core requires its selected agent provider credential.
-Never run two instances with the same Adapter ID against the same Core.
-
-Settings resolve from CLI flags, `HEARTH_ADAPTER_ESPHOME_` environment variables,
-optional `configs/esphome.yaml`, then defaults. The flags are `--config`,
-`--adapter-id`, `--nats-url`, `--log-level`, and `--log-format`. Device, discovery,
-and blocklist settings are YAML-only. Enable `discovery.enabled` to browse `_esphomelib._tcp.local` and
-automatically register supported devices not in `blocklist`. The list of
-`devices` then becomes optional: MAC-keyed entries can supply credentials and
-entity overrides without an address. Encrypted advertisements without a key are
-skipped with an `encryption_key_required` diagnostic, not tried in plaintext.
-
-To enroll unencrypted devices automatically, explicitly set
-`discovery.allow_insecure_plaintext: true`. This trusts LAN advertisements and
-exposes readings and controls to the network. mDNS and MAC comparisons are not
-cryptographic authentication. This permission is false by default; an individual
-addressless entry can instead opt in with `insecure_plaintext: true`.
-An explicit key always selects encryption, even if an advertisement omits it.
-
-Discovery uses resolved IP addresses, including address updates, rather than
-the system `.local` resolver. It needs multicast reachability on the host's
-network interfaces. Container bridge networks and VLAN boundaries may need
-host networking or an operator-managed mDNS reflector. At most 64 devices run
-concurrently, with up to 64 additional candidates waiting for capacity. Repeated
-announcements do not reconnect an unchanged device.
-Missing advertisements alone do not interrupt a live subscription; a device
-outage retains its identity/history and becomes unavailable. After restart,
-previously discovered Entities remain unavailable until rediscovered.
-
-For static operation, give a `devices` entry a colon-separated MAC and an
-address. The address remains authoritative when discovery is also enabled.
-Encrypted static entries require `encryption_key_file`; `port` defaults to 6053.
-Static `.local` addresses are rejected: use a fixed IP or unicast DNS instead.
-The MAC blocklist wins over both modes and marks already-owned Entities
-unavailable without deleting them. Configuration changes require a restart.
-
-Each key file contains the base64
-`api.encryption.key` from the device's configuration and must be readable by
-the Adapter user. Keep keys outside Git. Keys load at startup; restart after
-rotating a key file.
-
-For a static device without encryption, explicitly set `insecure_plaintext: true`
-on that device and omit `encryption_key_file`. The network-wide discovery
-permission does not authorize static plaintext entries. A failed encrypted
-connection never falls back to plaintext. The client
-supports API 1.10 or later (including ESPHome 2024.11.1), using the vendored
-ESPHome 2026.10.2 schema. Before API 1.14 it performs empty legacy authentication;
-password-protected devices are unsupported in either transport mode.
-
-Primary numeric, text, and binary sensors are read-only; switches and lights
-support power, and brightness-capable lights also support brightness. RGB-capable
-lights expose a separate color Entity with red, green, and blue channels from
-0 through 255. Lights with effects expose a setting restricted to their advertised
-effects plus `None`. Color Commands set RGB-only color brightness as part of the
-requested channel values, so grey and black survive firmware normalization.
-Color and effect Commands leave power and master brightness unchanged. Effect
-changes require the light to be on; an off or not-yet-known light state rejects
-the Command without sending it or implicitly turning the light on.
-Text sensors such as VOC Quality retain strings of up to 128 characters,
-including empty strings, and expose no Commands.
-Non-assumed position-capable covers expose `hearth.cover/v1`, with reported
-integer-percent `position` (0 closed, 100 open) and `motion` (`idle`, `opening`,
-or `closing`). Use `set {"position":100}` to open, `set {"position":0}` to close,
-or an intermediate integer to request partial travel. A position Command has a
-60-second deadline and is satisfied by a report within one percentage point,
-not by confirmation that motion stopped. When advertised, `stop {}` completes
-as **dispatched** after a successful frame write. It never waits for an earlier
-position target or synthesizes idle State. Stop clears earlier target matchers;
-their already-accepted Commands may time out. Later commands never replay those
-targets. Existing light and switch FIFO behavior is unchanged.
-
-Ratgdo partial position is timing-estimated and requires travel calibration.
-An initial idle/zero report can represent an uninitialized position; neither
-that report nor a satisfied Command independently verifies closure or security.
-Stop bypasses travel waits but shares the device worker with telemetry
-publication. If broker acknowledgements stall, publication can delay Stop
-until its deadline expires without a native command. Stop is not a hard-real-time
-or emergency-stop guarantee.
-
-Non-assumed locks expose `hearth.lock/v1` and code-free locks support
-`set {"value":"locked"}` or `set {"value":"unlocked"}`. Locks requiring a code
-remain read-only; lock-open requests are unsupported. Ratgdo's **Lock remotes**
-means remote lockout, not a physical deadbolt. Its firmware can immediately
-report a requested lockout change without confirming enforcement. A satisfied
-Command means firmware reported the requested State, not that wireless remotes
-were independently proven disabled. No live garage-door or lockout command was
-used to validate this implementation.
-
-Climate entities expose `hearth.thermostat/v1`: separate mode and reported
-activity, single or paired temperature targets, exact fan choices, and optional
-humidity readings/control. Numbers and selects expose the existing numeric-setting
-and enum-setting types. See [ESPHome thermostats](docs/guides/esphome-thermostat.md)
-for canonical operation parameters, Rheem humidity settings, and the Home
-Assistant feature comparison.
-
-Buttons, events, voice, and Bluetooth
-proxy functions are not mapped. Configuration, diagnostic, and
-disabled-by-default entities are hidden unless included by exact `<type>/<name>`
-reference, such as `include: ["sensor/Uptime"]`. `exclude: ["light/RGB Light"]`
-omits every Entity derived from that light. Overrides never grant an unsupported
-entity type.
-Include/exclude overrides also accept `cover/Door` and `lock/Lock remotes`.
-They accept `climate/HVAC`, `number/Relative Humidity Offset`, and
-`select/Fan Duty Cycle` as well.
-Cover Devices retain their light, sensor, and lock siblings under kind `cover`.
-Thermostats retain eligible siblings under kind `thermostat`, unless a cover
-on the same Device takes kind precedence.
-Upgrade Core before the ESPHome Adapter when enabling covers; older Core builds
-cannot register the new cover Entity type and Device kind.
-The same upgrade order applies to the thermostat type and Device kind.
-Sub-devices, assumed-state switches/covers/locks, covers without position support,
-and devices reporting `has_deep_sleep` are
-unsupported. The last restriction also applies when a firmware switch currently
-prevents sleep; that switch does not change the reported capability.
-
-Temperature, humidity, pressure, CO₂, particulate mass, and air-quality indices
-use typed canonical units. Unknown sensor measurements retain their upstream
-unit as generic numeric readings. Missing or invalid scalar reports preserve the
-last State. Within a climate snapshot, absent optional readings replace their
-previous values with absence; no older readings are merged into the snapshot.
-Device outages affect only that device's Entity availability; Adapter
-health remains healthy while its runtime works. The client reconnects and
-re-registers without replaying Commands. Entity identities depend on the MAC,
-platform, and upstream name. Renaming an entity in firmware creates a new Entity
-and leaves the old one unavailable; dashboards and Automations need retargeting.
-Entity external IDs include the MAC so identical names on different devices do
-not collide. Existing Binding-local Entity keys stay unchanged when upgrading
-from MAC-less external IDs, preserving canonical IDs, enablement, and history.
-
-ESPHome supplies no command acknowledgement or physical-outcome guarantee.
-Successful socket writes permit acceptance; matching reports satisfy Commands.
-For an already-matching request, the Adapter links its cached reading from the
-current live subscription. That receipt is weaker evidence than a fresh device
-read and is not proof of a physical effect. Observations already stored in Core
-are never used as this cache.
-
-### Z-Wave JS adapter
-
-`hearth-adapter-zwavejs` connects an operator-managed Z-Wave JS UI service to Hearth through the embedded Z-Wave JS server's WebSocket API. It targets API schema 29, and its wire shapes are derived from Z-Wave JS server 3.10.1 sources (driver 15.x, schema range 0–50). Read-only discovery and State projection have been smoke-tested against a live Home Assistant Z-Wave JS app; physical Commands have not yet been validated. A server is compatible when its version frame contains `minSchemaVersion <= 29 <= maxSchemaVersion` and its Home ID agrees with the `start_listening` snapshot. The Adapter never reads or receives S0/S2 keys, never changes network membership, and never sends inclusion, exclusion, SmartStart, interview, healing, route-rebuild, association, configuration, firmware, or controller-backup operations.
-
-The checked-in [wire fixtures](internal/adapters/zwavejs/testdata/README.md) are
-synthetic and source-derived, not household captures. Physical verification still
-requires a sanitized capture of schema-29 `node.set_value` and `node.poll_value`
-frames and explicitly approved switch off/on and dimmer 0/mid/99 trials.
-Protocol tests alone do not establish physical-device compatibility.
-
-Enable the Z-Wave JS server in Z-Wave JS UI (including the Z-Wave JS UI bundled with the Home Assistant Z-Wave JS app) and expose its WebSocket port only on a trusted private network. Keep the USB controller with the existing server. The Z-Wave adapter is an optional daemon alongside the simulator. It shares the simulator's Core, NATS, database, and dashboard:
-
-```sh
-cp -n configs/zwavejs.example.yaml configs/zwavejs.yaml
-# Set zwave_js.url in configs/zwavejs.yaml to your existing ws://host:3000 endpoint.
-mise run zwave-start # starts the simulator stack if needed, then the Z-Wave adapter
-mise daemons status zwave-adapter
-# When finished: mise run zwave-stop; mise run simulator-stop
-```
-
-`zwave-start` checks for `configs/zwavejs.yaml` and runs `simulator-start`, whose checked-in Core configuration requires a nonempty `HEARTH_OPENCODE_GO_API_KEY` in its environment. If you explicitly change the provider, supply that provider's credential instead. The Z-Wave daemon substitutes the worktree's assigned NATS port into a runtime copy under `.data/simulator-stack/`; leave the source file's `nats_url` at its example value. Both files are ignored by Git. The adapter is not in the default simulator daemon group: `mise run simulator-start` runs without it, and `mise run zwave-stop` stops only the adapter. Use `mise env --json | jq '{SIM_CORE_PORT, SIM_WEB_PORT}'` to print only those ports, never the full environment; the dashboard runs at `http://127.0.0.1:$SIM_WEB_PORT/`. Physical and simulated Devices share the simulator database. Their records remain after the adapter stops. Starting the Adapter discovers eligible nodes but sends no device Commands until one is explicitly requested.
-
-When running the binary directly, settings resolve in this order: CLI flags, `HEARTH_ADAPTER_ZWAVEJS_` environment variables, optional `configs/zwavejs.yaml`, then built-in defaults. An explicit `--config` or `HEARTH_ADAPTER_ZWAVEJS_CONFIG` path must exist. The settings flags are `--adapter-id`, `--nats-url`, `--zwave-js-url`, `--log-level`, and `--log-format`; for example, `--zwave-js-url` corresponds to `HEARTH_ADAPTER_ZWAVEJS_ZWAVE_JS_URL` and YAML `zwave_js.url`. The default YAML file can be omitted when the required settings come from flags or environment variables.
-
-The configuration accepts only an absolute lowercase `ws://` URL with an explicit host and port, no user info, query, or fragment, and an empty or root path. It has no credential, token, TLS, or certificate field at all: `wss://` is rejected. The embedded Z-Wave JS server offers no authentication and no TLS, so its listener, Hearth NATS, Hearth HTTP, and the Adapter must stay on loopback or a trusted private network. Exposing this configuration to an untrusted network is unsupported. Disabling optimistic value updates in Z-Wave JS UI is recommended but is not a correctness dependency.
-
-Discovery is automatic and needs no allowlist. Every ready, always-listening, completely interviewed non-controller node with a valid grounded Value pair registers one Device:
-
-- Binary Switch (Command Class 37) `currentValue`/`targetValue` registers `hearth.power/v1` with support `{"state":{},"operations":{"set":{}}}` and writes a boolean.
-- Multilevel Switch (Command Class 38) registers `hearth.brightness/v1` with support `{"state":{},"operations":{"set":{}}}`. Brightness State and Commands are integer percentages from 0–100; the Adapter translates Commands to the nearest native 0–99 level and normalizes observed levels back to percentages. It also provides power when the endpoint has no valid Binary Switch pair. `off` writes `0` and `on` writes `255`, the Command Class restore-previous-level value.
-- Binary Switch owns power when both Command Classes are valid on one endpoint.
-
-Device kind is `light` when any brightness Entity exists and `relay` otherwise. One Z-Wave node is one Device; root Entities are named `Power` and `Brightness`, and endpoint Entities prefix a valid endpoint label with keys such as `power-ep1`. Sleeping and frequently-listening actuators are excluded because Z-Wave JS could defer a write into a wake-up queue beyond Hearth's deadline, and a `sleep` Event makes a node temporarily unroutable until `wake up` plus a fresh node state prove it eligible again.
-
-Identity is the network slot, not the hardware: the Binding key is `zwave-<homeId>-node-<nodeId>` and the Device external ID is `<homeId>/node/<nodeId>`. Node names, labels, locations, and manufacturer/product identifiers are mutable metadata and never enter identity. Re-inclusion normally assigns a new node ID and therefore a new Binding and Device, while the previous Device stays unavailable. A controller may reuse a removed node's ID, and Z-Wave exposes no universal immutable physical-device identifier, so **before removing a node, disable its Hearth Entities**; reusing that slot safely requires explicit reconciliation support, which v1 defers. If this Adapter ID's owned mappings carry a different Home ID than the connected controller, the Adapter registers nothing and reports `adapter.hearth-adapter-zwavejs.network_identity_mismatch` instead of silently reusing node-number-shaped identities.
-
-The Adapter remains `unknown` until it has connected, negotiated schema 29, validated one Home ID, received and reconciled a complete snapshot, and installed routes. An empty network with a valid snapshot is healthy. Entity availability is explicit and never inferred from State.
-
-Command evidence is poll-linked. A power or brightness `set` is accepted only after a recognized successful numeric `node.set_value` result and is satisfied only by a fresh correlated `node.poll_value` read; a post-set `value updated` event is at most a wake hint for an extra poll and is never linked evidence, because Z-Wave JS UI may emit that update optimistically. Z-Wave JS exposes no cancellation for a write already handed to the driver, so a timed-out write is reported as an ambiguous attempt rather than as proof that no physical effect can occur later.
-
-Use the HTTP API to inspect adapter health, Entity availability, and canonical IDs, then verify a Command:
-
-```sh
-eval "$(mise env -s bash)" # or use your shell's equivalent
-curl "http://127.0.0.1:$SIM_CORE_PORT/v1/adapters/zwavejs"
-curl "http://127.0.0.1:$SIM_CORE_PORT/v1/entities"
-curl "http://127.0.0.1:$SIM_CORE_PORT/v1/entities/ent_..."
-curl -X POST "http://127.0.0.1:$SIM_CORE_PORT/v1/entities/ent_.../commands" \
-  -H 'content-type: application/json' \
-  -d '{"operation":"set","parameters":{"value":true}}'
-curl -X POST "http://127.0.0.1:$SIM_CORE_PORT/v1/entities/ent_.../commands" \
-  -H 'content-type: application/json' \
-  -d '{"operation":"set","parameters":{"value":50}}'
-```
-
-Brightness `50` requests 50%: the Adapter writes native level 50, verifies that
-native target with a correlated poll, and reports the actual normalized State,
-51%. Core's one-percentage-point satisfaction tolerance accepts that observation;
-it does not rewrite it to the requested 50%. The same tolerance applies at the
-endpoints. A request of 100% writes native 99 and observes 100%.
-
-For diagnostics, check adapter logs together with the adapter and Entity reads:
-
-- `hearth.external_system_unavailable` indicates that the WebSocket endpoint cannot be reached or the connection was lost; verify the Z-Wave JS server listener, `zwave_js.url`, and the trusted-network boundary.
-- `adapter.hearth-adapter-zwavejs.incompatible_protocol` indicates a version frame whose schema range excludes 29; update Z-Wave JS UI or Z-Wave JS server, or extend the Adapter deliberately.
-- `adapter.hearth-adapter-zwavejs.invalid_snapshot` indicates a malformed version frame or snapshot; check the Z-Wave JS UI driver state and its logs.
-- `adapter.hearth-adapter-zwavejs.network_identity_mismatch` indicates that owned mappings and the connected controller describe different Z-Wave networks; restore the intended endpoint or configure a new `adapter_id` for the other network.
-- Unavailable reasons distinguish `adapter.hearth-adapter-zwavejs.node_dead`, `adapter.hearth-adapter-zwavejs.node_asleep`, `adapter.hearth-adapter-zwavejs.node_not_ready`, `adapter.hearth-adapter-zwavejs.node_missing`, `adapter.hearth-adapter-zwavejs.node_unknown`, and `adapter.hearth-adapter-zwavejs.capability_missing`. A node that returns to `Unknown` after being assessed reports unavailable rather than available.
-- A Command timeout means no fresh matching polled value arrived before the Entity-type deadline. Check that the node is always-listening and alive, that the device reports `currentValue`, and whether the physical device is slow enough to need a longer poll window. A timeout does not cancel radio work; re-read State before assuming the command had no effect.
-
-## Application logs
-
-Hearth executables write to stderr with `--log-level info --log-format text` by default. Use `--log-format json` for filtering, or `--log-level debug` for Observation and Entity Event progress:
-
-```sh
-log_dir=$(mktemp -d /tmp/hearth-logs.XXXXXX)
-go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>"$log_dir/core.log"
-jq -c 'select(.event == "command.created")' "$log_dir/core.log"
-```
-
-See [the logging guide](docs/guides/logging.md) for startup/failure diagnosis and safety rules. Use Command-history APIs for durable outcomes, and `/readyz` plus Adapter/Entity reads for current health; logs do not reconstruct those lifecycles. Entity availability can lag authoritative Adapter health even when readiness passes. Commands still check authoritative health. See the [health projection guide](docs/architecture/adapter-health-projection.md) for history, recovery, and upgrade semantics.
+- [Coding standards](CODING_STANDARDS.md) govern changes.
+- [Entity-type authoring](entitytypes/README.md) covers schemas and generated behavior.
+- [Application logging](docs/guides/logging.md) covers safe diagnostics and evidence.
+- [Verification recipes](.agents/skills/verify-hearth/features/README.md) cover
+  bounded simulator journeys, including Core-only recovery.
 
 ## Documentation
 
-- [Documentation index](docs/README.md): guides, references, architecture and decision records, organized by reader and question.
-- [Glossary](GLOSSARY.md): canonical project language.
-- [Specs](specs/): unfinished work and a superseded proposal awaiting an owner decision.
+Use the [documentation index](docs/README.md) to find guides, references, and
+decision records by reader and question. The [glossary](GLOSSARY.md) defines
+canonical language. [Specs](specs/) hold unfinished work and a superseded
+proposal awaiting an owner decision.

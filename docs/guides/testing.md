@@ -124,6 +124,22 @@ caches that siblings cannot use; PR-specific compiled changes may rebuild on eac
 push. The [CI workflow](../../.github/workflows/mise.yml) owns cache keys, retention,
 race detection, and concurrency settings. Cache reuse does not replace any check.
 
+## Repository PR reviews
+
+The [PR-Agent workflow](../../.github/workflows/pr-agent.yml) reviews non-draft
+PRs and can send PR content and repository context to OpenAI, incurring API charges.
+To enable it in a repository, add the Actions secret `OPENAI_KEY`, merge the
+workflow into the default branch, then open a non-draft PR and inspect the
+**PR Agent** run and review. Apply usage limits to the owning OpenAI project.
+Disable the workflow in GitHub Actions to stop automatic reviews.
+
+Automatic runs review only. Repository owners, members, and collaborators can
+request `/review`, `/ask "your question"`, or `/improve` in a PR conversation
+comment. Ordinary issues and unauthorized commenters cannot invoke those tools.
+The workflow owns the model, permissions, and repository context settings;
+PR-supplied `.pr_agent.toml` files are ignored. It reads PR content through
+GitHub's API without checking out or executing PR code.
+
 ## Completion gate
 
 Dashboard conformance examples in `contracts/views/v1/examples.json` run through

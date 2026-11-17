@@ -235,7 +235,10 @@ Run this capture in a separate terminal before driving input. `timeout` exits
 with status 124 when the 30-second capture window expires; that is expected.
 Plain subscriptions are live-only. Facts are at-least-once: deduplicate by fact
 `id`. Command lifecycle is not a fact family. Durable HTTP history remains the
-authority; README documents JetStream catch-up.
+authority. The [architecture](../../../../docs/architecture/architecture.md)
+describes durable-reader recovery; the
+[Core-offline recipe](../../verify-hearth/features/entity-events.md) checks
+broker-acknowledged Event catch-up separately from readiness.
 
 ## Core-offline recovery
 

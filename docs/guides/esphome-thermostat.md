@@ -6,7 +6,7 @@ Entities on the same Device. Cover kind takes precedence on a mixed
 cover/thermostat device.
 
 Upgrade Core before the ESPHome Adapter. Configure credentials, discovery, and
-static devices using the [ESPHome setup](../../README.md#esphome-adapter).
+static devices using the [ESPHome setup](esphome.md).
 No firmware change or Home Assistant bridge is required.
 
 ## Read the thermostat

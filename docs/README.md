@@ -18,6 +18,8 @@ work or proposals awaiting an owner decision.
 - [Automation delays](guides/automation-delay-steps.md): for Automation authors. How do I add and inspect an elapsed wait?
 - [Automation Function Steps](guides/automation-function-steps.md): for Automation authors. How do I invoke an Adapter Function from a Run?
 - [Discord notifications](guides/discord.md): for operators. How do I configure and prove one notification send without replay?
+- [Ecowitt station setup](guides/ecowitt.md): for operators. How do I connect a GW2000/WS90 station over MQTT and inspect its measurements?
+- [ESPHome setup](guides/esphome.md): for operators. How do I configure Native API discovery, static devices and credentials safely?
 - [ESPHome thermostats](guides/esphome-thermostat.md): for operators. How do I inspect thermostat support and safely read back a Command outcome?
 - [Levoit purifiers](guides/levoit.md): for operators. How do I configure purifier control and interpret its optimistic evidence?
 - [Application logging](guides/logging.md): for operators and developers. How do I capture diagnostics without confusing logs with durable outcomes or health?
@@ -25,7 +27,9 @@ work or proposals awaiting an owner decision.
 - [Reusable Automations](guides/reusable-automations.md): for household operators. How do I define, call and diagnose a reusable sequence?
 - [Storybook development](guides/storybook.md): for dashboard contributors. How do I run and verify component stories without Core?
 - [Testing and validation](guides/testing.md): for contributors. How do I choose focused checks and complete validation?
+- [Zigbee2MQTT setup](guides/zigbee2mqtt.md): for operators. How do I connect an existing Zigbee2MQTT service and verify discovery without device Commands?
 - [Extend Zigbee2MQTT capabilities](guides/zigbee2mqtt-capabilities.md): for Adapter contributors. How do I add and prove a capability from captured evidence?
+- [Z-Wave JS setup](guides/zwavejs.md): for operators. How do I connect an existing server while preserving network identity and physical-acceptance limits?
 
 ## Reference
 

@@ -64,3 +64,27 @@ selected model's Chat Completions API, tool support, and `reasoning_content`
 field when this integration was developed. Deterministic protocol and restart
 tests are synthetic; they do not establish household-use eligibility or
 physical-device behavior.
+
+## Configuration compatibility
+
+The removed `agent.max_steps` key is rejected, including when set to zero or null.
+Use `agent.max_iterations`, `--agent-max-iterations`, or
+`HEARTHD_AGENT_MAX_ITERATIONS`. This limit counts model-generation cycles, not
+the former graph steps; the values are not interchangeable.
+
+## Public turn failures
+
+Blocking HTTP turns return 502 for a provider call failure or nil model response,
+503 for caller/Drain cancellation or caller expiry, and a safe internal 500 for
+tool transport, trace persistence, or other setup faults. A provider timeout with
+an active caller remains a model failure, not caller cancellation.
+
+The SSE message route is mounted directly on Echo and is not in OpenAPI.
+It streams the same turn as the blocking route. After headers commit,
+unexpected failure ends with opaque `turn.failed` text rather than a new HTTP
+status. Expected caller/Drain cancellation retains its cancellation message.
+Modeled MCP failures remain recoverable tool observations; transport/session
+and trace persistence faults are turn-fatal. Private infrastructure errors do
+not become public history or SSE text. See the
+[Agent HTTP boundary](../../internal/modules/agent/register.go) and
+[stream handler](../../internal/modules/agent/stream.go).
