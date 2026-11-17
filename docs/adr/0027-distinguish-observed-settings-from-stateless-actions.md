@@ -1,6 +1,8 @@
-# Distinguish observed settings from stateless dispatched actions
+---
+status: accepted
+---
 
-**Status:** DRAFT (unnumbered). Not accepted. Number only on acceptance.
+# Distinguish observed settings from stateless dispatched actions
 
 Observable settings (`hearth.enumsetting/v1`, `hearth.numericsetting/v1`) hold a persistent choice that a command changes and a fresh linked observation confirms, completing as `satisfied`. Stateless actions (`hearth.enumaction/v1`, first used by the Zigbee2MQTT `effect` expose) request something with no reported state — an effect cannot be read back — so the command completes as honest unverified `dispatched` once adapter acceptance is durably recorded, with no observation requested, no matcher installed, and no state stored.
 

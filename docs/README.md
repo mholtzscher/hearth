@@ -84,4 +84,4 @@ Records describe decisions at their historical point, not a second current contr
 - [Carry previous State on Observation Facts](adr/0024-carry-previous-state-on-observation-facts.md)
 - [Schedule Automations without replay](adr/0025-schedule-automations-without-replay.md)
 - [Scope persistence failures to operations](adr/0026-scope-persistence-failures-to-operations.md)
-- [Draft: observed settings versus stateless dispatched actions](adr/draft-observed-settings-vs-stateless-dispatched-actions.md)
+- [Distinguish observed settings from stateless dispatched actions](adr/0027-distinguish-observed-settings-from-stateless-actions.md)
