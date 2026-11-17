@@ -400,7 +400,9 @@ one- or two-pixel horizon lines, never as large decorative fills.
 
 ## Components
 
-Both surfaces use the shared controls in `web/src/components`.
+Both surfaces use the shared controls in `web/src/components`. The Storybook
+**Design system** section (`mise run storybook-start`) shows these tokens and
+components rendered from the live CSS.
 
 **The One Focus Ring Rule.** Every focusable control shows the same 2px violet
 outline with a 3px offset, from the global `:focus-visible` rule. A component

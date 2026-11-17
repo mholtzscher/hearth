@@ -1,14 +1,47 @@
+import { DocsContainer } from "@storybook/addon-docs/blocks";
 import type { Preview } from "@storybook/react-vite";
 import MockDate from "mockdate";
 import { mswLoader } from "msw-storybook-addon/csf3";
 import { setupWorker } from "msw/browser";
+import type { ComponentProps } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { create } from "storybook/theming";
+import type { ThemeVars } from "storybook/theming";
 
 import { setBaseUrl } from "../src/api/client";
 import { ViewDataProvider } from "../src/features/views/data/provider";
+import { cn } from "../src/lib/utils";
 
 import "../src/index.css";
 import { fixtureNow, createCoreHandlers } from "./msw-handlers";
+
+/**
+ * Docs pages use Hearth's dark tokens. Storybook's theme math needs plain colors,
+ * so read them from the live CSS when a docs page first renders.
+ */
+let docsTheme: ThemeVars | undefined;
+const hearthDocsTheme = (): ThemeVars => {
+  if (!docsTheme) {
+    const root = getComputedStyle(document.documentElement);
+    const token = (name: string) => root.getPropertyValue(`--${name}`).trim();
+    docsTheme = create({
+      base: "dark",
+      appBg: token("gray-1"),
+      appContentBg: token("background"),
+      appPreviewBg: token("background"),
+      appBorderColor: token("border"),
+      barBg: token("gray-1"),
+      colorSecondary: token("violet"),
+      fontBase: '"Figtree Variable", sans-serif',
+      textColor: token("foreground"),
+      textMutedColor: token("muted-foreground"),
+    });
+  }
+  return docsTheme;
+};
+const HearthDocsContainer = (props: ComponentProps<typeof DocsContainer>) => (
+  <DocsContainer {...props} theme={hearthDocsTheme()} />
+);
 
 // Core requests that no handler answered during the current story.
 const unhandledCoreRequests: string[] = [];
@@ -25,7 +58,13 @@ const preview: Preview = {
           initialEntries={[context.parameters.route?.entry ?? "/"]}
         >
           <ViewDataProvider key={context.id}>
-            <main className="bg-background text-label text-foreground max-tablet:p-3 block h-auto min-h-screen translate-none p-6 *:mx-auto *:max-w-[1080px]">
+            <main
+              className={cn(
+                "bg-background text-label text-foreground max-tablet:p-3 block h-auto translate-none p-6 *:mx-auto *:max-w-[1080px]",
+                // An inline docs story takes its content's height, not the viewport's.
+                context.viewMode !== "docs" && "min-h-screen"
+              )}
+            >
               {context.parameters.route ? (
                 <Routes>
                   <Route
@@ -95,9 +134,23 @@ const preview: Preview = {
     options: {
       storySort: {
         method: "alphabetical",
-        order: ["Start here", "Components", "Pages", "Application"],
+        order: [
+          "Start here",
+          "Design system",
+          [
+            "Overview",
+            "Foundations",
+            "Components",
+            "View cards",
+            "Do's and Don'ts",
+          ],
+          "Components",
+          "Pages",
+          "Application",
+        ],
       },
     },
+    docs: { container: HearthDocsContainer },
     layout: "fullscreen",
     controls: {
       matchers: {

@@ -1,0 +1,43 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+
+import * as DataCardStories from "../features/views/cards/data-card.stories";
+import * as MetricStories from "../features/views/cards/metric/metric.stories";
+import * as ViewCards from "./view-cards.stories";
+
+<Meta of={ViewCards} tags={["!manifest"]} />
+
+# View cards
+
+**The One Frame Rule.** Every data card in a view uses `DataCard` from `features/views/cards/data-card.tsx`.
+
+## Card frame
+
+The real frame with its slots, in order. Time and Source share the footer row.
+
+<Canvas of={ViewCards.FrameAnatomy} sourceState="none" />
+
+## Card states
+
+A card shows every state that applies, in precedence order. Tones: error `error`, warn `warn`, neutral `gray-7`. Every entry carries words.
+
+<Canvas of={ViewCards.CardStates} sourceState="none" />
+
+Several states at once, listed in precedence order.
+
+<Canvas of={DataCardStories.WithStatus} sourceState="none" />
+
+A bound Metric keeps its last value, dimmed, beside Unavailable.
+
+<Canvas of={MetricStories.Unavailable} sourceState="none" />
+
+## Afterglow
+
+A changed reading lights the top edge in `orange` and fades over ten seconds with `ease-out-expo`. The same value reported again stays dark. Under reduced motion the edge stays lit for ten seconds without fading.
+
+<Canvas of={ViewCards.Afterglow} sourceState="none" />
+
+## Stable Height
+
+**The Stable Height Rule.** A control reserves its status line while idle. Press both switches.
+
+<Canvas of={ViewCards.StableHeight} sourceState="none" />

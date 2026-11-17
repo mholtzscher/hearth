@@ -1,0 +1,100 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+
+import * as AccordionStories from "../components/accordion.stories";
+import * as ButtonStories from "../components/button.stories";
+import * as CardStories from "../components/card.stories";
+import * as DialogStories from "../components/dialog.stories";
+import * as FactsStories from "../components/facts.stories";
+import * as InputStories from "../components/input.stories";
+import * as NativeSelectStories from "../components/native-select.stories";
+import * as NoticeStories from "../components/notice.stories";
+import * as PageHeaderStories from "../components/page-header.stories";
+import * as PopoverStories from "../components/popover.stories";
+import * as SegmentedControlStories from "../components/segmented-control.stories";
+import * as SwitchStories from "../components/switch.stories";
+import * as TableStories from "../components/table.stories";
+import * as TextareaStories from "../components/textarea.stories";
+
+<Meta title="Design system/Components" />
+
+# Components
+
+The shared controls in `web/src/components`. Use them instead of restyling native elements; each story below is the component's own.
+
+## Button
+
+`rounded-md`, `text-label`. Primary is `orange` for the one action; outline is `card` with a `border` for filters, paging, and secondary actions.
+
+<Canvas of={ButtonStories.Variants} sourceState="none" />
+
+`default` is 32px, `touch` 44px; `icon` and `icon-touch` are square.
+
+<Canvas of={ButtonStories.Sizes} sourceState="none" />
+
+A disabled primary turns `gray-3` with `gray-7` text; other variants dim to 50%.
+
+<Canvas of={ButtonStories.DisabledVariants} sourceState="none" />
+
+## Fields
+
+`Input`, `NativeSelect`, and `Textarea`: `card` background, `input` border, `rounded-md`, `text-label`. `default` 32px, `touch` 44px, `auto` follows the pointer.
+
+<Canvas of={InputStories.Sizes} sourceState="none" />
+
+<Canvas of={NativeSelectStories.Sizes} sourceState="none" />
+
+<Canvas of={TextareaStories.Editable} sourceState="none" />
+
+## Switch
+
+A 44×24px pill track inside a `rounded-md` target. Off is `gray-3`; on is `violet`.
+
+<Canvas of={SwitchStories.Sizes} sourceState="none" />
+
+<Canvas of={SwitchStories.On} sourceState="none" />
+
+## Segmented control
+
+Native `aria-pressed` buttons. Selected uses `violet-soft`, `violet-text`, and an inset `violet` line.
+
+<Canvas of={SegmentedControlStories.Default} sourceState="none" />
+
+## Dialog
+
+`gray-2` surface, `gray-4` border, `rounded-xl`, overlay shadow. A bottom sheet on phones with `placement="bottom"`.
+
+<Canvas of={DialogStories.Centered} sourceState="none" />
+
+## Popover
+
+`popover` surface, `rounded-card`, overlay shadow. Used for Source details on desktop.
+
+<Canvas of={PopoverStories.OpenAndDismiss} sourceState="none" />
+
+## Notice
+
+`destructive` tint, `text-caption`, `rounded-md`. `role="alert"` for errors, `role="status"` for feedback.
+
+<Canvas of={NoticeStories.Alert} sourceState="none" />
+
+<Canvas of={NoticeStories.Status} sourceState="none" />
+
+## Card
+
+`card` surface, `border`, `rounded-card`. `compact` is the Development page density.
+
+<Canvas of={CardStories.Default} sourceState="none" />
+
+<Canvas of={CardStories.Compact} sourceState="none" />
+
+## Page structure
+
+`PageHeader` pairs the headline with wrapping actions. `Facts` and `Table` carry metadata at `text-label`. `Accordion` uses `rounded-lg`.
+
+<Canvas of={PageHeaderStories.WithActions} sourceState="none" />
+
+<Canvas of={FactsStories.Metadata} sourceState="none" />
+
+<Canvas of={TableStories.Readings} sourceState="none" />
+
+<Canvas of={AccordionStories.Expanded} sourceState="none" />
