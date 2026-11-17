@@ -32,27 +32,23 @@ describe("Storybook Chromium selection", () => {
     }
   });
 
-  it.each([true, false])("honors an explicit override (NixOS: %s)", (nixOS) => {
+  it("prefers an explicit override to Chromium on PATH", () => {
+    const directory = fixture();
+    executable(directory, "chromium");
     expect(
-      resolveChromium(
-        { PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: "/custom/chrome" },
-        nixOS
-      )
+      resolveChromium({
+        PATH: directory,
+        PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: "/custom/chrome",
+      })
     ).toBe("/custom/chrome");
   });
 
-  it("keeps Playwright's bundled browser outside NixOS, even with Chromium on PATH", () => {
-    const directory = fixture();
-    executable(directory, "chromium");
-    expect(resolveChromium({ PATH: directory }, false)).toBeUndefined();
-  });
-
   it.each(["chromium", "chromium-browser"])(
-    "discovers executable %s on NixOS without an override",
+    "discovers executable %s on PATH without an override",
     (name) => {
       const directory = fixture();
       const file = executable(directory, name);
-      expect(resolveChromium({ PATH: directory }, true)).toBe(file);
+      expect(resolveChromium({ PATH: directory })).toBe(file);
     }
   );
 
@@ -68,18 +64,15 @@ describe("Storybook Chromium selection", () => {
     const preferred = executable(first, "chromium-browser");
     executable(second, "chromium");
     expect(
-      resolveChromium(
-        {
-          PATH: [path.join(directory, "missing"), first, second].join(
-            path.delimiter
-          ),
-        },
-        true
-      )
+      resolveChromium({
+        PATH: [path.join(directory, "missing"), first, second].join(
+          path.delimiter
+        ),
+      })
     ).toBe(preferred);
   });
 
-  it("leaves missing-browser reporting to Playwright when no executable is found", () => {
-    expect(resolveChromium({ PATH: fixture() }, true)).toBeUndefined();
+  it("uses Playwright's bundled browser when no executable is found on PATH", () => {
+    expect(resolveChromium({ PATH: fixture() })).toBeUndefined();
   });
 });
