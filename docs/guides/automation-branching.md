@@ -1,0 +1,288 @@
+# Automation branching
+
+This guide describes the v1 Automation definition and unified history contracts.
+
+An Automation can use nested `if` and ordered `choose` Steps to select static
+Command sequences. Admission Conditions decide whether a Run starts. Branch
+Conditions decide what an admitted Run does when it reaches a branching Step.
+They can compare current Entity State, match the Run's recorded Trigger IDs, or
+evaluate a bool value binding. Expression Conditions are branch-only; see
+[Automation expressions](../reference/automation-expressions.md).
+
+## A complete nested definition
+
+Discover registered IDs with `GET /v1/entities`. Replace the illustrative IDs
+below with your button event Entity and controllable power Entity. The button
+must support `single_press` and `double_press`; the power Entity must support
+`set` with boolean `value` parameters and have boolean State. Saving validates
+every arm, including arms that a particular Run will not select.
+
+This definition routes a single press through a nested State-dependent toggle,
+routes a double press to off, and turns on for a manual invocation:
+
+```sh
+curl -X POST http://127.0.0.1:8080/v1/automations \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "Office button routes power",
+    "enabled": true,
+    "triggers": [
+      {
+        "id": "single",
+        "kind": "entity_event",
+        "entity_id": "ent_01950000-0000-7000-8000-000000000001",
+        "event_name": "single_press"
+      },
+      {
+        "id": "double",
+        "kind": "entity_event",
+        "entity_id": "ent_01950000-0000-7000-8000-000000000001",
+        "event_name": "double_press"
+      }
+    ],
+    "steps": [
+      {
+        "id": "route-button",
+        "kind": "choose",
+        "branches": [
+          {
+            "id": "toggle",
+            "conditions": {"id": "single-match", "kind": "trigger", "trigger_ids": ["single"]},
+            "steps": [
+              {
+                "id": "toggle-power",
+                "kind": "if",
+                "conditions": {
+                  "id": "is-on",
+                  "kind": "entity_state",
+                  "entity_id": "ent_01950000-0000-7000-8000-000000000002",
+                  "value_pointer": "",
+                  "operator": "eq",
+                  "operand": true,
+                  "max_age_seconds": 300
+                },
+                "then": [
+                  {"kind":"command", "id": "toggle-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
+                ],
+                "else": [
+                  {"kind":"command", "id": "toggle-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
+                ]
+              }
+            ]
+          },
+          {
+            "id": "off",
+            "conditions": {"id": "double-match", "kind": "trigger", "trigger_ids": ["double"]},
+            "steps": [
+              {"kind":"command", "id": "double-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
+            ]
+          }
+        ],
+        "default": [
+          {"kind":"command", "id": "manual-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
+        ]
+      }
+    ]
+  }'
+```
+
+Use the returned `aut_` ID for later requests. Full replacement still uses
+`PUT /v1/automations/{automation_id}` with `expected_revision` and `definition`.
+HTTP and MCP accept the same recursive v1 definition. MCP publishes the strict
+definition input schema but no tool output schemas. MCP result projections are
+independent of HTTP; read direct Run or Skip detail with
+`get_automation_history_entry` for canonical branch evidence.
+The dashboard also provides an editor for definitions and a history view.
+
+## Step and Condition contract
+
+- A Command Step has `id`, `"kind":"command"`, `entity_id`, `operation`, and
+  `parameters`. The `kind` field is required.
+- An If Step has `id`, `"kind":"if"`, `conditions`, and a nonempty `then`
+  sequence. It may have a nonempty `else` sequence.
+- A Choose Step has `id`, `"kind":"choose"`, and ordered `branches`. Each
+  alternative has `id`, `conditions`, and a nonempty `steps` sequence. It may
+  have a nonempty `default` sequence.
+- Omit `else` or `default` for no action on a false/no-match result. An explicit
+  empty array or null is invalid. Go callers use nil for an omitted optional arm.
+- Any sequence can contain Commands, If Steps, and Choose Steps. After a selected
+  sequence completes, execution continues with the following surrounding Step.
+  An all-false construct without a fallback is a successful no-op.
+
+Branch State Conditions reuse `entity_state`, `all`, `any`, and `not` from the
+[Conditions guide](../reference/automation-conditions.md). `value_pointer` selects inside
+the State value, not the Entity API response. The empty string selects the whole
+value. The former `pointer` alias is invalid.
+
+A `trigger` leaf is true when any configured `trigger_ids` ID belongs to the
+immutable Run match set. Its nonempty list contains unique IDs referencing Triggers
+in the same definition. Use `all` over separate leaves to require multiple
+matches, or `not` to negate a match. This leaf never returns unknown. It works
+with Observation, Entity Event, held-state, and scheduled admission alike,
+including multiple matched scheduled IDs. Trigger leaves are invalid anywhere
+in top-level admission `conditions`.
+
+Manual Runs have no matched Trigger IDs. Every trigger leaf is therefore false,
+and its negation can be true. Manual invocation accepts no synthetic Trigger
+context. `{"bypass_conditions":true}` bypasses only admission Conditions; branch
+Conditions still evaluate normally. In the example, manual invocation selects
+`default` and never reads the nested toggle's State.
+
+### Authoring bounds
+
+The required Trigger array may be empty, including in manually invoked
+definitions. Present Step sequences and Choose alternatives must be nonempty.
+The [definition schema](../../internal/modules/automations/automation-definition.schema.json)
+and [definition validation](../../internal/modules/automations/definition_validation.go)
+own the current bounds; the [branching](../../internal/modules/automations/branching.go)
+and [Condition](../../internal/modules/automations/conditions.go) implementations
+also bound tree depth and node counts.
+
+Count all defined nodes, including unselected arms. Top-level Steps are at depth
+one. Step IDs are unique across the whole definition. Alternative IDs are unique
+within their Choose Step.
+Condition IDs are unique within one root; admission has its own root namespace.
+Unknown fields, contradictory family fields, and null structural members are
+invalid. A State comparison operand may be JSON null because it is a value.
+
+Save-time validation checks every Entity and Command reference in every arm.
+State predicates require existing stateful Entities, but missing, unavailable,
+or disabled State does not itself invalidate the definition. Selected Commands
+still validate against current support and execution eligibility when attempted.
+Targets remain static; parameter bindings may calculate from Run-local values.
+
+## When State is read
+
+Admission reads only top-level admission Condition references. Reaching an If
+reads its Condition's requested Entities once. Reaching a Choose reads the union
+of all its immediate alternatives' State references in one coherent snapshot,
+even if an early Trigger-only alternative will match. It does not read State
+referenced only by nested Steps. A Trigger-only construct needs no State read.
+
+Core samples one UTC evaluation time after a successful read. Every evaluated
+Choose alternative shares that time and snapshot. A reached nested branch reads
+again after preceding Commands finish. The snapshot is coherent, not atomic
+with the later Commands; physical actions or other Runs can change State.
+Recorded decisions are never reevaluated after State changes.
+
+Core evaluates every leaf inside an evaluated Condition tree. Three-valued logic
+still applies: `any(true, unknown)` is true and `all(false, unknown)` is false.
+For Choose, Core evaluates alternatives in order and stops at the first true or
+unknown root. The first true root selects its arm. An unknown root fails the Run
+immediately, without later alternatives or default. Later alternatives have no
+evaluation evidence, although their immediate State references were in the read.
+Unselected nested Steps have neither reads nor decision records.
+
+## Failures and interruption
+
+| History code | Meaning |
+| --- | --- |
+| `branch_condition_unknown` | An evaluated root was unknown, such as missing or expired evidence |
+| `branch_state_read_failed` | State acquisition failed or exceeded its deadline |
+| `branch_snapshot_incomplete` | The returned batch did not cover every requested Entity |
+| `branch_state_corrupt` | Stored State or supplied State evidence was corrupt |
+
+A batch read failure fails the construct even if an earlier Trigger-only
+alternative would otherwise match. Each branch read and decision write has a
+five-second bound. Read errors are errors, not false or unknown Conditions.
+Core commits unknown/error evidence and Run failure atomically. It retains only
+fully evaluated alternatives, never a failed tree's partial evidence.
+
+Core commits a selection decision before attempting its children. If that write
+fails or its commit is ambiguous, Core dispatches no selected Command and makes
+one bounded, atomic interruption attempt for only that Run, then logs. It never
+retries cleanup or execution, rewrites a committed decision, closes module
+admission, or fails readiness for this operation fault. If cleanup fails, the
+affected Automation may stay busy until startup recovery; independent Automations
+can proceed after their own admission writes succeed.
+Expected unknown evidence fails only its Run, not readiness.
+
+A selected Command failure stops the Run. There is no fallback after selection,
+no evaluation or execution retry, and no undo of earlier physical effects.
+Shutdown stops execution before the next decision or Command and records
+`interrupted/core_stopping`. Restart records `interrupted/core_restarted` for
+active Runs, preserves committed decisions and completed attempts, and never
+resumes or replays Commands. A new manual invocation is new work, not recovery.
+The one-active-Run rule and `automation_busy` behavior remain unchanged.
+
+## Inspecting durable history
+
+```sh
+curl http://127.0.0.1:8080/v1/automations/aut_.../history
+curl http://127.0.0.1:8080/v1/automations/aut_.../history/arn_...
+```
+
+Run detail in HTTP and MCP includes one sparse `executions` timeline. Each reached
+decision has a global zero-based `sequence`, `step_id`, `kind`, `phase`, diagnostic
+timestamps, and kind-owned evidence containing `outcome` and `evaluations`. Outcomes are `then`, `else`,
+`branch`, `default`, `no_match`, `unknown`, or `error`. `branch` also records
+`selected_branch_id`; unknown/error records a `failure_code`. Choose evaluations
+carry `branch_id` and contain only the evaluated definition-order prefix.
+Trigger leaf evidence has `kind: "trigger"` and `matched_trigger_ids`, the matching
+intersection in configured order, or an empty array for false.
+
+Global sequence establishes reached order across all Step kinds. Timestamps are
+diagnostic and may move backward. There are no preallocated rows for unselected
+Commands and no separate decision or Command-attempt arrays.
+
+A decision proves selection, not dispatch or completion. A committed selection
+can sit beside entirely unattempted children after shutdown. Unselected commands
+and commands never reached have no execution row. Check reached executions and
+the Run outcome for execution results.
+
+The web UI shows a nested definition outline and a unified chronological timeline
+with expandable exact evidence and verified Command links. Definition edits or deletion do
+not change a Run's immutable snapshot or retained evidence. History pruning
+removes decision rows with their parent Run under the existing retention policy.
+
+## Compatibility and rollback
+
+The definition schema ID is `urn:hearth:schema:automation-definition:v1`.
+Every Step requires `kind`, including `"kind":"command"`. Comparisons accept
+only `value_pointer`, not the former `pointer` alias. Old exported definitions
+must be updated before submission; the public decoder has no legacy fallback.
+
+Back up the SQLite database before upgrading. Historical startup migration
+`00017_automation_definition_size.sql` adds `"kind":"command"` to implicit
+Command Steps in stored definitions and retained Run snapshots, including nested
+If/Choose sequences. It preserves revisions, timestamps, Step order, parameters,
+and execution evidence; already-current documents are untouched. This repairs
+the first-tick scheduler failure after upgrading a database with old definitions,
+without resetting household data or replaying Commands.
+
+The old version 14 failed when otherwise-valid documents already filled the
+64 KiB limit. It is now a no-op checkpoint; version 17 repairs both databases
+waiting for 14 and those that already applied it. The raw, normalized, and
+SQLite definition/snapshot limit at that checkpoint was 66,080 bytes: exactly 64 KiB plus the
+544 bytes needed for 32 new Command kinds. Tree and leaf limits are unchanged.
+This is a small size-policy expansion, not a legacy public decoder.
+
+The migration keeps checks and foreign keys enabled, preserving Holds and all
+Run children during the table rebuilds. It does not repair arbitrary invalid
+documents or the former `pointer` alias. A failed rebuild or rewrite rolls back
+the entire migration. Down retains canonical kinds and the size allowance;
+returning to an older binary requires a matching pre-upgrade backup, not a
+schema downgrade. Never truncate parameters or delete retained records to fit.
+
+History uses `urn:hearth:schema:automation-history:v1`. Run, Skip, and summary
+responses require `cause`: `manual`, `schedule`, `device_fact` with a `fact`,
+`held_state` with `evidence`, or `invocation` with parent Automation, Run, and
+Step IDs. Observation Facts expose `observation_id`,
+`disposition`, `value`, and optional `previous_value`; Entity Event Facts expose
+`event_id` and `name`. An absent previous value differs from JSON null. State
+leaf evidence has `kind: "entity_state"`. Condition decisions require a
+`bypass_requested` flag consistent with their mode.
+
+Migration `00010_automation_branch_decisions.sql` adds only the decision child
+table and preserves existing history. Its Down drops decision evidence only.
+It does not remove branching definitions or convert Run snapshots for older
+binaries. Returning to an older binary requires its matching database and
+frontend. Down/Up does not recover dropped evidence.
+
+Migration 23 preserves post-22 revisions and executions, retaining literal
+definitions byte-for-byte. It does not manufacture prior value evidence. Restore a
+matching backup for binary rollback; see [the expression guide](../reference/automation-expressions.md).
+
+Loops, parallel groups, Run queues, cancellation APIs, and resumption remain out
+of scope. See the [module ownership guide](../../internal/modules/automations/README.md)
+for implementation boundaries.

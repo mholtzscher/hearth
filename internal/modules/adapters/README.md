@@ -48,7 +48,7 @@ through root `sqlc.yaml`. Tests belong beside their domain, real SQLite, or real
 NATS boundary. Run the repository mise tasks; do not edit generated code by hand.
 
 Handwritten row decoders and column encoders follow the
-[SQLite mapping standards](../../../docs/sqlite-mapping-standards.md).
+[SQLite mapping standards](../../../docs/reference/sqlite-mapping-standards.md).
 
 `Service` owns runtime and management behavior. `FunctionService` owns catalog
 registration, revision-pinned invocation, recovery, retention, and admission.
@@ -64,8 +64,8 @@ and SQLite close; no durable execution worker or replay exists. Startup marks
 unfinished evidence unknown. The shared history worker prunes terminal evidence
 older than thirty days, without pruning runtime/health evidence or catalogs.
 
-See [Adapter Functions](../../../docs/adapter-functions.md) for public contracts,
+See [Adapter Functions](../../../docs/reference/adapter-functions.md) for public contracts,
 non-secret payload rules, SDK serving, upgrade, and rollback.
 
-See the [operator guide](../../../docs/adapter-health-projection.md) for lag,
+See the [operator guide](../../../docs/architecture/adapter-health-projection.md) for lag,
 retention, recovery, upgrade, and rollback semantics.

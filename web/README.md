@@ -1,110 +1,70 @@
-# Hearth Debug Dashboard
+# Hearth dashboard development
 
-React household workspace and development dashboard for `hearthd`. It exposes conversations, dashboards, Automation authoring and retained execution evidence, alongside Adapter, Device, Entity, Command, Notification, and NATS diagnostics.
+The React dashboard is the household workspace and Core inspection UI. For product behavior, use the [documentation index](../docs/README.md), not a second API or page catalog here. All commands below run from the repository root.
 
-## Automation authoring
+## Run locally
 
-The Automations library offers cards and the diagnostic table. Cards have switchable Sentence and Step stack read styles. **Edit Automation** opens the stack builder; **New Automation** starts a disabled draft. Every path owns its ordered Steps, including nested If/Else and first-match Choose paths.
-
-Conversation Automation artifacts are separate from dashboard views. A card can reference a saved Automation's current definition, propose a new Automation, or propose replacement against a saved revision. **Open in canvas** selects it. Only browser **Save** creates or replaces it; **Save and enable** makes enablement explicit. The household agent uses `present_automation` for proposals rather than calling create/replace directly. External MCP and HTTP CRUD are unchanged.
-
-Function, Read-State, and Set-Variables Steps use the exact-JSON inspector. Untouched literals and expressions retain their source tokens, including numbers beyond JavaScript's safe integer range. The editor validates the canonical Automation schema; Core rechecks current resource support when saving. Review model-authored proposals before Save: exact transport does not guarantee that the model reproduces every original literal.
-
-Failed saves retain the draft. A revision conflict offers reload or explicit save-as-new; an ambiguous creation is not automatically retried. Check the library before trying another creation. Referenced children open read-only previews of their current definitions. Real execution and retained Run/Skip evidence remain on the detail page; draft changes are never a simulation or a Run.
-
-## Prerequisites
-
-- `hearthd` running, default `http://127.0.0.1:8080`. For a local simulator stack with worktree-specific ports, use `mise run simulator-start` instead.
-- Node + pnpm, provided by mise: run `mise install` from the repo root.
-
-## Run
+Install [Mise](https://mise.jdx.dev/), then:
 
 ```sh
-cd web
-pnpm install
-pnpm run dev
-```
-
-Open http://127.0.0.1:5173. `/v1`, `/healthz`, `/readyz`, and `/openapi.json` are proxied to `HEARTHD_URL` (default `http://127.0.0.1:8080`):
-
-```sh
-HEARTHD_URL=http://127.0.0.1:8080 pnpm run dev
-```
-
-To point at a non-loopback `hearthd` on a trusted network, set the base URL in the toolbar (stored in `localStorage`) instead of using the proxy. The HTTP API has no authentication, so keep `hearthd` on loopback or a trusted network. Browsers block cross-origin reads unless the server sends CORS headers, and `hearthd` serves none: in a browser, leave the base URL empty to use the same-origin vite proxy. A non-empty base URL only works from a same-origin deployment or once `hearthd` gains CORS support.
-
-## Remote access (Tailscale)
-
-The dev server binds loopback only (`mise run web-dev` passes `--host 127.0.0.1`), so expose it with `tailscale serve` instead of widening the bind:
-
-```sh
-mise run web-dev                                          # loopback
-tailscale serve --bg --http=8088 http://127.0.0.1:5173    # tailnet only
-```
-
-→ `http://<machine>.<tailnet>.ts.net:8088/` (use `--https=443` for a TLS certificate). Tailscale forwards the original Host header, so `vite.config.ts` allowlists this machine's tailnet names automatically when `tailscale` is on `PATH`. Set `HEARTH_ALLOWED_HOSTS=host.example,.suffix.example` for any other name (a leading dot allows the whole suffix).
-
-Only the dashboard port needs to be reachable: `hearthd` stays on `127.0.0.1:8080` because the proxy runs server-side. Neither the dashboard nor the HTTP API authenticates, so every device your tailnet ACLs allow can use it.
-
-## Household agent
-
-`/agent` drives hearthd's required household agent (`POST /v1/agent/conversations`, `POST .../{id}/messages`, `GET .../{id}/messages`): Eino ADK in-process with OpenAI Responses, an embedded automation skill, and SQLite conversation history. Turns stream over SSE (`POST .../{id}/messages/stream`: `turn.started`, `tool.preparing`, `tool.started`, `tool.finished`, `view.presented`, `turn.finished`/`turn.failed`) so tool activity renders incrementally; a view being written holds its place in the reply from `tool.preparing` until it is presented. Each session reconciles with history at turn end. `ConversationsProvider` owns the requests above the routes, so navigating within Hearth or starting another conversation does not cancel an active turn. New conversations appear in Recent immediately. Reloading or closing the tab, or switching the Core connection, still cancels requests. The stream route is a plain Echo handler and stays out of `openapi.json`. The browser holds no model key. Conversation URLs identify server-side durable history. Core always registers these routes: the agent is a required module, configured by the non-secret `agent` block in `configs/hearthd.yaml` (including optional `agent.model`, default `gpt-5.6-luna`) and the environment-only `HEARTH_OPENAI_API_KEY`. Core fails startup when that variable is missing, empty, or whitespace-only. A 404 from the page means the dashboard is connected to an older Core build. See `web/src/pages/agent-page.tsx` and `internal/modules/agent`.
-
-## Develop components with Storybook
-
-Use [the Storybook workflow](../docs/storybook.md) to develop dashboard components without Core, NATS, model credentials, or devices:
-
-```sh
+mise install
 mise run web-install
-mise run storybook-browser-install
-mise run storybook-start
+mise run simulator-start
 ```
 
-Open the printed `Local:` URL. The primary checkout uses 6006 and each linked worktree gets its own port. The managed start writes this checkout's MCP endpoint to the ignored `.opencode/opencode.json`; use that instead of a fixed URL, and run `mise run storybook-stop` when finished. Stories use the production dark theme and synthetic HTTP fixtures. `mise run storybook-test` runs browser interaction/accessibility checks; `mise run storybook-build` creates `web/storybook-static`.
+Use the printed worktree-local web URL. This starts Core, NATS, and simulated Devices; it requires the simulator's selected model-provider credential. The checked-in simulator selects OpenCode Go (`HEARTH_OPENCODE_GO_API_KEY`). Standalone Core defaults to OpenAI (`HEARTH_OPENAI_API_KEY`). Supply the selected key through a supervisor or secret manager, never the browser. See [Core setup](../README.md#try-it-with-simulated-devices) and [provider compatibility](../docs/reference/agent-skills.md). Stop the managed stack with `mise run simulator-stop`.
 
-## Check and fix web code
-
-Ultracite uses its default Oxlint core, React, and Vitest rules and Oxfmt formatting. From the repository root:
+To use an already running Core instead:
 
 ```sh
-mise run web-check
+HEARTHD_URL=http://127.0.0.1:8080 mise run web-dev
+```
+
+Open `http://127.0.0.1:5173`. Leave the toolbar's base URL empty to use Vite's same-origin proxy for `/v1`, `/healthz`, `/readyz`, and `/openapi.json`. The Core API has no authentication or CORS headers. Keep it on loopback or a trusted private network. A toolbar override is stored in `localStorage`, but cross-origin browser reads fail without CORS; an override needs a same-origin deployment, not merely a reachable Core.
+
+## Remote access through Tailscale
+
+The managed dev server binds loopback. Instead of widening its bind:
+
+```sh
+mise run web-dev
+tailscale serve --bg --http=8088 http://127.0.0.1:5173
+```
+
+Use `http://<machine>.<tailnet>.ts.net:8088/`, or `--https=443` for TLS. Vite allowlists this machine's tailnet names when `tailscale` is on `PATH`. For another hostname, set `HEARTH_ALLOWED_HOSTS=host.example,.suffix.example`; a leading dot allows the suffix. Only the dashboard port needs exposure because the proxy reaches Core server-side. Every device permitted by tailnet ACLs can use the unauthenticated dashboard and API.
+
+## Develop and verify UI
+
+Follow [Storybook development](../docs/guides/storybook.md) for synthetic, credential-free component work, MCP discovery, and browser verification. Follow [coding standards](../CODING_STANDARDS.md#dashboard-design-system) and [design intent](../DESIGN.md) when changing UI.
+
+```sh
 mise run web-fix
+mise run web-check
+mise run --skip-deps web-test
+mise run --skip-deps web-build
 ```
 
-`web-check` reports lint and formatting errors without changing files. `web-fix` applies formatting and safe lint fixes; review the diff and fix remaining diagnostics before running `web-check` again. CI and `mise run validate` enforce the same check. Build output, dependencies, and the generated MSW worker are excluded.
+Review safe fixes before rerunning checks. Ultracite's default rules apply; build output, dependencies, and the generated MSW worker are excluded. Use [the testing guide](../docs/guides/testing.md) for final validation.
 
-## Build
+### Automation editor safety
 
-```sh
-pnpm run build
-pnpm run preview
-```
+Agent proposals and current-definition references open in the canvas, separate from dashboard views. Only explicit browser **Save** persists a definition; **Save and enable** also enables it. External HTTP/MCP CRUD is unchanged. The exact-JSON inspector preserves untouched literal/expression tokens, including large integers, but cannot guarantee that a model reproduces original literals. Core rechecks current support on save.
 
-## Container image
+Failed saves keep the draft. Conflicts offer reload or explicit save-as-new; ambiguous creation is never automatically retried. Check the library before another creation. Referenced children are read-only previews of their current definitions. Editing a draft does not execute or simulate it; use retained Run/Skip detail for execution evidence.
 
-Releases publish `ghcr.io/mholtzscher/hearth/hearth-web:<tag>` (same tag as the `ko` Go images): a static build served by nginx, proxying `/v1`, `/healthz`, `/readyz`, `/openapi.json` to `HEARTHD_URL` and `/nats-monitor` to `NATS_MONITOR_URL` (same-origin, so no CORS setup is needed). Point it at `hearthd` at container start:
+## Container deployment
+
+Releases publish `ghcr.io/mholtzscher/hearth/hearth-web:<tag>`, matching the Go release tag. The static nginx image proxies Core and NATS monitoring server-side:
 
 ```sh
 mise run web-docker-build
 docker run --rm -p 8081:80 -e HEARTHD_URL=http://hearthd:8080 hearth-web:dev
 ```
 
-The `HEARTHD_URL` hostname must resolve when the container starts (nginx resolves proxy targets at startup). The NATS websocket URL stays editable in the NATS page (stored in `localStorage`), so it needs no proxy.
+Set `HEARTHD_URL` and `NATS_MONITOR_URL` for the deployment. Their hostnames must resolve when nginx starts. The NATS WebSocket URL remains browser-side and editable in the NATS page; it is not proxied.
 
-## Pages
+## NATS debugging
 
-- **Entities**: list (optional `device_id` filter), link to detail.
-- **Entity detail**: metadata, state, support, enable/disable toggle (`PATCH /v1/entities/{id}`), command sender (`POST …/commands`) with power/brightness presets, command history, availability history, raw JSON.
-- **Devices**: list + detail with embedded entities.
-- **Adapters**: list + detail with runtime evidence, health history, raw JSON.
-- **Commands**: household history newest-first (`GET /v1/commands`) with entity/status filters, lookup by `cmd_…` id (`GET /v1/commands/{id}`) with shareable `?command_id=` links and recent IDs, outcome timeline with latency, and links to entity pages and automation step attempts.
-- **Automations**: switchable Sentence/Step stack cards, stack authoring, retained Run/Skip history, manual Runs, and revision-checked enablement. Notification leaves have structured destination/title/message editing. Run notification evidence is separate from Commands and links to independent attempt detail. Missing/pruned detail never changes a retained Step outcome.
-- **Destinations / Notifications**: destination discovery, one-shot manual test sends and paginated attempt history. Unknown outcomes are ambiguous, never automatically retried. See [Core notification usage](../docs/notifications.md).
-- **NATS**: live wire traffic (`hearth.v1.adapter.>` over websocket) with subject presets, pause/clear, and subject filter; plus server info from the NATS monitoring endpoint (connections with subscriptions, JetStream stream `HEARTH_OBSERVATIONS_V1` state and consumer lag).
-- **Device facts**: reads Core's `HEARTH_DEVICE_FACTS_V1` JetStream stream over the same websocket. A bounded retained snapshot (newest 200, newest-first, `hearth.v1.core.fact.>`) is read through a short-lived ephemeral consumer that is deleted as soon as the read completes; live streaming is off by default and adds a separate ephemeral `DeliverNew` tail that sees only facts published after it is created. Both consumers are page-owned and deleted on completion or disable, with `inactive_threshold` as orphan safety for a closed tab. Entity and device names are enrichment from the HTTP read API; the payload and subject carry only the canonical entity id. Neither path offers durable recovery.
+The simulator supplies `VITE_NATS_WS_URL` and `NATS_MONITOR_URL` from worktree-local listeners in [its NATS configuration](../configs/nats.simulator.conf). For separate NATS, supply both URLs when starting Vite. The WebSocket override is stored in `localStorage`; diagnostics pages share a refcounted connection per URL. Restart the simulator stack after changing its NATS configuration.
 
-Health (`/healthz`) and readiness (`/readyz`) poll every 10s in the header.
-
-## NATS debugging prerequisites
-
-The simulator stack configures loopback WebSocket and monitoring listeners in `configs/nats.simulator.conf` on `SIM_NATS_PORT + 1` and `SIM_NATS_PORT + 4000`. `mise run simulator-start` passes the WebSocket URL to Vite as `VITE_NATS_WS_URL` and the monitoring URL as `NATS_MONITOR_URL`. For a separate NATS deployment, supply both URLs when starting Vite. The WebSocket URL is editable in the NATS page (stored in `localStorage`) and both pages share one refcounted connection per URL, so one page's teardown never closes the other's socket. Restart the simulator stack after changing its NATS configuration.
+Wire and Device Fact viewers are diagnostic, not durable recovery consumers. Retained snapshots and live tails use page-owned ephemeral consumers, deleted on completion or disable with an inactivity timeout for orphan cleanup. Use [Device Fact delivery](../docs/architecture/architecture.md#device-fact-delivery-and-recovery) and durable Core APIs for evidence rather than inferring outcomes from missing browser traffic.

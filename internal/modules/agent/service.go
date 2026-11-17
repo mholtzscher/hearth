@@ -697,7 +697,7 @@ func turnFailureCode(err error) string {
 }
 
 // logTurnFailure records the cause server-side only; it never crosses the
-// HTTP boundary, mirroring the MCP error-mapping posture. docs/logging.md
+// HTTP boundary, mirroring the MCP error-mapping posture. docs/guides/logging.md
 // forbids raw error strings here, so the record carries fixed codes instead.
 func (service *Service) logTurnFailure(ctx context.Context, conversationID, stage string, err error) {
 	attrs := []slog.Attr{

@@ -4,6 +4,8 @@ import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
+import { resolveChromium } from "./scripts/storybook-browser.ts";
+
 export default defineConfig({
   test: {
     projects: [
@@ -34,7 +36,7 @@ export default defineConfig({
             headless: true,
             provider: playwright({
               launchOptions: {
-                executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+                executablePath: resolveChromium(),
               },
             }),
             instances: [{ browser: "chromium" }],

@@ -4,6 +4,54 @@ State and support JSON Schemas define the built-in data shapes. The behavioral
 manifest defines operations, bounds relative to support, and Command satisfaction.
 State fields are derived from the schemas, not a manifest allowlist.
 
+## Behavior manifests
+
+Each type's `entitytype.json` manifest uses its State, support, and operation
+parameter JSON Schemas plus `examples.json`. Concrete Entity-type and generated
+SDK directories contain no handwritten Go. Run `mise run --skip-deps generate`
+to regenerate bindings, codecs, behavior, typed SDK facades, conformance tests,
+and the aggregate catalog. Run `mise run validate` and review the generated diff
+before committing.
+
+Each operation declares `parameters_schema`, a positive integer `deadline_ms`,
+`outcome` (`observed` or `dispatched`), and `satisfied_when`. Observed
+operations require a nonempty rule array; dispatched operations require `[]`
+and generate no matcher. `stateless: true` omits Observation constructors.
+`event_source: true` additionally requires `stateless: true` and no operations.
+
+Rules are conjunctive and evaluated in declaration order. A rule has `op`,
+`left`, optional `right`, and the operator-specific `tolerance` or `modulus`.
+Paths are RFC 6901 JSON Pointers; the empty path selects the root. References
+select required scalar fields except for optional-leaf operators and the
+required string-array right operand of membership rules. Objects and optional
+intermediate segments are rejected.
+
+| Operator | Operands and meaning |
+| --- | --- |
+| `eq` | Same scalar kind; equality |
+| `gte`, `lte` | Same numeric kind; ordered comparison |
+| `multiple_of` | Integers; left is a multiple of right |
+| `is_true` | Boolean left only |
+| `near` | Integers and `tolerance >= 0`; `abs(left-right) <= tolerance` |
+| `circular_near` | Integers, positive `modulus`, and `0 <= tolerance < modulus/2`; shortest circular distance |
+| `in` | String left and unique string-array right, which may be empty; membership |
+| `in_if_present` | Optional string leaf left and possibly empty unique string-array right; absent passes; item string-length bounds must match the left leaf |
+| `eq_optional` | Both absent, or both present and equal |
+| `gte_if_present`, `lte_if_present` | Optional numeric leaf left and required numeric right; absent passes |
+
+Both distance operators require operand schemas with explicit nonnegative
+integer minimum and maximum bounds. For `circular_near`, operand maxima must
+also be below the modulus.
+
+State validation can reference `state` and `support`; support validation only
+`support`; parameter validation `parameters`, `support`, and `operation_support`.
+`satisfied_when` can reference only `parameters` and `state`. Active Commands
+therefore keep their satisfaction rules when re-registration narrows support.
+
+State equality is generated schema-structural equality. `type: number` binds to
+Go `float64`; integers through 2^53 are exact, overflow fails decoding, and
+underflow may round to zero.
+
 ## Numeric State annotations
 
 Numeric scalar schemas may carry one `hearth` object:

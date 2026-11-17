@@ -5,14 +5,15 @@
 - When calling the `Agent` tool, always specify `agent` explicitly (including `"general-purpose"`) so its configured model and thinking settings are honored.
 
 - For focused formatting, generation, module tidying, linting, testing, and vetting, always use the mise tasks below instead of invoking the underlying tools directly.
-- When adding or changing tests, reviewing test boundaries, or choosing validation scope, read [docs/testing.md](docs/testing.md).
-- For dashboard UI development, story authoring, or browser component verification, read [docs/storybook.md](docs/storybook.md) and start this checkout's managed server with `mise run storybook-start`; it writes the MCP endpoint to the ignored `.opencode/opencode.json`. Use the `hearth-storybook` MCP server to discover existing components and verify the affected stories.
+- When adding or changing tests, reviewing test boundaries, or choosing validation scope, read [docs/guides/testing.md](docs/guides/testing.md).
+- For dashboard UI development, story authoring, or browser component verification, read [docs/guides/storybook.md](docs/guides/storybook.md) and start this checkout's managed server with `mise run storybook-start`; it writes the MCP endpoint to the ignored `.opencode/opencode.json`. Use the `hearth-storybook` MCP server to discover existing components and verify the affected stories.
 - During iteration, use `GO_PACKAGES='...' mise run test` for focused tests, with the existing focused lint and vet tasks as needed. Tests run without race instrumentation locally; CI enables it. Use `mise run test -- -race` for an optional local race check. After integrating the final changes, unset `GO_PACKAGES`, run `mise run validate`, and review any generated, formatting, or module changes before committing.
 - Review the resulting diff and include intended generated or formatting changes.
 - For changes under `web/`, run `mise run web-fix`, review the diff, and run `mise run web-check`. Fix violations against Ultracite's defaults rather than adding rule exceptions.
 - When reviewing a change, read `CODING_STANDARDS.md` before reporting findings.
 - For simulator development, start worktree-local NATS with `mise run simulator-start`; stop it with `mise run simulator-stop`.
 - Real-Mosquitto integration tests always require a reachable Docker daemon and fail without one.
+- Keep verification evidence and one-off reports off `main`. Screenshots, recordings, measurement dumps, capture scripts, review notes, and point-in-time analyses belong in the PR, not the tree. Attach images and videos with `gh pr create`, `gh pr edit`, or `gh pr comment --attach <file>` (gh 2.99 or later) instead of committing them; put other evidence, such as measurements, in the PR body. Put lasting conclusions in the living doc they change.
 - Before adding complexity for a speculative or vanishingly unlikely race or security edge case, explain the concrete failure mode, likelihood, and complexity cost to the user and get their buy-in. Do not silently expand scope for theoretical robustness.
 
 ## Commands
@@ -37,5 +38,5 @@ Set `GO_PACKAGES` to space-separated Go package paths for focused checks, for ex
 | ------------------------------ | ---------------------- |
 | Setup and development workflow | `README.md`            |
 | Canonical domain language      | `GLOSSARY.md`          |
-| Architectural constraints      | `docs/architecture.md` |
-| Product scope                  | `docs/product.md`      |
+| Architectural constraints      | `docs/architecture/architecture.md` |
+| Product scope                  | `docs/architecture/product.md`      |

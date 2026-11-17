@@ -25,6 +25,6 @@
     "vitest.config.ts",
     ".storybook",
     "scripts/check-storybook-manifest.ts",
-    "scripts/storybook-server*.ts"
+    "scripts/storybook-*.ts"
   ]
 }
