@@ -51,7 +51,11 @@ you need to reach it from another device.
 Start writes this checkout's MCP endpoint to the ignored
 `.opencode/opencode.json`. OpenCode watches that file and reloads the
 `hearth-storybook` server. Do not add the server with `opencode mcp add` or
-hardcode a port; `opencode mcp list` verifies the connection. Stop removes the
+hardcode a port. OpenCode reloads the file and connects asynchronously, so the
+first `opencode mcp list` after start can omit the server or show it as
+`pending`. Repeat the command until it shows `hearth-storybook` as connected.
+If it stays absent, run `opencode debug config` in the same checkout to check
+that OpenCode found the generated file. Stop removes the
 generated file because the endpoint no longer exists. Storybook's MCP and
 component manifest features are upstream preview features.
 
@@ -71,7 +75,8 @@ workflow below for component verification.
 
 ## Work as an agent
 
-1. Run `mise run storybook-start` and confirm `hearth-storybook` is connected.
+1. Run `mise run storybook-start`, then repeat `opencode mcp list` until
+   `hearth-storybook` is connected.
    Start writes this checkout's endpoint to `.opencode/opencode.json`; do not
    register the server by hand. Discover its available tools rather than guessing
    their names or argument shapes.

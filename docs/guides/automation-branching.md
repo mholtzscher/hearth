@@ -122,11 +122,18 @@ with Observation, Entity Event, held-state, and scheduled admission alike,
 including multiple matched scheduled IDs. Trigger leaves are invalid anywhere
 in top-level admission `conditions`.
 
-Manual Runs have no matched Trigger IDs. Every trigger leaf is therefore false,
+Start a manual Run with `POST /v1/automations/{automation_id}/runs`. Core
+answers 202 with a `Location` header naming the Run's history entry. Manual
+Runs have no matched Trigger IDs. Every trigger leaf is therefore false,
 and its negation can be true. Manual invocation accepts no synthetic Trigger
 context. `{"bypass_conditions":true}` bypasses only admission Conditions; branch
 Conditions still evaluate normally. In the example, manual invocation selects
 `default` and never reads the nested toggle's State.
+
+To exercise the `single` and `double` arms, press the button. In the simulator
+stack, the scripted `Events` Entity emits `single_press` and `double_press`
+every 30 seconds; use its Entity ID as the button. Read the resulting Runs with
+`GET /v1/automations/{automation_id}/history`.
 
 ### Authoring bounds
 

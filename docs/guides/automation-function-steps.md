@@ -6,19 +6,35 @@ Operation. Functions can appear in the top-level sequence or any If/Choose arm.
 
 ## Author a Function Step
 
-1. Discover the Function with `GET /v1/adapters/{adapter_id}/functions/{function_key}`
-   or MCP `get_adapter_function`.
-2. Read its argument schema and copy `contract_fingerprint` into the Step.
-3. Create or replace the Automation through the ordinary HTTP/MCP Automation API.
+1. List Adapter IDs with `GET /v1/adapters`, then list one Adapter's Functions
+   with `GET /v1/adapters/{adapter_id}/functions`.
+2. Read the Function with `GET /v1/adapters/{adapter_id}/functions/{function_key}`
+   or MCP `get_adapter_function`. Copy its `contract_fingerprint` into the Step
+   and build `arguments` from its input schema.
+3. Create the Automation with `POST /v1/automations`, or replace it with
+   `PUT /v1/automations/{automation_id}`.
+4. Start a manual Run with `POST /v1/automations/{automation_id}/runs`. The 202
+   response's `Location` header names the Run's history entry, which lists the
+   Function Step in `executions`.
+
+This definition refreshes one Zigbee2MQTT Entity when run manually. Replace the
+Adapter ID, fingerprint, and Entity ID with values from your discovery reads:
 
 ```json
 {
-  "id": "refresh-weather",
-  "kind": "function",
-  "adapter_id": "zigbee2mqtt",
-  "function_key": "refresh_entity",
-  "contract_fingerprint": "<copy from Function discovery>",
-  "arguments": {"entity_id": "<canonical Entity ID>"}
+  "name": "Refresh office sensor",
+  "enabled": true,
+  "triggers": [],
+  "steps": [
+    {
+      "id": "refresh-sensor",
+      "kind": "function",
+      "adapter_id": "zigbee2mqtt",
+      "function_key": "refresh_entity",
+      "contract_fingerprint": "<copy from Function discovery>",
+      "arguments": {"entity_id": "<canonical Entity ID>"}
+    }
+  ]
 }
 ```
 

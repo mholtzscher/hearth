@@ -103,7 +103,9 @@ test webhook.** Run Core and this companion against the same trusted NATS, then:
 4. Verify **exactly one** matching message in Discord, with that message ID
    (enable Developer Mode to copy its ID). Record time, release, destination ID,
    attempt ID and matching receipt; never record the webhook URL.
-5. Restart the companion and verify destination ID stability without another send.
+5. Restart the companion without sending again. Verify that the destination ID
+   is unchanged, that destination-filtered history still shows exactly one
+   attempt, and that the channel still shows exactly one matching message.
 
 An ambiguous outcome is not permission to retry. Inspect Core history and the
 channel first; every new invocation creates a new attempt and may duplicate a

@@ -41,7 +41,10 @@ that every firmware or sensor works.
    mkdir -p .data
    ```
 
-2. Store the gateway's 32-character hexadecimal PASSKEY in a separate private
+2. Find the gateway's PASSKEY: every report it publishes includes
+   `PASSKEY=<value>`, so read one report from the configured MQTT topic, for
+   example with `mosquitto_sub -t <topic> -C 1`. Store the 32-character
+   hexadecimal value in a separate private
    file readable by the Adapter process. Use your secret manager or a private
    editor, not shell history, flags, environment variables, or YAML values.
    Set `station.passkey_file` to its path. The Adapter reads it at startup;

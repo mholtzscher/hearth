@@ -73,7 +73,7 @@ curl -fsS 'http://127.0.0.1:<SIM_CORE_PORT>/v1/devices'
 curl -fsS 'http://127.0.0.1:<SIM_CORE_PORT>/v1/entities'
 ```
 
-Replace the placeholder with the printed port and follow pagination as needed.
+Replace the placeholder with the printed port. Lists return at most one page; when a response has `next_cursor`, repeat the request with `?cursor=<next_cursor>`.
 Inspect Entity support, State, and availability before any separately
 authorized operation. To stop the Adapter, then the remaining simulator stack:
 
