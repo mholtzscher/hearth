@@ -58,7 +58,8 @@ mise run simulator-stop
 ## Inspect discovery and identity
 
 Replace `<SIM_CORE_PORT>` with the printed port in these read-only requests.
-Lists return at most one page; when a response has `next_cursor`, repeat the request with `?cursor=<next_cursor>`:
+Each list response holds one page. If it has `next_cursor`, repeat the same
+request, keeping its filters, with `cursor=<next_cursor>` added to the query string:
 
 ```sh
 curl -fsS 'http://127.0.0.1:<SIM_CORE_PORT>/v1/adapters/zwavejs'
@@ -82,7 +83,8 @@ it**; safe slot reuse requires reconciliation support that is not yet present.
 To disable one Entity, send
 `PATCH /v1/entities/<entity_id>` with `Content-Type: application/merge-patch+json`
 and body `{"enabled":false}`. Repeat for each Entity that
-`GET /v1/entities?device_id=<device_id>` lists for the node.
+`GET /v1/entities?device_id=<device_id>` lists for the node, following
+`next_cursor` with `GET /v1/entities?device_id=<device_id>&cursor=<next_cursor>`.
 If owned mappings have another Home ID, the Adapter registers nothing and
 reports `network_identity_mismatch`. Restore the intended endpoint or use a
 new `adapter_id` for a different network.

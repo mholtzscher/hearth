@@ -130,10 +130,10 @@ context. `{"bypass_conditions":true}` bypasses only admission Conditions; branch
 Conditions still evaluate normally. In the example, manual invocation selects
 `default` and never reads the nested toggle's State.
 
-To exercise the `single` and `double` arms, press the button. In the simulator
-stack, the scripted `Events` Entity emits `single_press` and `double_press`
-every 30 seconds; use its Entity ID as the button. Read the resulting Runs with
-`GET /v1/automations/{automation_id}/history`.
+To exercise the `toggle` and `off` branches, press the button. In the
+simulator stack, the scripted `Events` Entity alternates `single_press` and
+`double_press` every 30 seconds; use its Entity ID for both Triggers. Read the
+resulting Runs with `GET /v1/automations/{automation_id}/history`.
 
 ### Authoring bounds
 

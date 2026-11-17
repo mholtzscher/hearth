@@ -11,14 +11,17 @@ Operation. Functions can appear in the top-level sequence or any If/Choose arm.
 2. Read the Function with `GET /v1/adapters/{adapter_id}/functions/{function_key}`
    or MCP `get_adapter_function`. Copy its `contract_fingerprint` into the Step
    and build `arguments` from its input schema.
-3. Create the Automation with `POST /v1/automations`, or replace it with
+3. Create the Automation by sending the definition to `POST /v1/automations`.
+   To replace an Automation, send
+   `{"expected_revision": <current revision>, "definition": <definition>}` to
    `PUT /v1/automations/{automation_id}`.
 4. Start a manual Run with `POST /v1/automations/{automation_id}/runs`. The 202
    response's `Location` header names the Run's history entry, which lists the
    Function Step in `executions`.
 
-This definition refreshes one Zigbee2MQTT Entity when run manually. Replace the
-Adapter ID, fingerprint, and Entity ID with values from your discovery reads:
+This definition requests a refresh of one supported Zigbee2MQTT Entity when run
+manually. A successful invocation confirms publication, not fresh State. Replace
+the Adapter ID, fingerprint, and Entity ID with values from your discovery reads:
 
 ```json
 {
