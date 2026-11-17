@@ -79,8 +79,9 @@ the root. The asserted `entity_type` must match the actual Entity. Numeric field
 use the schema's `hearth` unit annotation, or dimensionless `1` by default.
 Dynamic units reference support and cannot change on re-registration. Cards never
 store a display unit. Core projects readings according to the household's
-`household_unit_system` (`metric` or `us`) and supplies units, labels, precision,
-and declared bounds beside inline numeric values in paired detail/history reads. The
+`household_unit_system` (`metric` or `us`) and supplies units, labels, and
+precision beside inline numeric values in paired detail and history reads.
+Detail reads also carry declared bounds; history reads do not. The
 web displays those numbers without converting them again or waiting for a
 separate household-settings read. US precipitation is shown in inches or
 inches per hour. Formula and control consumers select the same response's
@@ -358,9 +359,11 @@ closing. Core checks the Entity's type on presentation and save.
   travel. A changed displayed position or motion lights the afterglow; identical
   reports stay dark.
 
-Grid accepts 1–4 columns as a ceiling. Grids made only of ToggleTiles,
-tile-layout AirPurifiers, and tile-layout Covers use a 160px minimum and can retain two columns on
-phones; other grids keep the 248px minimum and single-column phone layout.
+Grid accepts 1–4 columns as a ceiling. Two kinds of grid use a 160px minimum
+and can retain two columns on phones: grids made only of ToggleTiles,
+tile-layout AirPurifiers, and tile-layout Covers, and grids made only of Metric
+and State cards. Other grids keep the 248px minimum and single-column phone
+layout.
 Metering ToggleTiles span the full row on phones, with tighter spacing and the
 measurement opposite the power State.
 Each metering card uses its content height rather than stretching to a neighbor

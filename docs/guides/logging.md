@@ -97,8 +97,8 @@ Command outcomes have no Fact and remain in HTTP/SQLite history.
 Use Automation history for immutable snapshots, matched Triggers, Steps, Skips,
 and Command links. An executor fault stops only its Run with one scoped
 interruption attempt; failed cleanup can leave that Automation busy until startup
-recovery. A calendar-worker fault instead closes Automation admission and fails
-readiness. Missed schedule occurrences have no history or replay, and no-match
+recovery. A schedule-worker fault instead logs `core.automation_schedule_failed`,
+closes Automation admission, and fails readiness. Missed schedule occurrences have no history or replay, and no-match
 ticks have no per-second logs. See [schedules](../reference/automation-schedules.md)
 and [Automation ownership](../../internal/modules/automations/README.md).
 

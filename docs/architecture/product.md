@@ -36,19 +36,13 @@ The primary browser workflow is conversation, generated live view, customization
 
 - Home provides the conversation workspace and live canvas. Generated views and manual edits remain drafts until explicitly saved.
 - Saved dashboards retain resource references, not captured readings. Rendering, refreshing, or saving a dashboard must not execute device Commands; only a household member's gesture on a control sends one.
-- View cards show readings, trends, ranges, and charts. ToggleTile offers whole-card power control, with an optional explicitly selected metering reading and sparkline; ToggleList offers per-row power switches and optional Turn all off. Weather cards present a station's outdoor conditions, rain, wind, and pressure, deriving only values the measurements support; the Forecast card shows upcoming hourly or daily forecasts from a forecast Entity. Device cards for lights retain their power switch and brightness slider. AirPurifier cards show a purifier's air quality and filter life and control its power, mode, fan level, display, and child lock; its tile is a power press. Controls derive from Entity support. Controls for other Entity types remain a current limitation, not a product non-goal.
+- View cards show readings, trends, ranges, and charts, and some cards offer controls. Controls derive from Entity support. An Entity type without a card control is a current limitation, not a product non-goal. The [card catalog](../reference/dashboards.md) lists which cards control which Entity types.
 - Core exposes HTTP and MCP interfaces for inspection and supported actions. The household agent uses the same MCP catalog rather than a separate control mechanism.
 - Automations support Triggers, Conditions, and ordered Steps, with retained execution history. Commands distinguish admission, dispatch, and observed satisfaction; acceptance alone does not establish a physical outcome.
 - The current HTTP API has no authentication. Deployment remains limited to loopback or a trusted private network; public exposure is unsupported.
 - Canonical terminology comes from the [glossary](../../GLOSSARY.md). In particular, State, Entity availability, Adapter health, and Command outcome are distinct facts.
 
 Current browser behavior and dashboard limitations are documented in [Agent-first dashboards](../reference/dashboards.md). Technical contracts and implementation details remain in their owning specifications and guides.
-
-## First vertical slice
-
-The initial milestone was to observe and control one Home Assistant-managed light through an HTTP API, validating the temporary migration seam while keeping the house operational. Its design separated the Home Assistant adapter from Core and used a simulator to inject failures against the same contracts.
-
-The project now includes configurable automations and a browser interface. The first-light milestone is historical context, not the current capability boundary.
 
 ## Evidence on Hand
 
