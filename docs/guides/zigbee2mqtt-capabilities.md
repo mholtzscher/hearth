@@ -124,8 +124,8 @@ leak, or smoke capability is one more record plus captured contract tests, not
 new translation code; none of those capabilities is implemented yet, and
 discovery does not support an expose without a matching record.
 
-Evidence: `testdata/bridge-devices-3rsnl02043z.json` and
-`testdata/state-3rsnl02043z.json` are handcrafted minimal sanitized shapes of a
+Evidence: [`bridge-devices-3rsnl02043z.json`](../../internal/adapters/zigbee2mqtt/testdata/bridge-devices-3rsnl02043z.json) and
+[`state-3rsnl02043z.json`](../../internal/adapters/zigbee2mqtt/testdata/state-3rsnl02043z.json) are handcrafted minimal sanitized shapes of a
 2026-09-11 passive capture from the Third Reality `3RSNL02043Z` night light on
 host Wanda (`software_build_id` `v1.00.86`). Sanitization changed only the IEEE
 address, friendly name, and description; model, vendor, build, expose nesting,
@@ -193,7 +193,7 @@ version caches actions again, later non-retained State reports could repeat a
 stale action; update the compatibility evidence before claiming support for
 that version.
 
-Evidence: `testdata/bridge-devices-3rsb22bz.json` is a sanitized model of the
+Evidence: [`bridge-devices-3rsb22bz.json`](../../internal/adapters/zigbee2mqtt/testdata/bridge-devices-3rsb22bz.json) is a sanitized model of the
 2026-09-10 Third Reality `3RSB22BZ` capture (Zigbee2MQTT 2.14.1,
 `software_build_id` `v1.00.35`): identity fields are sanitized, while model,
 vendor, build, expose shape, and values are retained. It exposes `action` with

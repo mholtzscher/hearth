@@ -126,9 +126,16 @@ not prove whether the purifier changed; no mutation is replayed.
 Acquisition runs immediately and waits one interval after each completed cycle.
 Each cycle completes paginated discovery, then reads online supported Devices.
 Request volume depends on the configured interval, online Devices, inventory
-pages, login, and Commands. The [example configuration](../../configs/levoit.example.yaml)
+pages, login, and Commands. For example, at the 60-second default, one inventory
+page and two online purifiers take three requests per cycle, about 4320 per day
+before login and Commands. The [example configuration](../../configs/levoit.example.yaml)
 and [configuration owner](../../internal/app/levoit/config.go) define the polling
 settings; they are not an official quota guarantee.
+
+The VeSync protocol is unofficial. The Adapter's authentication, model aliases,
+and Bypass V2 purifier methods follow
+[pyvesync at commit `36e3a61`](https://github.com/webdjoe/pyvesync/tree/36e3a6198e323578eae698d583f7fbcfafc9e826/src/pyvesync),
+not a published VeSync API.
 
 Device identity derives from its VeSync CID, never its name. Renaming preserves
 Hearth IDs, enablement, and name overrides. Replacing hardware with a new CID

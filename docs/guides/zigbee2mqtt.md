@@ -12,9 +12,10 @@ an MQTT broker. The Adapter uses MQTT 3.1.1 over plain `mqtt://` or `tcp://`
 with an explicit host and port. It has no MQTT authentication or TLS settings.
 Keep MQTT, NATS, the Zigbee2MQTT management endpoint, and the unauthenticated
 Hearth HTTP API on loopback or a trusted private network. An untrusted network
-is unsupported. The known tested combinations use Zigbee2MQTT 2.13.0 or 2.14.1
-with Mosquitto 2.0.22. Other versions must provide compatible retained payloads
-and behavior.
+is unsupported. The Adapter's fixtures include captures from Zigbee2MQTT 2.13.0
+and 2.14.1 as well as synthetic shapes, and its real-broker tests use the Mosquitto image pinned in
+[`mosquittotest`](../../internal/platform/mosquitto/mosquittotest/mosquitto.go).
+Other versions must provide compatible retained payloads and behavior.
 
 Configure Zigbee2MQTT so its effective retained `bridge/info` reports:
 

@@ -4,7 +4,8 @@
 State field from retained accepted reports. It reads one-minute rollup cells,
 updated atomically when Core records each applied or unchanged Observation.
 The operation is read-only. The existing GET on the same path remains the
-receive-ordered audit view, including rejected reports. Yes/no and text fields
+receive-ordered audit view. It returns state updates by default; pass
+`disposition=all` or `disposition=rejected` to include rejected reports. Yes/no and text fields
 use [State changes](state-changes.md).
 
 ```json
@@ -30,7 +31,8 @@ use [State changes](state-changes.md).
 Boolean, string, unknown, and stateless sources are not numeric sources.
 Core aggregates once in canonical units, then returns `canonical` and `display`
 metric groups together. Each group contains `unit` and `metrics`; display also
-contains `label`, `fraction_digits`, and declared `range` when available.
+contains `label` and `fraction_digits`. History groups carry no declared `range`;
+read the Entity detail for bounds.
 There is no `include` or `units` selector on this HTTP operation.
 Clients format without reconversion; see
 [quantity metadata and read units](units.md).

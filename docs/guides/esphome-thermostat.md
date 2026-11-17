@@ -11,9 +11,12 @@ No firmware change or Home Assistant bridge is required.
 
 ## Read the thermostat
 
-Set `CORE` to the trusted Core HTTP base URL. List Devices and Entities, following
-pagination, and identify the desired Device and its `hearth.thermostat/v1`
-Entity. Set `THERMOSTAT` to that Entity's canonical ID, then read its detail:
+Set `CORE` to the trusted Core HTTP base URL. List Devices and Entities and
+identify the desired Device and its `hearth.thermostat/v1` Entity.
+Each list response holds one page. If it has `next_cursor`, repeat the same
+request, keeping its filters, with `cursor=<next_cursor>` added to the query string.
+`GET /v1/entities?device_id=<device_id>` lists one Device's Entities.
+Set `THERMOSTAT` to that Entity's canonical ID, then read its detail:
 
 ```sh
 CORE=http://127.0.0.1:8080

@@ -106,7 +106,8 @@ Reuse the opaque cursor with the same filter. Pages are positions, not snapshots
 
 ## MCP
 
-The existing `/mcp` catalog exposes exactly five notification tools:
+The `/mcp` catalog exposes these notification tools. MCP `tools/list` returns
+their authoritative input schemas.
 
 - `list_notification_destinations`: optional `limit`, `cursor`.
 - `get_notification_destination`: required `destination_id`.
@@ -235,6 +236,6 @@ explicit operator-only check requiring credentials.
 Migration 00012 is additive. Its Down removes notification identities and evidence;
 binary rollback requires a pre-feature database backup.
 Migration 00013 adds Run-owned notification Step evidence; pruning a Run removes
-only its evidence, never notification attempts. Current migration 23 preserves
+only its evidence, never notification attempts. Migration 23 preserves
 post-22 executions/revisions and labels earlier values unavailable; it does not
 invent historical notification inputs. Use a matching backup for binary rollback.

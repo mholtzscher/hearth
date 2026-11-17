@@ -42,7 +42,10 @@ that every firmware or sensor works.
    ```
 
 2. Store the gateway's 32-character hexadecimal PASSKEY in a separate private
-   file readable by the Adapter process. Use your secret manager or a private
+   file readable by the Adapter process. Compatible reports include
+   `PASSKEY=<value>`. To find it, start the broker and gateway (step 5) and
+   read one report from the gateway's topic, for example with
+   `mosquitto_sub -h <broker-host> -p <broker-port> -t <topic> -C 1`. Use your secret manager or a private
    editor, not shell history, flags, environment variables, or YAML values.
    Set `station.passkey_file` to its path. The Adapter reads it at startup;
    restart after a change.

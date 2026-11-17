@@ -105,7 +105,12 @@ charts, State change history, or automation triggers.
 
 Every forecast Observation is retained under Core's ordinary Observation history
 policy. Storage depends on payloads, the configured polling interval, and the
-[history retention configuration](../../configs/hearthd.example.yaml).
+[history retention configuration](../../configs/hearthd.example.yaml). A full
+48-hour and 8-day forecast encodes to about 17 KB of Observation JSON per poll,
+as `TestFullForecastObservationSize` in
+[`forecast_test.go`](../../internal/adapters/pirateweather/forecast_test.go)
+reports for a synthetic response. At the 15-minute default that is about 1.6 MB
+per day, or 49 MB per 30-day window, before database row and index overhead.
 
 ## Polling
 
