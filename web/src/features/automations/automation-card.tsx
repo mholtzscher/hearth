@@ -316,7 +316,7 @@ const CardContent = ({
         <StackSequence ctx={ctx} steps={definition.steps} path={["steps"]} />
       )}
       <details className="border-border border-t py-1">
-        <summary className="marker:text-gray-7 focus-visible:outline-ring min-h-9 cursor-pointer py-2 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-solid">
+        <summary className="marker:text-gray-7 min-h-9 cursor-pointer py-2">
           Exact definition
         </summary>
         <JsonCode source={formatJsonSource(document.source)} block />
