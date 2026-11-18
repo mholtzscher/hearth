@@ -67,7 +67,7 @@ const DialogTitle = ({
 }: React.ComponentProps<typeof DialogPrimitive.Title>) => (
   <DialogPrimitive.Title
     data-slot="dialog-title"
-    className={cn("text-compact-reading", className)}
+    className={cn("text-title leading-[1.4] font-semibold", className)}
     {...props}
   />
 );

@@ -128,7 +128,7 @@ export const CardSource = ({
     <>
       <header className="flex items-start justify-between gap-5">
         {phone ? (
-          <DialogTitle className={headingClass}>
+          <DialogTitle>
             {observedAt ? "Reading details" : "Source details"}
           </DialogTitle>
         ) : (

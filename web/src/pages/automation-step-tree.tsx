@@ -55,7 +55,7 @@ export const AutomationVariables = ({
   }
   return (
     <div>
-      <h3 className="text-label font-medium">{label}</h3>
+      <h3 className="text-body font-semibold">{label}</h3>
       {Object.keys(variables ?? {}).map((name) => (
         <BindingView key={name} owner={variables} field={name} label={name} />
       ))}

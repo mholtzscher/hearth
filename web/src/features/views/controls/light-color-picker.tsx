@@ -552,9 +552,7 @@ const PickerBody = ({
         )}
       >
         {phone ? (
-          <DialogTitle className="text-title leading-[1.4] font-semibold">
-            Light color
-          </DialogTitle>
+          <DialogTitle>Light color</DialogTitle>
         ) : (
           <h2 className="text-title leading-[1.4] font-semibold" id={headingId}>
             Light color

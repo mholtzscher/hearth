@@ -77,7 +77,7 @@ const Compass = ({
     {(["N", "E", "S", "W"] as const).map((letter, index) => (
       <text
         key={letter}
-        className="fill-gray-8 text-[11px] font-medium [dominant-baseline:central] [text-anchor:middle]"
+        className="fill-gray-8 text-caption font-medium [dominant-baseline:central] [text-anchor:middle]"
         x={Math.sin((index * Math.PI) / 2) * 32}
         y={-Math.cos((index * Math.PI) / 2) * 32}
       >

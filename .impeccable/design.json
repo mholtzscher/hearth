@@ -414,11 +414,11 @@
       },
       "title": {
         "displayName": "Title",
-        "purpose": "View headings and Development section headings."
+        "purpose": "View headings, Development section headings, and dialog titles."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Conversation text."
+        "purpose": "Conversation text; at weight 600, subsection headings below a Title."
       },
       "label": {
         "displayName": "Label",

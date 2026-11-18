@@ -753,7 +753,7 @@ const FactRowView = ({
       </TableCell>
       <TableCell className="text-muted-foreground text-caption font-mono">
         <span title={source}>{clockTime(source)}</span>
-        <span className="ms-1 text-[0.65rem]">
+        <span className="text-caption ms-1">
           {deltaLabel(source, fact.envelope.emitted_at)}
         </span>
       </TableCell>
