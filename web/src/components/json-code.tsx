@@ -10,7 +10,7 @@ const jsonTheme = {
 export const JsonCode = ({ code }: { code: string }) => (
   <Highlight code={code} language="json" theme={jsonTheme}>
     {({ tokens, getLineProps, getTokenProps }) => (
-      <pre className="m-0 overflow-auto text-xs">
+      <pre className="overflow-auto text-xs">
         {/* getLineProps/getTokenProps echo every extra input key back into
               the props they return, so ask for line and token props only and
               pass the React key explicitly: spreading a key into JSX warns. */}

@@ -129,7 +129,7 @@ const historyClassNames = (nav: NavMode, drawerOpen: boolean) => {
   }
   return {
     root,
-    header: nav === "rail" ? "pt-0 pe-0 pb-1 ps-3" : undefined,
+    header: nav === "rail" ? "pe-0 pb-1" : undefined,
     close: nav === "rail" ? "-me-1" : undefined,
   };
 };
@@ -182,7 +182,7 @@ const EntityJump = () => {
     <Input
       aria-label="Jump to entity id"
       placeholder="Jump to entity id…"
-      className="w-40 max-w-full shrink"
+      className="w-40 max-w-full"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {

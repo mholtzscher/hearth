@@ -38,7 +38,7 @@ export const statusTone = (status: string): Tone =>
 
 /** Healthy states stay quiet; problems carry the color weight. */
 const toneClass: Record<Tone, string> = {
-  default: "border-border text-muted-foreground",
+  default: "text-muted-foreground",
   success: "border-success/30 bg-success/10 text-success",
   warning: "border-warning/35 bg-warning/10 text-warning",
   error: "border-destructive/40 bg-destructive/15 text-destructive",

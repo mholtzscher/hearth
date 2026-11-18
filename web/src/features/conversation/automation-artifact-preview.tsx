@@ -163,13 +163,13 @@ export const AutomationArtifactPreview = ({
         >
           {open ? (
             <>
-              <CheckIcon className="size-4 shrink-0" aria-hidden="true" />
+              <CheckIcon aria-hidden="true" />
               Showing in canvas
             </>
           ) : (
             <>
               Open in canvas
-              <ArrowRightIcon className="size-4 shrink-0" aria-hidden="true" />
+              <ArrowRightIcon aria-hidden="true" />
             </>
           )}
         </Button>
