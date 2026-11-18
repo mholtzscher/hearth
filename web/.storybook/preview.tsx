@@ -60,7 +60,7 @@ const preview: Preview = {
           <ViewDataProvider key={context.id}>
             <main
               className={cn(
-                "bg-background text-label text-foreground max-tablet:p-3 block h-auto translate-none p-6 *:mx-auto *:max-w-[1080px]",
+                "bg-background text-label text-foreground max-tablet:p-3 p-6 *:mx-auto *:max-w-[1080px]",
                 // An inline docs story takes its content's height, not the viewport's.
                 context.viewMode !== "docs" && "min-h-screen"
               )}

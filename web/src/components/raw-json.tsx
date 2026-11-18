@@ -23,12 +23,7 @@ export const RawJson = ({
     className="rounded-card mt-4 border px-3"
   >
     <AccordionItem value="raw-json">
-      <AccordionTrigger
-        headingLevel={headingLevel}
-        className="text-sm font-medium"
-      >
-        {title}
-      </AccordionTrigger>
+      <AccordionTrigger headingLevel={headingLevel}>{title}</AccordionTrigger>
       <AccordionContent>
         <JsonCode
           code={code ?? JSON.stringify(value, null, 2) ?? String(value)}

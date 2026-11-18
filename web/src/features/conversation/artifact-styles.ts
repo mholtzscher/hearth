@@ -17,5 +17,5 @@ export const artifactAction = (open: boolean, inlineView = false) =>
     (!inlineView || open) &&
       "@max-[440px]:col-[2/-1] @max-[440px]:justify-self-start",
     open &&
-      "text-muted-foreground hover:text-link border-transparent hover:bg-transparent @max-[440px]:-ms-3"
+      "text-muted-foreground hover:text-link hover:bg-transparent @max-[440px]:-ms-3"
   );

@@ -109,13 +109,9 @@ export const Field = ({
     <div className={field}>
       <label htmlFor={controlID}>{label}</label>
       {multiline ? (
-        <Textarea
-          {...props}
-          className="w-full min-w-0 resize-y font-mono"
-          rows={4}
-        />
+        <Textarea {...props} className="font-mono" rows={4} />
       ) : (
-        <Input {...props} size="auto" className="w-full min-w-0" />
+        <Input {...props} size="auto" />
       )}{" "}
       {ctx.invalid[key] !== undefined && (
         <small id={errorID} role="alert" className="text-destructive">
@@ -149,7 +145,6 @@ export const Select = ({
       <span>{label}</span>
       <NativeSelect
         size="auto"
-        className="w-full min-w-0"
         value={current}
         onChange={(event) => ctx.apply(path, q(event.target.value))}
       >
@@ -330,7 +325,6 @@ export const Condition = ({
         <span>Condition type</span>
         <NativeSelect
           size="auto"
-          className="w-full min-w-0"
           value={none ? "none" : value.kind}
           onChange={(event) => changeKind(event.target.value)}
         >
