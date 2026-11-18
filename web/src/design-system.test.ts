@@ -34,6 +34,25 @@ const HAND_ROLLED_CARDS: Record<string, number> = {
 /** Files outside the low-level wrappers that import radix-ui. */
 const RADIX_IMPORTS: string[] = [];
 
+/**
+ * Pixel and rem text sizes off the type scale, by file (DESIGN.md, Typography).
+ * The rail hides the wordmark text at 0px.
+ */
+const ARBITRARY_TEXT_SIZES: Record<string, string[]> = {
+  "src/app.tsx": ["text-[24px]", "text-[0px]", "text-[20px]"],
+  "src/features/views/cards/state-timeline/lanes.tsx": ["text-[13px]"],
+  "src/features/views/cards/wind/wind.tsx": ["text-[11px]"],
+  "src/pages/agent-page.tsx": ["text-[28px]"],
+  "src/pages/device-facts-page.tsx": ["text-[0.65rem]"],
+};
+
+/** Files that may use a narrow text size; each owns the width rule for it. */
+const NARROW_TEXT_OWNERS = [
+  "src/components/page-header.tsx",
+  "src/features/views/cards/cover/cover.tsx",
+  "src/features/views/cards/reading.tsx",
+];
+
 const RAW_CONTROL_WRAPPERS = new Set([
   "src/components/input.tsx",
   "src/components/native-select.tsx",
@@ -273,6 +292,10 @@ describe("design system limits", () => {
 
 describe("Hearth theme tokens", () => {
   const css = read("src/index.css").replaceAll(/\/\*[\s\S]*?\*\//gu, "");
+  const defaults = readFileSync(
+    new URL(import.meta.resolve("tailwindcss/theme.css")),
+    "utf-8"
+  );
 
   it("registers every custom text size with cn", () => {
     const names = [...css.matchAll(/--text-(?<name>[\w-]+)\s*:/gu)]
@@ -324,11 +347,59 @@ describe("Hearth theme tokens", () => {
     ).toStrictEqual([]);
   });
 
-  it("registers every custom radius with cn, excluding Tailwind's built-in names", () => {
-    const defaults = readFileSync(
-      new URL(import.meta.resolve("tailwindcss/theme.css")),
-      "utf-8"
+  it("uses none of Tailwind's built-in text sizes", () => {
+    // Skip companion variables such as --text-xs--line-height.
+    const builtIn = [...defaults.matchAll(/--text-(?<name>[\w-]+)\s*:/gu)]
+      .map((match) => match[1])
+      .filter((name) => !name.includes("--"));
+    const pattern = new RegExp(
+      `(?<![\\w-])text-(?:${builtIn.join("|")})(?![\\w-])`,
+      "gu"
     );
+    const unknown = [...files("src"), ...files(".storybook")]
+      .filter(
+        (file) => /\.(?:tsx?|mdx)$/u.test(file) && !/\.test\.tsx?$/u.test(file)
+      )
+      .flatMap((file) =>
+        [...read(file).matchAll(pattern)].map((match) => `${file}: ${match[0]}`)
+      );
+    expect(
+      unknown,
+      "index.css resets Tailwind's type scale, so these classes set no size. Use a text size from index.css."
+    ).toStrictEqual([]);
+  });
+
+  it("holds pixel and rem text sizes to their exceptions", () => {
+    const measured = Object.fromEntries(
+      applicationSource()
+        .map(
+          (file) =>
+            [
+              file,
+              [
+                ...read(file).matchAll(/(?<![\w-])text-\[[\d.]+(?:px|rem)\]/gu),
+              ].map((match) => match[0]),
+            ] as const
+        )
+        .filter(([, sizes]) => sizes.length > 0)
+    );
+    expect(
+      measured,
+      "Use a text size from index.css. If an exception disappeared, remove it from the list."
+    ).toStrictEqual(ARBITRARY_TEXT_SIZES);
+  });
+
+  it("keeps narrow text sizes inside the components that own them", () => {
+    const users = applicationSource().filter((file) =>
+      /text-(?:reading|headline)-narrow/u.test(read(file))
+    );
+    expect(
+      users,
+      "Reading and PageHeader apply their narrow sizes themselves."
+    ).toStrictEqual(NARROW_TEXT_OWNERS);
+  });
+
+  it("registers every custom radius with cn, excluding Tailwind's built-in names", () => {
     const builtIn = new Set(
       [...defaults.matchAll(/--radius-(?<name>[\w-]+)\s*:/gu)].map(
         (match) => match[1]
@@ -359,8 +430,8 @@ describe("Hearth class merging", () => {
     expect(cn("text-label text-foreground", "text-body")).toBe(
       "text-foreground text-body"
     );
-    expect(cn("text-body", "text-sm")).toBe("text-sm");
-    expect(cn("text-sm", "text-body")).toBe("text-body");
+    expect(cn("text-body", "text-caption")).toBe("text-caption");
+    expect(cn("text-caption", "text-body")).toBe("text-body");
   });
 
   it("resolves a custom radius against a built-in radius", () => {

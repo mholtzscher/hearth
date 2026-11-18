@@ -186,7 +186,7 @@ const LiveMessages = () => {
         <Input
           aria-label="NATS websocket URL"
           placeholder="ws://127.0.0.1:4223"
-          className="w-56 font-mono text-xs"
+          className="text-caption w-56 font-mono"
           value={wsUrl}
           onChange={(e) => {
             setWsUrl(e.target.value);
@@ -196,7 +196,7 @@ const LiveMessages = () => {
         <Input
           aria-label="Subject (supports * and >)"
           placeholder="hearth.v1.adapter.>"
-          className="w-96 flex-1 font-mono text-xs"
+          className="text-caption w-96 flex-1 font-mono"
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
         />
@@ -250,7 +250,7 @@ const LiveMessages = () => {
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
-        <span className="text-muted-foreground text-sm">
+        <span className="text-muted-foreground text-label">
           {messages.length} buffered (max {MAX_MESSAGES}), newest first
           {paused && " · paused"}
         </span>
@@ -277,15 +277,15 @@ const LiveMessages = () => {
           )}
           {visible.map((m, i) => (
             <TableRow key={`${m.at}-${i}`} className="align-top">
-              <TableCell className="text-muted-foreground font-mono text-xs whitespace-nowrap">
+              <TableCell className="text-muted-foreground text-caption font-mono whitespace-nowrap">
                 {m.at}
               </TableCell>
-              <TableCell className="font-mono text-xs break-all whitespace-normal">
+              <TableCell className="text-caption font-mono break-all whitespace-normal">
                 {m.subject}
               </TableCell>
               <TableCell className="whitespace-normal">
                 {m.json === null ? (
-                  <pre className="m-0 text-xs break-all whitespace-pre-wrap">
+                  <pre className="text-caption m-0 break-all whitespace-pre-wrap">
                     {m.payload.slice(0, 2000)}
                   </pre>
                 ) : (
@@ -372,9 +372,9 @@ const ServerInfo = () => {
     <div className="grid items-start gap-3 xl:grid-cols-2">
       <Card size="compact">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Server</span>
+          <span className="text-label font-medium">Server</span>
           {varz.loading && (
-            <span className="text-muted-foreground text-xs">Loading…</span>
+            <span className="text-muted-foreground text-caption">Loading…</span>
           )}
         </div>
         {varz.error && <ErrorBox error={varz.error} />}
@@ -404,7 +404,7 @@ const ServerInfo = () => {
 
       <Card size="compact">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium">
+          <span className="text-label font-medium">
             JetStream: HEARTH_OBSERVATIONS_V1
           </span>
           <Button size="default" variant="outline" onClick={handleRefreshJsz}>
@@ -421,7 +421,7 @@ const ServerInfo = () => {
         )}
         {(observations?.consumer_detail ?? []).map((c) => (
           <div key={String(c.name ?? "consumer")} className="mt-3">
-            <span className="text-sm font-medium">
+            <span className="text-label font-medium">
               Consumer {String(c.name ?? "?")}
             </span>
             <Facts
@@ -432,7 +432,7 @@ const ServerInfo = () => {
           </div>
         ))}
         {!jsz.loading && !jsz.error && !observations && (
-          <p className="text-muted-foreground mt-2 text-sm">
+          <p className="text-muted-foreground text-label mt-2">
             Stream not found (is hearthd running?).
           </p>
         )}
@@ -441,7 +441,7 @@ const ServerInfo = () => {
 
       <Card size="compact" className="xl:col-span-2">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium">Connections</span>
+          <span className="text-label font-medium">Connections</span>
           <Button size="default" variant="outline" onClick={handleRefreshConns}>
             Refresh
           </Button>
@@ -463,17 +463,19 @@ const ServerInfo = () => {
             )}
             {(conns.data?.connections ?? []).map((c) => (
               <TableRow key={c.cid} className="align-top">
-                <TableCell className="font-mono text-xs">{c.cid}</TableCell>
+                <TableCell className="text-caption font-mono">
+                  {c.cid}
+                </TableCell>
                 <TableCell>{c.kind}</TableCell>
-                <TableCell className="font-mono text-xs">
+                <TableCell className="text-caption font-mono">
                   {c.ip}:{c.port}
                 </TableCell>
-                <TableCell className="text-muted-foreground font-mono text-xs break-all whitespace-normal">
+                <TableCell className="text-muted-foreground text-caption font-mono break-all whitespace-normal">
                   {c.subscriptions ?? "—"}
                   {(c.subscriptions_list ?? []).length > 0 &&
                     `: ${(c.subscriptions_list ?? []).join(", ")}`}
                 </TableCell>
-                <TableCell className="font-mono text-xs">
+                <TableCell className="text-caption font-mono">
                   {c.in_msgs} / {c.out_msgs}
                 </TableCell>
               </TableRow>

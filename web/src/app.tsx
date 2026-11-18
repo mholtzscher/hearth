@@ -232,7 +232,7 @@ const ConnectionSettings = () => {
               }
             }}
           />
-          <p className="text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-caption">
             Empty uses the same origin (the vite proxy).
           </p>
         </div>
@@ -286,9 +286,9 @@ const SidebarBrand = ({
   <div
     data-slot="sidebar-brand"
     className={cn(
-      "px-2 text-2xl leading-normal font-semibold tracking-[-.03em]",
+      "px-2 text-[24px] leading-normal font-semibold tracking-[-.03em]",
       nav === "rail" && "text-center text-[0px]",
-      nav === "bar" && "min-h-11 ps-3 pe-[52px] pt-2 text-xl",
+      nav === "bar" && "min-h-11 ps-3 pe-[52px] pt-2 text-[20px] leading-7",
       hideWhileSearching
     )}
   >

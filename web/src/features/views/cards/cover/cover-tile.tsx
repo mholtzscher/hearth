@@ -75,7 +75,7 @@ export const CoverTile = ({ props }: { props: CoverProps }) => {
     <Reading
       as="span"
       value={status.value}
-      className="@max-[200px]:text-reading-narrow block overflow-hidden text-ellipsis whitespace-nowrap"
+      className="block overflow-hidden text-ellipsis whitespace-nowrap"
     >
       {word}
     </Reading>

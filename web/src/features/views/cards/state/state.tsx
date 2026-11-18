@@ -59,7 +59,7 @@ export const StateCard = ({
     >
       <Reading
         value={status.value}
-        className="@max-[200px]:text-reading-narrow text-balance [overflow-wrap:anywhere]"
+        className="text-balance [overflow-wrap:anywhere]"
       >
         {data ? data.text : "—"}
       </Reading>

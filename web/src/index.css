@@ -59,7 +59,8 @@
   --radius-xs: 4px;
   --radius-md: 8px;
   --radius-card: 12px;
-  /* Font size only. Line height stays an explicit utility. */
+  /* Only Hearth's type scale compiles. Font size only; line height stays an explicit utility. */
+  --text-*: initial;
   --text-reading: 40px;
   --text-reading-narrow: 32px;
   --text-headline: 26px;

@@ -41,7 +41,7 @@ const AdapterHealthHistory = ({ adapterId }: { adapterId: string }) => {
       )
   );
   if (loading) {
-    return <p className="text-muted-foreground text-sm">Loading history…</p>;
+    return <p className="text-muted-foreground text-label">Loading history…</p>;
   }
   if (error) {
     return <ErrorBox error={error} />;
@@ -67,10 +67,10 @@ const AdapterHealthHistory = ({ adapterId }: { adapterId: string }) => {
                 <StatusChip status={t.status} />
               </TableCell>
               <TableCell>{t.source}</TableCell>
-              <TableCell className="font-mono text-xs">
+              <TableCell className="text-caption font-mono">
                 {t.reason?.code ?? "—"}
               </TableCell>
-              <TableCell className="text-muted-foreground font-mono text-xs">
+              <TableCell className="text-muted-foreground text-caption font-mono">
                 {t.observed_at}
               </TableCell>
             </TableRow>
@@ -96,7 +96,7 @@ const AdapterDetail = ({ adapterId }: { adapterId: string }) => {
     apiFetch<Adapter>(`/v1/adapters/${adapterId}`)
   );
   if (loading) {
-    return <p className="text-muted-foreground text-sm">Loading…</p>;
+    return <p className="text-muted-foreground text-label">Loading…</p>;
   }
   if (error) {
     return (
@@ -208,7 +208,7 @@ const AdaptersPage = () => {
           Reset
         </Button>
         {loading && (
-          <span className="text-muted-foreground text-sm">Loading…</span>
+          <span className="text-muted-foreground text-label">Loading…</span>
         )}
       </PageHeader>
       {error && <ErrorBox error={error} />}
@@ -243,7 +243,7 @@ const AdaptersPage = () => {
                     <StatusChip status={a.health.status} />
                   </TableCell>
                   <TableCell>{a.health.source}</TableCell>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="text-caption font-mono">
                     {a.health.reason?.code ?? "—"}
                   </TableCell>
                 </TableRow>

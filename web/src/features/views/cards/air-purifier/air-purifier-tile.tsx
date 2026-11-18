@@ -24,11 +24,7 @@ const readingBody = ({
   modeWord?: string;
   on: boolean;
 }) => (
-  <Reading
-    as="span"
-    value={power.status.value}
-    className="@max-[200px]:text-reading-narrow block"
-  >
+  <Reading as="span" value={power.status.value} className="block">
     {power.data && "text" in power.data ? power.data.text : "—"}
     {on && modeWord && (
       <small

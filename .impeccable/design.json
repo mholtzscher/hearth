@@ -402,7 +402,7 @@
       },
       "reading-narrow": {
         "displayName": "Reading narrow",
-        "purpose": "Metric, State, and ToggleTile below a 200px content width."
+        "purpose": "A reading in a card narrower than 200px; Reading applies it."
       },
       "headline": {
         "displayName": "Headline",

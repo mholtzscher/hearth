@@ -414,14 +414,14 @@ const renderChartNotice = (
 ): ReactNode | null => {
   if (acceptedCount === 0) {
     return (
-      <p className="text-muted-foreground mt-3 text-sm">
+      <p className="text-muted-foreground text-label mt-3">
         Rejected observations have no canonical State value to chart.
       </p>
     );
   }
   if (kind === "coordinates") {
     return (
-      <p className="text-muted-foreground mt-3 text-sm">
+      <p className="text-muted-foreground text-label mt-3">
         Structured coordinate values are listed below with units and activity;
         no chart.
       </p>
@@ -429,35 +429,35 @@ const renderChartNotice = (
   }
   if (kind === "discrete") {
     return (
-      <p className="text-muted-foreground mt-3 text-sm">
+      <p className="text-muted-foreground text-label mt-3">
         Discrete values are listed below; no chart.
       </p>
     );
   }
   if (kind === "stateless") {
     return (
-      <p className="text-muted-foreground mt-3 text-sm">
+      <p className="text-muted-foreground text-label mt-3">
         Stateless actions record no State; triggers appear in command history.
       </p>
     );
   }
   if (kind === "forecast") {
     return (
-      <p className="text-muted-foreground mt-3 text-sm">
+      <p className="text-muted-foreground text-label mt-3">
         Forecast snapshots are listed below; no chart.
       </p>
     );
   }
   if (kind === "unsupported") {
     return (
-      <p className="text-muted-foreground mt-3 text-sm">
+      <p className="text-muted-foreground text-label mt-3">
         Chart unavailable for this Entity type.
       </p>
     );
   }
   if (validCount === 0) {
     return (
-      <p className="text-muted-foreground mt-3 text-sm">
+      <p className="text-muted-foreground text-label mt-3">
         {choiceSkipped > 0 && malformedSkipped === 0
           ? "Choice values are listed below; no numeric State values to chart."
           : `No valid State values to chart. (${malformedSkipped} malformed skipped)`}
@@ -660,7 +660,7 @@ const StateHistoryChart = ({
           Observation sequence (not elapsed time)
         </text>
       </svg>
-      <figcaption className="text-muted-foreground mt-1 text-xs">
+      <figcaption className="text-muted-foreground text-caption mt-1">
         {`Observed ${firstObserved} to ${lastObserved} · ${valid.length} plotted${skipped.length > 0 ? ` · ${skipped.join(" · ")}` : ""}.`}
         {filter === "unchanged" &&
           " Unchanged observations only; intervening State changes are not shown."}
@@ -694,7 +694,7 @@ const HistoryScope = ({
   return (
     <div>
       {loading && (
-        <span className="text-muted-foreground mt-1.5 block text-sm">
+        <span className="text-muted-foreground text-label mt-1.5 block">
           Loading…
         </span>
       )}
@@ -702,7 +702,7 @@ const HistoryScope = ({
       {data && (
         <>
           {data.items.length === 0 ? (
-            <p className="text-muted-foreground mt-3 text-sm">
+            <p className="text-muted-foreground text-label mt-3">
               No state history recorded. No State updates to chart.
             </p>
           ) : (
@@ -728,7 +728,7 @@ const HistoryScope = ({
                   {data.items.map((entry) => (
                     <TableRow key={entry.observation_id}>
                       <TableCell
-                        className="font-mono text-xs"
+                        className="text-caption font-mono"
                         title={
                           entry.value === undefined ||
                           forecastSummary(entityType, entry.value) !== null
@@ -748,7 +748,7 @@ const HistoryScope = ({
                         <span className="flex flex-wrap items-center gap-1.5">
                           <StatusChip status={entry.disposition} />
                           {entry.rejection_code && (
-                            <span className="text-muted-foreground font-mono text-xs">
+                            <span className="text-muted-foreground text-caption font-mono">
                               {entry.rejection_code}
                             </span>
                           )}
@@ -760,13 +760,13 @@ const HistoryScope = ({
                           className="text-muted-foreground"
                         />
                       </TableCell>
-                      <TableCell className="text-muted-foreground font-mono text-xs">
+                      <TableCell className="text-muted-foreground text-caption font-mono">
                         {entry.observed_at}
                       </TableCell>
-                      <TableCell className="text-muted-foreground font-mono text-xs">
+                      <TableCell className="text-muted-foreground text-caption font-mono">
                         {entry.adapter_received_at}
                       </TableCell>
-                      <TableCell className="text-muted-foreground font-mono text-xs">
+                      <TableCell className="text-muted-foreground text-caption font-mono">
                         {entry.source_updated_at ?? "—"}
                       </TableCell>
                     </TableRow>
@@ -826,7 +826,7 @@ const EntityStateHistory = ({
           Latest / Refresh history
         </Button>
       </div>
-      <p className="text-muted-foreground mt-1.5 text-xs">
+      <p className="text-muted-foreground text-caption mt-1.5">
         Newer observations appear after refreshing. Older entries may expire
         while paging.
       </p>

@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 
 import { Button } from "../../components/button";
 import { Notice, StatusNotice } from "../../components/notice";
+import { pageHeadingClass } from "../../components/page-header";
 import { cn } from "../../lib/utils";
 import { AutomationCard } from "../automations/automation-card";
 import { AutomationEditor } from "../automations/automation-editor";
@@ -11,7 +12,6 @@ import { automationDocumentIssues } from "../automations/document";
 import type { AutomationDraft, DocumentIssue } from "../automations/document";
 import {
   canvasHeader,
-  canvasHeading,
   canvasInner,
   canvasSubtitle,
   canvasTitle,
@@ -72,7 +72,7 @@ const CanvasTitle = ({
   unsaved: boolean;
 }) => (
   <div className={canvasTitle}>
-    <h2 className={canvasHeading}>{draft.document.definition.name}</h2>
+    <h2 className={pageHeadingClass}>{draft.document.definition.name}</h2>
     <p className={canvasSubtitle}>
       {draft.base
         ? `Automation · revision ${draft.base.revision}`

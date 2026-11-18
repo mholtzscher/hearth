@@ -189,8 +189,8 @@ const renderReading = ({
     value={statusValue}
     className={
       metric
-        ? "@max-[200px]:text-reading-narrow max-tablet:flex max-tablet:flex-wrap max-tablet:items-baseline max-tablet:justify-between max-tablet:gap-x-3 max-tablet:gap-y-1 block"
-        : "@max-[200px]:text-reading-narrow block"
+        ? "max-tablet:flex max-tablet:flex-wrap max-tablet:items-baseline max-tablet:justify-between max-tablet:gap-x-3 max-tablet:gap-y-1 block"
+        : "block"
     }
   >
     {powerValue(data)}

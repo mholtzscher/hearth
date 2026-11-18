@@ -25,12 +25,12 @@ const BindingView = ({
   label: string;
 }) => (
   <div>
-    <span className="text-xs">
+    <span className="text-caption">
       {label}:{" "}
       {source === undefined ? "Literal" : "Expression (resolved when reached)"}
     </span>
     <pre
-      className="max-h-64 overflow-auto font-mono text-xs break-all whitespace-pre-wrap"
+      className="text-caption max-h-64 overflow-auto font-mono break-all whitespace-pre-wrap"
       aria-label={label}
     >
       {source ??
@@ -55,7 +55,7 @@ export const AutomationVariables = ({
   }
   return (
     <div>
-      <h3 className="text-sm font-medium">{label}</h3>
+      <h3 className="text-label font-medium">{label}</h3>
       {Object.keys(variables ?? {}).map((name) => (
         <BindingView key={name} owner={variables} field={name} label={name} />
       ))}
@@ -162,7 +162,7 @@ const stepDescription = (
           >
             {step.automation_id}
           </RouterLink>
-          <p className="text-xs">
+          <p className="text-caption">
             Waits for the child Run to succeed before continuing.
           </p>
         </>
@@ -176,7 +176,7 @@ const stepDescription = (
           <span className="font-mono">
             {step.adapter_id} / {step.function_key}
           </span>
-          <p className="font-mono text-xs break-all">
+          <p className="text-caption font-mono break-all">
             Contract fingerprint: {step.contract_fingerprint}
           </p>
           <BindingView
@@ -249,7 +249,7 @@ export const AutomationConditionTree = ({
   condition: AutomationBranchCondition;
   labels: ReadonlyMap<string, string>;
 }) => (
-  <ul className="mt-1 text-xs">
+  <ul className="text-caption mt-1">
     {describeAutomationCondition(condition).map(
       ({ condition: node, depth }, index) => (
         <li key={index} style={{ marginLeft: (depth - 1) * 16 }}>
@@ -274,7 +274,7 @@ const AutomationStepTree = ({
   const tree = describeAutomationSteps(steps);
   return (
     <div>
-      <p className="text-muted-foreground text-xs">
+      <p className="text-muted-foreground text-caption">
         {tree.stepCount} defined Steps · {tree.commandCount} commands
         {tree.notificationCount > 0 && (
           <> · {tree.notificationCount} notifications</>
@@ -292,7 +292,7 @@ const AutomationStepTree = ({
           <li
             key={index}
             style={{ marginLeft: (row.depth - 1) * 20 }}
-            className="border-l pl-3 text-sm"
+            className="text-label border-l pl-3"
           >
             {row.type === "arm" ? (
               <>
@@ -306,7 +306,7 @@ const AutomationStepTree = ({
               </>
             ) : (
               <>
-                <span className="font-mono text-xs">{row.step.id}</span>
+                <span className="text-caption font-mono">{row.step.id}</span>
                 {" · "}
                 {row.step.kind === "sub_automation"
                   ? "Sub-automation"

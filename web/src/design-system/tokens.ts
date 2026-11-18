@@ -85,9 +85,9 @@ export type TextToken = (typeof TEXT_TOKENS)[number];
 /** Where each type size is used, from DESIGN.md Typography. */
 export const TYPE_USE: Record<TextToken, string> = {
   reading: "A card's single reading",
-  "reading-narrow": "Metric, State, ToggleTile below 200px",
+  "reading-narrow": "Reading below a 200px card width; Reading applies it",
   headline: "Canvas, library, and Development page titles",
-  "headline-narrow": "Page titles on phones",
+  "headline-narrow": "Page titles on phones; PageHeader applies it",
   title: "View and section headings",
   body: "Conversation text",
   label: "Workspace base: cards, fields, buttons, tables",

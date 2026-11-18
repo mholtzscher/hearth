@@ -24,7 +24,7 @@ export const Reading = ({
     data-slot="reading"
     data-value={value}
     className={cn(
-      "text-reading text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 leading-[1.15] font-[350] tracking-[-.03em] tabular-nums",
+      "text-reading @max-[200px]:text-reading-narrow text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 leading-[1.15] font-[350] tracking-[-.03em] tabular-nums",
       className
     )}
   >

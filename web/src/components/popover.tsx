@@ -47,7 +47,7 @@ const PopoverHeader = ({
 }: React.ComponentProps<"div">) => (
   <div
     data-slot="popover-header"
-    className={cn("flex flex-col gap-0.5 text-sm", className)}
+    className={cn("text-label flex flex-col gap-0.5", className)}
     {...props}
   />
 );

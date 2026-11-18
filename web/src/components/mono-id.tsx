@@ -8,7 +8,7 @@ export const MonoId = ({
 }) => (
   <span
     title={value}
-    className={`block truncate font-mono text-xs ${className}`}
+    className={`text-caption block truncate font-mono ${className}`}
   >
     {value}
   </span>

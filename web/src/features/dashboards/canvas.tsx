@@ -15,6 +15,7 @@ import { useBaseUrlVersion } from "../../api/client";
 import { Button } from "../../components/button";
 import { Card } from "../../components/card";
 import { Notice, StatusNotice } from "../../components/notice";
+import { pageHeadingClass } from "../../components/page-header";
 import { cn } from "../../lib/utils";
 import type { ViewDefinition } from "../views/catalog";
 import { readDefinition } from "../views/catalog/compatibility";
@@ -24,7 +25,6 @@ import { ViewRenderer } from "../views/renderer/view-renderer";
 import { AutomationCanvasBody } from "../workspace/automation-canvas";
 import {
   canvasHeader,
-  canvasHeading,
   canvasInner,
   canvasSubtitle,
   canvasTitle,
@@ -139,7 +139,7 @@ const CanvasTitleBlock = ({
   draft: Draft;
 }) => (
   <div className={canvasTitle}>
-    <h2 className={canvasHeading}>{viewTitle(view)}</h2>
+    <h2 className={pageHeadingClass}>{viewTitle(view)}</h2>
     <CanvasSubtitle draft={draft} />
   </div>
 );

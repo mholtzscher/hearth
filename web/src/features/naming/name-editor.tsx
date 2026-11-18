@@ -76,11 +76,11 @@ const Editor = ({ objectId, kind, metadata, onUpdated }: Props) => {
 
   return (
     <div className="mt-3 grid gap-2" aria-label={`${kind} name`}>
-      <p className="text-sm">Display name: {metadata.name}</p>
-      <p className="text-muted-foreground text-sm">
+      <p className="text-label">Display name: {metadata.name}</p>
+      <p className="text-muted-foreground text-label">
         Adapter name: {metadata.adapter_name}
       </p>
-      <p className="text-sm">
+      <p className="text-label">
         {metadata.name_override === null
           ? "Using Adapter name"
           : "Name override active"}
@@ -102,7 +102,10 @@ const Editor = ({ objectId, kind, metadata, onUpdated }: Props) => {
             aria-describedby={`${fieldId}-count`}
             onChange={(event) => setDraft(event.target.value)}
           />
-          <p id={`${fieldId}-count`} className="text-muted-foreground text-xs">
+          <p
+            id={`${fieldId}-count`}
+            className="text-muted-foreground text-caption"
+          >
             {[...draft].length} code points. Names must contain 1–128 code
             points after trimming.
           </p>
@@ -150,9 +153,9 @@ const Editor = ({ objectId, kind, metadata, onUpdated }: Props) => {
       >
         Reset to Adapter name
       </Button>
-      <output className="block text-sm">{status}</output>
+      <output className="text-label block">{status}</output>
       {error && (
-        <p role="alert" className="text-destructive text-sm">
+        <p role="alert" className="text-destructive text-label">
           {error}
         </p>
       )}

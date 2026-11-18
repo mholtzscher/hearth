@@ -484,9 +484,9 @@ const LiveSection = ({
       />
       <Label htmlFor="device-facts-live">Stream live facts</Label>
       <StatusChip status={chipText} tone={tone} />
-      <output className="text-muted-foreground text-sm">{stateLine}</output>
+      <output className="text-muted-foreground text-label">{stateLine}</output>
     </div>
-    <p className="text-muted-foreground mt-1.5 text-xs">{explanation}</p>
+    <p className="text-muted-foreground text-caption mt-1.5">{explanation}</p>
     <div className="mt-2 flex flex-wrap items-center gap-2">
       <Button
         size="default"
@@ -496,7 +496,7 @@ const LiveSection = ({
       >
         Clear live arrivals
       </Button>
-      <span className="text-muted-foreground text-xs">
+      <span className="text-muted-foreground text-caption">
         live arrivals delivered this session: {delivered}
         {malformed > 0 ? ` · ${malformed} malformed skipped` : ""}
       </span>
@@ -536,7 +536,7 @@ const FactFilters = ({
     <div>
       <span
         id="device-facts-family-label"
-        className="text-muted-foreground block text-xs"
+        className="text-muted-foreground text-caption block"
       >
         Family
       </span>
@@ -552,7 +552,7 @@ const FactFilters = ({
     <div>
       <span
         id="device-facts-disposition-label"
-        className="text-muted-foreground block text-xs"
+        className="text-muted-foreground text-caption block"
       >
         Disposition (observations only)
       </span>
@@ -569,7 +569,7 @@ const FactFilters = ({
     <div className="min-w-[16rem] flex-1">
       <Label
         htmlFor="device-facts-text"
-        className="text-muted-foreground text-xs"
+        className="text-muted-foreground text-caption"
       >
         Filter
       </Label>
@@ -585,7 +585,7 @@ const FactFilters = ({
     <div>
       <Label
         htmlFor="device-facts-cap"
-        className="text-muted-foreground text-xs"
+        className="text-muted-foreground text-caption"
       >
         Row cap
       </Label>
@@ -623,7 +623,7 @@ const FactSummary = ({
   duplicateCount: number;
   malformedCount: number;
 }) => (
-  <div className="text-muted-foreground mt-2 flex flex-wrap items-baseline gap-x-3 text-sm">
+  <div className="text-muted-foreground text-label mt-2 flex flex-wrap items-baseline gap-x-3">
     <span id="device-facts-summary">
       Newest first · showing {displayCount} of {filteredCount} matching ·{" "}
       {rowCount} in view (snapshot ∪ live)
@@ -716,7 +716,7 @@ const FactRowView = ({
         <span className="block truncate" title={fact.entityId}>
           {enrichment?.name ?? "(unresolved entity)"}
         </span>
-        <span className="text-muted-foreground block truncate text-xs">
+        <span className="text-muted-foreground text-caption block truncate">
           {enrichment?.deviceName || fact.entityId}
         </span>
       </TableCell>
@@ -740,18 +740,18 @@ const FactRowView = ({
       </TableCell>
       <TableCell className="max-w-[13rem]">
         <span
-          className="text-muted-foreground block truncate font-mono text-xs"
+          className="text-muted-foreground text-caption block truncate font-mono"
           title={fact.id}
         >
           {fact.id}
         </span>
       </TableCell>
-      <TableCell className="text-muted-foreground font-mono text-xs">
+      <TableCell className="text-muted-foreground text-caption font-mono">
         <span title={fact.envelope.emitted_at}>
           {clockTime(fact.envelope.emitted_at)}
         </span>
       </TableCell>
-      <TableCell className="text-muted-foreground font-mono text-xs">
+      <TableCell className="text-muted-foreground text-caption font-mono">
         <span title={source}>{clockTime(source)}</span>
         <span className="ms-1 text-[0.65rem]">
           {deltaLabel(source, fact.envelope.emitted_at)}
@@ -892,7 +892,7 @@ const FactWarnings = ({ warnings }: { warnings: string[] }) => {
   return (
     <div
       role="alert"
-      className="border-warning/35 bg-warning/10 text-warning mt-2 rounded-md border px-3 py-2 text-sm"
+      className="border-warning/35 bg-warning/10 text-warning text-label mt-2 rounded-md border px-3 py-2"
     >
       <span className="font-medium">
         Contract mismatch{warnings.length > 1 ? "es" : ""}:
@@ -1034,7 +1034,7 @@ const MetadataSection = ({ rows }: { rows: [string, ReactNode][] }) => (
 
 const RawFactSection = ({ row }: { row: FactRow }) => (
   <Section title="Raw fact JSON">
-    <p className="text-muted-foreground text-xs">
+    <p className="text-muted-foreground text-caption">
       The published payload as decoded from the wire: every field the publisher
       sent, including any the typed envelope above does not model,
       pretty-printed for display only. Stream sequence, consumer and delivery
@@ -1090,12 +1090,12 @@ const FactDetail = ({
           tone={familyTone(fact.family)}
         />
         {enrichment && (
-          <span className="text-sm">
+          <span className="text-label">
             {enrichment.deviceName ? `${enrichment.deviceName} · ` : ""}
             {enrichment.name}
           </span>
         )}
-        <span className="text-muted-foreground font-mono text-xs">
+        <span className="text-muted-foreground text-caption font-mono">
           {fact.id}
         </span>
       </div>
@@ -1487,7 +1487,7 @@ export default function DeviceFactsPage() {
         onClear={clearFilters}
       />
 
-      <p className="text-muted-foreground mt-2 text-xs">
+      <p className="text-muted-foreground text-caption mt-2">
         Entity, device and type names are dashboard enrichment from the devices
         read API; the fact payload and subject carry only the canonical entity
         id.
@@ -1521,7 +1521,7 @@ export default function DeviceFactsPage() {
             snapshotReadAt={snapshotMeta?.readAt ?? null}
           />
         ) : (
-          <p className="text-muted-foreground text-sm">
+          <p className="text-muted-foreground text-label">
             {selectedId
               ? "The selected fact is no longer in the buffer: it was trimmed by the row cap, or it was a live arrival that was cleared. Select another row."
               : "Select a fact row to inspect its envelope, source timing, value, subject, broker metadata and raw JSON."}
