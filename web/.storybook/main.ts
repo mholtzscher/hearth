@@ -18,7 +18,11 @@ const config: StorybookConfig = {
     options: { builder: { viteConfigPath: false } },
   },
   staticDirs: ["./public"],
-  features: { componentsManifest: true },
+  features: {
+    componentsManifest: true,
+    menuOnboardingChecklist: false,
+    sidebarOnboardingChecklist: false,
+  },
   typescript: {
     reactDocgen: "react-docgen-typescript",
     // These options replace Storybook's defaults, so restate the ones controls rely on.
