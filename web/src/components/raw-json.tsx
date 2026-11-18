@@ -17,7 +17,11 @@ export const RawJson = ({
   code?: string;
   headingLevel?: 2 | 3 | 4 | 5 | 6;
 }) => (
-  <Accordion type="single" collapsible className="mt-4 rounded-lg border px-3">
+  <Accordion
+    type="single"
+    collapsible
+    className="rounded-card mt-4 border px-3"
+  >
     <AccordionItem value="raw-json">
       <AccordionTrigger
         headingLevel={headingLevel}

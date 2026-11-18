@@ -95,15 +95,12 @@ export const TYPE_USE: Record<TextToken, string> = {
   caption: "Notices, Recent date headings",
 };
 
-export const RADII = ["sm", "md", "lg", "card", "xl"] as const;
+export const RADII = ["md", "card"] as const;
 export type Radius = (typeof RADII)[number];
 
 export const RADIUS_USE: Record<Radius, string> = {
-  sm: "Compact press targets",
-  md: "Buttons, fields, notices",
-  lg: "Accordion, warning boxes",
-  card: "Cards, popovers, composer",
-  xl: "Modal, phone sheet tops",
+  md: "Controls: buttons, fields, notices, press targets",
+  card: "Surfaces: cards, popovers, composer, modal",
 };
 
 export const BREAKPOINTS = [

@@ -77,11 +77,8 @@ typography:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "12px"
 rounded:
-  sm: "6px"
   md: "8px"
-  lg: "10px"
   card: "12px"
-  xl: "14px"
 spacing:
   stack-sm: "8px"
   grid-gap: "12px"
@@ -137,7 +134,7 @@ components:
   segment-selected:
     backgroundColor: "{colors.violet-soft}"
     textColor: "{colors.violet-text}"
-    rounded: "{rounded.md}"
+    rounded: "5px"
   card:
     backgroundColor: "{colors.gray-1}"
     textColor: "{colors.gray-10}"
@@ -154,7 +151,7 @@ components:
   dialog:
     backgroundColor: "{colors.gray-2}"
     textColor: "{colors.gray-10}"
-    rounded: "{rounded.xl}"
+    rounded: "{rounded.card}"
     padding: "24px"
   notice:
     typography: "{typography.caption}"
@@ -384,16 +381,21 @@ above the workspace use one: the modal, popovers, and drawers.
 
 ## Shapes
 
-Corners are gently rounded and consistent by role:
+Corners have two sizes, one for each kind of element. The same radius looks
+rounder on a small element than on a large one, so controls and surfaces need
+different values. Two sizes only 2px apart look like a mistake, not a
+different role.
 
-- **Card** (`card`, 12px): cards, popovers, Markdown tables, and the composer.
-- **Control** (`md`, 8px): buttons, fields, segmented controls, notices, and
-  household navigation.
-- **Modal** (`xl`, 14px): the workspace modal and the top corners of phone
-  sheets.
-- **Small** (`sm`, 6px): compact press targets such as the Source action and
-  tool-activity rows, and the color picker's exact-value inputs.
-- **Large** (`lg`, 10px): the Accordion and two Development warning boxes.
+- **Control** (`md`, 8px): buttons, fields, segmented controls, notices,
+  household navigation, and compact press targets such as the Source action.
+- **Card** (`card`, 12px): cards, popovers, the modal and phone sheets,
+  Markdown tables, the Accordion, and the composer.
+
+An element inset a few pixels inside a rounded frame takes the frame's radius
+minus the inset, so the gap stays even around the corner. Segments sit 3px
+inside the segmented control and have 5px corners. A sent message keeps one 4px
+corner toward the composer. Tiny shapes such as slider tracks, timeline bars,
+and inline code take a radius that fits their size.
 
 Switch tracks are pills. Borders are 1px and neutral. Gradients appear only as
 one- or two-pixel horizon lines, never as large decorative fills.
@@ -471,7 +473,7 @@ current value; a value that matches no option leaves every segment unselected.
 Each enabled segment stays in the Tab order.
 
 The frame is the card surface with a 1px `gray-4` border and 2px padding.
-Segments have 8px corners and a 32px minimum height by default, or 44px with
+Segments have 5px corners and a 32px minimum height by default, or 44px with
 `size="touch"`; long labels wrap and increase the height. A selected segment
 uses `violet-soft`, `violet-text`, and a 1px inset violet line. Disabled
 segments use 50% opacity.
@@ -479,9 +481,9 @@ segments use 50% opacity.
 ### Dialogs and popovers
 
 `Dialog` from `components/dialog.tsx` uses the `gray-2` surface, a `gray-4`
-border, 14px corners, a dim backdrop, and a centered decision layout. Short
+border, 12px corners, a dim backdrop, and a centered decision layout. Short
 desktop viewports let the dialog body scroll. With `placement="bottom"`, it
-becomes a viewport-bounded sheet at 720px and below, with 14px top corners,
+becomes a viewport-bounded sheet at 720px and below, with 12px top corners,
 square bottom corners, and safe-area padding.
 
 Modal dialogs contain focus, close on Escape, and return focus to their trigger.

@@ -109,7 +109,7 @@ export const CardSource = ({
       type="button"
       data-slot="source-toggle"
       className={cn(
-        "text-muted-foreground hover:bg-gray-2 hover:text-foreground max-tablet:relative max-tablet:after:absolute max-tablet:after:inset-x-0 max-tablet:after:-inset-y-2 ms-auto -me-1.5 inline-flex min-h-7 shrink-0 items-center gap-1 rounded-sm px-1.5 py-0 whitespace-nowrap pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-2",
+        "text-muted-foreground hover:bg-gray-2 hover:text-foreground max-tablet:relative max-tablet:after:absolute max-tablet:after:inset-x-0 max-tablet:after:-inset-y-2 ms-auto -me-1.5 inline-flex min-h-7 shrink-0 items-center gap-1 rounded-md px-1.5 py-0 whitespace-nowrap pointer-coarse:relative pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-2",
         toggleClassName
       )}
       aria-expanded={open}
@@ -233,7 +233,6 @@ export const CardSource = ({
       <DialogContent
         placement="bottom"
         data-placement="bottom"
-        className="max-tablet:rounded-t-[14px]"
         aria-modal="true"
         onClick={closeOnNavigation}
       >

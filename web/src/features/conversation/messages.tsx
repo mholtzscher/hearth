@@ -330,7 +330,7 @@ const ContextPart = ({ data }: DataMessagePartProps<unknown>) => {
 
 // Reply metadata rows share one icon column: status icon at the reply's edge, text after it, disclosure last.
 const activitySummary =
-  "flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-sm hover:text-foreground pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden";
+  "flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md hover:text-foreground pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden";
 const activityIcon = "size-4 shrink-0";
 const ToolGroup = ({
   count,
@@ -393,7 +393,7 @@ const ToolPart = ({ toolName, argsText, result }: ToolCallMessagePartProps) => (
 
 const userParts = { data: { by_name: { "hearth-context": ContextPart } } };
 const UserMessage = () => (
-  <div className="rounded-card border-gray-3 bg-gray-2 text-body text-foreground ms-auto mt-8 w-fit max-w-[min(85%,560px)] rounded-br-xs border px-4 py-2.5 leading-[1.6] [overflow-wrap:break-word] whitespace-pre-wrap first:mt-4">
+  <div className="rounded-card border-gray-3 bg-gray-2 text-body text-foreground ms-auto mt-8 w-fit max-w-[min(85%,560px)] rounded-br-[4px] border px-4 py-2.5 leading-[1.6] [overflow-wrap:break-word] whitespace-pre-wrap first:mt-4">
     <MessagePrimitive.Parts components={userParts} />
   </div>
 );

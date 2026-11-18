@@ -1184,7 +1184,7 @@ const AutomationEnablementCard = ({
       {conflictNotice && (
         <p
           role="alert"
-          className="border-warning/35 bg-warning/10 text-warning mt-2 rounded-lg border px-2 py-1.5 text-xs"
+          className="border-warning/35 bg-warning/10 text-warning mt-2 rounded-md border px-2 py-1.5 text-xs"
         >
           {conflictNotice}
         </p>

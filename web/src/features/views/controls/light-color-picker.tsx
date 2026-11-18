@@ -57,7 +57,7 @@ const hintClasses = "mt-3 text-label leading-normal text-gray-8";
 const exactClasses = "mt-4 flex flex-wrap items-center gap-2.5";
 const labelClasses = "flex items-center gap-1.5 text-label text-gray-8";
 const inputClasses =
-  "min-h-11 w-[76px] min-w-0 rounded-sm border border-gray-4 bg-gray-3 p-2 font-[inherit] text-gray-10 tabular-nums caret-violet disabled:cursor-not-allowed disabled:text-gray-6 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring";
+  "min-h-11 w-[76px] min-w-0 rounded-md border border-gray-4 bg-gray-3 p-2 font-[inherit] text-gray-10 tabular-nums caret-violet disabled:cursor-not-allowed disabled:text-gray-6 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring";
 
 /**
  * The Command queue stores plain records; the exported color interfaces have no
