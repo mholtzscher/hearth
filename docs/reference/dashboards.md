@@ -124,7 +124,9 @@ An absent optional field shows **No value**, not zero or **Never observed**.
 Availability, enablement, missing Entities, never-observed State, and request
 failure are separate conditions. An old observation alone does not imply an
 unavailable Entity. Failed refreshes preserve the last reading with a visible
-failure indicator and observation time.
+failure indicator and observation time. Entity links in **Source** close the
+details before navigating, so the dashboard's unsaved-changes dialog stays
+usable.
 
 ## Ownership and extension
 
@@ -165,7 +167,7 @@ history refresh.
 WeekPattern binds one yes/no field with an optional label and words. It shades
 7 local days by 24 hours at five levels (0, 1–5, 6–15, 16–30 and over 30
 minutes true) and states each day's changes into true and time true. Future
-hours are outlined; hours without a known value stay empty. It glows when a
+hours are outlined; hours without a known value are dashed. It glows when a
 history refresh changes a shaded level or a daily total. Each one-hour bucket
 counts toward the local hour it starts in: a one-hour daylight-saving shift
 merges or empties one cell, and a half-hour shift (as on Lord Howe Island)
@@ -246,8 +248,9 @@ view is presented or saved: `mm/h` for rain rates, `mm` for rain totals, and
   `month`, `year`), and a `trend` window for the rate. While the storm total is
   above zero it leads; otherwise the rate does, and a zero rate reads **Dry**.
   Totals are the station's own counters; the card never sums the rate.
-- Wind requires `speed` and optionally binds `gust`, `direction`, and
-  `max_gust`. It names the Beaufort force and draws where the wind comes from on
+- Wind requires `speed` and optionally binds `gust`, `direction`, `max_gust`,
+  and a `trend` window for the sustained speed, read from the same speed
+  Entity. It names the Beaufort force and draws where the wind comes from on
   a compass. Direction has no history, because history means aren't circular.
 - Pressure binds one `hearth.pressure/v1` `source` and an optional `trend`. It
   always reads 6 hours of history to compare the latest minute with the one
