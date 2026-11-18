@@ -122,13 +122,6 @@ const COLOR_VARIABLES: Record<string, string> = {
   primary: "--primary",
 };
 
-/**
- * index.css radius tokens that DESIGN.md omits because no application screen
- * uses them. `xs` is unused; `4xl` appears only in the shadcn Badge, which no
- * screen renders. Remove a name here once it is used and documented.
- */
-const UNDOCUMENTED_RADII = new Set(["xs", "4xl"]);
-
 /** `#rrggbbaa` as its base color and alpha percentage. */
 const translucent = (hex: string) => {
   const match = /^#(?<base>[\da-f]{6})(?<alpha>[\da-f]{2})$/iu.exec(hex);
@@ -236,19 +229,12 @@ describe("DESIGN.md matches index.css", () => {
     ).toStrictEqual([]);
   });
 
-  it("documents every used radius in index.css", () => {
+  it("documents every radius in index.css", () => {
     const declared = [...theme.keys()]
       .filter((name) => name.startsWith("--radius-"))
       .map((name) => name.slice("--radius-".length));
     expect(
-      [...UNDOCUMENTED_RADII].filter((name) => !declared.includes(name)),
-      "Remove radii that index.css no longer declares from UNDOCUMENTED_RADII."
-    ).toStrictEqual([]);
-    expect(
-      declared.filter(
-        (name) =>
-          !UNDOCUMENTED_RADII.has(name) && !(name in section(design, "rounded"))
-      ),
+      declared.filter((name) => !(name in section(design, "rounded"))),
       "Add these index.css radii to DESIGN.md rounded."
     ).toStrictEqual([]);
   });

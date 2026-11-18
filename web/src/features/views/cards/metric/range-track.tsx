@@ -34,14 +34,14 @@ export const RangeTrack = ({
       className="group/range mt-3.5 grid gap-1.5"
       data-value={dimmed ? "dimmed" : "live"}
     >
-      <div className="bg-gray-3 relative h-1 rounded-[2px]" aria-hidden="true">
+      <div className="bg-gray-3 relative h-1 rounded-xs" aria-hidden="true">
         <span
-          className="bg-gray-7 group-data-[value=dimmed]/range:bg-gray-5 absolute inset-y-0 left-0 rounded-[2px]"
+          className="bg-gray-7 group-data-[value=dimmed]/range:bg-gray-5 absolute inset-y-0 left-0 rounded-xs"
           style={{ width: `${share * 100}%` }}
         />
         <span
           data-slot="range-marker"
-          className="bg-gray-10 group-data-[value=dimmed]/range:bg-gray-8 absolute top-1/2 -ml-px h-3.5 w-0.5 -translate-y-1/2 rounded-[1px]"
+          className="bg-gray-10 group-data-[value=dimmed]/range:bg-gray-8 absolute top-1/2 -ml-px h-3.5 w-0.5 -translate-y-1/2 rounded-xs"
           style={{ left: `${share * 100}%` }}
         />
       </div>

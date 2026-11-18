@@ -282,7 +282,7 @@ const SeriesTooltip = ({
         return (
           <p key={i}>
             <span
-              className="me-1.5 inline-block size-2.5 shrink-0 rounded-[2px] align-[-1px]"
+              className="me-1.5 inline-block size-2.5 shrink-0 rounded-xs align-[-1px]"
               aria-hidden="true"
               style={{ background: item.color }}
             />
@@ -359,7 +359,7 @@ export const TimeSeries = ({
             data-dimmed={item.dimmed || undefined}
           >
             <span
-              className="inline-block size-2.5 shrink-0 rounded-[2px] align-[-1px] group-data-[dimmed]/series:opacity-60"
+              className="inline-block size-2.5 shrink-0 rounded-xs align-[-1px] group-data-[dimmed]/series:opacity-60"
               aria-hidden="true"
               style={{ background: item.color }}
             />

@@ -80,7 +80,7 @@ export const FanStepper = ({
                 key={i}
                 data-on={i < (level ?? 0) || undefined}
                 className={cn(
-                  "bg-gray-4 h-1.5 w-3.5 rounded-[3px]",
+                  "bg-gray-4 h-1.5 w-3.5 rounded-xs",
                   i < (level ?? 0) && filledPipClass(active, entity.enabled)
                 )}
               />

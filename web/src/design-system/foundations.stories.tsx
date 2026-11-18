@@ -120,7 +120,7 @@ const AliasRow = ({ alias, token }: { alias: string; token: string }) => {
           <span
             ref={aliasRef}
             data-slot="alias-swatch"
-            className="border-gray-4 size-4 shrink-0 rounded-sm border"
+            className="border-gray-4 size-4 shrink-0 rounded-xs border"
             style={{ backgroundColor: `var(--${alias})` }}
           />
           <code className="font-mono">{alias}</code>
@@ -313,11 +313,9 @@ export const TypeScale: Story = {
 };
 
 const RADIUS_CLASSES: Record<RadiusName, string> = {
-  sm: "rounded-sm",
+  xs: "rounded-xs",
   md: "rounded-md",
-  lg: "rounded-lg",
   card: "rounded-card",
-  xl: "rounded-xl",
 };
 
 const RadiusSample = ({ radius }: { radius: RadiusName }) => {

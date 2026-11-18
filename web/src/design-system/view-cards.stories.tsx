@@ -163,7 +163,7 @@ const FrameAnatomyFigure = () => {
               height: marker.height,
             }}
           >
-            <span className="border-violet absolute -inset-1 rounded-sm border border-dashed" />
+            <span className="border-violet absolute -inset-1 rounded-md border border-dashed" />
             <span className="bg-violet text-gray-0 text-caption absolute -top-3 -left-3 grid size-5 place-items-center rounded-full font-semibold">
               {index + 1}
             </span>

@@ -77,11 +77,9 @@ typography:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "12px"
 rounded:
-  sm: "6px"
+  xs: "4px"
   md: "8px"
-  lg: "10px"
   card: "12px"
-  xl: "14px"
 spacing:
   stack-sm: "8px"
   grid-gap: "12px"
@@ -137,7 +135,7 @@ components:
   segment-selected:
     backgroundColor: "{colors.violet-soft}"
     textColor: "{colors.violet-text}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.xs}"
   card:
     backgroundColor: "{colors.gray-1}"
     textColor: "{colors.gray-10}"
@@ -154,7 +152,7 @@ components:
   dialog:
     backgroundColor: "{colors.gray-2}"
     textColor: "{colors.gray-10}"
-    rounded: "{rounded.xl}"
+    rounded: "{rounded.card}"
     padding: "24px"
   notice:
     typography: "{typography.caption}"
@@ -384,16 +382,21 @@ above the workspace use one: the modal, popovers, and drawers.
 
 ## Shapes
 
-Corners are gently rounded and consistent by role:
+Corners have three sizes, one for each kind of element. The same radius looks
+rounder on a small element than on a large one, so details, controls, and
+surfaces need different values. Two sizes only 2px apart look like a mistake,
+not a different role.
 
-- **Card** (`card`, 12px): cards, popovers, Markdown tables, and the composer.
-- **Control** (`md`, 8px): buttons, fields, segmented controls, notices, and
-  household navigation.
-- **Modal** (`xl`, 14px): the workspace modal and the top corners of phone
-  sheets.
-- **Small** (`sm`, 6px): compact press targets such as the Source action and
-  tool-activity rows, and the color picker's exact-value inputs.
-- **Large** (`lg`, 10px): the Accordion and two Development warning boxes.
+- **Detail** (`xs`, 4px): elements smaller than a control or nested inside one:
+  segments, inline code, the sent-message corner toward the composer, the sheet
+  handle, and chart marks such as slider tracks, timeline bars, and week cells.
+- **Control** (`md`, 8px): buttons, fields, segmented controls, notices,
+  household navigation, and compact press targets such as the Source action.
+- **Card** (`card`, 12px): cards, popovers, the modal and phone sheets,
+  Markdown tables, the Accordion, and the composer.
+
+Every corner uses one of these tokens. A browser caps a radius at half the
+element's height, so a 4px-high track with `xs` corners has fully round ends.
 
 Switch tracks are pills. Borders are 1px and neutral. Gradients appear only as
 one- or two-pixel horizon lines, never as large decorative fills.
@@ -471,7 +474,7 @@ current value; a value that matches no option leaves every segment unselected.
 Each enabled segment stays in the Tab order.
 
 The frame is the card surface with a 1px `gray-4` border and 2px padding.
-Segments have 8px corners and a 32px minimum height by default, or 44px with
+Segments have 4px corners and a 32px minimum height by default, or 44px with
 `size="touch"`; long labels wrap and increase the height. A selected segment
 uses `violet-soft`, `violet-text`, and a 1px inset violet line. Disabled
 segments use 50% opacity.
@@ -479,9 +482,9 @@ segments use 50% opacity.
 ### Dialogs and popovers
 
 `Dialog` from `components/dialog.tsx` uses the `gray-2` surface, a `gray-4`
-border, 14px corners, a dim backdrop, and a centered decision layout. Short
+border, 12px corners, a dim backdrop, and a centered decision layout. Short
 desktop viewports let the dialog body scroll. With `placement="bottom"`, it
-becomes a viewport-bounded sheet at 720px and below, with 14px top corners,
+becomes a viewport-bounded sheet at 720px and below, with 12px top corners,
 square bottom corners, and safe-area padding.
 
 Modal dialogs contain focus, close on Escape, and return focus to their trigger.
@@ -846,7 +849,7 @@ the feed lists them in the header. An unavailable or disabled row draws at 60%
 opacity with a dashed baseline.
 
 Week pattern cards shade one yes/no field over 7 local days by 24 hours. Cells
-are 2px-rounded squares on the neutral ramp at five levels (0, 1–5, 6–15, 16–30,
+are 4px-rounded squares on the neutral ramp at five levels (0, 1–5, 6–15, 16–30,
 and over 30 minutes true). Future hours are outlined, and hours with no known
 value are dashed. Each day states its changes into true and its time true; that
 summary hides below a 420px card. A key names the levels.

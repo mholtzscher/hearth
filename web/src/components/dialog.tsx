@@ -48,12 +48,12 @@ const DialogContent = ({
       data-slot="dialog-content"
       forceMount={forceMount}
       className={cn(
-        "border-gray-4 bg-gray-2 text-label text-foreground fixed top-1/2 left-1/2 z-[101] w-[min(460px,calc(100vw-40px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 leading-normal shadow-[0_18px_60px_#0008] outline-none",
+        "border-gray-4 bg-gray-2 text-label text-foreground rounded-card fixed top-1/2 left-1/2 z-[101] w-[min(460px,calc(100vw-40px))] -translate-x-1/2 -translate-y-1/2 border p-6 leading-normal shadow-[0_18px_60px_#0008] outline-none",
         placement === "center"
           ? "short:max-h-[calc(100dvh-40px)] short:overflow-y-auto"
           : "tablet:short:max-h-[calc(100dvh-40px)] tablet:short:overflow-y-auto",
         placement === "bottom" &&
-          "max-tablet:inset-x-0 max-tablet:top-auto max-tablet:bottom-0 max-tablet:max-h-[85dvh] max-tablet:w-full max-tablet:translate-x-0 max-tablet:translate-y-0 max-tablet:overflow-auto max-tablet:overscroll-contain max-tablet:rounded-b-none max-tablet:border-0 max-tablet:px-[22px] max-tablet:pt-[22px] max-tablet:pb-[max(24px,env(safe-area-inset-bottom))] max-tablet:before:mx-auto max-tablet:before:mt-[-10px] max-tablet:before:mb-[18px] max-tablet:before:block max-tablet:before:h-1 max-tablet:before:w-8 max-tablet:before:rounded-[2px] max-tablet:before:bg-gray-6",
+          "max-tablet:inset-x-0 max-tablet:top-auto max-tablet:bottom-0 max-tablet:max-h-[85dvh] max-tablet:w-full max-tablet:translate-x-0 max-tablet:translate-y-0 max-tablet:overflow-auto max-tablet:overscroll-contain max-tablet:rounded-b-none max-tablet:border-0 max-tablet:px-[22px] max-tablet:pt-[22px] max-tablet:pb-[max(24px,env(safe-area-inset-bottom))] max-tablet:before:mx-auto max-tablet:before:mt-[-10px] max-tablet:before:mb-[18px] max-tablet:before:block max-tablet:before:h-1 max-tablet:before:w-8 max-tablet:before:rounded-xs max-tablet:before:bg-gray-6",
         className
       )}
       {...props}

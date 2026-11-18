@@ -11,8 +11,9 @@ export interface SegmentedControlProps<T extends string> {
   disabled?: boolean;
 }
 
+/** Segments sit inside the control frame, so they take the smaller detail radius. */
 const segmentClasses =
-  "min-w-0 rounded-md border-0 bg-transparent px-2 text-label leading-normal text-gray-9 [overflow-wrap:anywhere] " +
+  "min-w-0 rounded-xs border-0 bg-transparent px-2 text-label leading-normal text-gray-9 [overflow-wrap:anywhere] " +
   "hover:not-disabled:aria-[pressed=false]:bg-gray-3 hover:not-disabled:aria-[pressed=false]:text-foreground " +
   "disabled:opacity-50 " +
   "aria-[pressed=true]:bg-violet-soft aria-[pressed=true]:text-violet-text aria-[pressed=true]:shadow-[inset_0_0_0_1px_var(--violet)]";

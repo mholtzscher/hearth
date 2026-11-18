@@ -192,7 +192,7 @@ export const Centered: Story = {
         borderColor: "rgb(44, 44, 44)",
         borderWidth: "1px",
         borderStyle: "solid",
-        borderRadius: "14px",
+        borderRadius: "12px",
         padding: "24px",
         fontSize: "14px",
       }).map(([property, value]) =>
@@ -247,8 +247,8 @@ export const PhoneSheet: Story = {
     await expect(rect.bottom).toBe(window.innerHeight);
     await expect(rect.left).toBe(0);
     await expect(rect.width).toBe(window.innerWidth);
-    await expect(style.borderTopLeftRadius).toBe("14px");
-    await expect(style.borderTopRightRadius).toBe("14px");
+    await expect(style.borderTopLeftRadius).toBe("12px");
+    await expect(style.borderTopRightRadius).toBe("12px");
     await expect(style.borderBottomLeftRadius).toBe("0px");
     await expect(Number(style.maxHeight.replace(/px$/u, ""))).toBeCloseTo(
       window.innerHeight * 0.85,
@@ -284,7 +284,7 @@ export const PhoneSheet: Story = {
       1
     );
     await expect(handle.marginRight).toBe(handle.marginLeft);
-    await expect(handle.borderRadius).toBe("2px");
+    await expect(handle.borderRadius).toBe("4px");
     await expect(handle.backgroundColor).toBe("rgb(87, 87, 87)");
     await expectNoHorizontalOverflow(canvasElement);
   },

@@ -892,7 +892,7 @@ const FactWarnings = ({ warnings }: { warnings: string[] }) => {
   return (
     <div
       role="alert"
-      className="border-warning/35 bg-warning/10 text-warning mt-2 rounded-lg border px-3 py-2 text-sm"
+      className="border-warning/35 bg-warning/10 text-warning mt-2 rounded-md border px-3 py-2 text-sm"
     >
       <span className="font-medium">
         Contract mismatch{warnings.length > 1 ? "es" : ""}:

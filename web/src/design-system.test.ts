@@ -23,15 +23,12 @@ const RAW_CONTROLS: Record<string, number> = {
 
 /**
  * Bordered, card-radius surfaces outside components, by file. The composer, a
- * sent message, and unsupported view content are not cards (DESIGN.md); the
- * warning boxes await a warning Notice.
+ * sent message, and unsupported view content are not cards (DESIGN.md).
  */
 const HAND_ROLLED_CARDS: Record<string, number> = {
   "src/features/conversation/messages.tsx": 1,
   "src/features/views/renderer/view-renderer.tsx": 1,
   "src/pages/agent-page.tsx": 1,
-  "src/pages/automation-detail-page.tsx": 1,
-  "src/pages/device-facts-page.tsx": 1,
 };
 
 /** Files outside the low-level wrappers that import radix-ui. */
@@ -135,10 +132,7 @@ const applicationSource = (): string[] =>
 const countCardSurfaces = (source: string): number =>
   (source.match(/"[^"\n]*"|`[^`]*`/gu) ?? []).filter((literal) => {
     const classes = literal.slice(1, -1).split(/\s+/u);
-    return (
-      classes.some((name) => /^rounded-(?<radius>card|lg|xl)$/u.test(name)) &&
-      classes.includes("border")
-    );
+    return classes.includes("rounded-card") && classes.includes("border");
   }).length;
 
 const isWrapper = (file: string, rule: "raw-control" | "radix"): boolean =>
@@ -200,7 +194,7 @@ describe("countCardSurfaces", () => {
   it("counts each class list with a card radius and a border", () => {
     expect(
       countCardSurfaces(
-        `<div className="rounded-card border bg-card" /><li className={\`rounded-lg border \${x}\`} />`
+        `<div className="rounded-card border bg-card" /><li className={\`rounded-card border \${x}\`} />`
       )
     ).toBe(2);
   });
@@ -285,6 +279,49 @@ describe("Hearth theme tokens", () => {
       .map((match) => match[1])
       .toSorted();
     expect(names).toStrictEqual([...TEXT_TOKENS].toSorted());
+  });
+
+  it("uses only the radii index.css declares, plus full and none", () => {
+    const declared = new Set([
+      ...[...css.matchAll(/--radius-(?<name>[\w-]+)\s*:/gu)].map(
+        (match) => match[1]
+      ),
+      "full",
+      "none",
+    ]);
+    const sides = "(?:[trblxy]|tl|tr|br|bl|[se]|ss|se|es|ee)-";
+    const unknown = [...files("src"), ...files(".storybook")]
+      .filter(
+        (file) => /\.(?:tsx?|mdx)$/u.test(file) && !/\.test\.tsx?$/u.test(file)
+      )
+      .flatMap((file) =>
+        [
+          ...read(file).matchAll(
+            new RegExp(
+              `(?<![\\w-])rounded-(?:${sides})?(?<name>[a-z\\d]+)(?![\\w-])`,
+              "gu"
+            )
+          ),
+        ]
+          .filter((match) => !declared.has(match.groups?.name ?? ""))
+          .map((match) => `${file}: ${match[0]}`)
+      );
+    expect(
+      unknown,
+      "index.css resets Tailwind's radius scale, so these classes draw square corners. Use rounded-xs, rounded-md, or rounded-card."
+    ).toStrictEqual([]);
+  });
+
+  it("keeps arbitrary radii out of application source", () => {
+    const arbitrary = applicationSource().flatMap((file) =>
+      [
+        ...read(file).matchAll(/(?<![\w-])rounded(?:-[a-z]+)?-\[[^\]]+\]/gu),
+      ].map((match) => `${file}: ${match[0]}`)
+    );
+    expect(
+      arbitrary,
+      "Use a radius token from index.css instead of a pixel value."
+    ).toStrictEqual([]);
   });
 
   it("registers every custom radius with cn, excluding Tailwind's built-in names", () => {
