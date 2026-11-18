@@ -282,9 +282,11 @@ siblings set no size.
 - **Headline** (500, 26px, 1.3): canvas, library, and Development page titles.
 - **Headline narrow** (500, 22px, 1.3): the same titles on phones.
   `pageHeadingClass` applies it.
-- **Title** (600, 18px): view headings and Development section headings, without
-  uppercase labels or extra separator rules.
-- **Body** (16px, 1.7): conversation text.
+- **Title** (600, 18px): view headings, Development section headings, and
+  dialog titles, without uppercase labels or extra separator rules.
+- **Body** (16px, 1.7): conversation text. At weight 600, Body is the
+  subsection heading below a Title: the automation editor's headings and the
+  headings inside a Development section.
 - **Label** (14px, 1.5): the workspace base size, used for card titles, reading
   metadata, chart legends, editor details, fields, buttons, and tables.
 - **Compact reading** (400, 20px, 1.3, tabular figures): row values in

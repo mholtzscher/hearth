@@ -935,9 +935,9 @@ const AutomationRunView = ({
       <Facts rows={causeRows(run.cause, labels)} />
     </div>
     <ConditionDecisionView decision={run.condition_decision} />
-    <h3 className="text-label mt-4 font-medium">Run value initialization</h3>
+    <h3 className="text-body mt-4 font-semibold">Run value initialization</h3>
     <RunInitialization run={run} />
-    <h3 className="text-label mt-4 font-medium">Step executions</h3>
+    <h3 className="text-body mt-4 font-semibold">Step executions</h3>
     <p className="text-muted-foreground text-caption">
       One zero-based sequence across all Step kinds. Only durably reached Steps
       appear; absence does not establish why a Step was not reached. Expected
@@ -947,7 +947,7 @@ const AutomationRunView = ({
       outcomes.
     </p>
     <StepExecutionTimeline run={run} />
-    <h3 className="text-label mt-4 font-medium">Definition snapshot</h3>
+    <h3 className="text-body mt-4 font-semibold">Definition snapshot</h3>
     <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
     <AutomationVariables
       variables={run.snapshot.variables}
@@ -992,7 +992,7 @@ const AutomationSkipView = ({
       ]}
     />
     <ConditionDecisionView decision={skip.condition_decision} />
-    <h3 className="text-label mt-4 font-medium">Matched Triggers</h3>
+    <h3 className="text-body mt-4 font-semibold">Matched Triggers</h3>
     <AutomationTriggerList triggers={skip.matched_triggers} labels={labels} />
     <RawJson
       value={skip}
@@ -1293,7 +1293,7 @@ const AutomationDefinitionSections = ({
       )}
       {definition.conditions && (
         <>
-          <h3 className="text-label font-medium">Admission Conditions</h3>
+          <h3 className="text-body font-semibold">Admission Conditions</h3>
           <AutomationConditionTree
             condition={definition.conditions}
             labels={labels}

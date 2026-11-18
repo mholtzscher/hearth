@@ -41,9 +41,7 @@ const RADIX_IMPORTS: string[] = [];
 const ARBITRARY_TEXT_SIZES: Record<string, string[]> = {
   "src/app.tsx": ["text-[24px]", "text-[0px]", "text-[20px]"],
   "src/features/views/cards/state-timeline/lanes.tsx": ["text-[13px]"],
-  "src/features/views/cards/wind/wind.tsx": ["text-[11px]"],
   "src/pages/agent-page.tsx": ["text-[28px]"],
-  "src/pages/device-facts-page.tsx": ["text-[0.65rem]"],
 };
 
 /** Files that may use a narrow text size; each owns the width rule for it. */
