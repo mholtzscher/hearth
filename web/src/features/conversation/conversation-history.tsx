@@ -118,7 +118,7 @@ export const ConversationHistory = ({
     <section
       id={id}
       className={cn(
-        "conversation-history border-border flex min-h-0 flex-1 flex-col border-t pt-5 [--history-bg:var(--gray-0)]",
+        "border-border flex min-h-0 flex-1 flex-col border-t pt-5 [--history-bg:var(--gray-0)]",
         classNames?.root
       )}
       aria-labelledby={`${id}-title`}
