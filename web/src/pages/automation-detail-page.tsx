@@ -228,7 +228,7 @@ const AutomationTriggerList = ({
 }) => {
   if (triggers.length === 0) {
     return (
-      <p className="text-muted-foreground text-sm">No automatic triggers</p>
+      <p className="text-muted-foreground text-label">No automatic triggers</p>
     );
   }
   return (
@@ -238,10 +238,12 @@ const AutomationTriggerList = ({
           <li>
             <div className="flex flex-wrap items-center gap-2">
               <StatusChip status={trigger.kind} />
-              <span className="font-mono text-xs">{trigger.id}</span>
+              <span className="text-caption font-mono">{trigger.id}</span>
               {trigger.kind !== "cron" && (
                 <>
-                  <span className="text-muted-foreground text-sm">matches</span>
+                  <span className="text-muted-foreground text-label">
+                    matches
+                  </span>
                   <AutomationEntityLink
                     entityId={trigger.entity_id}
                     labels={labels}
@@ -249,7 +251,7 @@ const AutomationTriggerList = ({
                 </>
               )}
             </div>
-            <p className="mt-1 font-mono text-xs">
+            <p className="text-caption mt-1 font-mono">
               {triggerDescription(trigger)}
             </p>
           </li>
@@ -269,7 +271,7 @@ const ConditionEvaluationView = ({
 }: {
   evaluation: AutomationConditionEvaluation;
 }) => (
-  <ul className="text-xs">
+  <ul className="text-caption">
     {evaluation.nodes.map((node) => {
       switch (node.kind) {
         case "expression": {
@@ -337,20 +339,20 @@ const CommandExecutionEvidence = ({
         </RouterLink>
       )}
       {evidence.command_id && (
-        <p className="font-mono text-xs break-all">
+        <p className="text-caption font-mono break-all">
           Reserved Command: {evidence.command_id}
         </p>
       )}
       {evidence.correlation_id && (
-        <p className="font-mono text-xs break-all">
+        <p className="text-caption font-mono break-all">
           Correlation: {evidence.correlation_id}
         </p>
       )}
       {!evidence.verified_command_id && (
-        <p className="text-xs">No ownership-verified Command link.</p>
+        <p className="text-caption">No ownership-verified Command link.</p>
       )}
       {evidence.reason_code && (
-        <p className="font-mono text-xs">{evidence.reason_code}</p>
+        <p className="text-caption font-mono">{evidence.reason_code}</p>
       )}
     </>
   );
@@ -375,7 +377,7 @@ const DelayExecutionEvidence = ({
       {duration !== undefined && (
         <>
           <p>Duration: {automationDurationText(duration)}</p>
-          <p className="font-mono text-xs">
+          <p className="text-caption font-mono">
             Expected due (diagnostic):{" "}
             {new Date(
               Date.parse(execution.started_at) + duration
@@ -383,9 +385,11 @@ const DelayExecutionEvidence = ({
           </p>
         </>
       )}
-      <p className="text-xs">No wait resumes after interruption.</p>
+      <p className="text-caption">No wait resumes after interruption.</p>
       {execution.evidence.reason_code && (
-        <p className="font-mono text-xs">{execution.evidence.reason_code}</p>
+        <p className="text-caption font-mono">
+          {execution.evidence.reason_code}
+        </p>
       )}
     </>
   );
@@ -440,7 +444,7 @@ const SubAutomationExecutionEvidence = ({
         </p>
       )}
       {"reason_code" in evidence && (
-        <p className="font-mono text-xs">{evidence.reason_code}</p>
+        <p className="text-caption font-mono">{evidence.reason_code}</p>
       )}
       {"child_status" in evidence && (
         <p>
@@ -472,16 +476,18 @@ const NotificationExecutionEvidence = ({
         {evidence.outcome ?? "— (no confirmed attempt outcome)"}
       </p>
       {evidence.outcome === "unknown" && (
-        <p className="text-xs">
+        <p className="text-caption">
           Submission may have occurred; acceptance is unproven. Do not
           automatically resend.
         </p>
       )}
       {evidence.outcome === "accepted" && (
-        <p className="text-xs">Provider acceptance, not recipient delivery.</p>
+        <p className="text-caption">
+          Provider acceptance, not recipient delivery.
+        </p>
       )}
       {evidence.reason_code && (
-        <p className="font-mono text-xs">{evidence.reason_code}</p>
+        <p className="text-caption font-mono">{evidence.reason_code}</p>
       )}
     </>
   );
@@ -496,7 +502,7 @@ const FunctionExecutionEvidence = ({
   return (
     <>
       {evidence.invocation_id && (
-        <p className="font-mono text-xs break-all">
+        <p className="text-caption font-mono break-all">
           Reserved invocation: {evidence.invocation_id}
         </p>
       )}
@@ -505,18 +511,18 @@ const FunctionExecutionEvidence = ({
         {evidence.invocation_outcome ?? "— (no terminal invocation evidence)"}
       </p>
       {evidence.catalog_revision && (
-        <p className="font-mono text-xs">
+        <p className="text-caption font-mono">
           Catalog revision: {evidence.catalog_revision}
         </p>
       )}
       {evidence.invocation_outcome === "unknown" && (
-        <p className="text-xs">
+        <p className="text-caption">
           Effects may have occurred; success is unproven. Do not automatically
           retry.
         </p>
       )}
       {evidence.reason_code && (
-        <p className="font-mono text-xs">{evidence.reason_code}</p>
+        <p className="text-caption font-mono">{evidence.reason_code}</p>
       )}
     </>
   );
@@ -536,17 +542,17 @@ const BranchExecutionEvidence = ({
           ? `Alternative ${evidence.selected_branch_id}`
           : evidence.outcome}
       </p>
-      <p className="text-xs">
+      <p className="text-caption">
         Selection only; does not establish child completion.
       </p>
       {"failure_code" in evidence && (
-        <p className="font-mono text-xs">{evidence.failure_code}</p>
+        <p className="text-caption font-mono">{evidence.failure_code}</p>
       )}
       <details>
         <summary className="cursor-pointer">
           Evidence for {execution.step_id}
         </summary>
-        <pre className="mt-2 overflow-auto font-mono text-xs whitespace-pre-wrap">
+        <pre className="text-caption mt-2 overflow-auto font-mono whitespace-pre-wrap">
           {automationJsonText(execution)}
         </pre>
         {evidence.evaluations.map((item, index) => (
@@ -628,7 +634,7 @@ const StepExecutionTimeline = ({ run }: { run: AutomationRun }) => (
         .map((execution) => (
           <TableRow key={execution.step_id}>
             <TableCell>{execution.sequence}</TableCell>
-            <TableCell className="font-mono text-xs">
+            <TableCell className="text-caption font-mono">
               {execution.step_id}
             </TableCell>
             <TableCell>
@@ -656,16 +662,16 @@ const StepExecutionTimeline = ({ run }: { run: AutomationRun }) => (
                   <summary className="cursor-pointer">
                     Exact execution JSON for {execution.step_id}
                   </summary>
-                  <pre className="max-h-96 overflow-auto font-mono text-xs break-all whitespace-pre-wrap">
+                  <pre className="text-caption max-h-96 overflow-auto font-mono break-all whitespace-pre-wrap">
                     {automationJsonText(execution)}
                   </pre>
                 </details>
               )}
             </TableCell>
-            <TableCell className="font-mono text-xs">
+            <TableCell className="text-caption font-mono">
               {execution.started_at}
             </TableCell>
-            <TableCell className="font-mono text-xs">
+            <TableCell className="text-caption font-mono">
               {execution.completed_at ?? "—"}
             </TableCell>
           </TableRow>
@@ -886,7 +892,7 @@ const RunInitialization = ({ run }: { run: AutomationRun }) => {
       )}
       <details>
         <summary className="cursor-pointer">Exact initialization JSON</summary>
-        <pre className="max-h-96 overflow-auto font-mono text-xs break-all whitespace-pre-wrap">
+        <pre className="text-caption max-h-96 overflow-auto font-mono break-all whitespace-pre-wrap">
           {automationJsonText(initialization)}
         </pre>
       </details>
@@ -907,7 +913,7 @@ const AutomationRunView = ({
     <div className="flex flex-wrap items-center gap-2">
       <StatusChip label="run" status={run.status} />
       <StatusChip label="cause" status={run.cause.kind} />
-      <span className="text-muted-foreground text-xs">
+      <span className="text-muted-foreground text-caption">
         revision {run.revision}
       </span>
     </div>
@@ -929,10 +935,10 @@ const AutomationRunView = ({
       <Facts rows={causeRows(run.cause, labels)} />
     </div>
     <ConditionDecisionView decision={run.condition_decision} />
-    <h3 className="mt-4 text-sm font-medium">Run value initialization</h3>
+    <h3 className="text-label mt-4 font-medium">Run value initialization</h3>
     <RunInitialization run={run} />
-    <h3 className="mt-4 text-sm font-medium">Step executions</h3>
-    <p className="text-muted-foreground text-xs">
+    <h3 className="text-label mt-4 font-medium">Step executions</h3>
+    <p className="text-muted-foreground text-caption">
       One zero-based sequence across all Step kinds. Only durably reached Steps
       appear; absence does not establish why a Step was not reached. Expected
       due times are diagnostic UTC timestamps, not countdowns or timer
@@ -941,7 +947,7 @@ const AutomationRunView = ({
       outcomes.
     </p>
     <StepExecutionTimeline run={run} />
-    <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
+    <h3 className="text-label mt-4 font-medium">Definition snapshot</h3>
     <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
     <AutomationVariables
       variables={run.snapshot.variables}
@@ -970,11 +976,11 @@ const AutomationSkipView = ({
     <div className="flex flex-wrap items-center gap-2">
       <StatusChip label="skip" status={skip.reason} />
       <StatusChip label="cause" status={skip.cause.kind} />
-      <span className="text-muted-foreground text-xs">
+      <span className="text-muted-foreground text-caption">
         revision {skip.revision}
       </span>
     </div>
-    <p className="text-muted-foreground mt-1.5 text-xs">
+    <p className="text-muted-foreground text-caption mt-1.5">
       {skipReasonNote(skip.reason)}
     </p>
     <Facts
@@ -986,7 +992,7 @@ const AutomationSkipView = ({
       ]}
     />
     <ConditionDecisionView decision={skip.condition_decision} />
-    <h3 className="mt-4 text-sm font-medium">Matched Triggers</h3>
+    <h3 className="text-label mt-4 font-medium">Matched Triggers</h3>
     <AutomationTriggerList triggers={skip.matched_triggers} labels={labels} />
     <RawJson
       value={skip}
@@ -1115,7 +1121,7 @@ const AutomationDetailHeader = ({
         Refresh
       </Button>
       {loading && (
-        <span className="text-muted-foreground text-sm">Loading…</span>
+        <span className="text-muted-foreground text-label">Loading…</span>
       )}
     </PageHeader>
     {error && <ErrorBox error={error} />}
@@ -1171,20 +1177,20 @@ const AutomationEnablementCard = ({
           disabled={editing || toggling || loading || error !== null}
           onCheckedChange={onToggle}
         />
-        <Label htmlFor="automation-enabled" className="text-sm">
+        <Label htmlFor="automation-enabled" className="text-label">
           Enabled
         </Label>
-        <span className="text-muted-foreground font-mono text-xs">
+        <span className="text-muted-foreground text-caption font-mono">
           PUT /v1/automations/{"{id}"}
         </span>
       </div>
-      <p className="text-muted-foreground mt-1.5 text-xs">
+      <p className="text-muted-foreground text-caption mt-1.5">
         Enablement governs automatic Runs; a manual Run works either way.
       </p>
       {conflictNotice && (
         <p
           role="alert"
-          className="border-warning/35 bg-warning/10 text-warning mt-2 rounded-md border px-2 py-1.5 text-xs"
+          className="border-warning/35 bg-warning/10 text-warning text-caption mt-2 rounded-md border px-2 py-1.5"
         >
           {conflictNotice}
         </p>
@@ -1211,12 +1217,12 @@ const AutomationManualRunCard = ({
 }) => (
   <Card size="compact">
     <div className="flex items-center justify-between gap-2">
-      <span className="text-sm font-medium">Manual Run</span>
-      <span className="text-muted-foreground font-mono text-xs">
+      <span className="text-label font-medium">Manual Run</span>
+      <span className="text-muted-foreground text-caption font-mono">
         POST /v1/automations/{"{id}"}/runs
       </span>
     </div>
-    <p className="text-muted-foreground mt-1.5 text-xs">
+    <p className="text-muted-foreground text-caption mt-1.5">
       Starts one Run from the current definition snapshot. Each accepted request
       creates a distinct Run and there is no idempotency key, so an unconfirmed
       request is never retried: check the history before running again.
@@ -1233,7 +1239,7 @@ const AutomationManualRunCard = ({
     {runError && (
       <div className="mt-3">
         <ErrorBox error={runError} />
-        <p className="text-muted-foreground text-xs">
+        <p className="text-muted-foreground text-caption">
           {manualRunFailure(runError) ??
             "No Run outcome was confirmed for this request."}{" "}
           The POST was issued once and not retried.
@@ -1244,7 +1250,7 @@ const AutomationManualRunCard = ({
       <div className="mt-3">
         <AutomationRunView run={startedRun} labels={labels} />
         {startedRun.status === "running" && (
-          <p className="text-muted-foreground mt-2 text-xs">
+          <p className="text-muted-foreground text-caption mt-2">
             Steps continue in the background: refresh the history below to
             follow them.
           </p>
@@ -1274,20 +1280,20 @@ const AutomationDefinitionSections = ({
         expressions={definition.variables_expr}
       />
       {stepSummary.functionCount > 0 && (
-        <p className="text-muted-foreground text-xs">
+        <p className="text-muted-foreground text-caption">
           Function Steps use the exact-JSON inspector in the stack builder.
           Untouched arguments and contract fingerprints are preserved.
         </p>
       )}
       {stepSummary.notificationCount > 0 && (
-        <p className="text-muted-foreground text-xs">
+        <p className="text-muted-foreground text-caption">
           Notification Steps are editable in the stack builder. Enablement
           changes preserve the complete definition.
         </p>
       )}
       {definition.conditions && (
         <>
-          <h3 className="text-sm font-medium">Admission Conditions</h3>
+          <h3 className="text-label font-medium">Admission Conditions</h3>
           <AutomationConditionTree
             condition={definition.conditions}
             labels={labels}
@@ -1336,10 +1342,10 @@ const AutomationHistorySection = ({
           Refresh history
         </Button>
         {historyLoading && (
-          <span className="text-muted-foreground text-sm">Loading…</span>
+          <span className="text-muted-foreground text-label">Loading…</span>
         )}
       </div>
-      <p className="text-muted-foreground mt-1.5 text-xs">
+      <p className="text-muted-foreground text-caption mt-1.5">
         Newest first, Runs and Skips together. Select an entry id to load its
         recorded detail.
       </p>
@@ -1373,13 +1379,13 @@ const AutomationHistorySection = ({
                   <TableCell>
                     <StatusChip status={summary.kind} />
                   </TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs">
+                  <TableCell className="text-muted-foreground text-caption font-mono">
                     {summary.recorded_at}
                   </TableCell>
                   <TableCell>
                     <StatusChip status={historySummaryStatus(summary)} />
                   </TableCell>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="text-caption font-mono">
                     {summary.revision}
                   </TableCell>
                   <TableCell className="max-w-[18rem]">
@@ -1419,7 +1425,7 @@ const AutomationHistorySection = ({
       {selectedEntryId && (
         <Card size="compact" className="mt-4">
           {entryLoading && (
-            <p className="text-muted-foreground text-sm">Loading entry…</p>
+            <p className="text-muted-foreground text-label">Loading entry…</p>
           )}
           {entryError && <ErrorBox error={entryError} />}
           {entry && (

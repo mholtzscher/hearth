@@ -66,10 +66,7 @@ export const Metric = ({
       sourceExtra={trend ? trendMethod(trend.window) : undefined}
     >
       {/* An unavailable or disabled Entity keeps its last value at the reading scale, dimmed, so the status leads. */}
-      <Reading
-        value={status.value}
-        className="@max-[200px]:text-reading-narrow [overflow-wrap:anywhere]"
-      >
+      <Reading value={status.value} className="[overflow-wrap:anywhere]">
         {data ? data.value.toFixed(data.format.fraction_digits) : "—"}
         {data?.format.unit_label && (
           <ReadingUnit>{data.format.unit_label}</ReadingUnit>

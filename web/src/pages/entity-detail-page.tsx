@@ -458,7 +458,7 @@ const CommandHistory = ({ entityId }: { entityId: string }) => {
           Refresh history
         </Button>
         {loading && (
-          <span className="text-muted-foreground text-sm">Loading…</span>
+          <span className="text-muted-foreground text-label">Loading…</span>
         )}
       </div>
       {error && <ErrorBox error={error} />}
@@ -488,16 +488,16 @@ const CommandHistory = ({ entityId }: { entityId: string }) => {
                     />
                   </TableCell>
                   <TableCell>{command.operation}</TableCell>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="text-caption font-mono">
                     {JSON.stringify(command.parameters)}
                   </TableCell>
                   <TableCell>
                     <StatusChip status={command.status} />
                   </TableCell>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="text-caption font-mono">
                     {command.failure_code ?? "—"}
                   </TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs">
+                  <TableCell className="text-muted-foreground text-caption font-mono">
                     {command.requested_at}
                   </TableCell>
                 </TableRow>
@@ -536,7 +536,7 @@ const AvailabilityHistory = ({ entityId }: { entityId: string }) => {
       )
   );
   if (loading) {
-    return <p className="text-muted-foreground text-sm">Loading…</p>;
+    return <p className="text-muted-foreground text-label">Loading…</p>;
   }
   if (error) {
     return <ErrorBox error={error} />;
@@ -565,10 +565,10 @@ const AvailabilityHistory = ({ entityId }: { entityId: string }) => {
                 <StatusChip status={transition.status} />
               </TableCell>
               <TableCell>{transition.source}</TableCell>
-              <TableCell className="font-mono text-xs">
+              <TableCell className="text-caption font-mono">
                 {transition.reason?.code ?? "—"}
               </TableCell>
-              <TableCell className="text-muted-foreground font-mono text-xs">
+              <TableCell className="text-muted-foreground text-caption font-mono">
                 {transition.observed_at}
               </TableCell>
             </TableRow>
@@ -624,8 +624,8 @@ const CommandPanel = ({
   return (
     <Card size="compact">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium">Send command</span>
-        <span className="text-muted-foreground font-mono text-xs">
+        <span className="text-label font-medium">Send command</span>
+        <span className="text-muted-foreground text-caption font-mono">
           POST /v1/entities/{"{id}"}/commands
         </span>
       </div>
@@ -651,7 +651,7 @@ const CommandPanel = ({
             <Label htmlFor="cmd-operation">operation</Label>
             <Input
               id="cmd-operation"
-              className="font-mono text-xs"
+              className="text-caption font-mono"
               value={operation}
               onChange={(event) => {
                 onOperationChange(event.target.value);
@@ -662,7 +662,7 @@ const CommandPanel = ({
             <Label htmlFor="cmd-params">parameters (JSON)</Label>
             <Textarea
               id="cmd-params"
-              className="font-mono text-xs"
+              className="text-caption font-mono"
               value={paramsText}
               rows={2}
               aria-invalid={!!paramsError}
@@ -671,7 +671,7 @@ const CommandPanel = ({
               }}
             />
             <p
-              className={`text-xs ${paramsError ? "text-destructive" : "text-muted-foreground"}`}
+              className={`text-caption ${paramsError ? "text-destructive" : "text-muted-foreground"}`}
             >
               {paramsError ??
                 `e.g. ${exampleParams(type, support)}${type ? ` for ${type} ${defaultOperation(type)}` : ""}`}
@@ -689,12 +689,12 @@ const CommandPanel = ({
             <div className="flex items-center gap-2">
               <StatusChip status={result.status} />
               {result.status === "satisfied" ? (
-                <span className="text-muted-foreground font-mono text-xs">
+                <span className="text-muted-foreground text-caption font-mono">
                   obs={result.observation_id} value=
                   {JSON.stringify(result.value)}
                 </span>
               ) : (
-                <span className="text-muted-foreground text-xs">
+                <span className="text-muted-foreground text-caption">
                   dispatched — accepted with no observation; the effect was not
                   verified.
                 </span>
@@ -718,8 +718,8 @@ const ReadOnlyPanel = ({
   if (eventNames.length === 0) {
     return (
       <Card size="compact">
-        <span className="text-sm font-medium">Read-only entity</span>
-        <p className="text-muted-foreground mt-1.5 text-xs">
+        <span className="text-label font-medium">Read-only entity</span>
+        <p className="text-muted-foreground text-caption mt-1.5">
           {`This ${type} entity declares no command operations.`}
         </p>
       </Card>
@@ -727,15 +727,15 @@ const ReadOnlyPanel = ({
   }
   return (
     <Card size="compact">
-      <span className="text-sm font-medium">Event source</span>
-      <p className="text-muted-foreground mt-1.5 text-xs">
+      <span className="text-label font-medium">Event source</span>
+      <p className="text-muted-foreground text-caption mt-1.5">
         {`This ${type} entity sources Entity Events and declares no command operations. Supported event names:`}
       </p>
       <ul className="mt-1.5 flex flex-wrap gap-1.5">
         {eventNames.map((name, index) => (
           <li
             key={`${index}-${name}`}
-            className="rounded-md border px-1.5 py-0.5 font-mono text-xs"
+            className="text-caption rounded-md border px-1.5 py-0.5 font-mono"
           >
             {name}
           </li>
@@ -784,10 +784,10 @@ const EntityFactsCard = ({
         disabled={toggling}
         onCheckedChange={onEnabledChange}
       />
-      <Label htmlFor="entity-enabled" className="text-sm">
+      <Label htmlFor="entity-enabled" className="text-label">
         Enabled
       </Label>
-      <span className="text-muted-foreground font-mono text-xs">
+      <span className="text-muted-foreground text-caption font-mono">
         PATCH /v1/entities/{"{id}"}
       </span>
     </div>
@@ -818,7 +818,9 @@ const EntityHeader = ({
     <Button size="default" variant="outline" onClick={onRefresh}>
       Refresh
     </Button>
-    {loading && <span className="text-muted-foreground text-sm">Loading…</span>}
+    {loading && (
+      <span className="text-muted-foreground text-label">Loading…</span>
+    )}
   </PageHeader>
 );
 

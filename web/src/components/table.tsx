@@ -110,7 +110,7 @@ const TableCaption = ({
 }: React.ComponentProps<"caption">) => (
   <caption
     data-slot="table-caption"
-    className={cn("text-muted-foreground mt-4 text-sm", className)}
+    className={cn("text-muted-foreground text-label mt-4", className)}
     {...props}
   />
 );

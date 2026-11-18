@@ -76,7 +76,7 @@ export default function EntitiesPage() {
           Refresh
         </Button>
         {loading && (
-          <span className="text-muted-foreground text-sm">Loading…</span>
+          <span className="text-muted-foreground text-label">Loading…</span>
         )}
       </PageHeader>
       {error && <ErrorBox error={error} />}
@@ -108,7 +108,9 @@ export default function EntitiesPage() {
                   <TableCell className="max-w-[22rem]">
                     <MonoId value={e.id} className="text-muted-foreground" />
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{e.type}</TableCell>
+                  <TableCell className="text-caption font-mono">
+                    {e.type}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {e.adapter_id}
                   </TableCell>
@@ -116,7 +118,7 @@ export default function EntitiesPage() {
                   <TableCell>
                     <StatusChip status={e.availability.status} />
                   </TableCell>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="text-caption font-mono">
                     {e.state
                       ? (forecastSummary(e.type, e.state.value) ??
                         formatEntityState(e))

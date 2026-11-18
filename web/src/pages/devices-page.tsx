@@ -64,7 +64,7 @@ export default function DevicesPage() {
           Refresh
         </Button>
         {loading && (
-          <span className="text-muted-foreground text-sm">Loading…</span>
+          <span className="text-muted-foreground text-label">Loading…</span>
         )}
       </PageHeader>
       {error && <ErrorBox error={error} />}
@@ -117,14 +117,14 @@ export default function DevicesPage() {
       {selected && (
         <Section title="Device detail">
           {detail.loading && (
-            <p className="text-muted-foreground text-sm">Loading detail…</p>
+            <p className="text-muted-foreground text-label">Loading detail…</p>
           )}
           {detail.error && <ErrorBox error={detail.error} />}
           {detail.data && (
             <>
-              <p className="text-sm">
+              <p className="text-label">
                 <span className="font-medium">{detail.data.name}</span>{" "}
-                <span className="text-muted-foreground font-mono text-xs">
+                <span className="text-muted-foreground text-caption font-mono">
                   {selected} · kind={detail.data.kind}
                 </span>
               </p>
@@ -174,14 +174,14 @@ export default function DevicesPage() {
                           className="text-muted-foreground"
                         />
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="text-caption font-mono">
                         {e.type}
                       </TableCell>
                       <TableCell>{e.enabled ? "yes" : "no"}</TableCell>
                       <TableCell>
                         <StatusChip status={e.availability.status} />
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="text-caption font-mono">
                         {e.state
                           ? (forecastSummary(e.type, e.state.value) ??
                             formatEntityState(e))

@@ -141,7 +141,7 @@ const CommandDetail = ({ commandId }: { commandId: string }) => {
   return (
     <Card className="mt-3" size="compact">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-xs">{commandId}</span>
+        <span className="text-caption font-mono">{commandId}</span>
         {data && <StatusChip status={data.status} />}
         <Button
           size="default"
@@ -153,13 +153,13 @@ const CommandDetail = ({ commandId }: { commandId: string }) => {
           Refresh
         </Button>
         {loading && (
-          <span className="text-muted-foreground text-sm">Loading…</span>
+          <span className="text-muted-foreground text-label">Loading…</span>
         )}
       </div>
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <p className="text-muted-foreground mt-1.5 text-sm">
+          <p className="text-muted-foreground text-label mt-1.5">
             {statusNote(data)}
           </p>
           <Facts
@@ -261,7 +261,7 @@ const CommandsPage = () => {
         <Input
           aria-label="command_id"
           placeholder="Look up cmd_…"
-          className="w-96 font-mono text-xs"
+          className="text-caption w-96 font-mono"
           value={commandId}
           onChange={(e) => setCommandId(e.target.value)}
           onKeyDown={(e) => {
@@ -283,12 +283,12 @@ const CommandsPage = () => {
           Refresh list
         </Button>
         {loading && (
-          <span className="text-muted-foreground text-sm">Loading…</span>
+          <span className="text-muted-foreground text-label">Loading…</span>
         )}
       </PageHeader>
       {recentIds.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="text-muted-foreground text-xs">Recent:</span>
+          <span className="text-muted-foreground text-caption">Recent:</span>
           {recentIds.map((id) => (
             <Button
               key={id}
@@ -312,7 +312,7 @@ const CommandsPage = () => {
           <Input
             id="cmd-entity-filter"
             placeholder="Filter by entity_id…"
-            className="w-72 font-mono text-xs"
+            className="text-caption w-72 font-mono"
             value={entityFilter}
             onChange={(e) => setEntityFilter(e.target.value)}
             onKeyDown={(e) => {
@@ -396,10 +396,10 @@ const CommandsPage = () => {
                     </RouterLink>
                   </TableCell>
                   <TableCell>{c.operation}</TableCell>
-                  <TableCell className="max-w-[16rem] truncate font-mono text-xs">
+                  <TableCell className="text-caption max-w-[16rem] truncate font-mono">
                     {JSON.stringify(c.parameters)}
                   </TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs">
+                  <TableCell className="text-muted-foreground text-caption font-mono">
                     {c.requested_at}
                   </TableCell>
                   <TableCell className="max-w-[16rem]">

@@ -269,17 +269,19 @@ large; everything around them is quieter.
 
 Each typography token is a Tailwind utility (`text-reading`, `text-label`, and
 so on) that sets font size only. Apply line height, weight, and tracking
-separately.
+separately. `index.css` resets Tailwind's own type scale, so `text-sm` and its
+siblings set no size.
 
 ### Hierarchy
 
 - **Reading** (350, 40px, 1.15, tabular figures): a card's single reading. Units
   stay smaller and quieter.
-- **Reading narrow** (350, 32px, 1.15): Metric, State, and ToggleTile below a
-  200px content width.
+- **Reading narrow** (350, 32px, 1.15): a reading in a card narrower than
+  200px. `Reading` applies it; the Cover card switches at 250px because its
+  icon shares the row.
 - **Headline** (500, 26px, 1.3): canvas, library, and Development page titles.
-- **Headline narrow** (500, 22px, 1.3): the same titles on phones. The empty
-  conversation heading is the one size off this scale, at 28px.
+- **Headline narrow** (500, 22px, 1.3): the same titles on phones.
+  `pageHeadingClass` applies it.
 - **Title** (600, 18px): view headings and Development section headings, without
   uppercase labels or extra separator rules.
 - **Body** (16px, 1.7): conversation text.
@@ -289,6 +291,10 @@ separately.
   ReadingList, Device, ToggleList, AirPurifier, the timeline ledger, weather
   rows, and forecast temperatures.
 - **Caption** (12px): Notice text and the Recent conversations date headings.
+
+The empty conversation heading (28px), the wordmark (24px, 20px in the phone
+bar), and state timeline axes (13px, see Charts) sit off this scale.
+`design-system.test.ts` lists every pixel size off the scale.
 
 ## Layout
 
@@ -842,7 +848,7 @@ in one of three styles.
   strip; text changes pulse as ticks. It shows 12 entries and an outline **Show
   earlier changes** button.
 
-Axes use 13px labels, the one size off the type scale, because 14px labels
+Axes use 13px labels, off the type scale, because 14px labels
 overlap at a 440px width; labels may still overlap at narrower widths. The axis
 ends with a quiet "Now" label and no marker. Each row carries its own statuses;
 the feed lists them in the header. An unavailable or disabled row draws at 60%

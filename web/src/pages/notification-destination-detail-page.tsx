@@ -85,7 +85,7 @@ const DestinationDetail = ({ id }: { id: string }) => {
         <>
           <StatusChip status={data.available ? "available" : "unavailable"} />
           {!data.available && (
-            <p className="mt-2 text-sm">
+            <p className="text-label mt-2">
               Currently unavailable. A test send will still record a not-sent
               attempt if no route is available.
             </p>
@@ -116,7 +116,7 @@ const DestinationDetail = ({ id }: { id: string }) => {
               disabled={sending}
               onChange={(e) => setMessage(e.target.value)}
             />
-            <p className="text-muted-foreground text-sm">
+            <p className="text-muted-foreground text-label">
               Each click sends a new attempt. No automatic retries. An unknown
               outcome does not prove non-delivery.
             </p>

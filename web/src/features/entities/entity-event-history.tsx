@@ -45,7 +45,7 @@ const EntityEventHistory = ({
       >
         Latest / Refresh history
       </Button>
-      <p className="text-muted-foreground mt-1.5 text-xs">
+      <p className="text-muted-foreground text-caption mt-1.5">
         Newer events appear after refreshing. Older entries may expire while
         paging.
       </p>
@@ -79,7 +79,7 @@ const EventHistoryScope = ({
   return (
     <div>
       {loading && (
-        <span className="text-muted-foreground mt-1.5 block text-sm">
+        <span className="text-muted-foreground text-label mt-1.5 block">
           Loading…
         </span>
       )}
@@ -87,7 +87,7 @@ const EventHistoryScope = ({
       {data && (
         <>
           {data.items.length === 0 ? (
-            <p className="text-muted-foreground mt-3 text-sm">
+            <p className="text-muted-foreground text-label mt-3">
               No Entity Events are recorded.
               {supportedNames.length > 0 &&
                 ` Supported event names: ${supportedNames.join(", ")}.`}
@@ -119,7 +119,7 @@ const EventHistoryScope = ({
                         }
                       />
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="text-caption font-mono">
                       {entry.rejection_code ?? "—"}
                     </TableCell>
                     <TableCell className="max-w-[16rem]">
@@ -128,13 +128,13 @@ const EventHistoryScope = ({
                         className="text-muted-foreground"
                       />
                     </TableCell>
-                    <TableCell className="text-muted-foreground font-mono text-xs">
+                    <TableCell className="text-muted-foreground text-caption font-mono">
                       {entry.emitted_at}
                     </TableCell>
-                    <TableCell className="text-muted-foreground font-mono text-xs">
+                    <TableCell className="text-muted-foreground text-caption font-mono">
                       {entry.received_at}
                     </TableCell>
-                    <TableCell className="text-muted-foreground font-mono text-xs">
+                    <TableCell className="text-muted-foreground text-caption font-mono">
                       {entry.recorded_at}
                     </TableCell>
                   </TableRow>

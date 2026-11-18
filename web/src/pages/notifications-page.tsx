@@ -83,7 +83,7 @@ const AttemptDetail = ({ id }: { id: string }) => {
         {data && !error && (
           <>
             <StatusChip status={data.status} tone={attemptTone(data.status)} />
-            <p className="mt-2 text-sm">{attemptOutcome(data.status)}</p>
+            <p className="text-label mt-2">{attemptOutcome(data.status)}</p>
             <Facts
               rows={[
                 [
@@ -209,7 +209,7 @@ const NotificationsHistory = ({
                   <TableCell>{a.destination_name}</TableCell>
                   <TableCell>{a.title || "—"}</TableCell>
                   <TableCell>{a.reason_code ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="text-caption font-mono">
                     {a.started_at}
                   </TableCell>
                   <TableCell>

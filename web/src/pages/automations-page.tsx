@@ -86,7 +86,7 @@ const AutomationsLibrary = ({
           Refresh
         </Button>
         {loading && (
-          <span className="text-muted-foreground text-sm">Loading…</span>
+          <span className="text-muted-foreground text-label">Loading…</span>
         )}
       </PageHeader>
       {error && <ErrorBox error={error} />}
@@ -186,7 +186,7 @@ const AutomationsLibrary = ({
                           }
                         />
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="text-caption font-mono">
                         {automation.revision}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
@@ -200,7 +200,7 @@ const AutomationsLibrary = ({
                         {tree.commandCount}
                         {tree.truncated ? "+ (incomplete)" : ""}
                       </TableCell>
-                      <TableCell className="text-muted-foreground font-mono text-xs">
+                      <TableCell className="text-muted-foreground text-caption font-mono">
                         {automation.updated_at}
                       </TableCell>
                       <TableCell className="max-w-[22rem]">
