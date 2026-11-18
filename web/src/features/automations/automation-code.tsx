@@ -6,7 +6,7 @@ const unstyled: PrismTheme = { plain: {}, styles: [] };
 const tokenStyles =
   "[&_.token.property]:text-gray-9 [&_.token.string]:text-chart-5 [&_.token.number]:text-chart-7 [&_.token.boolean]:text-chart-3 [&_.token.null]:text-chart-3 [&_.token.punctuation]:text-muted-foreground [&_.token.operator]:text-muted-foreground";
 const chip =
-  "rounded-[4px] border border-border bg-gray-2 px-[5px] py-px text-[.85em] text-gray-9 [overflow-wrap:anywhere] [box-decoration-break:clone]";
+  "rounded-xs border border-border bg-gray-2 px-[5px] py-px text-[.85em] text-gray-9 [overflow-wrap:anywhere] [box-decoration-break:clone]";
 
 /** Exact JSON source, highlighted. Inline values sit in a code chip within
     the sentence; the block form shows a whole definition. */

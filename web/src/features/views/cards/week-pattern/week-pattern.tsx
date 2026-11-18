@@ -9,7 +9,7 @@ import { cardStatus } from "../status";
 import type { weekPatternSchema } from "./schema";
 
 const cellClass =
-  "block rounded-[2px] bg-gray-3 data-[level='1']:bg-[color-mix(in_oklch,var(--gray-10)_22%,var(--gray-2))] data-[level='2']:bg-[color-mix(in_oklch,var(--gray-10)_45%,var(--gray-2))] data-[level='3']:bg-[color-mix(in_oklch,var(--gray-10)_70%,var(--gray-2))] data-[level='4']:bg-gray-10 data-[future]:bg-transparent data-[future]:shadow-[inset_0_0_0_1px_var(--gray-3)] data-[unknown]:bg-transparent data-[unknown]:shadow-[inset_0_0_0_1px_var(--gray-3)] data-[unknown]:outline data-[unknown]:outline-dashed data-[unknown]:outline-gray-5 data-[unknown]:outline-offset-[-1px]";
+  "block rounded-xs bg-gray-3 data-[level='1']:bg-[color-mix(in_oklch,var(--gray-10)_22%,var(--gray-2))] data-[level='2']:bg-[color-mix(in_oklch,var(--gray-10)_45%,var(--gray-2))] data-[level='3']:bg-[color-mix(in_oklch,var(--gray-10)_70%,var(--gray-2))] data-[level='4']:bg-gray-10 data-[future]:bg-transparent data-[future]:shadow-[inset_0_0_0_1px_var(--gray-3)] data-[unknown]:bg-transparent data-[unknown]:shadow-[inset_0_0_0_1px_var(--gray-3)] data-[unknown]:outline data-[unknown]:outline-dashed data-[unknown]:outline-gray-5 data-[unknown]:outline-offset-[-1px]";
 const totalClass =
   "whitespace-nowrap text-right text-muted-foreground @max-[420px]:hidden";
 

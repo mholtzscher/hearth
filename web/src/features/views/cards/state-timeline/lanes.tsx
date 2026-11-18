@@ -93,7 +93,7 @@ export const Axis = ({
 };
 
 const trackClass =
-  "group/track relative h-[18px] min-w-0 before:absolute before:inset-x-0 before:top-2 before:h-0.5 before:bg-gray-4 before:content-[''] data-[dimmed]:before:h-0 data-[dimmed]:before:border-t-2 data-[dimmed]:before:border-dashed data-[dimmed]:before:border-gray-5 data-[dimmed]:before:bg-transparent data-[compact]:col-span-full data-[compact]:mt-2 data-[compact]:h-1.5 data-[compact]:rounded-[3px] data-[compact]:bg-gray-3 data-[compact]:before:hidden data-[compact]:data-[dimmed]:border-t-2 data-[compact]:data-[dimmed]:border-dashed data-[compact]:data-[dimmed]:border-gray-5 data-[compact]:data-[dimmed]:bg-transparent";
+  "group/track relative h-[18px] min-w-0 before:absolute before:inset-x-0 before:top-2 before:h-0.5 before:bg-gray-4 before:content-[''] data-[dimmed]:before:h-0 data-[dimmed]:before:border-t-2 data-[dimmed]:before:border-dashed data-[dimmed]:before:border-gray-5 data-[dimmed]:before:bg-transparent data-[compact]:col-span-full data-[compact]:mt-2 data-[compact]:h-1.5 data-[compact]:rounded-xs data-[compact]:bg-gray-3 data-[compact]:before:hidden data-[compact]:data-[dimmed]:border-t-2 data-[compact]:data-[dimmed]:border-dashed data-[compact]:data-[dimmed]:border-gray-5 data-[compact]:data-[dimmed]:bg-transparent";
 
 export const Track = ({
   data,
@@ -147,7 +147,7 @@ export const Track = ({
           <span
             key={index}
             data-slot="timeline-segment"
-            className="data-[unknown]:border-gray-5 data-[unknown]:bg-card absolute inset-y-0 min-w-0.5 overflow-hidden rounded-[2px] bg-(--timeline-color) group-data-[dimmed]/track:opacity-60 data-[rank='1']:bg-[color-mix(in_oklch,var(--timeline-color)_32%,var(--gray-1))] data-[rank='2']:bg-[color-mix(in_oklch,var(--timeline-color)_16%,var(--gray-1))] data-[unknown]:border data-[unknown]:border-dashed"
+            className="data-[unknown]:border-gray-5 data-[unknown]:bg-card absolute inset-y-0 min-w-0.5 overflow-hidden rounded-xs bg-(--timeline-color) group-data-[dimmed]/track:opacity-60 data-[rank='1']:bg-[color-mix(in_oklch,var(--timeline-color)_32%,var(--gray-1))] data-[rank='2']:bg-[color-mix(in_oklch,var(--timeline-color)_16%,var(--gray-1))] data-[unknown]:border data-[unknown]:border-dashed"
             data-unknown={interval.kind === "unknown" || undefined}
             data-rank={rank > 1 ? 2 : rank}
             style={{

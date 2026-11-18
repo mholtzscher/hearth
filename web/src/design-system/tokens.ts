@@ -95,10 +95,11 @@ export const TYPE_USE: Record<TextToken, string> = {
   caption: "Notices, Recent date headings",
 };
 
-export const RADII = ["md", "card"] as const;
+export const RADII = ["xs", "md", "card"] as const;
 export type Radius = (typeof RADII)[number];
 
 export const RADIUS_USE: Record<Radius, string> = {
+  xs: "Details: segments, inline code, chart marks, the message tail",
   md: "Controls: buttons, fields, notices, press targets",
   card: "Surfaces: cards, popovers, composer, modal",
 };

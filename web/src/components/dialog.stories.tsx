@@ -284,7 +284,7 @@ export const PhoneSheet: Story = {
       1
     );
     await expect(handle.marginRight).toBe(handle.marginLeft);
-    await expect(handle.borderRadius).toBe("2px");
+    await expect(handle.borderRadius).toBe("4px");
     await expect(handle.backgroundColor).toBe("rgb(87, 87, 87)");
     await expectNoHorizontalOverflow(canvasElement);
   },

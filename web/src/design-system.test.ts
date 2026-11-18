@@ -308,7 +308,19 @@ describe("Hearth theme tokens", () => {
       );
     expect(
       unknown,
-      "index.css resets Tailwind's radius scale, so these classes draw square corners. Use rounded-md, rounded-card, or an arbitrary radius."
+      "index.css resets Tailwind's radius scale, so these classes draw square corners. Use rounded-xs, rounded-md, or rounded-card."
+    ).toStrictEqual([]);
+  });
+
+  it("keeps arbitrary radii out of application source", () => {
+    const arbitrary = applicationSource().flatMap((file) =>
+      [
+        ...read(file).matchAll(/(?<![\w-])rounded(?:-[a-z]+)?-\[[^\]]+\]/gu),
+      ].map((match) => `${file}: ${match[0]}`)
+    );
+    expect(
+      arbitrary,
+      "Use a radius token from index.css instead of a pixel value."
     ).toStrictEqual([]);
   });
 

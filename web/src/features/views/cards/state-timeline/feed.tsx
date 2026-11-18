@@ -16,12 +16,12 @@ const Pulses = ({ pulses }: { pulses: NonNullable<FeedEntry["pulses"]> }) => {
   const last = Math.max(pulses.at(-1)?.to ?? first, first + 1);
   return (
     <div
-      className="bg-gray-2 relative mt-1.5 h-2.5 rounded-[2px]"
+      className="bg-gray-2 relative mt-1.5 h-2.5 rounded-xs"
       aria-hidden="true"
     >
       {pulses.map((pulse, index) => (
         <span
-          className="absolute inset-y-0 min-w-0.5 rounded-[1px] bg-(--timeline-color)"
+          className="absolute inset-y-0 min-w-0.5 rounded-xs bg-(--timeline-color)"
           key={index}
           style={{
             left: `${(100 * (pulse.from - first)) / (last - first)}%`,

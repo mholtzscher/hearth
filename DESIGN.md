@@ -77,6 +77,7 @@ typography:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "12px"
 rounded:
+  xs: "4px"
   md: "8px"
   card: "12px"
 spacing:
@@ -134,7 +135,7 @@ components:
   segment-selected:
     backgroundColor: "{colors.violet-soft}"
     textColor: "{colors.violet-text}"
-    rounded: "5px"
+    rounded: "{rounded.xs}"
   card:
     backgroundColor: "{colors.gray-1}"
     textColor: "{colors.gray-10}"
@@ -381,21 +382,21 @@ above the workspace use one: the modal, popovers, and drawers.
 
 ## Shapes
 
-Corners have two sizes, one for each kind of element. The same radius looks
-rounder on a small element than on a large one, so controls and surfaces need
-different values. Two sizes only 2px apart look like a mistake, not a
-different role.
+Corners have three sizes, one for each kind of element. The same radius looks
+rounder on a small element than on a large one, so details, controls, and
+surfaces need different values. Two sizes only 2px apart look like a mistake,
+not a different role.
 
+- **Detail** (`xs`, 4px): elements smaller than a control or nested inside one:
+  segments, inline code, the sent-message corner toward the composer, the sheet
+  handle, and chart marks such as slider tracks, timeline bars, and week cells.
 - **Control** (`md`, 8px): buttons, fields, segmented controls, notices,
   household navigation, and compact press targets such as the Source action.
 - **Card** (`card`, 12px): cards, popovers, the modal and phone sheets,
   Markdown tables, the Accordion, and the composer.
 
-An element inset a few pixels inside a rounded frame takes the frame's radius
-minus the inset, so the gap stays even around the corner. Segments sit 3px
-inside the segmented control and have 5px corners. A sent message keeps one 4px
-corner toward the composer. Tiny shapes such as slider tracks, timeline bars,
-and inline code take a radius that fits their size.
+Every corner uses one of these tokens. A browser caps a radius at half the
+element's height, so a 4px-high track with `xs` corners has fully round ends.
 
 Switch tracks are pills. Borders are 1px and neutral. Gradients appear only as
 one- or two-pixel horizon lines, never as large decorative fills.
@@ -473,7 +474,7 @@ current value; a value that matches no option leaves every segment unselected.
 Each enabled segment stays in the Tab order.
 
 The frame is the card surface with a 1px `gray-4` border and 2px padding.
-Segments have 5px corners and a 32px minimum height by default, or 44px with
+Segments have 4px corners and a 32px minimum height by default, or 44px with
 `size="touch"`; long labels wrap and increase the height. A selected segment
 uses `violet-soft`, `violet-text`, and a 1px inset violet line. Disabled
 segments use 50% opacity.
@@ -848,7 +849,7 @@ the feed lists them in the header. An unavailable or disabled row draws at 60%
 opacity with a dashed baseline.
 
 Week pattern cards shade one yes/no field over 7 local days by 24 hours. Cells
-are 2px-rounded squares on the neutral ramp at five levels (0, 1–5, 6–15, 16–30,
+are 4px-rounded squares on the neutral ramp at five levels (0, 1–5, 6–15, 16–30,
 and over 30 minutes true). Future hours are outlined, and hours with no known
 value are dashed. Each day states its changes into true and its time true; that
 summary hides below a 420px card. A key names the levels.

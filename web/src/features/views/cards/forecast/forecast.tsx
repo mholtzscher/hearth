@@ -136,12 +136,12 @@ const Daily = ({ periods, now }: { periods: DailyPeriod[]; now: number }) => {
               </span>
               <span
                 data-slot="forecast-range"
-                className="bg-gray-3 relative h-1 rounded-[2px]"
+                className="bg-gray-3 relative h-1 rounded-xs"
                 aria-hidden="true"
               >
                 {barStyle && (
                   <span
-                    className="bg-gray-9 group-data-[value=dimmed]/forecast:bg-gray-8 absolute inset-y-0 rounded-[2px]"
+                    className="bg-gray-9 group-data-[value=dimmed]/forecast:bg-gray-8 absolute inset-y-0 rounded-xs"
                     style={barStyle}
                   />
                 )}

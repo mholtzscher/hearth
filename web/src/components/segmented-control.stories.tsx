@@ -89,7 +89,7 @@ export const Touch: Story = {
     await expect(auto).toHaveFocus();
     const style = getComputedStyle(auto);
     await expect(style.height).toBe("44px");
-    await expect(style.borderRadius).toBe("5px");
+    await expect(style.borderRadius).toBe("4px");
     await expect(style.outlineWidth).toBe("2px");
     await expect(style.outlineStyle).toBe("solid");
     await expect(style.outlineOffset).toBe("3px");

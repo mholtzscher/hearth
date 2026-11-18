@@ -53,7 +53,7 @@ const DialogContent = ({
           ? "short:max-h-[calc(100dvh-40px)] short:overflow-y-auto"
           : "tablet:short:max-h-[calc(100dvh-40px)] tablet:short:overflow-y-auto",
         placement === "bottom" &&
-          "max-tablet:inset-x-0 max-tablet:top-auto max-tablet:bottom-0 max-tablet:max-h-[85dvh] max-tablet:w-full max-tablet:translate-x-0 max-tablet:translate-y-0 max-tablet:overflow-auto max-tablet:overscroll-contain max-tablet:rounded-b-none max-tablet:border-0 max-tablet:px-[22px] max-tablet:pt-[22px] max-tablet:pb-[max(24px,env(safe-area-inset-bottom))] max-tablet:before:mx-auto max-tablet:before:mt-[-10px] max-tablet:before:mb-[18px] max-tablet:before:block max-tablet:before:h-1 max-tablet:before:w-8 max-tablet:before:rounded-[2px] max-tablet:before:bg-gray-6",
+          "max-tablet:inset-x-0 max-tablet:top-auto max-tablet:bottom-0 max-tablet:max-h-[85dvh] max-tablet:w-full max-tablet:translate-x-0 max-tablet:translate-y-0 max-tablet:overflow-auto max-tablet:overscroll-contain max-tablet:rounded-b-none max-tablet:border-0 max-tablet:px-[22px] max-tablet:pt-[22px] max-tablet:pb-[max(24px,env(safe-area-inset-bottom))] max-tablet:before:mx-auto max-tablet:before:mt-[-10px] max-tablet:before:mb-[18px] max-tablet:before:block max-tablet:before:h-1 max-tablet:before:w-8 max-tablet:before:rounded-xs max-tablet:before:bg-gray-6",
         className
       )}
       {...props}

@@ -86,7 +86,7 @@ const meta = {
         <ul className="text-label mb-2 flex list-none gap-4 leading-normal">
           <li>
             <span
-              className="bg-chart-1 me-1.5 inline-block size-2.5 rounded-[2px]"
+              className="bg-chart-1 me-1.5 inline-block size-2.5 rounded-xs"
               aria-hidden="true"
             />
             Living room
