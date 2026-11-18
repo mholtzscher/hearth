@@ -1,0 +1,61 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+
+import * as Foundations from "./foundations.stories";
+
+<Meta of={Foundations} tags={["!manifest"]} />
+
+# Foundations
+
+Tokens from `web/src/index.css`. Every value on this page is read from the live CSS.
+
+## Colors
+
+### Gray ramp
+
+Untinted neutrals. `gray-0` is the ground.
+
+<Canvas of={Foundations.GrayRamp} sourceState="none" />
+
+### Brand
+
+Violet is Hearth's voice; orange is the one action and the afterglow.
+
+<Canvas of={Foundations.Brand} sourceState="none" />
+
+### Status
+
+Always paired with words. Never a brand hue.
+
+<Canvas of={Foundations.Status} sourceState="none" />
+
+### Role aliases
+
+Components name colors by role. Each alias resolves to one token.
+
+<Canvas of={Foundations.RoleAliases} sourceState="none" />
+
+### Chart series
+
+`--chart-1` to `--chart-8`, in order. Orange is not a series.
+
+<Canvas of={Foundations.ChartSeries} sourceState="none" />
+
+## Typography
+
+Figtree Variable. Each `text-*` utility sets size only; samples add DESIGN.md's weight, line height, and tracking.
+
+<Canvas of={Foundations.TypeScale} sourceState="none" />
+
+## Radius
+
+<Canvas of={Foundations.Radius} sourceState="none" />
+
+## Elevation
+
+Surfaces at rest are flat. Only overlays cast a shadow, shown here on `gray-3`.
+
+<Canvas of={Foundations.Elevation} sourceState="none" />
+
+## Layout
+
+<Canvas of={Foundations.Layout} sourceState="none" />

@@ -1,0 +1,33 @@
+import { Meta } from "@storybook/addon-docs/blocks";
+
+<Meta title="Design system/Overview" />
+
+# Design system
+
+Hearth's design system as defined in `DESIGN.md`, shown with the real components and the live CSS.
+
+## Creative North Star: "Afterglow"
+
+A quiet, dark-only household workspace: true black ground, untinted gray structure, and small deliberate signals of voice, action, and freshness. Readings and their evidence lead.
+
+- True black ground with a numbered, neutral gray ramp.
+- Violet for Hearth's voice; orange for the primary action and arrival signals.
+- A changed reading arrives as an afterglow: the card's top edge lights orange and fades over ten seconds. Text states each reading's age and availability.
+- A shared reading scale with a narrow-card step; compact diagnostics share the same tokens.
+- One card frame and one state table for every data card in a view.
+
+## Named rules
+
+- **The One Action Rule.** Orange is reserved for the primary action and the afterglow. Filters, paging, and secondary actions use outline controls.
+- **The Evidence Rule.** The afterglow marks a changed reading only. Age, Entity availability, and Command outcome are stated in text.
+- **The Flat Surface Rule.** Surfaces at rest cast no shadow. Only the modal, popovers, and drawers do.
+- **The One Focus Ring Rule.** Every focusable control shows the same 2px violet outline with a 3px offset.
+- **The Stable Height Rule.** Feedback never moves the layout. Controls reserve their status line while idle.
+- **The One Frame Rule.** Every data card in a view uses one frame and one state table.
+
+## Pages
+
+- [Foundations](?path=/docs/design-system-foundations--docs): colors, role aliases, chart series, type scale, radius, elevation, and layout.
+- [Components](?path=/docs/design-system-components--docs): the shared controls from `web/src/components`.
+- [View cards](?path=/docs/design-system-view-cards--docs): the card frame, card states, the afterglow, and Stable Height.
+- [Do's and Don'ts](?path=/docs/design-system-do-s-and-don-ts--docs): each rule beside its mistake.
