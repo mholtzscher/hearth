@@ -292,16 +292,16 @@
       "warn": {
         "role": "secondary",
         "displayName": "Status amber",
-        "canonical": "#f2c94c",
+        "canonical": "#e2b931",
         "tonalRamp": [
-          "color-mix(in oklch, #f2c94c 20%, black)",
-          "color-mix(in oklch, #f2c94c 40%, black)",
-          "color-mix(in oklch, #f2c94c 60%, black)",
-          "color-mix(in oklch, #f2c94c 80%, black)",
-          "#f2c94c",
-          "color-mix(in oklch, #f2c94c 75%, white)",
-          "color-mix(in oklch, #f2c94c 50%, white)",
-          "color-mix(in oklch, #f2c94c 25%, white)"
+          "color-mix(in oklch, #e2b931 20%, black)",
+          "color-mix(in oklch, #e2b931 40%, black)",
+          "color-mix(in oklch, #e2b931 60%, black)",
+          "color-mix(in oklch, #e2b931 80%, black)",
+          "#e2b931",
+          "color-mix(in oklch, #e2b931 75%, white)",
+          "color-mix(in oklch, #e2b931 50%, white)",
+          "color-mix(in oklch, #e2b931 25%, white)"
         ]
       },
       "error": {
@@ -337,61 +337,61 @@
       "chart-orchid": {
         "role": "tertiary",
         "displayName": "Chart orchid",
-        "canonical": "#ef8fd0",
+        "canonical": "#e79bce",
         "tonalRamp": [
-          "color-mix(in oklch, #ef8fd0 20%, black)",
-          "color-mix(in oklch, #ef8fd0 40%, black)",
-          "color-mix(in oklch, #ef8fd0 60%, black)",
-          "color-mix(in oklch, #ef8fd0 80%, black)",
-          "#ef8fd0",
-          "color-mix(in oklch, #ef8fd0 75%, white)",
-          "color-mix(in oklch, #ef8fd0 50%, white)",
-          "color-mix(in oklch, #ef8fd0 25%, white)"
+          "color-mix(in oklch, #e79bce 20%, black)",
+          "color-mix(in oklch, #e79bce 40%, black)",
+          "color-mix(in oklch, #e79bce 60%, black)",
+          "color-mix(in oklch, #e79bce 80%, black)",
+          "#e79bce",
+          "color-mix(in oklch, #e79bce 75%, white)",
+          "color-mix(in oklch, #e79bce 50%, white)",
+          "color-mix(in oklch, #e79bce 25%, white)"
         ]
       },
       "chart-pale-gold": {
         "role": "tertiary",
         "displayName": "Chart pale gold",
-        "canonical": "#f2d38a",
+        "canonical": "#f2d07d",
         "tonalRamp": [
-          "color-mix(in oklch, #f2d38a 20%, black)",
-          "color-mix(in oklch, #f2d38a 40%, black)",
-          "color-mix(in oklch, #f2d38a 60%, black)",
-          "color-mix(in oklch, #f2d38a 80%, black)",
-          "#f2d38a",
-          "color-mix(in oklch, #f2d38a 75%, white)",
-          "color-mix(in oklch, #f2d38a 50%, white)",
-          "color-mix(in oklch, #f2d38a 25%, white)"
+          "color-mix(in oklch, #f2d07d 20%, black)",
+          "color-mix(in oklch, #f2d07d 40%, black)",
+          "color-mix(in oklch, #f2d07d 60%, black)",
+          "color-mix(in oklch, #f2d07d 80%, black)",
+          "#f2d07d",
+          "color-mix(in oklch, #f2d07d 75%, white)",
+          "color-mix(in oklch, #f2d07d 50%, white)",
+          "color-mix(in oklch, #f2d07d 25%, white)"
         ]
       },
       "chart-ice": {
         "role": "tertiary",
         "displayName": "Chart ice",
-        "canonical": "#9fe3f0",
+        "canonical": "#86e1f2",
         "tonalRamp": [
-          "color-mix(in oklch, #9fe3f0 20%, black)",
-          "color-mix(in oklch, #9fe3f0 40%, black)",
-          "color-mix(in oklch, #9fe3f0 60%, black)",
-          "color-mix(in oklch, #9fe3f0 80%, black)",
-          "#9fe3f0",
-          "color-mix(in oklch, #9fe3f0 75%, white)",
-          "color-mix(in oklch, #9fe3f0 50%, white)",
-          "color-mix(in oklch, #9fe3f0 25%, white)"
+          "color-mix(in oklch, #86e1f2 20%, black)",
+          "color-mix(in oklch, #86e1f2 40%, black)",
+          "color-mix(in oklch, #86e1f2 60%, black)",
+          "color-mix(in oklch, #86e1f2 80%, black)",
+          "#86e1f2",
+          "color-mix(in oklch, #86e1f2 75%, white)",
+          "color-mix(in oklch, #86e1f2 50%, white)",
+          "color-mix(in oklch, #86e1f2 25%, white)"
         ]
       },
       "chart-sand": {
         "role": "tertiary",
         "displayName": "Chart sand",
-        "canonical": "#c9b38f",
+        "canonical": "#b59b63",
         "tonalRamp": [
-          "color-mix(in oklch, #c9b38f 20%, black)",
-          "color-mix(in oklch, #c9b38f 40%, black)",
-          "color-mix(in oklch, #c9b38f 60%, black)",
-          "color-mix(in oklch, #c9b38f 80%, black)",
-          "#c9b38f",
-          "color-mix(in oklch, #c9b38f 75%, white)",
-          "color-mix(in oklch, #c9b38f 50%, white)",
-          "color-mix(in oklch, #c9b38f 25%, white)"
+          "color-mix(in oklch, #b59b63 20%, black)",
+          "color-mix(in oklch, #b59b63 40%, black)",
+          "color-mix(in oklch, #b59b63 60%, black)",
+          "color-mix(in oklch, #b59b63 80%, black)",
+          "#b59b63",
+          "color-mix(in oklch, #b59b63 75%, white)",
+          "color-mix(in oklch, #b59b63 50%, white)",
+          "color-mix(in oklch, #b59b63 25%, white)"
         ]
       }
     },

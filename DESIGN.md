@@ -21,13 +21,13 @@ colors:
   on-orange: "#1f0d00"
   primary: "#ff8a3d"
   ok: "#5ad19a"
-  warn: "#f2c94c"
+  warn: "#e2b931"
   error: "#ff5c7a"
   info: "#7fb4ff"
-  chart-orchid: "#ef8fd0"
-  chart-pale-gold: "#f2d38a"
-  chart-ice: "#9fe3f0"
-  chart-sand: "#c9b38f"
+  chart-orchid: "#e79bce"
+  chart-pale-gold: "#f2d07d"
+  chart-ice: "#86e1f2"
+  chart-sand: "#b59b63"
 typography:
   reading:
     fontFamily: "Figtree Variable, sans-serif"
@@ -257,6 +257,16 @@ actions. Disabled primary actions become gray, not dimmed orange.
 shows. It says nothing about a reading's age, Entity availability, or Command
 outcome; text states those. Never rely on brand color alone to communicate
 status.
+
+**The Color Math Rule.** Measure a new or changed color in OKLCH, OKLab
+distance, and WCAG 2 contrast before adding it. Gray ramp steps are untinted
+and lighten at every step. Text tokens reach 4.5:1 on `gray-3`, and status text
+reaches 4.5:1 on its own 10 to 20% tint. Status colors sit between L 0.68 and
+0.82 with C of at least 0.11, and at least 0.11 from `orange` and `violet`.
+`chart-orchid`, `chart-pale-gold`, `chart-ice`, and `chart-sand` keep C between
+0.075 and 0.12. Chart series stay at least 0.12 from each other and 0.11 from
+`orange`, and `gray-0` labels reach 4.5:1 on each series. `design-tokens.test.ts`
+checks every rule.
 
 ## Typography
 

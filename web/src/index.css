@@ -107,7 +107,7 @@
   --orange-hover: #ffa366;
   --on-orange: #1f0d00;
   --ok: #5ad19a;
-  --warn: #f2c94c;
+  --warn: #e2b931;
   --error: #ff5c7a;
   --info: #7fb4ff;
 
@@ -135,12 +135,12 @@
   /* Chart series walk the night sky; orange is never a series color. */
   --chart-1: var(--gray-10);
   --chart-2: var(--violet);
-  --chart-3: #ef8fd0;
+  --chart-3: #e79bce;
   --chart-4: var(--info);
-  --chart-5: #f2d38a;
+  --chart-5: #f2d07d;
   --chart-6: var(--gray-7);
-  --chart-7: #9fe3f0;
-  --chart-8: #c9b38f;
+  --chart-7: #86e1f2;
+  --chart-8: #b59b63;
 }
 
 @layer base {
