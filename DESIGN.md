@@ -320,6 +320,12 @@ at 26px and above, −0.02em at 20px.
   headings, badges, chart and forecast axes, compass letters, and the rail's
   navigation labels. Notes and explanations use Label.
 
+Prose keeps a 32em measure, about 74 Figtree characters, and wraps with
+`text-pretty`: reply paragraphs, lists, and quotes, and a view's Notes. Avoid
+`ch` for a measure, because Figtree's zero is about 1.45 average characters
+wide. Numbers that line up or update, such as readings, ages, tables, and
+chart axes, use tabular figures.
+
 Only the wordmark (24px, 20px in the phone bar) sits off this scale.
 `design-system.test.ts` lists every pixel size off the scale, and every line
 height or tracking value outside the roles.
@@ -335,8 +341,9 @@ At desktop widths, a navigation sidebar of `clamp(218px, 22vw, 340px)` sits
 beside the workspace. When a canvas is present, the conversation column is
 `clamp(368px, 28vw, 480px)` with 20px gutters, which keeps the composer prompt
 on one line, and the canvas takes the remaining width. An independent
-conversation is centered at a maximum width of 960px; reply prose keeps a 720px
-maximum on the shared left edge. Canvas content has a maximum width of 1080px
+conversation is centered at a maximum width of 960px; replies keep a 720px
+maximum on the shared left edge, and their paragraphs, lists, and quotes stop
+at the 32em prose measure. Canvas content has a maximum width of 1080px
 beside the conversation and 1440px when it has the screen to itself: expanded,
 or as a dashboard page.
 
@@ -362,10 +369,10 @@ Development pages and the dashboard library share the dashboard's 1440px maximum
 width and 28px gutters (20px on phones). `PageHeader` pairs the headline with
 wrapping actions and optional context, separated from content by one rule.
 
-Metadata uses `Facts` definition lists. Each monospace value sits on its
-label's baseline and wraps below the label when space is limited. Tables use the label size and sentence-case column
-labels. Their named scroll areas enter the Tab order only while content
-overflows.
+Metadata uses `Facts` definition lists. Each monospace value sits on its label's
+baseline and wraps below the label when space is limited. Tables use the label
+size and sentence-case column labels. Their named scroll areas enter the Tab
+order only while content overflows.
 
 Development pages keep compact diagnostic controls. Their page links use the
 household navigation treatment; below 981px a shared native select replaces the

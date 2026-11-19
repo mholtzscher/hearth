@@ -63,7 +63,7 @@ export const FanStepper = ({
         </Button>
         <div className="flex items-center justify-center gap-3">
           <span
-            className="text-compact-reading text-foreground data-[value=empty]:text-gray-6 max-w-full text-right"
+            className="text-compact-reading text-foreground data-[value=empty]:text-gray-6 max-w-full text-right tabular-nums"
             data-value={level === undefined ? "empty" : undefined}
           >
             {level ?? "—"}

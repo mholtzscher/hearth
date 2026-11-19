@@ -95,7 +95,7 @@ const SwitchRow = ({
         )}
       </div>
       <span
-        className="text-compact-reading text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 ms-auto max-w-full flex-none text-right [overflow-wrap:break-word] whitespace-nowrap"
+        className="text-compact-reading text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 ms-auto max-w-full flex-none text-right [overflow-wrap:break-word] whitespace-nowrap tabular-nums"
         data-value={status.value}
       >
         {readingText(data)}

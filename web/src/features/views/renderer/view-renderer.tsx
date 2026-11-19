@@ -354,7 +354,7 @@ const ViewNode = ({
     case "Note": {
       return (
         <p
-          className={`text-body text-muted-foreground max-w-[70ch] ${followsHeading ? "mt-[calc(4px-var(--stack-gap))]" : ""}`}
+          className={`text-body text-muted-foreground max-w-[32em] text-pretty ${followsHeading ? "mt-[calc(4px-var(--stack-gap))]" : ""}`}
         >
           {node.props.text}
         </p>

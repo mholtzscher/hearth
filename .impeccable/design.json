@@ -414,7 +414,7 @@
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Conversation text; at weight 600, subsection headings below a Title."
+        "purpose": "Conversation text at a 32em measure; at weight 600, subsection headings below a Title."
       },
       "label": {
         "displayName": "Label",
