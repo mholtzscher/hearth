@@ -142,27 +142,28 @@ export const Track = ({
           interval.kind === "value" && interval.truthy === null
             ? (ranks.get(interval.text) ?? 0)
             : 0;
-        const text = interval.kind === "unknown" ? "No history" : interval.text;
+        const unknown = interval.kind === "unknown";
+        const text = unknown ? "No history" : interval.text;
+        // A dimmed row draws hollow segments so labels keep full contrast.
+        const hollow = dimmed && !unknown;
         return (
           <span
             key={index}
             data-slot="timeline-segment"
-            className="data-[unknown]:border-gray-5 data-[unknown]:bg-card absolute inset-y-0 min-w-0.5 overflow-hidden rounded-xs bg-(--timeline-color) group-data-[dimmed]/track:opacity-60 data-[rank='1']:bg-[color-mix(in_oklch,var(--timeline-color)_32%,var(--gray-1))] data-[rank='2']:bg-[color-mix(in_oklch,var(--timeline-color)_16%,var(--gray-1))] data-[unknown]:border data-[unknown]:border-dashed"
-            data-unknown={interval.kind === "unknown" || undefined}
-            data-rank={rank > 1 ? 2 : rank}
+            className="group/segment data-[unknown]:border-gray-5 data-[unknown]:bg-card data-[hollow]:bg-card absolute inset-y-0 min-w-0.5 overflow-hidden rounded-xs bg-(--timeline-color) data-[hollow]:border data-[hollow]:border-(--timeline-color) data-[rank='1']:bg-[color-mix(in_oklch,var(--timeline-color)_32%,var(--gray-1))] data-[rank='2']:bg-[color-mix(in_oklch,var(--timeline-color)_16%,var(--gray-1))] data-[unknown]:border data-[unknown]:border-dashed"
+            data-unknown={unknown || undefined}
+            data-hollow={hollow || undefined}
+            data-rank={hollow ? undefined : Math.min(rank, 2)}
             style={{
               left: `${(100 * (interval.from - data.from)) / (data.to - data.from)}%`,
               width: `${(100 * (interval.to - interval.from)) / (data.to - data.from)}%`,
             }}
           >
-            {!compact &&
-              (interval.kind === "unknown" || interval.truthy === null) && (
-                <span
-                  className={`text-label block overflow-hidden px-[5px] whitespace-nowrap ${interval.kind === "unknown" ? "text-gray-7 leading-4 font-normal" : `leading-[18px] font-medium ${rank > 0 ? "text-foreground" : "text-background"}`}`}
-                >
-                  {text}
-                </span>
-              )}
+            {!compact && (unknown || interval.truthy === null) && (
+              <span className="text-label text-background group-data-[unknown]/segment:text-gray-7 group-data-[hollow]/segment:text-muted-foreground group-data-[rank='1']/segment:text-foreground group-data-[rank='2']/segment:text-foreground block overflow-hidden px-[5px] leading-[18px] font-medium whitespace-nowrap group-data-[hollow]/segment:leading-4 group-data-[unknown]/segment:leading-4 group-data-[unknown]/segment:font-normal">
+                {text}
+              </span>
+            )}
           </span>
         );
       })}

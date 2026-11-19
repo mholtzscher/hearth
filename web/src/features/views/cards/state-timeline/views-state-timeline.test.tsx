@@ -297,6 +297,48 @@ describe("State timeline card", () => {
     expect(document.querySelector('[data-slot="card-arrival"]')).toBeTruthy();
   });
 
+  it("draws an unavailable row's known spans hollow and keeps unknown spans dashed", () => {
+    render(
+      <StateTimeline
+        title="Doors"
+        window="1h"
+        style={lanes}
+        rows={[
+          row({
+            ...ready,
+            metadata: { ...ready.metadata, availability: "unavailable" },
+          }),
+        ]}
+      />,
+      { wrapper: MemoryRouter }
+    );
+    expect(
+      document.querySelector(
+        '[data-slot="timeline-segment"][data-hollow]:not([data-unknown])'
+      )
+    ).toBeTruthy();
+    expect(
+      document.querySelector(
+        '[data-slot="timeline-segment"][data-unknown][data-hollow]'
+      )
+    ).toBeNull();
+  });
+
+  it("fills the spans of an available row", () => {
+    render(
+      <StateTimeline title="Doors" window="1h" style={lanes} rows={[row()]} />,
+      { wrapper: MemoryRouter }
+    );
+    expect(
+      document.querySelector(
+        '[data-slot="timeline-segment"]:not([data-unknown])'
+      )
+    ).toBeTruthy();
+    expect(
+      document.querySelector('[data-slot="timeline-segment"][data-hollow]')
+    ).toBeNull();
+  });
+
   it("does not replay a history change seen while an Entity was disabled", () => {
     const view = render(
       <StateTimeline title="Doors" window="1h" style={lanes} rows={[row()]} />,
