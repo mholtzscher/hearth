@@ -171,7 +171,7 @@ const FrameAnatomyFigure = () => {
         ))}
       </div>
       <div className="grid gap-3">
-        <ol className="text-label m-0 grid list-none gap-2 p-0 leading-normal">
+        <ol className="text-label m-0 grid list-none gap-2 p-0">
           {markers.map((marker, index) => (
             <li
               key={marker.name}
@@ -193,7 +193,7 @@ const FrameAnatomyFigure = () => {
             </li>
           ))}
         </ol>
-        <p className="text-label text-muted-foreground m-0 leading-normal">
+        <p className="text-label text-muted-foreground m-0">
           Frame: <TokenValue value={frame} token="card-frame" />
         </p>
       </div>
@@ -305,7 +305,7 @@ const CardStateGrid = () => (
   <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(min(100%,248px),1fr))] gap-3 p-0">
     {STATES.map((state) => (
       <li key={state.name} className="grid content-start gap-2">
-        <p className="text-label text-muted-foreground m-0 leading-normal">
+        <p className="text-label text-muted-foreground m-0">
           <span className="text-foreground font-medium">{state.name}</span>
           {" · "}afterglow {state.afterglow}
         </p>
@@ -443,14 +443,11 @@ const AfterglowDemo = () => {
             Same value again
           </Button>
         </div>
-        <p
-          aria-live="polite"
-          className="text-label text-muted-foreground m-0 leading-normal"
-        >
+        <p aria-live="polite" className="text-label text-muted-foreground m-0">
           Afterglow:{" "}
           <TokenValue value={animation ?? "dark"} token="afterglow" />
         </p>
-        <p className="text-label text-muted-foreground m-0 leading-normal">
+        <p className="text-label text-muted-foreground m-0">
           Reduced motion is {reduced ? "on" : "off"} here.
         </p>
       </div>
@@ -507,9 +504,7 @@ const LightTile = ({ reserved }: { reserved: boolean }) => {
   const label = reserved ? "With a reserved line" : "Without a reserved line";
   return (
     <div className="grid content-start gap-3" data-variant={label}>
-      <p className="text-label text-foreground m-0 leading-normal font-medium">
-        {label}
-      </p>
+      <p className="text-label text-foreground m-0 font-medium">{label}</p>
       <DataCard title="Hall light" status={[]} sources={[]}>
         <div className="flex items-center justify-between gap-3">
           <Reading className="text-reading-narrow">{on ? "On" : "Off"}</Reading>
@@ -531,7 +526,7 @@ const LightTile = ({ reserved }: { reserved: boolean }) => {
             <output
               data-tone="info"
               className={cn(
-                "text-label text-gray-9 mt-2 leading-normal",
+                "text-label text-gray-9 mt-2",
                 controlStatusLineClasses
               )}
             >

@@ -6,10 +6,8 @@ export const artifactHeader =
   "grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2";
 export const artifactIcon =
   "inline-grid size-9 place-items-center rounded-md bg-violet-soft text-violet";
-export const artifactTitle =
-  "text-body leading-[1.4] font-semibold [overflow-wrap:anywhere]";
-export const artifactSummary =
-  "text-label leading-normal text-muted-foreground";
+export const artifactTitle = "text-body font-semibold [overflow-wrap:anywhere]";
+export const artifactSummary = "text-label text-muted-foreground";
 
 export const artifactAction = (open: boolean, inlineView = false) =>
   cn(

@@ -36,7 +36,7 @@ export const StatusList = ({
     <ul
       data-slot="card-status"
       className={cn(
-        "text-label text-gray-9 flex list-none flex-wrap gap-x-2 gap-y-0 leading-normal",
+        "text-label text-gray-9 flex list-none flex-wrap gap-x-2 gap-y-0",
         className
       )}
     >
@@ -122,7 +122,7 @@ const DataCardFooter = ({
     <footer
       data-slot="card-footer"
       className={cn(
-        "text-label text-muted-foreground mt-auto flex items-center gap-3 leading-normal tabular-nums",
+        "text-label text-muted-foreground mt-auto flex items-center gap-3 tabular-nums",
         classNames?.footer
       )}
     >
@@ -216,14 +216,14 @@ export const DataCard = ({
           <Title
             id={titleId}
             data-slot="card-title"
-            className="text-label text-foreground min-w-0 leading-normal font-medium [overflow-wrap:anywhere]"
+            className="text-label text-foreground min-w-0 font-medium [overflow-wrap:anywhere]"
           >
             {title}
           </Title>
           {unit && (
             <span
               data-slot="card-unit"
-              className="text-label text-muted-foreground leading-normal"
+              className="text-label text-muted-foreground"
             >
               {unit}
             </span>

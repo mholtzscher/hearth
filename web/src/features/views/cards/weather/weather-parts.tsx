@@ -34,9 +34,9 @@ export const weatherTrendParts = {
   drawing: "@min-[460px]:h-[72px]",
 };
 export const weatherConditions =
-  "text-label leading-normal text-gray-9 text-balance data-[value=dimmed]:text-gray-8";
+  "text-label text-gray-9 text-balance data-[value=dimmed]:text-gray-8";
 export const weatherDetail =
-  "text-label leading-normal text-muted-foreground tabular-nums text-pretty data-[value=dimmed]:text-gray-7";
+  "text-label text-muted-foreground tabular-nums text-pretty data-[value=dimmed]:text-gray-7";
 
 /**
  * Current readings, plus history where a window is given, for a card's named
@@ -155,7 +155,7 @@ export const SlotStatus = ({
   return (
     <div
       data-slot="weather-slot-status"
-      className="text-label text-muted-foreground flex flex-wrap items-baseline gap-x-2 gap-y-0.5 leading-normal"
+      className="text-label text-muted-foreground flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
     >
       <span>{name}</span>
       <StatusList className="basis-full" entries={entries} />

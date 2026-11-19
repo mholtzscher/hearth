@@ -73,7 +73,7 @@ const ConnectedServerStatus = ({
     <output
       data-slot="server-status"
       className={cn(
-        "border-border text-label text-muted-foreground m-0 flex shrink-0 items-center gap-2 border-t px-3 pt-3 leading-normal",
+        "border-border text-label text-muted-foreground m-0 flex shrink-0 items-center gap-2 border-t px-3 pt-3",
         rail && "text-caption mt-auto flex-col gap-1 px-0 text-center",
         className
       )}

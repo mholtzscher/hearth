@@ -86,7 +86,7 @@ const SelectedContextChip = ({
   onClose: () => void;
 }) => (
   <fieldset
-    className="border-violet/35 text-label text-violet-text -ms-2 flex max-w-[calc(100%+8px)] min-w-0 justify-self-start rounded-md border leading-normal [min-inline-size:0]"
+    className="border-violet/35 text-label text-violet-text -ms-2 flex max-w-[calc(100%+8px)] min-w-0 justify-self-start rounded-md border [min-inline-size:0]"
     aria-label={`Selected ${kind}`}
   >
     <Button
@@ -193,7 +193,7 @@ const ConversationPlaceholder = ({
   }
   return (
     <div className="max-tablet:pt-[clamp(20px,5vh,48px)] short:pt-3 max-w-[520px] pt-[clamp(36px,12vh,140px)] pb-6">
-      <h2 className="max-tablet:max-w-[18ch] m-0 text-[28px] leading-[1.25] font-medium tracking-[-.03em] text-balance">
+      <h2 className="text-headline max-tablet:max-w-[18ch] m-0 text-balance">
         What would make home feel better?
       </h2>
       <ul
@@ -207,7 +207,7 @@ const ConversationPlaceholder = ({
                 <Button
                   variant="outline"
                   size="touch"
-                  className="group text-left leading-[1.4]"
+                  className="group text-left"
                 >
                   <SuggestionPrimitive.Title />
                   <ArrowRightIcon
@@ -252,7 +252,7 @@ const QueuedPromptStatus = ({
   }
   const paused = busy || loading;
   return (
-    <div className="text-label text-muted-foreground mt-3 leading-normal">
+    <div className="text-label text-muted-foreground mt-3">
       <output className="block">
         {paused
           ? "Message queued until the current reply finishes."
@@ -329,7 +329,7 @@ const ConversationErrorStatus = ({
   }
   if (failedPrompt) {
     return (
-      <p className="text-label text-muted-foreground mt-3 leading-normal">
+      <p className="text-label text-muted-foreground mt-3">
         Your prompt is preserved below. Retrying starts a new request; tools may
         already have run.
       </p>
@@ -433,7 +433,7 @@ const ConversationComposer = ({
               />
             )}
             {!editorValid && (
-              <p className="text-caption text-muted-foreground leading-normal">
+              <p className="text-caption text-muted-foreground">
                 Fix or discard invalid draft edits before sending
               </p>
             )}
@@ -701,7 +701,7 @@ const AgentPage = () => {
                       visible={!narrow || !mobileCanvas}
                     />
                     {busy && (
-                      <output className="text-label text-muted-foreground mt-3 block leading-normal">
+                      <output className="text-label text-muted-foreground mt-3 block">
                         Looking through your home…
                       </output>
                     )}

@@ -197,12 +197,12 @@ const renderReading = ({
     {metric && (
       <small
         data-slot="power-metric"
-        className="text-label text-muted-foreground data-[value=empty]:text-gray-6 max-tablet:ms-0 max-tablet:max-w-full max-tablet:whitespace-normal max-tablet:[overflow-wrap:anywhere] ms-1.5 inline-block tracking-normal whitespace-nowrap"
+        className="text-label text-muted-foreground data-[value=empty]:text-gray-6 max-tablet:ms-0 max-tablet:max-w-full max-tablet:whitespace-normal max-tablet:[overflow-wrap:anywhere] ms-1.5 inline-block whitespace-nowrap"
         data-value={metricStatus?.value}
       >
         {measured ? (
           <>
-            <span className="max-tablet:text-compact-reading max-tablet:font-normal max-tablet:tracking-[-.02em]">
+            <span className="max-tablet:text-compact-reading">
               {measured.value.toFixed(measured.format.fraction_digits)}
             </span>
             {measured.format.unit_label && ` ${measured.format.unit_label}`}
@@ -308,7 +308,7 @@ const renderControlStatus = ({
     );
   }
   return (
-    <p className="text-label text-muted-foreground mt-0 min-h-[21px] leading-normal">
+    <p className="text-label text-muted-foreground mt-0 min-h-[21px]">
       {power.entity ? "Read-only" : power.since}
     </p>
   );

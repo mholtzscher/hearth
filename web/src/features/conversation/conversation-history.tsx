@@ -91,10 +91,7 @@ export const ConversationHistory = ({
   let notice: ReactNode = null;
   if (error) {
     notice = (
-      <p
-        className="text-label text-muted-foreground px-3 leading-normal"
-        role="alert"
-      >
+      <p className="text-label text-muted-foreground px-3" role="alert">
         Could not load conversations.{" "}
         <Button variant="link" size="touch" onClick={refresh}>
           Retry
@@ -103,13 +100,13 @@ export const ConversationHistory = ({
     );
   } else if (!loading && conversations.length === 0) {
     notice = (
-      <p className="text-label text-muted-foreground px-3 leading-normal">
+      <p className="text-label text-muted-foreground px-3">
         Conversations you start appear here.
       </p>
     );
   } else if (needle && groups.length === 0) {
     notice = (
-      <output className="text-label text-muted-foreground px-3 leading-normal">
+      <output className="text-label text-muted-foreground px-3">
         No conversations match “{query.trim()}”.
       </output>
     );
@@ -130,7 +127,7 @@ export const ConversationHistory = ({
         )}
       >
         <h2
-          className="text-label text-muted-foreground leading-5 font-semibold"
+          className="text-label text-muted-foreground font-semibold"
           id={`${id}-title`}
           tabIndex={-1}
         >
@@ -203,7 +200,7 @@ export const ConversationHistory = ({
         >
           {groups.map((group) => (
             <div key={group.label} className="not-first:mt-3">
-              <h3 className="text-caption text-gray-7 sticky top-0 z-1 bg-[var(--history-bg)] px-3 pt-1.5 pb-1 leading-[18px] font-medium">
+              <h3 className="text-caption text-gray-7 sticky top-0 z-1 bg-[var(--history-bg)] px-3 pt-1.5 pb-1 font-medium">
                 {group.label}
               </h3>
               <ul className="grid list-none grid-cols-[minmax(0,1fr)] gap-0.5">

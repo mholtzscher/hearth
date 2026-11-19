@@ -14,7 +14,7 @@ import { ExpressionCode, JsonCode } from "./automation-code";
 import { documentValue } from "./document";
 import type { AutomationDocument } from "./document";
 
-const note = "block text-caption leading-normal text-muted-foreground";
+const note = "block text-caption text-muted-foreground";
 const paragraph = "my-[5px] text-label text-muted-foreground";
 
 /** Same-named Entities, such as several "Power" Entities, are told apart by their Device. */
@@ -415,7 +415,7 @@ const Branches = ({
           <p
             className={
               mode === "sentence"
-                ? "text-body text-foreground m-0 leading-[1.55]"
+                ? "text-body text-foreground m-0"
                 : `${paragraph} max-tablet:ml-6 ml-7`
             }
           >
@@ -505,7 +505,7 @@ export const SentenceSequence = ({
   <div aria-label="Sentence sequence">
     {steps.map((step, index) => (
       <div className="py-2" key={step.id}>
-        <p className="text-body text-foreground m-0 leading-[1.55]">
+        <p className="text-body text-foreground m-0">
           <StepCopy ctx={ctx} step={step} path={[...path, index]} />
           {step.kind !== "sub_automation" &&
           step.kind !== "if" &&
@@ -543,7 +543,7 @@ export const StackSequence = ({
       >
         <div className="max-tablet:grid-cols-[14px_minmax(0,1fr)] grid grid-cols-[18px_minmax(0,1fr)] items-start gap-x-2.5">
           <span
-            className="text-caption text-muted-foreground text-right leading-normal tabular-nums"
+            className="text-caption text-muted-foreground text-right tabular-nums"
             aria-hidden="true"
           >
             {index + 1}
@@ -555,7 +555,7 @@ export const StackSequence = ({
               </span>{" "}
               · <code className="text-caption">{step.id}</code>
             </span>
-            <div className="text-label mt-0.5 leading-[1.55]">
+            <div className="text-label mt-0.5">
               <StepCopy ctx={ctx} step={step} path={[...path, index]} />
             </div>
             <StepAside ctx={ctx} step={step} />

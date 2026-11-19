@@ -10,7 +10,7 @@ interface NoticeProps {
 }
 
 const noticeClasses =
-  "border-destructive/45 bg-destructive/8 text-caption text-foreground my-3 rounded-md border p-3 leading-normal";
+  "border-destructive/45 bg-destructive/8 text-caption text-foreground my-3 rounded-md border p-3";
 
 type StatusNoticeProps = Omit<NoticeProps, "role">;
 

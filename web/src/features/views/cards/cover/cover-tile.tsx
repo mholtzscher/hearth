@@ -81,7 +81,7 @@ export const CoverTile = ({ props }: { props: CoverProps }) => {
     </Reading>
   );
   const rowClass =
-    "m-0 h-[21px] overflow-hidden text-ellipsis whitespace-nowrap text-label leading-normal";
+    "m-0 h-[21px] overflow-hidden text-ellipsis whitespace-nowrap text-label";
   const onColor =
     open && "text-[color-mix(in_oklch,var(--violet)_14%,var(--gray-9))]";
   return (

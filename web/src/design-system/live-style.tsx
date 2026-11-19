@@ -65,10 +65,7 @@ export const TokenValue = ({
   <code
     data-slot="token-value"
     data-token={token}
-    className={cn(
-      "text-caption text-gray-8 font-mono leading-normal",
-      className
-    )}
+    className={cn("text-caption text-gray-8 font-mono", className)}
   >
     {value ?? "…"}
   </code>
@@ -98,7 +95,7 @@ export const ColorSwatch = ({
         className="border-gray-4 h-14 rounded-md border"
         style={style}
       />
-      <figcaption className="text-label grid min-w-0 gap-0.5 leading-normal">
+      <figcaption className="text-label grid min-w-0 gap-0.5">
         <span className="text-foreground font-medium [overflow-wrap:anywhere]">
           {name ?? variable}
         </span>

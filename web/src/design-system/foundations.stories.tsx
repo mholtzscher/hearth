@@ -219,41 +219,27 @@ const TYPE_SAMPLES: Record<
     </Reading>
   ),
   headline: (ref) => (
-    <span
-      ref={ref}
-      className="text-headline block leading-[1.3] font-medium tracking-[-.03em]"
-    >
-      Devices
-    </span>
-  ),
-  "headline-narrow": (ref) => (
-    <span
-      ref={ref}
-      className="text-headline-narrow block leading-[1.3] font-medium tracking-[-.03em]"
-    >
+    <span ref={ref} className="text-headline block">
       Devices
     </span>
   ),
   title: (ref) => (
-    <span ref={ref} className="text-title block font-semibold">
+    <span ref={ref} className="text-title block">
       Living room
     </span>
   ),
   body: (ref) => (
-    <span ref={ref} className="text-body block leading-[1.7]">
+    <span ref={ref} className="text-body block">
       The living room is 21.5 °C, half a degree warmer than an hour ago.
     </span>
   ),
   label: (ref) => (
-    <span ref={ref} className="text-label block leading-normal">
+    <span ref={ref} className="text-label block">
       Observed 2m ago
     </span>
   ),
   "compact-reading": (ref) => (
-    <span
-      ref={ref}
-      className="text-compact-reading block leading-[1.3] tracking-[-.02em] tabular-nums"
-    >
+    <span ref={ref} className="text-compact-reading block tabular-nums">
       21.5
     </span>
   ),
@@ -279,7 +265,7 @@ const TypeRow = ({ token }: { token: TextToken }) => {
           text-{token}
         </code>
         <TokenValue value={value} token={`text-${token}`} />
-        <span className="text-label text-muted-foreground leading-normal">
+        <span className="text-label text-muted-foreground">
           {TYPE_USE[token]}
         </span>
       </div>
@@ -328,7 +314,7 @@ const RadiusSample = ({ radius }: { radius: RadiusName }) => {
         ref={ref}
         className={`border-gray-6 bg-gray-2 h-16 border ${RADIUS_CLASSES[radius]}`}
       />
-      <figcaption className="text-label grid gap-0.5 leading-normal">
+      <figcaption className="text-label grid gap-0.5">
         <code className="text-foreground font-mono">rounded-{radius}</code>
         <TokenValue value={value} token={`radius-${radius}`} />
         <span className="text-muted-foreground">{RADIUS_USE[radius]}</span>
@@ -376,7 +362,7 @@ const ShadowSample = ({
   return (
     <figure className="m-0 grid min-w-0 content-start gap-3">
       <Card ref={ref} className={`h-24 ${className}`} />
-      <figcaption className="text-label grid gap-0.5 leading-normal">
+      <figcaption className="text-label grid gap-0.5">
         <span className="text-foreground font-medium">{name}</span>
         <TokenValue value={value} token={`shadow-${name}`} />
         <span className="text-muted-foreground">{use}</span>
@@ -524,7 +510,7 @@ export const Layout: Story = {
           ))}
         </TableBody>
       </Table>
-      <dl className="text-label tablet:grid-cols-[minmax(0,240px)_minmax(0,1fr)] desktop:gap-x-10 grid gap-x-6 gap-y-2 leading-normal">
+      <dl className="text-label tablet:grid-cols-[minmax(0,240px)_minmax(0,1fr)] desktop:gap-x-10 grid gap-x-6 gap-y-2">
         {LAYOUT_FACTS.map(([term, detail]) => (
           <div key={term} className="contents">
             <dt className="text-muted-foreground">{term}</dt>

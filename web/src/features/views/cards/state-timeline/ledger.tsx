@@ -36,7 +36,7 @@ export const TimelineLedger = ({
                 className="col-span-full flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5"
               >
                 <strong
-                  className="text-compact-reading data-[value=empty]:text-gray-6 data-[value=dimmed]:text-gray-8 leading-[1.3] font-normal tracking-[-.02em]"
+                  className="text-compact-reading data-[value=empty]:text-gray-6 data-[value=dimmed]:text-gray-8"
                   data-value={status.value}
                 >
                   {row.resource.data?.current?.text ?? "—"}

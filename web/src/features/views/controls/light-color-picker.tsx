@@ -53,7 +53,7 @@ const subscribePhone = (change: () => void) => {
   return () => media?.removeEventListener("change", change);
 };
 const isPhone = () => window.matchMedia?.(phoneQuery).matches ?? false;
-const hintClasses = "mt-3 text-label leading-normal text-gray-8";
+const hintClasses = "mt-3 text-label text-gray-8";
 const exactClasses = "mt-4 flex flex-wrap items-center gap-2.5";
 const labelClasses = "flex items-center gap-1.5 text-label text-gray-8";
 const inputClasses =
@@ -554,7 +554,7 @@ const PickerBody = ({
         {phone ? (
           <DialogTitle>Light color</DialogTitle>
         ) : (
-          <h2 className="text-title leading-[1.4] font-semibold" id={headingId}>
+          <h2 className="text-title" id={headingId}>
             Light color
           </h2>
         )}

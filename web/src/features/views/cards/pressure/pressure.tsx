@@ -83,7 +83,7 @@ const TendencyLine = ({
   return (
     <p
       data-slot="pressure-tendency"
-      className="text-label text-gray-9 data-[value=dimmed]:text-gray-7 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 leading-normal tabular-nums"
+      className="text-label text-gray-9 data-[value=dimmed]:text-gray-7 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 tabular-nums"
       data-value={status.value}
     >
       <Icon className="size-4 shrink-0" aria-hidden="true" />

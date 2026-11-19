@@ -25,7 +25,7 @@ import {
 
 type Props = z.infer<typeof forecastSchema>;
 const temperatureClass =
-  "text-compact-reading tracking-[-.02em] text-right group-data-[value=dimmed]/forecast:text-gray-8";
+  "text-compact-reading text-right group-data-[value=dimmed]/forecast:text-gray-8";
 const axisText = "fill-gray-8 text-caption";
 // Periods start on the hour in UTC; half-hour and quarter-hour zones keep their minutes.
 const hour = (date: Date) =>

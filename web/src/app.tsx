@@ -301,7 +301,7 @@ const SidebarBrand = ({
     hearth
     <small
       className={cn(
-        "text-label text-muted-foreground mt-1.5 block leading-normal font-normal tracking-normal",
+        "text-label text-muted-foreground mt-1.5 block font-normal",
         nav !== "full" && "hidden"
       )}
     >
@@ -443,7 +443,7 @@ const PhoneNavigationBar = ({
       <div className="group/phone-bar flex min-w-0 justify-center">
         <span
           data-slot="phone-bar-title"
-          className="text-body text-foreground truncate font-semibold tracking-[-.01em] group-has-[[data-slot=phone-bar-slot]:not(:empty)]/phone-bar:hidden"
+          className="text-body text-foreground truncate font-semibold group-has-[[data-slot=phone-bar-slot]:not(:empty)]/phone-bar:hidden"
         >
           {pageTitle(home, development)}
         </span>

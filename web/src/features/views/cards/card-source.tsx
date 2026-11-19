@@ -90,7 +90,7 @@ export const CardSource = ({
   const phone = useSyncExternalStore(subscribePhone, isPhone);
   const headingId = useId();
   const descriptionId = useId();
-  const headingClass = "m-0 text-title leading-[1.4] font-semibold";
+  const headingClass = "m-0 text-title";
   const descriptionClass = "mt-1.5 mb-[22px] text-muted-foreground";
   const heading = (
     <h2 id={headingId} className={headingClass}>
@@ -193,7 +193,7 @@ export const CardSource = ({
       )}
       {sources.length > 0 && (
         <section className="border-gray-4 mt-[22px] border-t pt-[18px]">
-          <h3 className="text-label leading-normal font-medium">
+          <h3 className="text-label font-medium">
             {sources.length === 1 ? "Source" : "Sources"}
           </h3>
           <ul className="mt-2.5 grid list-none gap-4 p-0">

@@ -200,7 +200,7 @@ export const WeekPattern = ({
           </div>
         </>
       ) : (
-        <p className="text-label text-muted-foreground py-6 leading-normal">
+        <p className="text-label text-muted-foreground py-6">
           Historical readings will appear here.
         </p>
       )}

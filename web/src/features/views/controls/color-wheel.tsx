@@ -135,7 +135,7 @@ export const ColorWheel = ({
           className="peer-focus-visible:outline-ring pointer-events-none absolute inset-0 rounded-full peer-focus-visible:outline-2 peer-focus-visible:outline-offset-3"
         />
       </div>
-      <p id={hintId} className="text-label text-gray-8 mt-3 leading-normal">
+      <p id={hintId} className="text-label text-gray-8 mt-3">
         Left/right: hue. Up/down: saturation. Shift for larger steps.
       </p>
     </>

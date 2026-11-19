@@ -54,7 +54,7 @@ export const CoverCard = ({ props }: { props: CoverProps }) => {
           </div>
           <p
             data-slot="cover-position"
-            className="text-label text-gray-9 data-[value=dimmed]:text-gray-8 leading-normal tabular-nums"
+            className="text-label text-gray-9 data-[value=dimmed]:text-gray-8 tabular-nums"
             data-value={status.value}
           >
             {data ? `${data.position} % open` : " "}

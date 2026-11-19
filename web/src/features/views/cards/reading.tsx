@@ -24,7 +24,7 @@ export const Reading = ({
     data-slot="reading"
     data-value={value}
     className={cn(
-      "text-reading @max-[200px]:text-reading-narrow text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 leading-[1.15] font-[350] tracking-[-.03em] tabular-nums",
+      "text-reading @max-[200px]:text-reading-narrow text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 tabular-nums",
       className
     )}
   >
@@ -39,12 +39,7 @@ export const ReadingUnit = ({
   className?: string;
   children: ReactNode;
 }) => (
-  <small
-    className={cn(
-      "text-label text-muted-foreground ms-1 tracking-normal",
-      className
-    )}
-  >
+  <small className={cn("text-label text-muted-foreground ms-1", className)}>
     {children}
   </small>
 );
@@ -94,7 +89,7 @@ export const ReadingRow = ({
     )}
     <span
       data-slot="reading-name"
-      className="text-label text-gray-9 data-[value=dimmed]:text-gray-8 min-w-0 flex-[1_1_9em] leading-normal [overflow-wrap:anywhere]"
+      className="text-label text-gray-9 data-[value=dimmed]:text-gray-8 min-w-0 flex-[1_1_9em] [overflow-wrap:anywhere]"
       data-value={nameValue}
     >
       {name}
@@ -102,7 +97,7 @@ export const ReadingRow = ({
     {beforeValue}
     <span
       data-slot="reading-value"
-      className="text-compact-reading text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 ms-auto max-w-full flex-none text-right leading-[1.3] font-normal tracking-[-.02em] [overflow-wrap:break-word]"
+      className="text-compact-reading text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 ms-auto max-w-full flex-none text-right [overflow-wrap:break-word]"
       data-value={value}
     >
       {children}

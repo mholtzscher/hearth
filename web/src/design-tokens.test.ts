@@ -114,6 +114,13 @@ const pixels = (value: string): number => {
 
 const design = parseFrontMatter(designMd);
 
+/** DESIGN.md typography keys and the index.css companion each one documents. */
+const TYPE_COMPANIONS = [
+  ["lineHeight", "line-height"],
+  ["letterSpacing", "letter-spacing"],
+  ["fontWeight", "font-weight"],
+] as const;
+
 /** DESIGN.md color names whose custom property is not `--<name>`. */
 const COLOR_VARIABLES: Record<string, string> = {
   "chart-orchid": "--chart-3",
@@ -193,7 +200,7 @@ describe("DESIGN.md matches index.css", () => {
   });
 
   it.each(Object.entries(section(design, "typography")))(
-    "type size %s",
+    "type role %s",
     (name, style) => {
       const declared = theme.get(`--text-${name}`);
       expect(declared, `index.css @theme has no --text-${name}.`).toBeDefined();
@@ -202,6 +209,14 @@ describe("DESIGN.md matches index.css", () => {
         `${pixels(declared as string)}px`,
         `DESIGN.md ${name} fontSize is ${documented}; index.css --text-${name} is ${declared}.`
       ).toBe(documented);
+      // Each role's companions in index.css match DESIGN.md, including absent ones.
+      for (const [key, suffix] of TYPE_COMPANIONS) {
+        const companion = `--text-${name}--${suffix}`;
+        expect(
+          theme.get(companion),
+          `DESIGN.md ${name} ${key} must match index.css ${companion}.`
+        ).toBe((style as Tree)[key]);
+      }
     }
   );
 
@@ -223,7 +238,8 @@ describe("DESIGN.md matches index.css", () => {
   it("documents every text size in index.css", () => {
     const declared = [...theme.keys()]
       .filter((name) => name.startsWith("--text-"))
-      .map((name) => name.slice("--text-".length));
+      .map((name) => name.slice("--text-".length))
+      .filter((name) => !name.includes("--"));
     expect(
       declared.filter((name) => !(name in section(design, "typography"))),
       "Add these index.css text sizes to DESIGN.md typography."

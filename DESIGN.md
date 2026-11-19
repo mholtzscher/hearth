@@ -49,33 +49,34 @@ typography:
     fontWeight: 500
     lineHeight: 1.3
     letterSpacing: "-0.03em"
-  headline-narrow:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "22px"
-    fontWeight: 500
-    lineHeight: 1.3
-    letterSpacing: "-0.03em"
   title:
     fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "18px"
+    fontSize: "20px"
     fontWeight: 600
-  body:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "16px"
-    lineHeight: 1.7
-  label:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "14px"
-    lineHeight: 1.5
+    lineHeight: 1.3
+    letterSpacing: "-0.02em"
   compact-reading:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "20px"
     fontWeight: 400
     lineHeight: 1.3
     letterSpacing: "-0.02em"
+    fontFeature: "tabular-nums"
+  body:
+    fontFamily: "Figtree Variable, sans-serif"
+    fontSize: "16px"
+    lineHeight: 1.6
+    letterSpacing: "0"
+  label:
+    fontFamily: "Figtree Variable, sans-serif"
+    fontSize: "14px"
+    lineHeight: 1.5
+    letterSpacing: "0"
   caption:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "12px"
+    lineHeight: 1.5
+    letterSpacing: "0"
 rounded:
   xs: "4px"
   md: "8px"
@@ -282,35 +283,43 @@ monospace.
 large; everything around them is quieter.
 
 Each typography token is a Tailwind utility (`text-reading`, `text-label`, and
-so on) that sets font size only. Apply line height, weight, and tracking
-separately. `index.css` resets Tailwind's own type scale, so `text-sm` and its
-siblings set no size.
+so on) that sets its whole role: size, line height, and tracking, plus weight
+for the display roles. Body, Label, and Caption leave weight to inherit, so a
+bold parent stays bold. A class on one element may override one part, such as
+`font-semibold` on a Body heading. `index.css` resets Tailwind's own type scale,
+so `text-sm` and its siblings set no size.
+
+The scale has seven sizes: 12, 14, 16, 20, 26, 32, and 40px. Line height
+follows the size: 1.15 for readings, 1.3 from 20 to 26px, 1.5 for 12 and
+14px, and 1.6 for prose at 16px. Tracking tightens only from 20px up: −0.03em
+at 26px and above, −0.02em at 20px.
 
 ### Hierarchy
 
-- **Reading** (350, 40px, 1.15, tabular figures): a card's single reading. Units
-  stay smaller and quieter.
-- **Reading narrow** (350, 32px, 1.15): a reading in a card narrower than
-  200px. `Reading` applies it; the Cover card switches at 250px because its
-  icon shares the row.
-- **Headline** (500, 26px, 1.3): canvas, library, and Development page titles.
-- **Headline narrow** (500, 22px, 1.3): the same titles on phones.
-  `pageHeadingClass` applies it.
-- **Title** (600, 18px): view headings, Development section headings, and
-  dialog titles, without uppercase labels or extra separator rules.
-- **Body** (16px, 1.7): conversation text. At weight 600, Body is the
+- **Reading** (350, 40px, 1.15, −0.03em, tabular figures): a card's single
+  reading. Units stay smaller and quieter.
+- **Reading narrow** (350, 32px, 1.15, −0.03em): a reading in a card narrower
+  than 200px. `Reading` applies it; the Cover card switches at 250px because
+  its icon shares the row.
+- **Headline** (500, 26px, 1.3, −0.03em): canvas, library, and Development page
+  titles at every width, and the empty conversation heading.
+- **Title** (600, 20px, 1.3, −0.02em): view headings, Development section
+  headings, dialog titles, and headings inside replies, without uppercase
+  labels or extra separator rules.
+- **Compact reading** (400, 20px, 1.3, −0.02em, tabular figures): row values in
+  ReadingList, Device, ToggleList, AirPurifier, the timeline ledger, weather
+  rows, and forecast temperatures.
+- **Body** (16px, 1.6): conversation text. At weight 600, Body is the
   subsection heading below a Title: the automation editor's headings and the
   headings inside a Development section.
 - **Label** (14px, 1.5): the workspace base size, used for card titles, reading
   metadata, chart legends, editor details, fields, buttons, and tables.
-- **Compact reading** (400, 20px, 1.3, tabular figures): row values in
-  ReadingList, Device, ToggleList, AirPurifier, the timeline ledger, weather
-  rows, and forecast temperatures.
-- **Caption** (12px): Notice text and the Recent conversations date headings.
+- **Caption** (12px, 1.5): Notice text and the Recent conversations date
+  headings.
 
-The empty conversation heading (28px), the wordmark (24px, 20px in the phone
-bar), and state timeline axes (13px, see Charts) sit off this scale.
-`design-system.test.ts` lists every pixel size off the scale.
+Only the wordmark (24px, 20px in the phone bar) sits off this scale.
+`design-system.test.ts` lists every pixel size off the scale, and every line
+height or tracking value outside the roles.
 
 ## Layout
 
@@ -866,7 +875,7 @@ in one of three styles.
   strip; text changes pulse as ticks. It shows 12 entries and an outline **Show
   earlier changes** button.
 
-Axes use 13px labels, off the type scale, because 14px labels
+Axes use 12px Caption labels, like every chart axis, because 14px labels
 overlap at a 440px width; labels may still overlap at narrower widths. The axis
 ends with a quiet "Now" label and no marker. Each row carries its own statuses;
 the feed lists them in the header. An unavailable or disabled row draws hollow

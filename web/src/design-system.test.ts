@@ -40,13 +40,30 @@ const RADIX_IMPORTS: string[] = [];
  */
 const ARBITRARY_TEXT_SIZES: Record<string, string[]> = {
   "src/app.tsx": ["text-[24px]", "text-[0px]", "text-[20px]"],
-  "src/features/views/cards/state-timeline/lanes.tsx": ["text-[13px]"],
-  "src/pages/agent-page.tsx": ["text-[28px]"],
+};
+
+/**
+ * Line heights and tracking outside the type roles, by file (DESIGN.md,
+ * Typography). The wordmark sets its own tracking, timeline segment labels fit
+ * an 18px track, and the canvas header actions wrap tighter on phones.
+ */
+const ARBITRARY_LEADING_AND_TRACKING: Record<string, string[]> = {
+  "src/app.tsx": ["tracking-[-.03em]"],
+  "src/features/dashboards/canvas.tsx": [
+    "leading-[1.25]",
+    "leading-[1.25]",
+    "leading-[1.25]",
+  ],
+  "src/features/views/cards/state-timeline/lanes.tsx": ["leading-[18px]"],
+  "src/features/workspace/automation-canvas.tsx": [
+    "leading-[1.25]",
+    "leading-[1.25]",
+    "leading-[1.25]",
+  ],
 };
 
 /** Files that may use a narrow text size; each owns the width rule for it. */
 const NARROW_TEXT_OWNERS = [
-  "src/components/page-header.tsx",
   "src/features/views/cards/cover/cover.tsx",
   "src/features/views/cards/reading.tsx",
 ];
@@ -354,8 +371,10 @@ describe("Hearth theme tokens", () => {
   );
 
   it("registers every custom text size with cn", () => {
+    // Skip companion variables such as --text-reading--line-height.
     const names = [...css.matchAll(/--text-(?<name>[\w-]+)\s*:/gu)]
       .map((match) => match[1])
+      .filter((name) => !name.includes("--"))
       .toSorted();
     expect(names).toStrictEqual([...TEXT_TOKENS].toSorted());
   });
@@ -445,13 +464,35 @@ describe("Hearth theme tokens", () => {
     ).toStrictEqual(ARBITRARY_TEXT_SIZES);
   });
 
+  it("holds line heights and tracking outside the type roles to their exceptions", () => {
+    const measured = Object.fromEntries(
+      applicationSource()
+        .map(
+          (file) =>
+            [
+              file,
+              [
+                ...read(file).matchAll(
+                  /(?<![\w-])(?:leading|tracking)-\[[^\]\s]+\]/gu
+                ),
+              ].map((match) => match[0]),
+            ] as const
+        )
+        .filter(([, values]) => values.length > 0)
+    );
+    expect(
+      measured,
+      "Each text token in index.css sets its role's line height and tracking. If an exception disappeared, remove it from the list."
+    ).toStrictEqual(ARBITRARY_LEADING_AND_TRACKING);
+  });
+
   it("keeps narrow text sizes inside the components that own them", () => {
     const users = applicationSource().filter((file) =>
-      /text-(?:reading|headline)-narrow/u.test(read(file))
+      /text-reading-narrow/u.test(read(file))
     );
     expect(
       users,
-      "Reading and PageHeader apply their narrow sizes themselves."
+      "Reading applies its narrow size itself; Cover switches at its own width."
     ).toStrictEqual(NARROW_TEXT_OWNERS);
   });
 

@@ -111,7 +111,7 @@ const LightDetailLine = ({
 }) => (
   <p
     data-slot="light-detail"
-    className="text-label text-gray-9 mt-2 leading-normal tabular-nums"
+    className="text-label text-gray-9 mt-2 tabular-nums"
   >
     {detailLevel && (
       <span
@@ -329,7 +329,7 @@ const Light = ({
         />
       )}
       {light.colorPreviewUnavailable && (
-        <p className="text-label text-muted-foreground mb-2 leading-normal">
+        <p className="text-label text-muted-foreground mb-2">
           Color preview unavailable; canonical reading is missing or out of
           date.
         </p>
@@ -470,7 +470,7 @@ const DeviceReadingNotice = ({
     return null;
   }
   return (
-    <p className="text-label text-muted-foreground mb-2 leading-normal">
+    <p className="text-label text-muted-foreground mb-2">
       Showing {MAX_DEVICE_ROWS} of {additionalCount} readings. Open Source for
       every Entity.
     </p>
@@ -549,7 +549,7 @@ export const DeviceCard = ({
         />
       )}
       {device && !light && shown.length === 0 && (
-        <p className="text-label text-muted-foreground py-6 leading-normal">
+        <p className="text-label text-muted-foreground py-6">
           No readable Entities on this Device.
         </p>
       )}

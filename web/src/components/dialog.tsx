@@ -48,7 +48,7 @@ const DialogContent = ({
       data-slot="dialog-content"
       forceMount={forceMount}
       className={cn(
-        "border-gray-4 bg-gray-2 text-label text-foreground rounded-card fixed top-1/2 left-1/2 z-[101] w-[min(460px,calc(100vw-40px))] -translate-x-1/2 -translate-y-1/2 border p-6 leading-normal shadow-[0_18px_60px_#0008] outline-none",
+        "border-gray-4 bg-gray-2 text-label text-foreground rounded-card fixed top-1/2 left-1/2 z-[101] w-[min(460px,calc(100vw-40px))] -translate-x-1/2 -translate-y-1/2 border p-6 shadow-[0_18px_60px_#0008] outline-none",
         placement === "center"
           ? "short:max-h-[calc(100dvh-40px)] short:overflow-y-auto"
           : "tablet:short:max-h-[calc(100dvh-40px)] tablet:short:overflow-y-auto",
@@ -67,7 +67,7 @@ const DialogTitle = ({
 }: React.ComponentProps<typeof DialogPrimitive.Title>) => (
   <DialogPrimitive.Title
     data-slot="dialog-title"
-    className={cn("text-title leading-[1.4] font-semibold", className)}
+    className={cn("text-title", className)}
     {...props}
   />
 );

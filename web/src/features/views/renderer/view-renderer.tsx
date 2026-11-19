@@ -105,7 +105,7 @@ const cardTitle = (node: CardElement): string => {
 };
 
 const unsupportedStyles =
-  "rounded-card border border-dashed border-gray-4 px-4 py-3.5 text-label leading-normal text-muted-foreground";
+  "rounded-card border border-dashed border-gray-4 px-4 py-3.5 text-label text-muted-foreground";
 
 interface CardBoundaryProps {
   resetKey: string;
@@ -151,7 +151,7 @@ class CardBoundary extends Component<CardBoundaryProps, CardBoundaryState> {
         ]}
         sources={[]}
       >
-        <p className="text-label text-muted-foreground leading-normal">
+        <p className="text-label text-muted-foreground">
           Edit the view or ask Hearth to change it.
         </p>
       </DataCard>
@@ -348,15 +348,13 @@ const ViewNode = ({
     }
     case "Heading": {
       return (
-        <Heading className="text-title leading-[1.4] font-semibold text-balance">
-          {node.props.text}
-        </Heading>
+        <Heading className="text-title text-balance">{node.props.text}</Heading>
       );
     }
     case "Note": {
       return (
         <p
-          className={`text-body text-muted-foreground max-w-[70ch] leading-[1.7] ${followsHeading ? "mt-[calc(4px-var(--stack-gap))]" : ""}`}
+          className={`text-body text-muted-foreground max-w-[70ch] ${followsHeading ? "mt-[calc(4px-var(--stack-gap))]" : ""}`}
         >
           {node.props.text}
         </p>
@@ -410,7 +408,7 @@ export const ViewRenderer = ({
     return (
       <div className="text-foreground">
         {view.status === "supported" ? view.definition.title : view.title}
-        <span className="text-label text-muted-foreground block leading-normal">
+        <span className="text-label text-muted-foreground block">
           Open view to load live readings
         </span>
       </div>

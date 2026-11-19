@@ -89,13 +89,13 @@ const SwitchRow = ({
             idle={power.since}
           />
         ) : (
-          <p className="text-label text-muted-foreground mt-0.5 min-h-[42px] leading-normal">
+          <p className="text-label text-muted-foreground mt-0.5 min-h-[42px]">
             {power.entity ? "Read-only" : power.since}
           </p>
         )}
       </div>
       <span
-        className="text-compact-reading text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 ms-auto max-w-full flex-none text-right leading-[1.3] font-normal tracking-[-.02em] [overflow-wrap:break-word] whitespace-nowrap"
+        className="text-compact-reading text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 ms-auto max-w-full flex-none text-right [overflow-wrap:break-word] whitespace-nowrap"
         data-value={status.value}
       >
         {readingText(data)}
@@ -237,7 +237,7 @@ export const BoundToggleList = ({
             Turn all off
           </Button>
           <output
-            className="text-label text-muted-foreground data-[failed]:text-destructive flex-[1_1_9em] leading-normal"
+            className="text-label text-muted-foreground data-[failed]:text-destructive flex-[1_1_9em]"
             data-failed={failed > 0 || undefined}
           >
             {groupText(members.length, inProgress, off, failed)}

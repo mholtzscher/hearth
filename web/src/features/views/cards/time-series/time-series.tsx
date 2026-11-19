@@ -263,7 +263,7 @@ const SeriesTooltip = ({
   }
   const start = Date.parse(bucket.start);
   return (
-    <div className="border-gray-4 bg-gray-2 text-label text-foreground grid gap-0.5 rounded-md border px-2.5 py-2 leading-normal tabular-nums">
+    <div className="border-gray-4 bg-gray-2 text-label text-foreground grid gap-0.5 rounded-md border px-2.5 py-2 tabular-nums">
       <p className="text-muted-foreground">
         {timeLabel(start, {
           weekday: !sameDay(start, now),
@@ -351,7 +351,7 @@ export const TimeSeries = ({
       sources={[...sources.values()]}
       sourceExtra={method}
     >
-      <ul className="text-label mb-2 flex list-none flex-wrap gap-x-4 gap-y-1 leading-normal">
+      <ul className="text-label mb-2 flex list-none flex-wrap gap-x-4 gap-y-1">
         {items.map((item, i) => (
           <li
             className="group/series data-[dimmed]:text-muted-foreground inline-flex flex-wrap items-center gap-x-2 gap-y-0"
@@ -369,12 +369,12 @@ export const TimeSeries = ({
         ))}
       </ul>
       {!aligned && first && (
-        <p className="text-label text-muted-foreground mb-2 leading-normal">
+        <p className="text-label text-muted-foreground mb-2">
           Showing the last synchronized interval while readings refresh.
         </p>
       )}
       {since && (
-        <p className="text-label text-muted-foreground mb-2 leading-normal">
+        <p className="text-label text-muted-foreground mb-2">
           History since{" "}
           {timeLabel(Date.parse(since), {
             weekday: !sameDay(Date.parse(since), now),
@@ -474,7 +474,7 @@ export const TimeSeries = ({
           </ChartContainer>
         </section>
       ) : (
-        <p className="text-label text-muted-foreground py-6 leading-normal">
+        <p className="text-label text-muted-foreground py-6">
           {aligned
             ? "Historical readings will appear here."
             : "Synchronizing series intervals…"}

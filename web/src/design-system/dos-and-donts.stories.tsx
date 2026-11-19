@@ -47,7 +47,7 @@ type Story = StoryObj<typeof meta>;
 const Verdict = ({ good }: { good: boolean }) => (
   <span
     className={cn(
-      "text-label inline-flex items-center gap-1.5 leading-normal font-semibold",
+      "text-label inline-flex items-center gap-1.5 font-semibold",
       good ? "text-success" : "text-destructive"
     )}
   >
