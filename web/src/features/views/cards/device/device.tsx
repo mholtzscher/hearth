@@ -528,7 +528,7 @@ export const DeviceCard = ({
           >
             Device details
           </Link>{" "}
-          <code className="text-caption text-muted-foreground mt-1 block">
+          <code className="text-label text-muted-foreground mt-1 block">
             {deviceId}
           </code>
         </p>

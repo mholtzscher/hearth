@@ -433,7 +433,7 @@ const ConversationComposer = ({
               />
             )}
             {!editorValid && (
-              <p className="text-caption text-muted-foreground">
+              <p className="text-label text-muted-foreground">
                 Fix or discard invalid draft edits before sending
               </p>
             )}

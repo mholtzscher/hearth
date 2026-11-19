@@ -186,7 +186,7 @@ const LiveMessages = () => {
         <Input
           aria-label="NATS websocket URL"
           placeholder="ws://127.0.0.1:4223"
-          className="text-caption w-56 font-mono"
+          className="text-label w-56 font-mono"
           value={wsUrl}
           onChange={(e) => {
             setWsUrl(e.target.value);
@@ -196,7 +196,7 @@ const LiveMessages = () => {
         <Input
           aria-label="Subject (supports * and >)"
           placeholder="hearth.v1.adapter.>"
-          className="text-caption w-96 flex-1 font-mono"
+          className="text-label w-96 flex-1 font-mono"
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
         />
@@ -277,15 +277,15 @@ const LiveMessages = () => {
           )}
           {visible.map((m, i) => (
             <TableRow key={`${m.at}-${i}`} className="align-top">
-              <TableCell className="text-muted-foreground text-caption font-mono whitespace-nowrap">
+              <TableCell className="text-muted-foreground text-label font-mono whitespace-nowrap">
                 {m.at}
               </TableCell>
-              <TableCell className="text-caption font-mono break-all whitespace-normal">
+              <TableCell className="text-label font-mono break-all whitespace-normal">
                 {m.subject}
               </TableCell>
               <TableCell className="whitespace-normal">
                 {m.json === null ? (
-                  <pre className="text-caption m-0 break-all whitespace-pre-wrap">
+                  <pre className="text-label m-0 break-all whitespace-pre-wrap">
                     {m.payload.slice(0, 2000)}
                   </pre>
                 ) : (
@@ -374,7 +374,7 @@ const ServerInfo = () => {
         <div className="flex items-center gap-2">
           <span className="text-label font-medium">Server</span>
           {varz.loading && (
-            <span className="text-muted-foreground text-caption">Loading…</span>
+            <span className="text-muted-foreground text-label">Loading…</span>
           )}
         </div>
         {varz.error && <ErrorBox error={varz.error} />}
@@ -463,19 +463,17 @@ const ServerInfo = () => {
             )}
             {(conns.data?.connections ?? []).map((c) => (
               <TableRow key={c.cid} className="align-top">
-                <TableCell className="text-caption font-mono">
-                  {c.cid}
-                </TableCell>
+                <TableCell className="text-label font-mono">{c.cid}</TableCell>
                 <TableCell>{c.kind}</TableCell>
-                <TableCell className="text-caption font-mono">
+                <TableCell className="text-label font-mono">
                   {c.ip}:{c.port}
                 </TableCell>
-                <TableCell className="text-muted-foreground text-caption font-mono break-all whitespace-normal">
+                <TableCell className="text-muted-foreground text-label font-mono break-all whitespace-normal">
                   {c.subscriptions ?? "—"}
                   {(c.subscriptions_list ?? []).length > 0 &&
                     `: ${(c.subscriptions_list ?? []).join(", ")}`}
                 </TableCell>
-                <TableCell className="text-caption font-mono">
+                <TableCell className="text-label font-mono">
                   {c.in_msgs} / {c.out_msgs}
                 </TableCell>
               </TableRow>

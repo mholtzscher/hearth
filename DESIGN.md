@@ -156,7 +156,7 @@ components:
     rounded: "{rounded.card}"
     padding: "24px"
   notice:
-    typography: "{typography.caption}"
+    typography: "{typography.label}"
     rounded: "{rounded.md}"
     padding: "12px"
 ---
@@ -276,8 +276,10 @@ status text at 20% or less.
 ## Typography
 
 **Font:** Figtree Variable, self-hosted through `@fontsource-variable/figtree`,
-with a sans-serif fallback. Opaque identifiers and raw structured data may use
-monospace.
+with a sans-serif fallback. Opaque identifiers, codes, timestamps, and raw
+structured data use each device's own monospace at the size of the text around
+them, usually Label. `index.css` sets `font-size-adjust: 0.5` on monospace, so
+every device's monospace matches Figtree's x-height.
 
 **Character:** a clear, restrained voice throughout. Readings are light and
 large; everything around them is quieter.
@@ -314,8 +316,9 @@ at 26px and above, −0.02em at 20px.
   headings inside a Development section.
 - **Label** (14px, 1.5): the workspace base size, used for card titles, reading
   metadata, chart legends, editor details, fields, buttons, and tables.
-- **Caption** (12px, 1.5): Notice text and the Recent conversations date
-  headings.
+- **Caption** (12px, 1.5): only small labels: the Recent conversations date
+  headings, badges, chart and forecast axes, compass letters, and the rail's
+  navigation labels. Notes and explanations use Label.
 
 Only the wordmark (24px, 20px in the phone bar) sits off this scale.
 `design-system.test.ts` lists every pixel size off the scale, and every line
@@ -359,8 +362,8 @@ Development pages and the dashboard library share the dashboard's 1440px maximum
 width and 28px gutters (20px on phones). `PageHeader` pairs the headline with
 wrapping actions and optional context, separated from content by one rule.
 
-Metadata uses `Facts` definition lists, which wrap values below their labels
-when space is limited. Tables use the label size and sentence-case column
+Metadata uses `Facts` definition lists. Each monospace value sits on its
+label's baseline and wraps below the label when space is limited. Tables use the label size and sentence-case column
 labels. Their named scroll areas enter the Tab order only while content
 overflows.
 
@@ -531,7 +534,7 @@ the one modal surface outside Dialog; decision dialogs always use Dialog.
 
 `Notice` from `components/notice.tsx` uses the error tint: a border of
 `destructive` at 45%, a background of `destructive` at 8%, foreground text, 8px
-corners, and 12px padding. Its text uses the 12px caption size with an 18px line
+corners, and 12px padding. Its text uses the 14px label size with a 21px line
 height. Notices grow with their content rather than taking a control height.
 
 Callers choose `role="alert"` for errors or `role="status"` for non-urgent

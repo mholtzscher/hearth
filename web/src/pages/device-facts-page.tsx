@@ -486,7 +486,7 @@ const LiveSection = ({
       <StatusChip status={chipText} tone={tone} />
       <output className="text-muted-foreground text-label">{stateLine}</output>
     </div>
-    <p className="text-muted-foreground text-caption mt-1.5">{explanation}</p>
+    <p className="text-muted-foreground text-label mt-1.5">{explanation}</p>
     <div className="mt-2 flex flex-wrap items-center gap-2">
       <Button
         size="default"
@@ -496,7 +496,7 @@ const LiveSection = ({
       >
         Clear live arrivals
       </Button>
-      <span className="text-muted-foreground text-caption">
+      <span className="text-muted-foreground text-label">
         live arrivals delivered this session: {delivered}
         {malformed > 0 ? ` · ${malformed} malformed skipped` : ""}
       </span>
@@ -536,7 +536,7 @@ const FactFilters = ({
     <div>
       <span
         id="device-facts-family-label"
-        className="text-muted-foreground text-caption block"
+        className="text-muted-foreground text-label block"
       >
         Family
       </span>
@@ -552,7 +552,7 @@ const FactFilters = ({
     <div>
       <span
         id="device-facts-disposition-label"
-        className="text-muted-foreground text-caption block"
+        className="text-muted-foreground text-label block"
       >
         Disposition (observations only)
       </span>
@@ -569,7 +569,7 @@ const FactFilters = ({
     <div className="min-w-[16rem] flex-1">
       <Label
         htmlFor="device-facts-text"
-        className="text-muted-foreground text-caption"
+        className="text-muted-foreground text-label"
       >
         Filter
       </Label>
@@ -585,7 +585,7 @@ const FactFilters = ({
     <div>
       <Label
         htmlFor="device-facts-cap"
-        className="text-muted-foreground text-caption"
+        className="text-muted-foreground text-label"
       >
         Row cap
       </Label>
@@ -716,7 +716,7 @@ const FactRowView = ({
         <span className="block truncate" title={fact.entityId}>
           {enrichment?.name ?? "(unresolved entity)"}
         </span>
-        <span className="text-muted-foreground text-caption block truncate">
+        <span className="text-muted-foreground text-label block truncate">
           {enrichment?.deviceName || fact.entityId}
         </span>
       </TableCell>
@@ -740,20 +740,20 @@ const FactRowView = ({
       </TableCell>
       <TableCell className="max-w-[13rem]">
         <span
-          className="text-muted-foreground text-caption block truncate font-mono"
+          className="text-muted-foreground text-label block truncate font-mono"
           title={fact.id}
         >
           {fact.id}
         </span>
       </TableCell>
-      <TableCell className="text-muted-foreground text-caption font-mono">
+      <TableCell className="text-muted-foreground text-label font-mono">
         <span title={fact.envelope.emitted_at}>
           {clockTime(fact.envelope.emitted_at)}
         </span>
       </TableCell>
-      <TableCell className="text-muted-foreground text-caption font-mono">
+      <TableCell className="text-muted-foreground text-label font-mono">
         <span title={source}>{clockTime(source)}</span>
-        <span className="text-caption ms-1">
+        <span className="ms-1">
           {deltaLabel(source, fact.envelope.emitted_at)}
         </span>
       </TableCell>
@@ -1034,7 +1034,7 @@ const MetadataSection = ({ rows }: { rows: [string, ReactNode][] }) => (
 
 const RawFactSection = ({ row }: { row: FactRow }) => (
   <Section title="Raw fact JSON">
-    <p className="text-muted-foreground text-caption">
+    <p className="text-muted-foreground text-label">
       The published payload as decoded from the wire: every field the publisher
       sent, including any the typed envelope above does not model,
       pretty-printed for display only. Stream sequence, consumer and delivery
@@ -1095,7 +1095,7 @@ const FactDetail = ({
             {enrichment.name}
           </span>
         )}
-        <span className="text-muted-foreground text-caption font-mono">
+        <span className="text-muted-foreground text-label font-mono">
           {fact.id}
         </span>
       </div>
@@ -1487,7 +1487,7 @@ export default function DeviceFactsPage() {
         onClear={clearFilters}
       />
 
-      <p className="text-muted-foreground text-caption mt-2">
+      <p className="text-muted-foreground text-label mt-2">
         Entity, device and type names are dashboard enrichment from the devices
         read API; the fact payload and subject carry only the canonical entity
         id.

@@ -209,7 +209,7 @@ const NotificationsHistory = ({
                   <TableCell>{a.destination_name}</TableCell>
                   <TableCell>{a.title || "—"}</TableCell>
                   <TableCell>{a.reason_code ?? "—"}</TableCell>
-                  <TableCell className="text-caption font-mono">
+                  <TableCell className="text-label font-mono">
                     {a.started_at}
                   </TableCell>
                   <TableCell>

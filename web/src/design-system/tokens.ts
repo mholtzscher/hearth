@@ -91,7 +91,7 @@ export const TYPE_USE: Record<TextToken, string> = {
   body: "Conversation text; subsection headings at 600",
   label: "Workspace base: cards, fields, buttons, tables",
   "compact-reading": "Row values in lists and ledgers",
-  caption: "Notices, Recent date headings",
+  caption: "Recent date headings, badges, chart axes, rail labels",
 };
 
 export const RADII = ["xs", "md", "card"] as const;

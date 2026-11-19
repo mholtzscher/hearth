@@ -45,7 +45,7 @@ const EntityEventHistory = ({
       >
         Latest / Refresh history
       </Button>
-      <p className="text-muted-foreground text-caption mt-1.5">
+      <p className="text-muted-foreground text-label mt-1.5">
         Newer events appear after refreshing. Older entries may expire while
         paging.
       </p>
@@ -119,7 +119,7 @@ const EventHistoryScope = ({
                         }
                       />
                     </TableCell>
-                    <TableCell className="text-caption font-mono">
+                    <TableCell className="text-label font-mono">
                       {entry.rejection_code ?? "—"}
                     </TableCell>
                     <TableCell className="max-w-[16rem]">
@@ -128,13 +128,13 @@ const EventHistoryScope = ({
                         className="text-muted-foreground"
                       />
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-caption font-mono">
+                    <TableCell className="text-muted-foreground text-label font-mono">
                       {entry.emitted_at}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-caption font-mono">
+                    <TableCell className="text-muted-foreground text-label font-mono">
                       {entry.received_at}
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-caption font-mono">
+                    <TableCell className="text-muted-foreground text-label font-mono">
                       {entry.recorded_at}
                     </TableCell>
                   </TableRow>

@@ -14,7 +14,7 @@ import { ExpressionCode, JsonCode } from "./automation-code";
 import { documentValue } from "./document";
 import type { AutomationDocument } from "./document";
 
-const note = "block text-caption text-muted-foreground";
+const note = "block text-label text-muted-foreground";
 const paragraph = "my-[5px] text-label text-muted-foreground";
 
 /** Same-named Entities, such as several "Power" Entities, are told apart by their Device. */
@@ -480,7 +480,7 @@ const Arm = ({
   >
     <summary className="marker:text-gray-7 focus-visible:outline-ring min-h-9 cursor-pointer py-2 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-solid">
       {title}
-      <small className="text-caption text-muted-foreground">
+      <small className="text-label text-muted-foreground">
         {" "}
         · {steps.length} {steps.length === 1 ? "Step" : "Steps"}
       </small>
@@ -543,7 +543,7 @@ export const StackSequence = ({
       >
         <div className="max-tablet:grid-cols-[14px_minmax(0,1fr)] grid grid-cols-[18px_minmax(0,1fr)] items-start gap-x-2.5">
           <span
-            className="text-caption text-muted-foreground text-right tabular-nums"
+            className="text-label text-muted-foreground text-right tabular-nums"
             aria-hidden="true"
           >
             {index + 1}
@@ -553,7 +553,7 @@ export const StackSequence = ({
               <span className="capitalize">
                 {step.kind.replaceAll("_", " ")}
               </span>{" "}
-              · <code className="text-caption">{step.id}</code>
+              · <code className="text-label">{step.id}</code>
             </span>
             <div className="text-label mt-0.5">
               <StepCopy ctx={ctx} step={step} path={[...path, index]} />

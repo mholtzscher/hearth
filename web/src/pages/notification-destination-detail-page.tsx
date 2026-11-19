@@ -67,7 +67,7 @@ const DestinationDetail = ({ id }: { id: string }) => {
       <PageHeader
         title={data?.name ?? "Notification destination"}
         description={
-          <span className="text-caption font-mono break-all">{id}</span>
+          <span className="text-label font-mono break-all">{id}</span>
         }
       >
         <Button

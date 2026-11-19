@@ -141,7 +141,7 @@ const CommandDetail = ({ commandId }: { commandId: string }) => {
   return (
     <Card className="mt-3" size="compact">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-caption font-mono">{commandId}</span>
+        <span className="text-label font-mono">{commandId}</span>
         {data && <StatusChip status={data.status} />}
         <Button
           size="default"
@@ -261,7 +261,7 @@ const CommandsPage = () => {
         <Input
           aria-label="command_id"
           placeholder="Look up cmd_…"
-          className="text-caption w-96 font-mono"
+          className="text-label w-96 font-mono"
           value={commandId}
           onChange={(e) => setCommandId(e.target.value)}
           onKeyDown={(e) => {
@@ -288,7 +288,7 @@ const CommandsPage = () => {
       </PageHeader>
       {recentIds.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="text-muted-foreground text-caption">Recent:</span>
+          <span className="text-muted-foreground text-label">Recent:</span>
           {recentIds.map((id) => (
             <Button
               key={id}
@@ -312,7 +312,7 @@ const CommandsPage = () => {
           <Input
             id="cmd-entity-filter"
             placeholder="Filter by entity_id…"
-            className="text-caption w-72 font-mono"
+            className="text-label w-72 font-mono"
             value={entityFilter}
             onChange={(e) => setEntityFilter(e.target.value)}
             onKeyDown={(e) => {
@@ -396,10 +396,10 @@ const CommandsPage = () => {
                     </RouterLink>
                   </TableCell>
                   <TableCell>{c.operation}</TableCell>
-                  <TableCell className="text-caption max-w-[16rem] truncate font-mono">
+                  <TableCell className="text-label max-w-[16rem] truncate font-mono">
                     {JSON.stringify(c.parameters)}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-caption font-mono">
+                  <TableCell className="text-muted-foreground text-label font-mono">
                     {c.requested_at}
                   </TableCell>
                   <TableCell className="max-w-[16rem]">

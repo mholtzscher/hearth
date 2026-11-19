@@ -31,7 +31,7 @@ export const JsonCode = ({
       return block ? (
         <pre
           data-slot="automation-code-block"
-          className={`text-caption text-gray-9 mb-2 [overflow-wrap:anywhere] whitespace-pre-wrap ${tokenStyles}`}
+          className={`text-label text-gray-9 mb-2 [overflow-wrap:anywhere] whitespace-pre-wrap ${tokenStyles}`}
         >
           <code>{lines}</code>
         </pre>

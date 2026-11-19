@@ -76,7 +76,7 @@ const LibraryCard = ({
           </Link>
         </h2>
         {updated && (
-          <p className="text-caption text-muted-foreground mt-1">
+          <p className="text-label text-muted-foreground mt-1">
             Updated{" "}
             <time
               dateTime={item.updated_at}
@@ -243,7 +243,7 @@ const ConnectedLibrary = () => {
             <h2 className="text-label mb-1 font-medium">
               Your first dashboard starts with a question.
             </h2>
-            <p className="text-caption text-muted-foreground mb-4">
+            <p className="text-label text-muted-foreground mb-4">
               Generate a view in conversation, customize it, and save it here.
             </p>
             <Link className="text-link" to="/">

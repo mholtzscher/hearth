@@ -244,7 +244,7 @@ const TYPE_SAMPLES: Record<
     </span>
   ),
   caption: (ref) => (
-    <span ref={ref} className="text-caption block">
+    <span ref={ref} className="text-label block">
       Previous 7 days
     </span>
   ),

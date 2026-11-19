@@ -65,7 +65,7 @@ export const TokenValue = ({
   <code
     data-slot="token-value"
     data-token={token}
-    className={cn("text-caption text-gray-8 font-mono", className)}
+    className={cn("text-label text-gray-8 font-mono", className)}
   >
     {value ?? "…"}
   </code>

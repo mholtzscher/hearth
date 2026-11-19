@@ -205,7 +205,7 @@ export const CardSource = ({
                 >
                   {source.label}
                 </Link>
-                <code className="text-caption text-muted-foreground mt-1 block">
+                <code className="text-label text-muted-foreground mt-1 block">
                   {source.entityId}
                 </code>
                 {!single &&

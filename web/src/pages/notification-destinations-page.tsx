@@ -88,9 +88,7 @@ export default function NotificationDestinationsPage() {
                       status={d.available ? "available" : "unavailable"}
                     />
                   </TableCell>
-                  <TableCell className="text-caption font-mono">
-                    {d.id}
-                  </TableCell>
+                  <TableCell className="text-label font-mono">{d.id}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

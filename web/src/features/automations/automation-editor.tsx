@@ -131,10 +131,10 @@ const SchemaGuide = ({
   schema?: Record<string, unknown>;
   title: string;
 }) => (
-  <details className="text-caption text-muted-foreground">
+  <details className="text-label text-muted-foreground">
     <summary className={summary}>{title}</summary>
     {schema ? (
-      <pre className="text-caption text-gray-9 [overflow-wrap:anywhere] whitespace-pre-wrap">
+      <pre className="text-label text-gray-9 [overflow-wrap:anywhere] whitespace-pre-wrap">
         {JSON.stringify(schema, null, 2)}
       </pre>
     ) : (
@@ -333,7 +333,7 @@ const SequenceEditor = ({
               </summary>
               <StepEditor ctx={ctx} path={[...path, index]} step={step} />
               <div className={actions}>
-                <span className="text-caption text-muted-foreground basis-full">
+                <span className="text-label text-muted-foreground basis-full">
                   Actions for {step.id} · {title}
                 </span>
                 <Button

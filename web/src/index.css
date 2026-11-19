@@ -3,6 +3,14 @@
 
 @custom-variant short (@media (max-height: 600px));
 
+/*
+ * Scale whichever monospace a device picks so its x-height matches Figtree's
+ * half-em, keeping codes the same visual size as the text beside them.
+ */
+@utility font-mono {
+  font-size-adjust: 0.5;
+}
+
 @theme inline {
   /* Only Hearth's palette compiles; Tailwind's default colours are removed. */
   --color-*: initial;
@@ -28,6 +36,10 @@
   --color-warning: var(--warning);
   --color-info: var(--info);
   --font-sans: "Figtree Variable", sans-serif;
+  /* Each device's own monospace; font-mono and code elements match Figtree's x-height. */
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
   --color-chart-8: var(--chart-8);
   --color-chart-7: var(--chart-7);
   --color-chart-6: var(--chart-6);
@@ -185,6 +197,10 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Match monospace in code elements to Figtree's x-height, as font-mono does. */
+  :where(code, kbd, samp, pre) {
+    font-size-adjust: 0.5;
   }
   html {
     @apply font-sans;

@@ -426,7 +426,7 @@
       },
       "caption": {
         "displayName": "Caption",
-        "purpose": "Notice text and Recent conversations date headings."
+        "purpose": "Small labels only: Recent conversations date headings, badges, chart axes, compass letters, and rail navigation labels."
       }
     },
     "shadows": [
@@ -573,9 +573,9 @@
       "name": "Notice",
       "kind": "custom",
       "refersTo": "notice",
-      "description": "An error notice: destructive tint, 8px corners, 12px caption text.",
+      "description": "An error notice: destructive tint, 8px corners, 14px label text.",
       "html": "<div class=\"ds-notice\" role=\"alert\">Couldn't load dashboards. Check the Core connection.</div>",
-      "css": ".ds-notice {font-family:'Figtree Variable',sans-serif;padding:12px;border:1px solid color-mix(in oklch,var(--error) 45%,transparent);border-radius:8px;background:color-mix(in oklch,var(--error) 8%,transparent);color:var(--gray-10);font-size:12px;line-height:18px}"
+      "css": ".ds-notice {font-family:'Figtree Variable',sans-serif;padding:12px;border:1px solid color-mix(in oklch,var(--error) 45%,transparent);border-radius:8px;background:color-mix(in oklch,var(--error) 8%,transparent);color:var(--gray-10);font-size:14px;line-height:21px}"
     },
     {
       "name": "Main navigation",
@@ -596,7 +596,7 @@
       "kind": "custom",
       "description": "Near-black field with a violet focus border and a primary send action.",
       "html": "<div class=\"ds-composer\"><textarea class=\"ds-composer-input\" rows=\"1\" aria-label=\"Message\" placeholder=\"Ask about your home, or ask for a view…\"></textarea><div class=\"ds-composer-footer\"><span>Message Hearth</span><button class=\"ds-send\">Send</button></div></div>",
-      "css": ".ds-composer {font-family:'Figtree Variable',sans-serif;display:flex;flex-direction:column;border:1px solid var(--gray-4);background:var(--gray-1);border-radius:12px;padding:8px} .ds-composer:focus-within {border-color:var(--violet)} .ds-composer-input {font-family:'Figtree Variable',sans-serif;display:block;box-sizing:border-box;width:100%;min-height:44px;padding:10px 8px;resize:none;border:0;outline:none;background:transparent;color:var(--gray-10);caret-color:var(--violet);font-size:16px;line-height:1.5} .ds-composer-input::placeholder {color:var(--gray-8);opacity:1} .ds-composer-footer {display:flex;align-items:center;gap:12px;color:var(--gray-8);font-size:12px} .ds-composer-footer>span {flex:1;padding:0 8px} .ds-send {font-family:'Figtree Variable',sans-serif;min-height:44px;min-width:44px;padding:0 10px;border:0;border-radius:8px;background:var(--orange);color:var(--on-orange);font-weight:600;cursor:pointer} .ds-send:hover:not(:disabled) {background:var(--orange-hover)} .ds-send:focus-visible {outline:2px solid var(--violet);outline-offset:3px} .ds-send:disabled {background:var(--gray-3);color:var(--gray-7)}"
+      "css": ".ds-composer {font-family:'Figtree Variable',sans-serif;display:flex;flex-direction:column;border:1px solid var(--gray-4);background:var(--gray-1);border-radius:12px;padding:8px} .ds-composer:focus-within {border-color:var(--violet)} .ds-composer-input {font-family:'Figtree Variable',sans-serif;display:block;box-sizing:border-box;width:100%;min-height:44px;padding:10px 8px;resize:none;border:0;outline:none;background:transparent;color:var(--gray-10);caret-color:var(--violet);font-size:16px;line-height:1.5} .ds-composer-input::placeholder {color:var(--gray-8);opacity:1} .ds-composer-footer {display:flex;align-items:center;gap:12px;color:var(--gray-8);font-size:14px} .ds-composer-footer>span {flex:1;padding:0 8px} .ds-send {font-family:'Figtree Variable',sans-serif;min-height:44px;min-width:44px;padding:0 10px;border:0;border-radius:8px;background:var(--orange);color:var(--on-orange);font-weight:600;cursor:pointer} .ds-send:hover:not(:disabled) {background:var(--orange-hover)} .ds-send:focus-visible {outline:2px solid var(--violet);outline-offset:3px} .ds-send:disabled {background:var(--gray-3);color:var(--gray-7)}"
     },
     {
       "name": "Arriving reading",

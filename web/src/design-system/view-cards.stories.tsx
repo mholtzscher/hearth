@@ -164,7 +164,7 @@ const FrameAnatomyFigure = () => {
             }}
           >
             <span className="border-violet absolute -inset-1 rounded-md border border-dashed" />
-            <span className="bg-violet text-gray-0 text-caption absolute -top-3 -left-3 grid size-5 place-items-center rounded-full font-semibold">
+            <span className="bg-violet text-gray-0 text-label absolute -top-3 -left-3 grid size-5 place-items-center rounded-full font-semibold">
               {index + 1}
             </span>
           </div>
@@ -178,7 +178,7 @@ const FrameAnatomyFigure = () => {
               data-slot-name={marker.name}
               className="grid grid-cols-[24px_minmax(0,1fr)] gap-x-2"
             >
-              <span className="bg-violet text-gray-0 text-caption grid size-5 place-items-center rounded-full font-semibold">
+              <span className="bg-violet text-gray-0 text-label grid size-5 place-items-center rounded-full font-semibold">
                 {index + 1}
               </span>
               <span className="grid">

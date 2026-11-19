@@ -25,7 +25,7 @@ export const Phone: Story = {
   args: {
     title: "Weather station in the back garden",
     description: (
-      <span className="text-caption font-mono break-all">
+      <span className="text-label font-mono break-all">
         dev_019a3e6a-4111-7000-8000-000000000003
       </span>
     ),

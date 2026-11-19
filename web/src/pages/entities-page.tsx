@@ -108,7 +108,7 @@ export default function EntitiesPage() {
                   <TableCell className="max-w-[22rem]">
                     <MonoId value={e.id} className="text-muted-foreground" />
                   </TableCell>
-                  <TableCell className="text-caption font-mono">
+                  <TableCell className="text-label font-mono">
                     {e.type}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
@@ -118,7 +118,7 @@ export default function EntitiesPage() {
                   <TableCell>
                     <StatusChip status={e.availability.status} />
                   </TableCell>
-                  <TableCell className="text-caption font-mono">
+                  <TableCell className="text-label font-mono">
                     {e.state
                       ? (forecastSummary(e.type, e.state.value) ??
                         formatEntityState(e))

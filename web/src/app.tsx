@@ -232,7 +232,7 @@ const ConnectionSettings = () => {
               }
             }}
           />
-          <p className="text-muted-foreground text-caption">
+          <p className="text-muted-foreground text-label">
             Empty uses the same origin (the vite proxy).
           </p>
         </div>

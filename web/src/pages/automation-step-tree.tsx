@@ -25,12 +25,12 @@ const BindingView = ({
   label: string;
 }) => (
   <div>
-    <span className="text-caption">
+    <span className="text-label">
       {label}:{" "}
       {source === undefined ? "Literal" : "Expression (resolved when reached)"}
     </span>
     <pre
-      className="text-caption max-h-64 overflow-auto font-mono break-all whitespace-pre-wrap"
+      className="text-label max-h-64 overflow-auto font-mono break-all whitespace-pre-wrap"
       aria-label={label}
     >
       {source ??
@@ -162,7 +162,7 @@ const stepDescription = (
           >
             {step.automation_id}
           </RouterLink>
-          <p className="text-caption">
+          <p className="text-label">
             Waits for the child Run to succeed before continuing.
           </p>
         </>
@@ -176,7 +176,7 @@ const stepDescription = (
           <span className="font-mono">
             {step.adapter_id} / {step.function_key}
           </span>
-          <p className="text-caption font-mono break-all">
+          <p className="text-label font-mono break-all">
             Contract fingerprint: {step.contract_fingerprint}
           </p>
           <BindingView
@@ -249,7 +249,7 @@ export const AutomationConditionTree = ({
   condition: AutomationBranchCondition;
   labels: ReadonlyMap<string, string>;
 }) => (
-  <ul className="text-caption mt-1">
+  <ul className="text-label mt-1">
     {describeAutomationCondition(condition).map(
       ({ condition: node, depth }, index) => (
         <li key={index} style={{ marginLeft: (depth - 1) * 16 }}>
@@ -274,7 +274,7 @@ const AutomationStepTree = ({
   const tree = describeAutomationSteps(steps);
   return (
     <div>
-      <p className="text-muted-foreground text-caption">
+      <p className="text-muted-foreground text-label">
         {tree.stepCount} defined Steps · {tree.commandCount} commands
         {tree.notificationCount > 0 && (
           <> · {tree.notificationCount} notifications</>
@@ -306,7 +306,7 @@ const AutomationStepTree = ({
               </>
             ) : (
               <>
-                <span className="text-caption font-mono">{row.step.id}</span>
+                <span className="text-label font-mono">{row.step.id}</span>
                 {" · "}
                 {row.step.kind === "sub_automation"
                   ? "Sub-automation"

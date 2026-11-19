@@ -186,7 +186,7 @@ const AutomationsLibrary = ({
                           }
                         />
                       </TableCell>
-                      <TableCell className="text-caption font-mono">
+                      <TableCell className="text-label font-mono">
                         {automation.revision}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
@@ -200,7 +200,7 @@ const AutomationsLibrary = ({
                         {tree.commandCount}
                         {tree.truncated ? "+ (incomplete)" : ""}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-caption font-mono">
+                      <TableCell className="text-muted-foreground text-label font-mono">
                         {automation.updated_at}
                       </TableCell>
                       <TableCell className="max-w-[22rem]">
