@@ -46,7 +46,7 @@ export const RangeTrack = ({
         />
       </div>
       <p
-        className="text-label text-muted-foreground flex justify-between gap-2 tabular-nums"
+        className="text-label text-muted-foreground flex justify-between gap-2"
         aria-hidden="true"
       >
         <span>{bound(minimum, digits)}</span>

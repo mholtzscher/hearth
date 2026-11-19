@@ -239,7 +239,7 @@ const TYPE_SAMPLES: Record<
     </span>
   ),
   "compact-reading": (ref) => (
-    <span ref={ref} className="text-compact-reading block tabular-nums">
+    <span ref={ref} className="text-compact-reading block">
       21.5
     </span>
   ),

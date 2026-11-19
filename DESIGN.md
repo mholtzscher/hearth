@@ -323,8 +323,13 @@ at 26px and above, −0.02em at 20px.
 Prose keeps a 32em measure, about 74 Figtree characters, and wraps with
 `text-pretty`: reply paragraphs, lists, and quotes, and a view's Notes. Avoid
 `ch` for a measure, because Figtree's zero is about 1.45 average characters
-wide. Numbers that line up or update, such as readings, ages, tables, and
-chart axes, use tabular figures.
+wide.
+
+Digits are tabular everywhere by default: `index.css` sets
+`font-variant-numeric: tabular-nums` on `html`, so readings, ages, levels,
+tables, and chart axes hold still as they update and line up in columns. Only
+prose opts out with `proportional-nums`: reply text, user messages, and view
+Notes. Tables inside a reply opt back in.
 
 Only the wordmark (24px, 20px in the phone bar) sits off this scale.
 `design-system.test.ts` lists every pixel size off the scale, and every line

@@ -8,4 +8,4 @@ export const sliderClasses =
   "focus-visible:[&::-webkit-slider-thumb]:outline-2 focus-visible:[&::-webkit-slider-thumb]:outline-offset-3 focus-visible:[&::-webkit-slider-thumb]:outline-ring focus-visible:[&::-moz-range-thumb]:outline-2 focus-visible:[&::-moz-range-thumb]:outline-offset-3 focus-visible:[&::-moz-range-thumb]:outline-ring";
 
 export const sliderLabelClasses =
-  "flex justify-between gap-2 text-label text-muted-foreground tabular-nums";
+  "flex justify-between gap-2 text-label text-muted-foreground";

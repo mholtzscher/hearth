@@ -263,7 +263,7 @@ const SeriesTooltip = ({
   }
   const start = Date.parse(bucket.start);
   return (
-    <div className="border-gray-4 bg-gray-2 text-label text-foreground grid gap-0.5 rounded-md border px-2.5 py-2 tabular-nums">
+    <div className="border-gray-4 bg-gray-2 text-label text-foreground grid gap-0.5 rounded-md border px-2.5 py-2">
       <p className="text-muted-foreground">
         {timeLabel(start, {
           weekday: !sameDay(start, now),

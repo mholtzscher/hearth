@@ -65,7 +65,7 @@ export const Axis = ({
     <div
       data-slot="timeline-axis"
       className={cn(
-        "text-muted-foreground text-caption relative h-5 tabular-nums",
+        "text-muted-foreground text-caption relative h-5",
         className
       )}
       aria-hidden="true"
@@ -224,7 +224,7 @@ export const TimelineLanes = ({
               color={`var(--chart-${(index % 8) + 1})`}
               dimmed={status.value === "dimmed"}
             />
-            <div className="text-muted-foreground text-right tabular-nums @max-[600px]:col-start-2 @max-[600px]:row-start-1 @max-[420px]:col-start-1 @max-[420px]:row-start-2 @max-[420px]:text-left">
+            <div className="text-muted-foreground text-right @max-[600px]:col-start-2 @max-[600px]:row-start-1 @max-[420px]:col-start-1 @max-[420px]:row-start-2 @max-[420px]:text-left">
               {totalsText(row.resource.data?.timeline, row.trueWord)}
             </div>
           </div>

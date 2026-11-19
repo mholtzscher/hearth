@@ -123,7 +123,7 @@ const OutsideSource = ({ history }: { history: Resolved<SeriesData> }) => {
         last loaded interval.
       </p>
       {historyData && (
-        <dl className="m-0 grid gap-4 tabular-nums">
+        <dl className="m-0 grid gap-4">
           {[
             { caption: "Temperature history from", at: historyData.from },
             { caption: "Temperature history to", at: historyData.to },

@@ -36,7 +36,7 @@ export const FanStepper = ({
       <div className="flex justify-between gap-3">
         <span className="text-gray-9">Fan level</span>
         {level !== undefined && (
-          <span className="text-muted-foreground text-right tabular-nums">
+          <span className="text-muted-foreground text-right">
             {active
               ? `Level ${level} of ${levels}`
               : `Level ${level} kept for Manual`}
@@ -63,7 +63,7 @@ export const FanStepper = ({
         </Button>
         <div className="flex items-center justify-center gap-3">
           <span
-            className="text-compact-reading text-foreground data-[value=empty]:text-gray-6 max-w-full text-right tabular-nums"
+            className="text-compact-reading text-foreground data-[value=empty]:text-gray-6 max-w-full text-right"
             data-value={level === undefined ? "empty" : undefined}
           >
             {level ?? "—"}

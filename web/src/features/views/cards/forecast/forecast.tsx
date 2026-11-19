@@ -104,7 +104,7 @@ const Daily = ({ periods, now }: { periods: DailyPeriod[]; now: number }) => {
           return (
             <li
               key={p.date}
-              className="border-border grid min-h-11 grid-cols-[4.2em_28px_3.2em_2.6em_1fr_2.6em] items-center gap-2.5 border-t tabular-nums first:border-t-0 @max-[300px]:grid-cols-[3.4em_24px_2.8em_2.4em_1fr_2.4em] @max-[300px]:gap-1.5"
+              className="border-border grid min-h-11 grid-cols-[4.2em_28px_3.2em_2.6em_1fr_2.6em] items-center gap-2.5 border-t first:border-t-0 @max-[300px]:grid-cols-[3.4em_24px_2.8em_2.4em_1fr_2.4em] @max-[300px]:gap-1.5"
               aria-label={dailyLabel(p, now)}
             >
               <span
@@ -287,7 +287,7 @@ const Hourly = ({
       >
         <svg
           data-slot="forecast-chart"
-          className="block overflow-visible tabular-nums"
+          className="block overflow-visible"
           width={width}
           height={216}
           viewBox={`0 0 ${width} 216`}

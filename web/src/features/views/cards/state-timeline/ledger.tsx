@@ -28,7 +28,7 @@ export const TimelineLedger = ({
               key={row.key}
             >
               <span className="text-muted-foreground">{row.label}</span>
-              <span className="text-muted-foreground text-right tabular-nums">
+              <span className="text-muted-foreground text-right">
                 {totalsText(row.resource.data?.timeline, row.trueWord)}
               </span>
               <div
@@ -36,7 +36,7 @@ export const TimelineLedger = ({
                 className="col-span-full flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5"
               >
                 <strong
-                  className="text-compact-reading data-[value=empty]:text-gray-6 data-[value=dimmed]:text-gray-8 tabular-nums"
+                  className="text-compact-reading data-[value=empty]:text-gray-6 data-[value=dimmed]:text-gray-8"
                   data-value={status.value}
                 >
                   {row.resource.data?.current?.text ?? "—"}

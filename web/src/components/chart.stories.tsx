@@ -51,7 +51,7 @@ const meta = {
               | { time: string; mean: number; band: [number, number] }
               | undefined;
             return active && sample ? (
-              <div className="border-gray-4 bg-gray-2 text-label text-foreground rounded-md border px-2.5 py-2 tabular-nums">
+              <div className="border-gray-4 bg-gray-2 text-label text-foreground rounded-md border px-2.5 py-2">
                 <p className="text-muted-foreground">{sample.time}</p>
                 <p>
                   Living room avg {sample.mean.toFixed(1)} °C (

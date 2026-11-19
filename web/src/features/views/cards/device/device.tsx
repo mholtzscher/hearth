@@ -109,10 +109,7 @@ const LightDetailLine = ({
   colorDimmed: boolean;
   brightnessDimmed: boolean;
 }) => (
-  <p
-    data-slot="light-detail"
-    className="text-label text-gray-9 mt-2 tabular-nums"
-  >
+  <p data-slot="light-detail" className="text-label text-gray-9 mt-2">
     {detailLevel && (
       <span
         className="data-[dimmed]:text-gray-8"

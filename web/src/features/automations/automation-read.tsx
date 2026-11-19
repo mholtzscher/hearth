@@ -543,7 +543,7 @@ export const StackSequence = ({
       >
         <div className="max-tablet:grid-cols-[14px_minmax(0,1fr)] grid grid-cols-[18px_minmax(0,1fr)] items-start gap-x-2.5">
           <span
-            className="text-label text-muted-foreground text-right tabular-nums"
+            className="text-label text-muted-foreground text-right"
             aria-hidden="true"
           >
             {index + 1}

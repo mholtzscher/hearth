@@ -36,7 +36,7 @@ export const weatherTrendParts = {
 export const weatherConditions =
   "text-label text-gray-9 text-balance data-[value=dimmed]:text-gray-8";
 export const weatherDetail =
-  "text-label text-muted-foreground tabular-nums text-pretty data-[value=dimmed]:text-gray-7";
+  "text-label text-muted-foreground text-pretty data-[value=dimmed]:text-gray-7";
 
 /**
  * Current readings, plus history where a window is given, for a card's named

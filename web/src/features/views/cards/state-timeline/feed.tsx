@@ -94,7 +94,7 @@ export const TimelineFeed = ({
                   }
                 >
                   <time
-                    className="text-muted-foreground text-right whitespace-nowrap tabular-nums"
+                    className="text-muted-foreground text-right whitespace-nowrap"
                     dateTime={new Date(entry.at).toISOString()}
                   >
                     {new Date(entry.at).toLocaleTimeString([], {

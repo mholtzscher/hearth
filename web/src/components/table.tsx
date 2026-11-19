@@ -31,10 +31,7 @@ const Table = ({ className, ...props }: React.ComponentProps<"table">) => {
       <table
         ref={table}
         data-slot="table"
-        className={cn(
-          "text-label w-full caption-bottom tabular-nums",
-          className
-        )}
+        className={cn("text-label w-full caption-bottom", className)}
         {...props}
       />
     </section>

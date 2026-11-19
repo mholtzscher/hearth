@@ -334,8 +334,8 @@ Apply this section to new and changed code under `web/`. Earlier code is a
 migration candidate, not a finding against an unrelated change.
 [`design-system.test.ts`](web/src/design-system.test.ts) tracks class selectors,
 raw form controls, hand-rolled card surfaces, direct `radix-ui` imports, text
-sizes off the type scale, and line heights or tracking outside the type roles,
-and fails when a count grows.
+sizes off the type scale, line heights or tracking outside the type roles, and
+numeric-spacing classes outside prose, and fails when a count grows.
 
 ### Style elements with utilities, not class selectors
 

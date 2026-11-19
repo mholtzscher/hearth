@@ -11,10 +11,7 @@ export const ChartContainer = ({
 }: Omit<ComponentProps<"div">, "children"> & { children: ReactElement }) => (
   <div
     data-slot="chart"
-    className={cn(
-      "text-caption flex aspect-video justify-center tabular-nums",
-      className
-    )}
+    className={cn("text-caption flex aspect-video justify-center", className)}
     {...props}
   >
     <ResponsiveContainer width="100%" height="100%">

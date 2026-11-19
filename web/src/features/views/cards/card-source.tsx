@@ -153,7 +153,7 @@ export const CardSource = ({
       {(observedAt ||
         single?.availability !== undefined ||
         single?.enabled !== undefined) && (
-        <dl className="m-0 grid gap-4 tabular-nums">
+        <dl className="m-0 grid gap-4">
           {observedAt && (
             <div className="grid gap-[3px]">
               <dt className="text-label text-muted-foreground">
@@ -211,7 +211,7 @@ export const CardSource = ({
                 {!single &&
                   (source.availability !== undefined ||
                     source.enabled !== undefined) && (
-                    <dl className="mt-2 grid gap-2 tabular-nums">
+                    <dl className="mt-2 grid gap-2">
                       <EntityFacts source={source} />
                     </dl>
                   )}

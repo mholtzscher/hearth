@@ -123,7 +123,7 @@ export const CoverTile = ({ props }: { props: CoverProps }) => {
         data-cover-position
         className={cn(
           rowClass,
-          "text-gray-9 data-[value=dimmed]:text-gray-8 tabular-nums",
+          "text-gray-9 data-[value=dimmed]:text-gray-8",
           onColor
         )}
         data-value={status.value}

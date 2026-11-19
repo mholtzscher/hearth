@@ -24,7 +24,7 @@ export const Reading = ({
     data-slot="reading"
     data-value={value}
     className={cn(
-      "text-reading @max-[200px]:text-reading-narrow text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6 tabular-nums",
+      "text-reading @max-[200px]:text-reading-narrow text-foreground data-[value=dimmed]:text-gray-8 data-[value=empty]:text-gray-6",
       className
     )}
   >
@@ -75,7 +75,7 @@ export const ReadingRow = ({
   <li
     data-slot="reading-row"
     className={cn(
-      "group/reading-row not-first:border-border relative flex flex-wrap items-baseline gap-x-4 gap-y-0.5 py-2.5 tabular-nums not-first:border-t",
+      "group/reading-row not-first:border-border relative flex flex-wrap items-baseline gap-x-4 gap-y-0.5 py-2.5 not-first:border-t",
       className
     )}
   >

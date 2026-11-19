@@ -122,7 +122,7 @@ const DataCardFooter = ({
     <footer
       data-slot="card-footer"
       className={cn(
-        "text-label text-muted-foreground mt-auto flex items-center gap-3 tabular-nums",
+        "text-label text-muted-foreground mt-auto flex items-center gap-3",
         classNames?.footer
       )}
     >

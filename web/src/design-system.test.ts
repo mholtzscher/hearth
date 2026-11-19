@@ -62,6 +62,19 @@ const ARBITRARY_LEADING_AND_TRACKING: Record<string, string[]> = {
   ],
 };
 
+/**
+ * Numeric-spacing classes, by file (DESIGN.md, Typography). index.css makes
+ * digits tabular at the root; prose opts out, and reply tables opt back in.
+ */
+const NUMERIC_SPACING: Record<string, string[]> = {
+  "src/features/conversation/messages.tsx": [
+    "proportional-nums",
+    "[&_table]:tabular-nums",
+    "proportional-nums",
+  ],
+  "src/features/views/renderer/view-renderer.tsx": ["proportional-nums"],
+};
+
 /** Files that may use a narrow text size; each owns the width rule for it. */
 const NARROW_TEXT_OWNERS = [
   "src/features/views/cards/cover/cover.tsx",
@@ -484,6 +497,35 @@ describe("Hearth theme tokens", () => {
       measured,
       "Each text token in index.css sets its role's line height and tracking. If an exception disappeared, remove it from the list."
     ).toStrictEqual(ARBITRARY_LEADING_AND_TRACKING);
+  });
+
+  it("makes digits tabular at the root", () => {
+    expect(
+      css,
+      "index.css sets font-variant-numeric: tabular-nums on html."
+    ).toMatch(/html\s*\{[^}]*font-variant-numeric:\s*tabular-nums;/u);
+  });
+
+  it("holds numeric-spacing classes to prose and its tables", () => {
+    const measured = Object.fromEntries(
+      applicationSource()
+        .map(
+          (file) =>
+            [
+              file,
+              [
+                ...read(file).matchAll(
+                  /(?<![\w-])(?:[^\s"'`]*:)?(?:tabular|proportional)-nums(?![\w-])/gu
+                ),
+              ].map((match) => match[0]),
+            ] as const
+        )
+        .filter(([, values]) => values.length > 0)
+    );
+    expect(
+      measured,
+      "Digits are tabular by default. Only prose sets proportional-nums. If an exception disappeared, remove it from the list."
+    ).toStrictEqual(NUMERIC_SPACING);
   });
 
   it("keeps narrow text sizes inside the components that own them", () => {

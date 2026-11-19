@@ -202,8 +202,15 @@
   :where(code, kbd, samp, pre) {
     font-size-adjust: 0.5;
   }
+  /*
+   * Hearth's numbers are readings, ages, levels, and table values, so digits
+   * share one width by default and columns and updating values hold still.
+   * Prose (replies, user messages, and view Notes) opts out with
+   * proportional-nums.
+   */
   html {
     @apply font-sans;
+    font-variant-numeric: tabular-nums;
     scrollbar-color: var(--gray-5) transparent;
     caret-color: var(--violet);
   }
