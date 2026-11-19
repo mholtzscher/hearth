@@ -3,6 +3,7 @@ import { http, HttpResponse } from "msw";
 import { expect } from "storybook/test";
 
 import { entityId } from "../../../../../.storybook/fixtures";
+import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { BoundStateTimeline } from "./state-timeline";
 
 const meta = {
@@ -54,6 +55,20 @@ export const Lanes: Story = {
   args: { style: "lanes" },
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("Open 23 h 20 min")).toBeVisible();
+  },
+};
+export const UnavailableLanes: Story = {
+  args: { style: "lanes" },
+  beforeEach: ({ msw }) => {
+    msw.use(
+      entityScenario(1, "unavailable"),
+      entityScenario(2, "disabled"),
+      entityScenario(10, "unavailable")
+    );
+  },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("heat")).toBeVisible();
+    await expect(canvas.getAllByText("Unavailable")[0]).toBeVisible();
   },
 };
 export const Feed: Story = {

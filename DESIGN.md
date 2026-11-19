@@ -261,12 +261,16 @@ status.
 **The Color Math Rule.** Measure a new or changed color in OKLCH, OKLab
 distance, and WCAG 2 contrast before adding it. Gray ramp steps are untinted
 and lighten at every step. Text tokens reach 4.5:1 on `gray-3`, and status text
-reaches 4.5:1 on its own 10 to 20% tint. Status colors sit between L 0.68 and
-0.82 with C of at least 0.11, and at least 0.11 from `orange` and `violet`.
+reaches 4.5:1 on its own 10 to 20% tint, so a status control shows hover with
+a border, not a stronger tint. Outside disabled controls, `gray-7` text sits
+only on `gray-0` and `gray-1` and reaches 4.5:1 there. Status colors sit
+between L 0.68 and 0.82 with C of at least 0.11, and at least 0.11 from
+`orange` and `violet`.
 `chart-orchid`, `chart-pale-gold`, `chart-ice`, and `chart-sand` keep C between
 0.075 and 0.12. Chart series stay at least 0.12 from each other and 0.11 from
 `orange`, and `gray-0` labels reach 4.5:1 on each series. `design-tokens.test.ts`
-checks every rule.
+checks every rule, and `design-system.test.ts` keeps status tints behind
+status text at 20% or less.
 
 ## Typography
 
@@ -448,8 +452,10 @@ square `icon` (32px) or `icon-touch` (44px) size and have an accessible name.
 - **Outline:** the card surface, a neutral border, and regular-weight text.
   Hover uses `gray-3`. Use outline for filters, paging, and secondary workspace
   actions.
-- **Secondary, ghost, destructive, and link** variants are also available.
-  Disabled non-primary buttons use 50% opacity.
+- **Destructive:** `destructive` text on a 20% `destructive` tint. Hover adds a
+  `destructive` border at 50% and keeps the tint, so the text stays at 4.5:1.
+- **Secondary, ghost, and link** variants are also available. Disabled
+  non-primary buttons use 50% opacity.
 
 The shared Button supplies its own styling, including when `asChild` renders a
 link.
@@ -863,8 +869,9 @@ in one of three styles.
 Axes use 13px labels, off the type scale, because 14px labels
 overlap at a 440px width; labels may still overlap at narrower widths. The axis
 ends with a quiet "Now" label and no marker. Each row carries its own statuses;
-the feed lists them in the header. An unavailable or disabled row draws at 60%
-opacity with a dashed baseline.
+the feed lists them in the header. An unavailable or disabled row draws hollow
+segments outlined in the series color, with `muted-foreground` labels, and a
+dashed baseline.
 
 Week pattern cards shade one yes/no field over 7 local days by 24 hours. Cells
 are 4px-rounded squares on the neutral ramp at five levels (0, 1–5, 6–15, 16–30,

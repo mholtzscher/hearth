@@ -337,6 +337,8 @@ const SURFACE_TEXT = [
   "chart-pale-gold",
   "chart-ice",
 ];
+/** Dimmed readings and history headings use gray-7 text only on these surfaces. */
+const QUIET_TEXT_SURFACES = ["gray-0", "gray-1"];
 /** Status chips, badges, and destructive buttons tint their surface with their own color. */
 const STATUS_TINTS = [0.1, 0.15, 0.2];
 const TINTED_SURFACES = ["gray-1", "gray-2"];
@@ -391,6 +393,16 @@ const PALETTE_RULES: [string, (palette: Palette) => string[]][] = [
         const ratio = contrast(pick(palette, name), pick(palette, "gray-3"));
         return ratio < LIMITS.textContrast
           ? [`${name} on gray-3 is ${ratio.toFixed(2)}:1.`]
+          : [];
+      }),
+  ],
+  [
+    "gray-7 text is readable on gray-0 and gray-1",
+    (palette) =>
+      QUIET_TEXT_SURFACES.flatMap((surface) => {
+        const ratio = contrast(pick(palette, "gray-7"), pick(palette, surface));
+        return ratio < LIMITS.textContrast
+          ? [`gray-7 on ${surface} is ${ratio.toFixed(2)}:1.`]
           : [];
       }),
   ],

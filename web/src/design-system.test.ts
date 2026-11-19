@@ -152,6 +152,36 @@ const countCardSurfaces = (source: string): number =>
     return classes.includes("rounded-card") && classes.includes("border");
   }).length;
 
+/** Status colors whose text sits on a tint of the same color. */
+const STATUS_COLORS = ["destructive", "success", "warning", "info"];
+/** The strongest tint that keeps status text at 4.5:1 (DESIGN.md, Color Math Rule). */
+const MAX_STATUS_TINT = 20;
+
+/**
+ * Finds status tints above MAX_STATUS_TINT in quoted class lists that also set
+ * text in the same status color, in any variant, such as `hover:bg-destructive/30`.
+ */
+const strongStatusTints = (source: string): string[] =>
+  (source.match(/"[^"\n]*"|`[^`]*`/gu) ?? []).flatMap((literal) =>
+    STATUS_COLORS.flatMap((color) => {
+      if (
+        !new RegExp(`(?:^|[\\s:])text-${color}(?![\\w-])`, "u").test(literal)
+      ) {
+        return [];
+      }
+      return [
+        ...literal.matchAll(
+          new RegExp(
+            `(?:^|[\\s"\`])(?<tint>[\\w:-]*bg-${color}/(?<alpha>\\d+))`,
+            "gu"
+          )
+        ),
+      ]
+        .filter((match) => Number(match.groups?.alpha) > MAX_STATUS_TINT)
+        .map((match) => match.groups?.tint ?? "");
+    })
+  );
+
 const isWrapper = (file: string, rule: "raw-control" | "radix"): boolean =>
   (rule === "raw-control" ? RAW_CONTROL_WRAPPERS : RADIX_WRAPPERS).has(file);
 
@@ -225,6 +255,24 @@ describe("countCardSurfaces", () => {
   });
 });
 
+describe("strongStatusTints", () => {
+  it("finds a status tint above 20% behind text of the same color", () => {
+    expect(
+      strongStatusTints(
+        '"bg-destructive/20 text-destructive hover:bg-destructive/30" `bg-info/25 text-info`'
+      )
+    ).toStrictEqual(["hover:bg-destructive/30", "bg-info/25"]);
+  });
+
+  it("ignores tints at 20% or less and tints behind other text colors", () => {
+    expect(
+      strongStatusTints(
+        '"bg-destructive/20 text-destructive" "bg-warning/40 text-foreground" "border-success/30 bg-success/10 text-success"'
+      )
+    ).toStrictEqual([]);
+  });
+});
+
 describe("design system limits", () => {
   it("holds each stylesheet to its class-selector limit", () => {
     const measured = Object.fromEntries(
@@ -274,6 +322,16 @@ describe("design system limits", () => {
       measured,
       "Draw a card with Card from components/card.tsx. If a count fell, lower its limit to match."
     ).toStrictEqual(HAND_ROLLED_CARDS);
+  });
+
+  it("keeps status tints behind status text at 20% or less", () => {
+    const strong = applicationSource().flatMap((file) =>
+      strongStatusTints(read(file)).map((tint) => `${file}: ${tint}`)
+    );
+    expect(
+      strong,
+      "Status text drops below 4.5:1 on a stronger tint of its own color. Show hover with a border instead."
+    ).toStrictEqual([]);
   });
 
   it("keeps radix-ui imports inside low-level wrappers", () => {
