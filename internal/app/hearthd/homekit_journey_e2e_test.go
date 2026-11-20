@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -26,6 +27,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	homekitapp "github.com/mholtzscher/hearth/internal/app/homekit"
 	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
+	adaptersmcp "github.com/mholtzscher/hearth/internal/modules/adapters/mcpapi"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -149,7 +151,7 @@ func TestHomeKitFunctionsThroughProductionCore(t *testing.T) {
 		return status.Health.Status == "healthy", nil
 	})
 	info := assertHomeKitInventoryJourney(t, client, core, revision, binding, powerID)
-	assertHomeKitResetAdmission(t, client, core, revision)
+	assertHomeKitFunctionAdmission(t, client, core, revision)
 	reset := homekitJourneyInvoke(t, client, core, revision, "reset_pairing",
 		`{"confirm":"reset_all_homekit_pairings"}`, "succeeded", "")
 	var replacement homekitJourneyPairing
@@ -303,6 +305,22 @@ func assertHomeKitExposureSurvivedReset(
 func assertHomeKitListThroughMCP(t *testing.T, core *functionCoreRun, revision, deviceID string) {
 	t.Helper()
 	client := connectAutomationFunctionsMCP(t, core)
+	catalog := decodeNotification[adaptersmcp.FunctionPage](t, automationFunctionsMCP(t, client,
+		"list_adapter_functions", fmt.Sprintf(`{"adapter_id":%q}`, homekitJourneyAdapter)))
+	var keys []string
+	for _, item := range catalog.Items {
+		if item.AdapterID != homekitJourneyAdapter || !item.Callable || item.CatalogRevision != revision {
+			t.Fatalf("unexpected MCP catalog entry for %s", item.FunctionKey)
+		}
+		keys = append(keys, item.FunctionKey)
+	}
+	slices.Sort(keys)
+	if !reflect.DeepEqual(
+		keys,
+		[]string{"expose_device", "list_accessories", "pairing_info", "reset_pairing", "unexpose_device"},
+	) {
+		t.Fatalf("MCP HomeKit Function keys: %v", keys)
+	}
 	raw := automationFunctionsMCP(t, client, "invoke_adapter_function",
 		fmt.Sprintf(`{"adapter_id":%q,"function_key":"list_accessories","catalog_revision":%q,"arguments":{}}`,
 			homekitJourneyAdapter, revision))
@@ -316,10 +334,38 @@ func assertHomeKitListThroughMCP(t *testing.T, core *functionCoreRun, revision, 
 		outcome.Result.Accessories[0].DeviceID != deviceID {
 		t.Fatal("MCP Function invocation did not return the exposed Device")
 	}
+	retained := decodeNotification[adaptersmcp.InvocationDetail](t, automationFunctionsMCP(t, client,
+		"get_adapter_function_invocation", fmt.Sprintf(`{"invocation_id":%q}`, outcome.InvocationID)))
+	var list homekitJourneyList
+	homekitJourneyDecode(t, retained.Result, &list)
+	if retained.InvocationID != outcome.InvocationID || retained.AdapterID != homekitJourneyAdapter ||
+		retained.FunctionKey != "list_accessories" || retained.CatalogRevision != revision ||
+		retained.Status != "succeeded" || retained.CompletedAt == nil || !reflect.DeepEqual(list, outcome.Result) {
+		t.Fatal("MCP HomeKit invocation history did not match the completed result")
+	}
+	history := decodeNotification[adaptersmcp.InvocationPage](t, automationFunctionsMCP(t, client,
+		"list_adapter_function_invocations", fmt.Sprintf(`{"adapter_id":%q}`, homekitJourneyAdapter)))
+	succeeded := make(map[string]bool)
+	for _, entry := range history.Items {
+		if entry.AdapterID == homekitJourneyAdapter && entry.CatalogRevision == revision &&
+			entry.Status == "succeeded" && entry.CompletedAt != nil {
+			succeeded[entry.FunctionKey] = true
+		}
+	}
+	for _, key := range keys {
+		if !succeeded[key] {
+			t.Fatalf("MCP invocation history is missing a successful %s call", key)
+		}
+	}
 }
 
 func assertHomeKitInventoryJourney(
-	t *testing.T, client *http.Client, core *functionCoreRun, revision string, binding adapter.Binding, powerID string,
+	t *testing.T,
+	client *http.Client,
+	core *functionCoreRun,
+	revision string,
+	binding adapter.Binding,
+	powerID string,
 ) homekitJourneyPairing {
 	t.Helper()
 	initial := homekitJourneyInvoke(t, client, core, revision, "list_accessories", `{}`, "succeeded", "")
@@ -387,14 +433,21 @@ func (list homekitJourneyList) hasCandidate(id string) bool {
 	return false
 }
 
-func assertHomeKitResetAdmission(t *testing.T, client *http.Client, core *functionCoreRun, revision string) {
+func assertHomeKitFunctionAdmission(t *testing.T, client *http.Client, core *functionCoreRun, revision string) {
 	t.Helper()
-	for _, invalid := range []string{`{}`, `{"confirm":"wrong"}`} {
+	for _, tc := range []struct{ key, invalid string }{
+		{"list_accessories", `{"unexpected":true}`},
+		{"expose_device", `{}`},
+		{"unexpose_device", `{}`},
+		{"pairing_info", `{"unexpected":true}`},
+		{"reset_pairing", `{}`},
+		{"reset_pairing", `{"confirm":"wrong"}`},
+	} {
 		status, _, requestErr := functionNetworkRequest(t.Context(), client, core.address, http.MethodPost,
-			"/v1/adapters/"+homekitJourneyAdapter+"/functions/reset_pairing/invocations",
-			`{"catalog_revision":`+strconv.Quote(revision)+`,"arguments":`+invalid+`}`)
+			"/v1/adapters/"+homekitJourneyAdapter+"/functions/"+tc.key+"/invocations",
+			`{"catalog_revision":`+strconv.Quote(revision)+`,"arguments":`+tc.invalid+`}`)
 		if requestErr != nil || status != http.StatusUnprocessableEntity {
-			t.Fatalf("invalid reset_pairing confirmation: HTTP %d, error %v", status, requestErr)
+			t.Fatalf("invalid %s arguments: HTTP %d, error %v", tc.key, status, requestErr)
 		}
 	}
 	// Read history without printing it: pairing_info intentionally retains secrets.

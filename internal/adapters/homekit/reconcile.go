@@ -71,6 +71,7 @@ func (r *Runtime) coordinate(ctx context.Context, live **liveFactFeed) {
 			c.mutate(ctx, request)
 		case <-c.reload:
 			c.reloadNow(ctx)
+			c.health(ctx)
 		}
 	}
 }
@@ -195,5 +196,4 @@ func (c *reconciler) reloadNow(ctx context.Context) {
 		waiter.reply <- waiter.result
 	}
 	c.pending = nil
-	c.health(ctx)
 }

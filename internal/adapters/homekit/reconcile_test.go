@@ -40,6 +40,6 @@ func TestRebuildRequestsShareOneWindow(t *testing.T) {
 		coordinator.scheduleReload()
 		assert.Equal(t, first, coordinator.reload)
 		<-coordinator.reload
-		assert.Equal(t, reloadDelay, time.Since(started))
+		assert.Equal(t, 2*time.Second, time.Since(started))
 	})
 }
