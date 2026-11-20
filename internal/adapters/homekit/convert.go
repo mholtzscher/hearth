@@ -72,7 +72,12 @@ func speedPercent(index, count int) float64 {
 }
 
 func speedIndex(speed float64, count int) int {
-	return max(0, min(count-1, int(math.Ceil(speed*float64(count)/maxPercent))-1))
+	for index := range count - 1 {
+		if speed <= speedPercent(index, count) {
+			return index
+		}
+	}
+	return count - 1
 }
 
 func airQuality(pm float64) int {

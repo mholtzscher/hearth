@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+func TestPurifierSpeedPercentRoundTripsForEverySupportedChoiceCount(t *testing.T) {
+	t.Parallel()
+	const maxChoices = 64 // enumsetting/v1 support schema
+	for count := 1; count <= maxChoices; count++ {
+		for index := range count {
+			published := speedPercent(index, count)
+			if got := speedIndex(published, count); got != index {
+				t.Errorf("%d speeds: level %d displayed as %.0f%% writes back as level %d",
+					count, index+1, published, got+1)
+				break
+			}
+		}
+	}
+}
+
+func TestFourSpeedPurifierKeepsExistingThresholds(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		speed float64
+		index int
+	}{{1, 0}, {25, 0}, {25.1, 1}, {50, 1}, {50.1, 2}, {75, 2}, {75.1, 3}, {100, 3}} {
+		if got := speedIndex(tc.speed, 4); got != tc.index {
+			t.Errorf("%.1f%%: got index %d, want %d", tc.speed, got, tc.index)
+		}
+	}
+}
+
 func TestMappingConversions(t *testing.T) {
 	t.Parallel()
 	if got := celsius(21500); got != 21.5 || milliCelsius(got) != 21500 {

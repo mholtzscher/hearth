@@ -108,6 +108,51 @@ func TestHAPCoverTargetRollsBackToObservedPositionOnCoreTimeout(t *testing.T) {
 	})
 }
 
+func TestHAPCoverStopDoesNotWaitForMoveOutcome(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		const id = "cover-position"
+		entity := Entity{ID: id, DeviceID: "cover", Type: "hearth.cover/v1",
+			Enabled: true, Availability: "available",
+			State:   &EntityState{Value: json.RawMessage(`{"position":15,"motion":"opening"}`)},
+			Support: json.RawMessage(`{"state":{},"operations":{"set":{},"stop":{}}}`)}
+		exposure := Exposure{
+			DeviceID: entity.DeviceID, Kind: KindWindowCovering, Name: "Cover", AID: 2,
+			Entities: []RoleAssignment{{Role: "position", EntityID: id}}, Slots: map[string]uint16{"position/" + id: 1},
+		}
+		executor := movingCoverExecutor{calls: make(chan executedWrite, 2)}
+		lookup := func(string) Entity { return entity }
+		runner := newCommandRunner(t.Context(), executor, lookup, slog.New(slog.DiscardHandler))
+		defer runner.close()
+		built, err := buildAccessory(exposure, Inventory{Entities: map[string]Entity{id: entity}}, "celsius",
+			lookup, runner.submit)
+		require.NoError(t, err)
+		cover := built.accessory.Ss[1]
+		req := httptest.NewRequest(http.MethodPut, "/characteristics", http.NoBody)
+		_, status := cover.C(characteristic.TypeTargetPosition).SetValueRequest(float64(70), req)
+		require.Zero(t, status)
+		synctest.Wait()
+		require.Len(t, executor.calls, 1)
+		assert.Equal(t, "set", (<-executor.calls).operation)
+		_, status = cover.C(characteristic.TypeHoldPosition).SetValueRequest(true, req)
+		require.Zero(t, status)
+		synctest.Wait()
+		require.Len(t, executor.calls, 1)
+		assert.Equal(t, executedWrite{id, "stop", map[string]any{}}, <-executor.calls)
+	})
+}
+
+type movingCoverExecutor struct{ calls chan executedWrite }
+
+func (e movingCoverExecutor) ExecuteCommand(ctx context.Context, id, operation string, parameters any) error {
+	e.calls <- executedWrite{id, operation, parameters}
+	if operation == "set" {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return nil
+}
+
 func TestHAPPurifierWithOnlyActiveRoleHasReadableNonWritableMode(t *testing.T) {
 	t.Parallel()
 	const id = "fixture-power"

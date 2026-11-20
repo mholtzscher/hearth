@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -20,6 +21,14 @@ func setConn(addr string, conn *conn) {
 	mux.Lock()
 	defer mux.Unlock()
 	cons[addr] = conn
+}
+
+func removeConn(addr string, closed net.Conn) {
+	mux.Lock()
+	defer mux.Unlock()
+	if cons[addr] == closed {
+		delete(cons, addr)
+	}
 }
 
 func getConn(req *http.Request) *conn {

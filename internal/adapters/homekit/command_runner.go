@@ -32,11 +32,13 @@ type writeIntent struct {
 	EntityID, Operation string
 	Parameters          map[string]any
 	Group, Field        string
+	immediate           bool
 	finish              func(failed bool)
 }
 
 type writeBatch struct {
 	intents []writeIntent
+	done    chan struct{}
 }
 
 type commandRunner struct {
@@ -48,6 +50,7 @@ type commandRunner struct {
 	mu      sync.Mutex
 	wait    sync.WaitGroup
 	pending map[uint64]*writeBatch
+	tail    map[uint64]chan struct{}
 	active  int
 	closing bool
 }
@@ -58,6 +61,7 @@ func newCommandRunner(
 	ctx, cancel := context.WithCancel(ctx)
 	return &commandRunner{
 		ctx: ctx, cancel: cancel, core: core, lookup: lookup, logger: logger, pending: make(map[uint64]*writeBatch),
+		tail: make(map[uint64]chan struct{}),
 	}
 }
 
@@ -82,15 +86,30 @@ func (r *commandRunner) submit(aid uint64, intent writeIntent) int {
 	batch := &writeBatch{intents: []writeIntent{intent}}
 	if intent.Group != "" {
 		r.pending[aid] = batch
+	} else if !intent.immediate {
+		// A later grouped write must not jump ahead of this separate batch.
+		delete(r.pending, aid)
+	}
+	var previous <-chan struct{}
+	if !intent.immediate {
+		previous = r.tail[aid]
+		batch.done = make(chan struct{})
+		r.tail[aid] = batch.done
 	}
 	r.active++
-	r.wait.Go(func() { r.runBatch(aid, batch, intent.Group != "") })
+	r.wait.Go(func() { r.runBatch(aid, batch, intent.Group != "", previous) })
 	return 0
 }
 
-func (r *commandRunner) runBatch(aid uint64, batch *writeBatch, coalesce bool) {
+func (r *commandRunner) runBatch(aid uint64, batch *writeBatch, coalesce bool, previous <-chan struct{}) {
 	defer func() {
 		r.mu.Lock()
+		if batch.done != nil {
+			if r.tail[aid] == batch.done {
+				delete(r.tail, aid)
+			}
+			close(batch.done)
+		}
 		r.active--
 		r.mu.Unlock()
 	}()
@@ -102,8 +121,16 @@ func (r *commandRunner) runBatch(aid uint64, batch *writeBatch, coalesce bool) {
 		case <-r.ctx.Done():
 		}
 		r.mu.Lock()
-		delete(r.pending, aid)
+		if r.pending[aid] == batch {
+			delete(r.pending, aid)
+		}
 		r.mu.Unlock()
+	}
+	if previous != nil {
+		select {
+		case <-previous:
+		case <-r.ctx.Done():
+		}
 	}
 	failed := r.ctx.Err() != nil
 	if !failed {

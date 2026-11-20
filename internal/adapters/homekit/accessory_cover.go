@@ -22,7 +22,13 @@ func mapCover(b *accessoryBuilder) error {
 	b.bind(s.CurrentPosition.C, item.EntityID, readPosition, nil)
 	var write func(any) (writeIntent, int)
 	if supports(b.inventory.Entities[item.EntityID], "set") {
-		write = integerWriter(item.EntityID, "position", "", "", 0, maxPercent)
+		position := integerWriter(item.EntityID, "position", "", "", 0, maxPercent)
+		write = func(value any) (writeIntent, int) {
+			intent, status := position(value)
+			// Do not leave an older move queued to run after a later Stop.
+			intent.immediate = true
+			return intent, status
+		}
 	} else {
 		s.TargetPosition.Permissions = slices.DeleteFunc(
 			s.TargetPosition.Permissions,
@@ -57,7 +63,7 @@ func mapCover(b *accessoryBuilder) error {
 			if !hold {
 				return writeIntent{}, 0
 			}
-			return writeIntent{EntityID: item.EntityID, Operation: "stop", Parameters: map[string]any{}}, 0
+			return writeIntent{EntityID: item.EntityID, Operation: "stop", immediate: true}, 0
 		})
 	}
 	return b.addService(slot(item), s.S, true)

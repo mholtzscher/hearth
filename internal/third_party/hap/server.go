@@ -69,7 +69,6 @@ type Server struct {
 
 	mux  *sync.Mutex
 	sess map[string]interface{}
-	cons map[string]*conn
 }
 
 // A ServeMux lets you attach handlers to http url paths.
@@ -99,7 +98,6 @@ func NewServer(store Store, a *accessory.A, as ...*accessory.A) (*Server, error)
 		as:   as,
 		mux:  &sync.Mutex{},
 		sess: make(map[string]interface{}),
-		cons: make(map[string]*conn),
 	}
 	s.ss = &http.Server{
 		Handler:   r,
@@ -422,8 +420,8 @@ func (s *Server) connStateEvent(conn net.Conn, event http.ConnState) {
 		addr := conn.RemoteAddr().String()
 		s.mux.Lock()
 		delete(s.sess, addr)
-		delete(s.cons, addr)
 		s.mux.Unlock()
+		removeConn(addr, conn)
 	}
 }
 

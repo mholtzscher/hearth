@@ -6,20 +6,7 @@
 **Date:** 2026-11-19
 **Baseline:** `main` at `422276f`
 **Depends on:** the Adapter SDK Session, Adapter Functions, Adapter health, Core HTTP Device and Entity reads, Core HTTP Commands, and the Device Fact stream
-**Target evidence:** the household's iPhone and Apple home hub on the trusted LAN. Not yet collected: HomeKit behavior in this spec comes from upstream source and documentation, not from this household.
-
-## Implementation checkpoint
-
-- **Playbook:** mstack Spec implementation. **Scope:** this approved Go Adapter spec; the closed TypeScript bridge PR #180 is not the delivery branch.
-- **Worktree:** `/home/michael/code/worktrees/hearth/feat-homekit-adapter`, branch `feat/homekit-adapter`, based on `origin/main` at `422276f`.
-- **Completion checklist:** the D1–D12 dependencies and A1–A17 checks below remain the contract. D12 is conditional on a confirmed library defect.
-- **Evidence:** the original `main` checkout is clean after moving the spec. Baseline Discord and SDK unit tests passed. After integrating D3–D5, focused tests with `-tags=integration -count=1`, lint and vet passed for `./cmd/hearth-adapter-homekit`, `./internal/app/homekit`, and `./internal/adapters/homekit`. Real NATS and SQLite verified Session claim/release on cancellation. Real JetStream verified tail delivery, rejecting a mismatched subject, and reporting consumer deletion. An HTTP socket fixture verified 201 Entities, canonical units and one Command POST per call. Unit tests verified stale-Fact rejection, setup URI encoding, identity retention and store fault handling, and explicit roles.
-- **Current step:** D1–D10 and D12 implemented on [draft PR #411](https://github.com/mholtzscher/hearth/pull/411). Local automated acceptance is verified. A17 requires a household operator; the software controller is not a substitute.
-- **Next action:** verify the published revision's CI and complete A17 with the household operator. Start with a single test light on the target Linux host. Do not use an existing pairing store for the acceptance run.
-- **Contract decisions:** keep the existing Core API and preserve only the structured failure fields Core sends. Michael confirmed that `pairing_info` returns the setup code and URI only while unpaired, accepts the resulting 30-day Function history exposure, and does not log either credential. Michael chose WindowCovering for garage covers; defer GarageDoorOpener until Hearth has obstruction evidence.
-- **Autonomous continuation:** Production Core verified 201 Entities, HTTP and MCP management, successful reset, and HTTP recovery after consumer deletion within 5 seconds, before the normal 60-second resync. `/tmp/opencode/hearth-homekit-wire.rZNe76/run-3.log` records race-enabled software pairing, encrypted writes and notifications, old-controller revocation on reset, and graceful SIGTERM. CI passed `backend` and `web` on the initial draft revision, `c326e8e`. Full local validation passed with the acceptance follow-up (`/tmp/opencode/hearth-homekit-validate-acceptance.log`). It covers a combined exposure reload, health faults and recovery, and schema and retained history for all five Functions. Decision trail: `/tmp/opencode/hearth-homekit-decisions.tsv`.
-- **Container verification:** Linux amd64 non-root host-network deployment passed the same software pairing, encrypted write/event, reset and shutdown checks (`/tmp/opencode/hearth-homekit-wire.rZNe76/run-docker.log`). Arm64 image build passed; arm64 runtime not tested.
-- **Runtime review:** Reproduced four findings: an unreadable purifier mode with only `active` mapped, contradictory cover target events during movement, delayed shutdown with an admitted mutation, and listing blocked while HAP was stopped. Focused race tests and full validation passed after the fixes (`/tmp/opencode/hearth-homekit-validate-reviewed.log`). A failed pairing reset can still make pairing-status reads busy until recovery. A notification already in flight can overlap a new write; the cover regression exercises Observations processed after admission. Startup still exits on a failed initial inventory read or HAP bind. The household operator plans to run A17 separately.
+**Target evidence:** the household's iPhone and Apple home hub on the trusted LAN.
 
 ## Problem
 
@@ -261,7 +248,7 @@ Temperatures convert between milli-Celsius and Celsius as `c = mCel / 1000` and 
 | `Active` | `active` | `set {"value": bool}` |
 | `CurrentAirPurifierState` | inactive when `active` is false, otherwise purifying | none |
 | `TargetAirPurifierState` | auto when `mode` is `auto`, otherwise manual | auto sends `mode set "auto"`. Manual sends `mode set "manual"` when it is a choice, otherwise the first choice that is not `auto` |
-| `RotationSpeed` (step `100 / n`) | `speed` choice at index `i` of `n` support choices gives `round(100 * (i + 1) / n)` | the speed `s` selects choice `ceil(s * n / 100) - 1`, clamped to `0..n-1`. Speed 0 sends nothing; HomeKit sends `Active` separately |
+| `RotationSpeed` (step `100 / n`) | `speed` choice at index `i` of `n` support choices gives `round(100 * (i + 1) / n)` | Select the first choice whose published percentage meets or exceeds the requested speed. Speed 0 sends nothing; HomeKit sends `Active` separately |
 | `LockPhysicalControls` | `child_lock` | `set {"value": bool}` |
 | `AirQualitySensor.PM2_5Density` and `AirQuality` | `pm25` µg/m³. Air quality: excellent ≤ 12, good ≤ 35, fair ≤ 55, inferior ≤ 150, poor above | none |
 | `FilterMaintenance.FilterLifeLevel` and `FilterChangeIndication` | `filter_life` percent. Change indication when ≤ 10 | none |
@@ -312,7 +299,15 @@ A HAP characteristic write follows these steps:
 5. A satisfied or dispatched Command needs no further action. The Fact for its linked Observation updates the characteristic.
 6. On any other result (504 `outcome_timeout`, 503, 409 `entity_disabled`, 502, 400, transport failure), the runner logs a warning with `command_id` when known and restores the Entity's target and current characteristics from the latest State. It does not retry.
 
-The runner owns every background Command goroutine and joins them at shutdown. At most 32 Commands run at once. Beyond that, writes return `-70403` (resource busy) without being queued.
+Ordinary batches for an accessory run in admission order, including across
+coalescing windows. Batches for different accessories can run concurrently.
+Cover position and Stop Commands keep their independent dispatch paths.
+In particular, Stop does not wait for a move's outcome.
+
+The runner owns every background Command goroutine and joins them at shutdown.
+At most 32 batches are admitted across all accessories, including batches waiting
+for an earlier one. When the limit is reached, a new batch returns `-70403`
+(resource busy).
 
 ## Accessory reloads
 

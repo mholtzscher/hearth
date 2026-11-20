@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -49,6 +50,52 @@ func hearthWait(t *testing.T, ch <-chan struct{}) {
 	case <-ch:
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for lifecycle")
+	}
+}
+
+func TestHearthClosedConnectionLeavesNotificationRegistry(t *testing.T) {
+	s, err := NewServer(NewMemStore(), accessory.NewOutlet(accessory.Info{Name: "Registry test"}).A)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := make(chan struct{}, 1)
+	closed := make(chan struct{}, 1)
+	s.ss.ConnState = func(c net.Conn, state http.ConnState) {
+		s.connStateEvent(c, state)
+		switch state {
+		case http.StateNew:
+			accepted <- struct{}{}
+		case http.StateClosed:
+			closed <- struct{}{}
+		}
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = s.ss.Serve(&listener{ln})
+	}()
+	defer func() {
+		_ = s.ss.Close()
+		hearthWait(t, done)
+	}()
+	for attempt := 0; attempt < 2; attempt++ {
+		client, err := net.DialTimeout("tcp", ln.Addr().String(), time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := client.LocalAddr().String()
+		hearthWait(t, accepted)
+		registered := conns()[addr] != nil
+		_ = client.Close()
+		hearthWait(t, closed)
+		if !registered || conns()[addr] != nil {
+			t.Errorf("connection %s: registered when accepted=%t, still registered after close=%t",
+				addr, registered, conns()[addr] != nil)
+		}
 	}
 }
 
