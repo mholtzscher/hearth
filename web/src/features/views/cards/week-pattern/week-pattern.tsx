@@ -127,7 +127,7 @@ export const WeekPattern = ({
             </ul>
             <div
               data-slot="week-grid"
-              className="grid grid-cols-[2.4rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-[3px] tabular-nums @max-[420px]:grid-cols-[2.2rem_minmax(0,1fr)]"
+              className="grid grid-cols-[2.4rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-[3px] @max-[420px]:grid-cols-[2.2rem_minmax(0,1fr)]"
               aria-hidden="true"
             >
               <span />
@@ -200,7 +200,7 @@ export const WeekPattern = ({
           </div>
         </>
       ) : (
-        <p className="text-label text-muted-foreground py-6 leading-normal">
+        <p className="text-label text-muted-foreground py-6">
           Historical readings will appear here.
         </p>
       )}

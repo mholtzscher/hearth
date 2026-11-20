@@ -31,7 +31,7 @@ const meta = {
   tags: ["ai-generated"],
   decorators: [
     (Story) => (
-      <div className="text-label grid gap-3 leading-normal">
+      <div className="text-label grid gap-3">
         <Story />
       </div>
     ),

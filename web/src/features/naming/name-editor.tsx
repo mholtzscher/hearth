@@ -104,7 +104,7 @@ const Editor = ({ objectId, kind, metadata, onUpdated }: Props) => {
           />
           <p
             id={`${fieldId}-count`}
-            className="text-muted-foreground text-caption"
+            className="text-muted-foreground text-label"
           >
             {[...draft].length} code points. Names must contain 1–128 code
             points after trimming.

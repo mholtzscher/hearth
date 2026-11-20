@@ -67,10 +67,10 @@ const AdapterHealthHistory = ({ adapterId }: { adapterId: string }) => {
                 <StatusChip status={t.status} />
               </TableCell>
               <TableCell>{t.source}</TableCell>
-              <TableCell className="text-caption font-mono">
+              <TableCell className="text-label font-mono">
                 {t.reason?.code ?? "—"}
               </TableCell>
-              <TableCell className="text-muted-foreground text-caption font-mono">
+              <TableCell className="text-muted-foreground text-label font-mono">
                 {t.observed_at}
               </TableCell>
             </TableRow>
@@ -243,7 +243,7 @@ const AdaptersPage = () => {
                     <StatusChip status={a.health.status} />
                   </TableCell>
                   <TableCell>{a.health.source}</TableCell>
-                  <TableCell className="text-caption font-mono">
+                  <TableCell className="text-label font-mono">
                     {a.health.reason?.code ?? "—"}
                   </TableCell>
                 </TableRow>

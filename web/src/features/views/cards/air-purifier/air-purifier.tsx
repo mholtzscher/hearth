@@ -144,7 +144,7 @@ const renderObservedDetail = ({
   return (
     <p
       data-slot="purifier-detail"
-      className="text-gray-9 data-[value=dimmed]:text-gray-8 tabular-nums"
+      className="text-gray-9 data-[value=dimmed]:text-gray-8"
       data-value={modeValue}
     >
       {choiceWords(observedMode)}

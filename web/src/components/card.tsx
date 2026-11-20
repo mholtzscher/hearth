@@ -26,7 +26,7 @@ const Card = ({
       data-size={size}
       className={cn(
         "rounded-card border-border bg-card text-card-foreground min-w-0 border",
-        size === "compact" ? "text-label p-3 leading-normal" : "p-[18px]",
+        size === "compact" ? "text-label p-3" : "p-[18px]",
         className
       )}
       {...props}

@@ -51,7 +51,7 @@ const meta = {
               | { time: string; mean: number; band: [number, number] }
               | undefined;
             return active && sample ? (
-              <div className="border-gray-4 bg-gray-2 text-label text-foreground rounded-md border px-2.5 py-2 leading-normal tabular-nums">
+              <div className="border-gray-4 bg-gray-2 text-label text-foreground rounded-md border px-2.5 py-2">
                 <p className="text-muted-foreground">{sample.time}</p>
                 <p>
                   Living room avg {sample.mean.toFixed(1)} °C (
@@ -83,7 +83,7 @@ const meta = {
   render: (args) => (
     <div>
       <div className="max-w-[640px]">
-        <ul className="text-label mb-2 flex list-none gap-4 leading-normal">
+        <ul className="text-label mb-2 flex list-none gap-4">
           <li>
             <span
               className="bg-chart-1 me-1.5 inline-block size-2.5 rounded-xs"

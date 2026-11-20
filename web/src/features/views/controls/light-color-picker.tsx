@@ -53,11 +53,11 @@ const subscribePhone = (change: () => void) => {
   return () => media?.removeEventListener("change", change);
 };
 const isPhone = () => window.matchMedia?.(phoneQuery).matches ?? false;
-const hintClasses = "mt-3 text-label leading-normal text-gray-8";
+const hintClasses = "mt-3 text-label text-gray-8";
 const exactClasses = "mt-4 flex flex-wrap items-center gap-2.5";
 const labelClasses = "flex items-center gap-1.5 text-label text-gray-8";
 const inputClasses =
-  "min-h-11 w-[76px] min-w-0 rounded-md border border-gray-4 bg-gray-3 p-2 font-[inherit] text-gray-10 tabular-nums caret-violet disabled:cursor-not-allowed disabled:text-gray-6 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring";
+  "min-h-11 w-[76px] min-w-0 rounded-md border border-gray-4 bg-gray-3 p-2 font-[inherit] text-gray-10 caret-violet disabled:cursor-not-allowed disabled:text-gray-6 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-ring";
 
 /**
  * The Command queue stores plain records; the exported color interfaces have no
@@ -554,7 +554,7 @@ const PickerBody = ({
         {phone ? (
           <DialogTitle>Light color</DialogTitle>
         ) : (
-          <h2 className="text-title leading-[1.4] font-semibold" id={headingId}>
+          <h2 className="text-title" id={headingId}>
             Light color
           </h2>
         )}
@@ -603,9 +603,7 @@ const PickerBody = ({
       )}
       <div className="border-gray-4 text-label text-gray-8 mt-5 flex flex-wrap justify-between gap-x-4 gap-y-2 border-t pt-4">
         <span>Observed</span>
-        <span className="text-gray-10 tabular-nums">
-          {observed ?? "No color observed"}
-        </span>
+        <span className="text-gray-10">{observed ?? "No color observed"}</span>
       </div>
       <LightControlFeedback
         controls={controls}

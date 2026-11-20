@@ -187,7 +187,7 @@ export const StateGuide = ({
     );
   }
   return (
-    <div className="text-caption text-muted-foreground">
+    <div className="text-label text-muted-foreground">
       <span>State fields · canonical units</span>
       <ul className="pl-[18px]">
         {Object.entries(fields).map(([path, stateField]) => {

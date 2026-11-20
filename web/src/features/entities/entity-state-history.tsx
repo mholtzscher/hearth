@@ -660,7 +660,7 @@ const StateHistoryChart = ({
           Observation sequence (not elapsed time)
         </text>
       </svg>
-      <figcaption className="text-muted-foreground text-caption mt-1">
+      <figcaption className="text-muted-foreground text-label mt-1">
         {`Observed ${firstObserved} to ${lastObserved} · ${valid.length} plotted${skipped.length > 0 ? ` · ${skipped.join(" · ")}` : ""}.`}
         {filter === "unchanged" &&
           " Unchanged observations only; intervening State changes are not shown."}
@@ -728,7 +728,7 @@ const HistoryScope = ({
                   {data.items.map((entry) => (
                     <TableRow key={entry.observation_id}>
                       <TableCell
-                        className="text-caption font-mono"
+                        className="text-label font-mono"
                         title={
                           entry.value === undefined ||
                           forecastSummary(entityType, entry.value) !== null
@@ -748,7 +748,7 @@ const HistoryScope = ({
                         <span className="flex flex-wrap items-center gap-1.5">
                           <StatusChip status={entry.disposition} />
                           {entry.rejection_code && (
-                            <span className="text-muted-foreground text-caption font-mono">
+                            <span className="text-muted-foreground text-label font-mono">
                               {entry.rejection_code}
                             </span>
                           )}
@@ -760,13 +760,13 @@ const HistoryScope = ({
                           className="text-muted-foreground"
                         />
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-caption font-mono">
+                      <TableCell className="text-muted-foreground text-label font-mono">
                         {entry.observed_at}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-caption font-mono">
+                      <TableCell className="text-muted-foreground text-label font-mono">
                         {entry.adapter_received_at}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-caption font-mono">
+                      <TableCell className="text-muted-foreground text-label font-mono">
                         {entry.source_updated_at ?? "—"}
                       </TableCell>
                     </TableRow>
@@ -826,7 +826,7 @@ const EntityStateHistory = ({
           Latest / Refresh history
         </Button>
       </div>
-      <p className="text-muted-foreground text-caption mt-1.5">
+      <p className="text-muted-foreground text-label mt-1.5">
         Newer observations appear after refreshing. Older entries may expire
         while paging.
       </p>

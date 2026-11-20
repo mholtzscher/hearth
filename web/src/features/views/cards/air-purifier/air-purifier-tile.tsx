@@ -28,7 +28,7 @@ const readingBody = ({
     {power.data && "text" in power.data ? power.data.text : "—"}
     {on && modeWord && (
       <small
-        className="text-compact-reading text-gray-9 data-[value=dimmed]:text-gray-8 ms-1.5 tracking-[-.02em]"
+        className="text-compact-reading text-gray-9 data-[value=dimmed]:text-gray-8 ms-1.5"
         data-value={mode?.status.value}
       >
         {modeWord}
@@ -149,7 +149,7 @@ const renderControlStatus = ({
     );
   }
   return (
-    <p className="text-label text-muted-foreground min-h-[21px] leading-normal">
+    <p className="text-label text-muted-foreground min-h-[21px]">
       {hasEntity ? "Read-only" : ""}
     </p>
   );

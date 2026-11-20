@@ -468,7 +468,7 @@ export const ViewEditor = ({
         )
   );
   return (
-    <div className="text-label grid gap-3 leading-normal">
+    <div className="text-label grid gap-3">
       <p>Changes stay in this draft until you save.</p>
       {error && <output className="block">{error}</output>}
       <TextField

@@ -333,14 +333,15 @@ input. Examples include
 Apply this section to new and changed code under `web/`. Earlier code is a
 migration candidate, not a finding against an unrelated change.
 [`design-system.test.ts`](web/src/design-system.test.ts) tracks class selectors,
-raw form controls, hand-rolled card surfaces, direct `radix-ui` imports, and
-text sizes off the type scale, and fails when a count grows.
+raw form controls, hand-rolled card surfaces, direct `radix-ui` imports, text
+sizes off the type scale, line heights or tracking outside the type roles, and
+numeric-spacing classes outside prose, and fails when a count grows.
 
 ### Style elements with utilities, not class selectors
 
 For new and changed files under `web/src` and `web/.storybook`, put styles on
 elements as Tailwind utilities. Stylesheets hold only theme tokens, element
-resets, keyframes, and custom variants. Class selectors separate styles from
+resets, keyframes, custom variants, and `@utility` extensions. Class selectors separate styles from
 components and, outside a cascade layer, override utilities including those on
 shadcn controls. Existing selectors are migration candidates. **Source:** stated.
 

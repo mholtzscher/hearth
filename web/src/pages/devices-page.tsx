@@ -124,7 +124,7 @@ export default function DevicesPage() {
             <>
               <p className="text-label">
                 <span className="font-medium">{detail.data.name}</span>{" "}
-                <span className="text-muted-foreground text-caption font-mono">
+                <span className="text-muted-foreground text-label font-mono">
                   {selected} · kind={detail.data.kind}
                 </span>
               </p>
@@ -174,14 +174,14 @@ export default function DevicesPage() {
                           className="text-muted-foreground"
                         />
                       </TableCell>
-                      <TableCell className="text-caption font-mono">
+                      <TableCell className="text-label font-mono">
                         {e.type}
                       </TableCell>
                       <TableCell>{e.enabled ? "yes" : "no"}</TableCell>
                       <TableCell>
                         <StatusChip status={e.availability.status} />
                       </TableCell>
-                      <TableCell className="text-caption font-mono">
+                      <TableCell className="text-label font-mono">
                         {e.state
                           ? (forecastSummary(e.type, e.state.value) ??
                             formatEntityState(e))

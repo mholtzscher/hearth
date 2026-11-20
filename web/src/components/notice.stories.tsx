@@ -27,9 +27,9 @@ export const Alert: Story = {
     await Promise.all(
       Object.entries({
         color: "rgb(244, 244, 244)",
-        fontSize: "12px",
+        fontSize: "14px",
         fontWeight: "400",
-        lineHeight: "18px",
+        lineHeight: "21px",
         padding: "12px",
         marginTop: "12px",
         marginBottom: "12px",
@@ -52,7 +52,7 @@ export const Alert: Story = {
     const text = canvasElement.ownerDocument.createRange();
     text.selectNodeContents(notice);
     await expect(notice.getBoundingClientRect().height).toBe(
-      26 + 18 * text.getClientRects().length
+      26 + 21 * text.getClientRects().length
     );
     const parent = notice.parentElement;
     if (!parent) {

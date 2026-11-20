@@ -68,7 +68,7 @@ export const TimelineFeed = ({
   return (
     <div className="grid gap-1">
       {visible.length === 0 ? (
-        <p className="text-label text-muted-foreground py-6 leading-normal">
+        <p className="text-label text-muted-foreground py-6">
           {hasHistory
             ? `No changes in the last ${windowWords}`
             : "Historical readings will appear here."}
@@ -94,7 +94,7 @@ export const TimelineFeed = ({
                   }
                 >
                   <time
-                    className="text-muted-foreground text-right whitespace-nowrap tabular-nums"
+                    className="text-muted-foreground text-right whitespace-nowrap"
                     dateTime={new Date(entry.at).toISOString()}
                   >
                     {new Date(entry.at).toLocaleTimeString([], {

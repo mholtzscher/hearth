@@ -90,7 +90,7 @@ export const CardSource = ({
   const phone = useSyncExternalStore(subscribePhone, isPhone);
   const headingId = useId();
   const descriptionId = useId();
-  const headingClass = "m-0 text-title leading-[1.4] font-semibold";
+  const headingClass = "m-0 text-title";
   const descriptionClass = "mt-1.5 mb-[22px] text-muted-foreground";
   const heading = (
     <h2 id={headingId} className={headingClass}>
@@ -153,7 +153,7 @@ export const CardSource = ({
       {(observedAt ||
         single?.availability !== undefined ||
         single?.enabled !== undefined) && (
-        <dl className="m-0 grid gap-4 tabular-nums">
+        <dl className="m-0 grid gap-4">
           {observedAt && (
             <div className="grid gap-[3px]">
               <dt className="text-label text-muted-foreground">
@@ -193,7 +193,7 @@ export const CardSource = ({
       )}
       {sources.length > 0 && (
         <section className="border-gray-4 mt-[22px] border-t pt-[18px]">
-          <h3 className="text-label leading-normal font-medium">
+          <h3 className="text-label font-medium">
             {sources.length === 1 ? "Source" : "Sources"}
           </h3>
           <ul className="mt-2.5 grid list-none gap-4 p-0">
@@ -205,13 +205,13 @@ export const CardSource = ({
                 >
                   {source.label}
                 </Link>
-                <code className="text-caption text-muted-foreground mt-1 block">
+                <code className="text-label text-muted-foreground mt-1 block">
                   {source.entityId}
                 </code>
                 {!single &&
                   (source.availability !== undefined ||
                     source.enabled !== undefined) && (
-                    <dl className="mt-2 grid gap-2 tabular-nums">
+                    <dl className="mt-2 grid gap-2">
                       <EntityFacts source={source} />
                     </dl>
                   )}

@@ -47,7 +47,7 @@ type Story = StoryObj<typeof meta>;
 const Verdict = ({ good }: { good: boolean }) => (
   <span
     className={cn(
-      "text-label inline-flex items-center gap-1.5 leading-normal font-semibold",
+      "text-label inline-flex items-center gap-1.5 font-semibold",
       good ? "text-success" : "text-destructive"
     )}
   >
@@ -327,7 +327,7 @@ const TouchTargetsPair = () => (
     doRule="Give household controls the touch size."
     doExample={<MeasuredButton size="touch" />}
     dontRule="Shrink a household control below the touch size."
-    dontExample={<MeasuredButton className="text-caption h-6 px-2" />}
+    dontExample={<MeasuredButton className="text-label h-6 px-2" />}
   />
 );
 
@@ -361,7 +361,7 @@ const SharedFramePair = () => (
     dontRule="Invent a custom frame for a card type."
     dontExample={
       <div className="grid min-w-48 flex-1 gap-1 rounded-[20px] bg-[linear-gradient(135deg,color-mix(in_oklch,var(--info)_30%,var(--gray-1)),var(--gray-1))] p-4">
-        <span className="text-caption tracking-[.1em] uppercase">Rain</span>
+        <span className="text-label tracking-[.1em] uppercase">Rain</span>
         <span className="text-reading-narrow font-bold">2.4mm</span>
       </div>
     }

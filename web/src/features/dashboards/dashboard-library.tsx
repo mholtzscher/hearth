@@ -65,7 +65,7 @@ const LibraryCard = ({
         />
         <h2
           id={`dashboard-${item.id}`}
-          className="text-label mt-3 leading-normal font-medium [overflow-wrap:anywhere]"
+          className="text-label mt-3 font-medium [overflow-wrap:anywhere]"
         >
           {/* The link covers the card; Delete sits above it. */}
           <Link
@@ -76,7 +76,7 @@ const LibraryCard = ({
           </Link>
         </h2>
         {updated && (
-          <p className="text-caption text-muted-foreground mt-1 leading-[18px]">
+          <p className="text-label text-muted-foreground mt-1">
             Updated{" "}
             <time
               dateTime={item.updated_at}
@@ -240,10 +240,10 @@ const ConnectedLibrary = () => {
         )}
         {!(loading || error) && items.length === 0 && (
           <Card>
-            <h2 className="text-label mb-1 leading-normal font-medium">
+            <h2 className="text-label mb-1 font-medium">
               Your first dashboard starts with a question.
             </h2>
-            <p className="text-caption text-muted-foreground mb-4">
+            <p className="text-label text-muted-foreground mb-4">
               Generate a view in conversation, customize it, and save it here.
             </p>
             <Link className="text-link" to="/">

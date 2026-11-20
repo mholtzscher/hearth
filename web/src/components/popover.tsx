@@ -27,7 +27,7 @@ const PopoverContent = ({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        "rounded-card bg-popover text-label text-popover-foreground z-[81] flex max-h-[min(720px,var(--radix-popover-content-available-height,calc(100dvh-24px)))] w-[min(440px,calc(100vw-24px))] flex-col gap-2.5 overflow-auto overscroll-contain p-[22px] leading-normal [overflow-wrap:anywhere] shadow-[0_18px_60px_#0008] outline-none",
+        "rounded-card bg-popover text-label text-popover-foreground z-[81] flex max-h-[min(720px,var(--radix-popover-content-available-height,calc(100dvh-24px)))] w-[min(440px,calc(100vw-24px))] flex-col gap-2.5 overflow-auto overscroll-contain p-[22px] [overflow-wrap:anywhere] shadow-[0_18px_60px_#0008] outline-none",
         className
       )}
       {...props}

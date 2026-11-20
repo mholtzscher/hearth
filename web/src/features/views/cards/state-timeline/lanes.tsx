@@ -65,7 +65,7 @@ export const Axis = ({
     <div
       data-slot="timeline-axis"
       className={cn(
-        "text-muted-foreground relative h-5 text-[13px] tabular-nums",
+        "text-muted-foreground text-caption relative h-5",
         className
       )}
       aria-hidden="true"
@@ -202,7 +202,7 @@ export const TimelineLanes = ({
             className="contents @max-[600px]:grid @max-[600px]:grid-cols-[minmax(0,1fr)_auto] @max-[600px]:items-baseline @max-[600px]:gap-x-3 @max-[600px]:gap-y-1.5 @max-[420px]:grid-cols-[minmax(0,1fr)] @max-[420px]:gap-0.5"
             key={row.key}
           >
-            <div className="grid min-w-0 leading-[1.35] @max-[600px]:flex @max-[600px]:flex-wrap @max-[600px]:items-baseline @max-[600px]:gap-x-2 @max-[600px]:gap-y-0">
+            <div className="grid min-w-0 @max-[600px]:flex @max-[600px]:flex-wrap @max-[600px]:items-baseline @max-[600px]:gap-x-2 @max-[600px]:gap-y-0">
               <span className="overflow-hidden text-ellipsis whitespace-nowrap">
                 {row.label}
               </span>
@@ -224,7 +224,7 @@ export const TimelineLanes = ({
               color={`var(--chart-${(index % 8) + 1})`}
               dimmed={status.value === "dimmed"}
             />
-            <div className="text-muted-foreground text-right tabular-nums @max-[600px]:col-start-2 @max-[600px]:row-start-1 @max-[420px]:col-start-1 @max-[420px]:row-start-2 @max-[420px]:text-left">
+            <div className="text-muted-foreground text-right @max-[600px]:col-start-2 @max-[600px]:row-start-1 @max-[420px]:col-start-1 @max-[420px]:row-start-2 @max-[420px]:text-left">
               {totalsText(row.resource.data?.timeline, row.trueWord)}
             </div>
           </div>

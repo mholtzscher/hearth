@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 /** The product heading shared by pages and canvas titles. */
 export const pageHeadingClass =
-  "text-headline max-tablet:text-headline-narrow leading-[1.3] font-medium tracking-[-.03em] text-balance [overflow-wrap:anywhere]";
+  "text-headline text-balance [overflow-wrap:anywhere]";
 
 /** A page title and its actions, with optional context below. */
 export const PageHeader = ({
@@ -31,7 +31,7 @@ export const PageHeader = ({
     {description && (
       <div
         data-slot="page-description"
-        className="text-label text-muted-foreground mt-2 leading-normal"
+        className="text-label text-muted-foreground mt-2"
       >
         {description}
       </div>

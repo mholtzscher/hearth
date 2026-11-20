@@ -46,7 +46,7 @@ export const RangeTrack = ({
         />
       </div>
       <p
-        className="text-label text-muted-foreground flex justify-between gap-2 leading-normal tabular-nums"
+        className="text-label text-muted-foreground flex justify-between gap-2"
         aria-hidden="true"
       >
         <span>{bound(minimum, digits)}</span>
@@ -59,9 +59,7 @@ export const RangeTrack = ({
         Range {bound(minimum, digits)} to {bound(maximum, digits)}
         {unit}
       </p>
-      {outside && (
-        <p className="text-label text-gray-9 leading-normal">{outside}</p>
-      )}
+      {outside && <p className="text-label text-gray-9">{outside}</p>}
     </div>
   );
 };

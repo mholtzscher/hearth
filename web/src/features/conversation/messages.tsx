@@ -67,7 +67,7 @@ const markdownPlugins = [remarkGfm];
 const markdownContainerProps = {
   "data-slot": "message-markdown",
   className:
-    "min-w-0 max-w-[720px] overflow-x-auto leading-[1.7] [&_:is(p,ul,ol,blockquote,pre,table)]:my-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul]:list-disc [&_ol]:list-decimal [&_:is(ul,ol)]:ps-6 [&_li]:my-1 [&_li>p]:my-1 [&_:is(h1,h2,h3,h4,h5,h6)]:mt-6 [&_:is(h1,h2,h3,h4,h5,h6)]:mb-2 [&_:is(h1,h2,h3,h4,h5,h6)]:text-title [&_:is(h1,h2,h3,h4,h5,h6)]:leading-[1.4] [&_:is(h1,h2,h3,h4,h5,h6)]:font-semibold [&_:is(h1,h2,h3,h4,h5,h6)]:text-foreground [&_a]:text-link [&_a]:underline [&_a]:underline-offset-[3px] [&_strong]:font-semibold [&_strong]:text-foreground [&_:not(pre)>code]:rounded-xs [&_:not(pre)>code]:border [&_:not(pre)>code]:border-border [&_:not(pre)>code]:bg-gray-2 [&_:not(pre)>code]:px-[5px] [&_:not(pre)>code]:py-px [&_:not(pre)>code]:text-[.85em] [&_:not(pre)>code]:[overflow-wrap:anywhere] [&_pre]:overflow-x-auto [&_pre]:rounded-card [&_pre]:border [&_pre]:border-border [&_pre]:bg-card [&_pre]:px-4 [&_pre]:py-3 [&_pre]:text-label [&_pre]:leading-normal [&_blockquote]:border-s [&_blockquote]:border-border [&_blockquote]:ps-3 [&_blockquote]:text-muted-foreground [&_table]:w-full [&_table]:border-separate [&_table]:border-spacing-0 [&_table]:rounded-card [&_table]:border [&_table]:border-border [&_table]:bg-card [&_table]:text-label [&_table]:leading-normal [&_table]:tabular-nums [&_:is(th,td)]:px-4 [&_:is(th,td)]:py-2.5 [&_:is(th,td)]:text-start [&_:is(th,td)]:align-top [&_th]:font-semibold [&_th]:text-muted-foreground [&_tbody>tr>*]:border-t [&_tbody>tr>*]:border-border",
+    "min-w-0 max-w-[720px] overflow-x-auto text-pretty proportional-nums [&_:is(p,ul,ol,blockquote)]:max-w-[32em] [&_:is(p,ul,ol,blockquote,pre,table)]:my-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul]:list-disc [&_ol]:list-decimal [&_:is(ul,ol)]:ps-6 [&_li]:my-1 [&_li>p]:my-1 [&_:is(h1,h2,h3,h4,h5,h6)]:mt-6 [&_:is(h1,h2,h3,h4,h5,h6)]:mb-2 [&_:is(h1,h2,h3,h4,h5,h6)]:text-title [&_:is(h1,h2,h3,h4,h5,h6)]:text-foreground [&_a]:text-link [&_a]:underline [&_a]:underline-offset-[3px] [&_strong]:font-semibold [&_strong]:text-foreground [&_:not(pre)>code]:rounded-xs [&_:not(pre)>code]:border [&_:not(pre)>code]:border-border [&_:not(pre)>code]:bg-gray-2 [&_:not(pre)>code]:px-[5px] [&_:not(pre)>code]:py-px [&_:not(pre)>code]:[overflow-wrap:anywhere] [&_pre]:overflow-x-auto [&_pre]:rounded-card [&_pre]:border [&_pre]:border-border [&_pre]:bg-card [&_pre]:px-4 [&_pre]:py-3 [&_pre]:text-label [&_blockquote]:border-s [&_blockquote]:border-border [&_blockquote]:ps-3 [&_blockquote]:text-muted-foreground [&_table]:w-full [&_table]:border-separate [&_table]:border-spacing-0 [&_table]:rounded-card [&_table]:border [&_table]:border-border [&_table]:bg-card [&_table]:text-label [&_table]:tabular-nums [&_:is(th,td)]:px-4 [&_:is(th,td)]:py-2.5 [&_:is(th,td)]:text-start [&_:is(th,td)]:align-top [&_th]:font-semibold [&_th]:text-muted-foreground [&_tbody>tr>*]:border-t [&_tbody>tr>*]:border-border",
 };
 
 const plural = (count: number, noun: string) =>
@@ -304,7 +304,7 @@ const ContextPart = ({ data }: DataMessagePartProps<unknown>) => {
   const parsed = viewContextSchema.safeParse(data);
   const view = parsed.success ? readDefinition(parsed.data.definition) : null;
   const badge =
-    "mt-1.5 flex items-start gap-2 text-label leading-normal whitespace-normal text-violet-text [overflow-wrap:anywhere]";
+    "mt-1.5 flex items-start gap-2 text-label whitespace-normal text-violet-text [overflow-wrap:anywhere]";
   const icon = "mt-[2.5px] size-4 shrink-0";
   if (automation.success) {
     return (
@@ -341,7 +341,7 @@ const ToolGroup = ({
   pending: number;
   children: ReactNode;
 }) => (
-  <details className="group/tools text-label text-muted-foreground leading-normal">
+  <details className="group/tools text-label text-muted-foreground">
     <summary className={activitySummary}>
       {pending ? (
         <CircleDashedIcon className={activityIcon} aria-hidden="true" />
@@ -393,7 +393,7 @@ const ToolPart = ({ toolName, argsText, result }: ToolCallMessagePartProps) => (
 
 const userParts = { data: { by_name: { "hearth-context": ContextPart } } };
 const UserMessage = () => (
-  <div className="rounded-card border-gray-3 bg-gray-2 text-body text-foreground ms-auto mt-8 w-fit max-w-[min(85%,560px)] rounded-br-xs border px-4 py-2.5 leading-[1.6] [overflow-wrap:break-word] whitespace-pre-wrap first:mt-4">
+  <div className="rounded-card border-gray-3 bg-gray-2 text-body text-foreground ms-auto mt-8 w-fit max-w-[min(85%,560px)] rounded-br-xs border px-4 py-2.5 [overflow-wrap:break-word] whitespace-pre-wrap proportional-nums first:mt-4">
     <MessagePrimitive.Parts components={userParts} />
   </div>
 );
@@ -426,8 +426,8 @@ const CopyResponse = () => {
 };
 
 const AssistantMessage = () => (
-  <div className="text-body text-gray-9 mt-6 flex flex-col gap-3 leading-[1.7] [overflow-wrap:break-word]">
-    <div className="text-label text-foreground mb-[-4px] flex min-h-6 items-center gap-2 leading-normal font-semibold">
+  <div className="text-body text-gray-9 mt-6 flex flex-col gap-3 [overflow-wrap:break-word]">
+    <div className="text-label text-foreground mb-[-4px] flex min-h-6 items-center gap-2 font-semibold">
       <HouseIcon className="text-violet size-4 shrink-0" aria-hidden="true" />
       Hearth
     </div>

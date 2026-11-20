@@ -137,8 +137,7 @@ export const Trend = ({
   const { data } = resource;
   const rootClass = cn("mt-3 grid gap-1", className);
   const plotClass = cn("relative h-11", classNames?.plot);
-  const textClass =
-    "text-label leading-normal text-muted-foreground tabular-nums";
+  const textClass = "text-label text-muted-foreground";
   if (!data) {
     const words = historyWords(resource, window);
     return (

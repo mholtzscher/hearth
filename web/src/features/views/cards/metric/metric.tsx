@@ -76,9 +76,7 @@ export const Metric = ({
         <RangeTrack data={{ ...data, range: data.range }} dimmed={dimmed} />
       )}
       {range && data && !data.range && (
-        <p className="text-label text-gray-9 leading-normal">
-          Range unavailable.
-        </p>
+        <p className="text-label text-gray-9">Range unavailable.</p>
       )}
       {trend && status.value !== "empty" && (
         <Trend

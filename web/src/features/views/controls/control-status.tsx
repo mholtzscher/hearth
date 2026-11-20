@@ -5,8 +5,7 @@ import { cn } from "../../../lib/utils";
 import { useControl } from "../data/provider";
 import { StatusDot } from "./status-dot";
 
-export const controlStatusClasses =
-  "mt-2 min-h-[21px] text-label leading-normal text-gray-9";
+export const controlStatusClasses = "mt-2 min-h-[21px] text-label text-gray-9";
 export const controlStatusLineClasses =
   "flex items-baseline gap-1.5 empty:hidden data-[tone=error]:text-destructive";
 

@@ -109,10 +109,7 @@ const LightDetailLine = ({
   colorDimmed: boolean;
   brightnessDimmed: boolean;
 }) => (
-  <p
-    data-slot="light-detail"
-    className="text-label text-gray-9 mt-2 leading-normal tabular-nums"
-  >
+  <p data-slot="light-detail" className="text-label text-gray-9 mt-2">
     {detailLevel && (
       <span
         className="data-[dimmed]:text-gray-8"
@@ -329,7 +326,7 @@ const Light = ({
         />
       )}
       {light.colorPreviewUnavailable && (
-        <p className="text-label text-muted-foreground mb-2 leading-normal">
+        <p className="text-label text-muted-foreground mb-2">
           Color preview unavailable; canonical reading is missing or out of
           date.
         </p>
@@ -470,7 +467,7 @@ const DeviceReadingNotice = ({
     return null;
   }
   return (
-    <p className="text-label text-muted-foreground mb-2 leading-normal">
+    <p className="text-label text-muted-foreground mb-2">
       Showing {MAX_DEVICE_ROWS} of {additionalCount} readings. Open Source for
       every Entity.
     </p>
@@ -528,7 +525,7 @@ export const DeviceCard = ({
           >
             Device details
           </Link>{" "}
-          <code className="text-caption text-muted-foreground mt-1 block">
+          <code className="text-label text-muted-foreground mt-1 block">
             {deviceId}
           </code>
         </p>
@@ -549,7 +546,7 @@ export const DeviceCard = ({
         />
       )}
       {device && !light && shown.length === 0 && (
-        <p className="text-label text-muted-foreground py-6 leading-normal">
+        <p className="text-label text-muted-foreground py-6">
           No readable Entities on this Device.
         </p>
       )}

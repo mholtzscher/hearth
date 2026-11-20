@@ -86,13 +86,12 @@ export type TextToken = (typeof TEXT_TOKENS)[number];
 export const TYPE_USE: Record<TextToken, string> = {
   reading: "A card's single reading",
   "reading-narrow": "Reading below a 200px card width; Reading applies it",
-  headline: "Canvas, library, and Development page titles",
-  "headline-narrow": "Page titles on phones; PageHeader applies it",
-  title: "View, section, and dialog headings",
+  headline: "Page titles at every width; the empty conversation heading",
+  title: "View, section, dialog, and reply headings",
   body: "Conversation text; subsection headings at 600",
   label: "Workspace base: cards, fields, buttons, tables",
   "compact-reading": "Row values in lists and ledgers",
-  caption: "Notices, Recent date headings",
+  caption: "Recent date headings, badges, chart axes, rail labels",
 };
 
 export const RADII = ["xs", "md", "card"] as const;

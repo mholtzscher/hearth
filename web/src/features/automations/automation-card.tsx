@@ -254,9 +254,7 @@ const CardContent = ({
   return (
     <>
       <div className="mt-5">
-        <span className="text-caption text-muted-foreground block leading-normal">
-          When
-        </span>
+        <span className="text-label text-muted-foreground block">When</span>
         <p className={paragraph}>
           {definition.triggers.length
             ? definition.triggers.map((trigger, index) => (
@@ -274,7 +272,7 @@ const CardContent = ({
         </p>
         {definition.conditions && (
           <>
-            <span className="text-caption text-muted-foreground mt-3 block leading-normal">
+            <span className="text-label text-muted-foreground mt-3 block">
               Only if
             </span>
             <p className={paragraph}>
@@ -289,7 +287,7 @@ const CardContent = ({
         <InitialVariables ctx={ctx} />
       </div>
       <div
-        className={`${row} border-border text-caption text-muted-foreground mt-4 border-t pt-3`}
+        className={`${row} border-border text-label text-muted-foreground mt-4 border-t pt-3`}
       >
         <span>
           {definition.steps.length} root{" "}
@@ -307,7 +305,7 @@ const CardContent = ({
           ]}
         />
       </div>
-      <div className="text-caption text-muted-foreground mt-[18px] block leading-normal">
+      <div className="text-label text-muted-foreground mt-[18px] block">
         Then
       </div>
       {style === "sentence" ? (

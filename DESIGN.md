@@ -49,33 +49,34 @@ typography:
     fontWeight: 500
     lineHeight: 1.3
     letterSpacing: "-0.03em"
-  headline-narrow:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "22px"
-    fontWeight: 500
-    lineHeight: 1.3
-    letterSpacing: "-0.03em"
   title:
     fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "18px"
+    fontSize: "20px"
     fontWeight: 600
-  body:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "16px"
-    lineHeight: 1.7
-  label:
-    fontFamily: "Figtree Variable, sans-serif"
-    fontSize: "14px"
-    lineHeight: 1.5
+    lineHeight: 1.3
+    letterSpacing: "-0.02em"
   compact-reading:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "20px"
     fontWeight: 400
     lineHeight: 1.3
     letterSpacing: "-0.02em"
+    fontFeature: "tabular-nums"
+  body:
+    fontFamily: "Figtree Variable, sans-serif"
+    fontSize: "16px"
+    lineHeight: 1.6
+    letterSpacing: "0"
+  label:
+    fontFamily: "Figtree Variable, sans-serif"
+    fontSize: "14px"
+    lineHeight: 1.5
+    letterSpacing: "0"
   caption:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "12px"
+    lineHeight: 1.5
+    letterSpacing: "0"
 rounded:
   xs: "4px"
   md: "8px"
@@ -155,7 +156,7 @@ components:
     rounded: "{rounded.card}"
     padding: "24px"
   notice:
-    typography: "{typography.caption}"
+    typography: "{typography.label}"
     rounded: "{rounded.md}"
     padding: "12px"
 ---
@@ -275,42 +276,64 @@ status text at 20% or less.
 ## Typography
 
 **Font:** Figtree Variable, self-hosted through `@fontsource-variable/figtree`,
-with a sans-serif fallback. Opaque identifiers and raw structured data may use
-monospace.
+with a sans-serif fallback. Opaque identifiers, codes, timestamps, and raw
+structured data use each device's own monospace at the size of the text around
+them, usually Label. `index.css` sets `font-size-adjust: 0.5` on monospace, so
+every device's monospace matches Figtree's x-height.
 
 **Character:** a clear, restrained voice throughout. Readings are light and
 large; everything around them is quieter.
 
 Each typography token is a Tailwind utility (`text-reading`, `text-label`, and
-so on) that sets font size only. Apply line height, weight, and tracking
-separately. `index.css` resets Tailwind's own type scale, so `text-sm` and its
-siblings set no size.
+so on) that sets its whole role: size, line height, and tracking, plus weight
+for the display roles. Body, Label, and Caption leave weight to inherit, so a
+bold parent stays bold. A class on one element may override one part, such as
+`font-semibold` on a Body heading. `index.css` resets Tailwind's own type scale,
+so `text-sm` and its siblings set no size.
+
+The scale has seven sizes: 12, 14, 16, 20, 26, 32, and 40px. Line height
+follows the size: 1.15 for readings, 1.3 from 20 to 26px, 1.5 for 12 and
+14px, and 1.6 for prose at 16px. Tracking tightens only from 20px up: −0.03em
+at 26px and above, −0.02em at 20px.
 
 ### Hierarchy
 
-- **Reading** (350, 40px, 1.15, tabular figures): a card's single reading. Units
-  stay smaller and quieter.
-- **Reading narrow** (350, 32px, 1.15): a reading in a card narrower than
-  200px. `Reading` applies it; the Cover card switches at 250px because its
-  icon shares the row.
-- **Headline** (500, 26px, 1.3): canvas, library, and Development page titles.
-- **Headline narrow** (500, 22px, 1.3): the same titles on phones.
-  `pageHeadingClass` applies it.
-- **Title** (600, 18px): view headings, Development section headings, and
-  dialog titles, without uppercase labels or extra separator rules.
-- **Body** (16px, 1.7): conversation text. At weight 600, Body is the
+- **Reading** (350, 40px, 1.15, −0.03em, tabular figures): a card's single
+  reading. Units stay smaller and quieter.
+- **Reading narrow** (350, 32px, 1.15, −0.03em): a reading in a card narrower
+  than 200px. `Reading` applies it; the Cover card switches at 250px because
+  its icon shares the row.
+- **Headline** (500, 26px, 1.3, −0.03em): canvas, library, and Development page
+  titles at every width, and the empty conversation heading.
+- **Title** (600, 20px, 1.3, −0.02em): view headings, Development section
+  headings, dialog titles, and headings inside replies, without uppercase
+  labels or extra separator rules.
+- **Compact reading** (400, 20px, 1.3, −0.02em, tabular figures): row values in
+  ReadingList, Device, ToggleList, AirPurifier, the timeline ledger, weather
+  rows, and forecast temperatures.
+- **Body** (16px, 1.6): conversation text. At weight 600, Body is the
   subsection heading below a Title: the automation editor's headings and the
   headings inside a Development section.
 - **Label** (14px, 1.5): the workspace base size, used for card titles, reading
   metadata, chart legends, editor details, fields, buttons, and tables.
-- **Compact reading** (400, 20px, 1.3, tabular figures): row values in
-  ReadingList, Device, ToggleList, AirPurifier, the timeline ledger, weather
-  rows, and forecast temperatures.
-- **Caption** (12px): Notice text and the Recent conversations date headings.
+- **Caption** (12px, 1.5): only small labels: the Recent conversations date
+  headings, badges, chart and forecast axes, compass letters, and the rail's
+  navigation labels. Notes and explanations use Label.
 
-The empty conversation heading (28px), the wordmark (24px, 20px in the phone
-bar), and state timeline axes (13px, see Charts) sit off this scale.
-`design-system.test.ts` lists every pixel size off the scale.
+Prose keeps a 32em measure, about 74 Figtree characters, and wraps with
+`text-pretty`: reply paragraphs, lists, and quotes, and a view's Notes. Avoid
+`ch` for a measure, because Figtree's zero is about 1.45 average characters
+wide.
+
+Digits are tabular everywhere by default: `index.css` sets
+`font-variant-numeric: tabular-nums` on `html`, so readings, ages, levels,
+tables, and chart axes hold still as they update and line up in columns. Only
+prose opts out with `proportional-nums`: reply text, user messages, and view
+Notes. Tables inside a reply opt back in.
+
+Only the wordmark (24px, 20px in the phone bar) sits off this scale.
+`design-system.test.ts` lists every pixel size off the scale, and every line
+height or tracking value outside the roles.
 
 ## Layout
 
@@ -323,8 +346,9 @@ At desktop widths, a navigation sidebar of `clamp(218px, 22vw, 340px)` sits
 beside the workspace. When a canvas is present, the conversation column is
 `clamp(368px, 28vw, 480px)` with 20px gutters, which keeps the composer prompt
 on one line, and the canvas takes the remaining width. An independent
-conversation is centered at a maximum width of 960px; reply prose keeps a 720px
-maximum on the shared left edge. Canvas content has a maximum width of 1080px
+conversation is centered at a maximum width of 960px; replies keep a 720px
+maximum on the shared left edge, and their paragraphs, lists, and quotes stop
+at the 32em prose measure. Canvas content has a maximum width of 1080px
 beside the conversation and 1440px when it has the screen to itself: expanded,
 or as a dashboard page.
 
@@ -350,10 +374,10 @@ Development pages and the dashboard library share the dashboard's 1440px maximum
 width and 28px gutters (20px on phones). `PageHeader` pairs the headline with
 wrapping actions and optional context, separated from content by one rule.
 
-Metadata uses `Facts` definition lists, which wrap values below their labels
-when space is limited. Tables use the label size and sentence-case column
-labels. Their named scroll areas enter the Tab order only while content
-overflows.
+Metadata uses `Facts` definition lists. Each monospace value sits on its label's
+baseline and wraps below the label when space is limited. Tables use the label
+size and sentence-case column labels. Their named scroll areas enter the Tab
+order only while content overflows.
 
 Development pages keep compact diagnostic controls. Their page links use the
 household navigation treatment; below 981px a shared native select replaces the
@@ -522,7 +546,7 @@ the one modal surface outside Dialog; decision dialogs always use Dialog.
 
 `Notice` from `components/notice.tsx` uses the error tint: a border of
 `destructive` at 45%, a background of `destructive` at 8%, foreground text, 8px
-corners, and 12px padding. Its text uses the 12px caption size with an 18px line
+corners, and 12px padding. Its text uses the 14px label size with a 21px line
 height. Notices grow with their content rather than taking a control height.
 
 Callers choose `role="alert"` for errors or `role="status"` for non-urgent
@@ -866,7 +890,7 @@ in one of three styles.
   strip; text changes pulse as ticks. It shows 12 entries and an outline **Show
   earlier changes** button.
 
-Axes use 13px labels, off the type scale, because 14px labels
+Axes use 12px Caption labels, like every chart axis, because 14px labels
 overlap at a 440px width; labels may still overlap at narrower widths. The axis
 ends with a quiet "Now" label and no marker. Each row carries its own statuses;
 the feed lists them in the header. An unavailable or disabled row draws hollow
