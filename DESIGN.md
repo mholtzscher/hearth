@@ -309,8 +309,8 @@ at 26px and above, −0.02em at 20px.
   headings, dialog titles, and headings inside replies, without uppercase
   labels or extra separator rules.
 - **Compact reading** (400, 20px, 1.3, −0.02em, tabular figures): row values in
-  ReadingList, Device, ToggleList, AirPurifier, the timeline ledger, weather
-  rows, and forecast temperatures.
+  ReadingList, Device, ToggleList, AirPurifier, Thermostat, the timeline ledger,
+  weather rows, and forecast temperatures.
 - **Body** (16px, 1.6): conversation text. At weight 600, Body is the
   subsection heading below a Title: the automation editor's headings and the
   headings inside a Development section.
@@ -866,6 +866,30 @@ The Cover tile is a ToggleTile whose press opens, closes, or stops. It reads
 what a press does (**Press to stop**), and the status line. Status words are
 short (**Rejected.**, **Press again.**) and keep the full sentence in a tooltip
 and for screen readers. An open cover takes the On surface.
+
+#### Thermostat
+
+The card leads with what the thermostat is set to. A target block of two
+columns and three fixed rows holds the targets the current mode uses: a 14px
+`gray-9` label (**Heat to**, **Cool to**, or **Target**), the target at the
+reading size with a `muted-foreground` degree sign, and a pair of 44px outline
+− and + icon buttons. One target takes the left column. A mode with no target
+spans both columns with **Mode**, the mode word at the reading size, and **No
+target in this mode.** in 14px `muted-foreground`.
+
+- The block has the same height in every mode and at every card width from
+  248px, and the line beneath it is always reserved, so switching the mode or
+  stepping a target never moves the card.
+- Targets are neutral: `gray-10`, or `gray-8` when dimmed. While a target
+  Command is pending, the requested value takes `violet-text` with a 1.5px dashed
+  violet underline, as Cover marks a requested position.
+- The line under the block names the mode and activity in 14px `gray-9`:
+  **Heat & cool · Heating**. Where the mode leads the block, it names the
+  activity alone.
+- Inside temperature and humidity follow as compact reading rows. Only they
+  light the afterglow.
+- Mode is a touch segmented control for up to four modes and a touch select for
+  more; Fan is a touch select. One shared reserved line follows.
 
 #### State timeline and Week pattern
 
