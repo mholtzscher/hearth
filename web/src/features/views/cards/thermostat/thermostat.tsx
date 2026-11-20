@@ -10,10 +10,9 @@ import { ReadingRow, ReadingUnit } from "../reading";
 import type { ValueTreatment } from "../status";
 import { useThermostat } from "./data";
 import type { ThermostatProps } from "./schema";
-import type { ThermostatMode } from "./state";
+import type { ThermostatMode, ThermostatValues } from "./state";
 import { TargetBlock } from "./target-block";
-import { stepTarget } from "./targets";
-import { detailLine, modeWords } from "./words";
+import { modeWords } from "./words";
 
 /** Up to four modes fit a touch segmented control at the minimum card width. */
 const SEGMENTED_MODES = 4;
@@ -31,6 +30,47 @@ const ControlRow = ({
   </div>
 );
 
+const readingText = (
+  value: number | undefined,
+  quantity: Quantity | undefined
+) =>
+  value === undefined || !quantity
+    ? undefined
+    : value.toFixed(quantity.fraction_digits);
+
+/** Only the readings light the card's edge; targets and modes come from Commands. */
+const readingArrivals = ({
+  observed,
+  quantities,
+  observedAt,
+  glows,
+}: {
+  observed: ThermostatValues | undefined;
+  quantities: Record<string, Quantity> | undefined;
+  observedAt: string | undefined;
+  glows: boolean;
+}) =>
+  [
+    {
+      key: "inside",
+      shown: readingText(
+        observed?.current_temperature,
+        quantities?.["/current_temperature"]
+      ),
+    },
+    {
+      key: "humidity",
+      shown: readingText(
+        observed?.current_humidity,
+        quantities?.["/current_humidity"]
+      ),
+    },
+  ].flatMap(({ key, shown }) =>
+    shown === undefined || !observedAt
+      ? []
+      : [{ key, shown, updatedAt: observedAt, eligible: glows }]
+  );
+
 /** A compact reading row that glows when its own displayed value changes. */
 const Row = ({
   name,
@@ -47,10 +87,7 @@ const Row = ({
   treatment: ValueTreatment;
   glows: boolean;
 }) => {
-  const text =
-    value === undefined || !quantity
-      ? undefined
-      : value.toFixed(quantity.fraction_digits);
+  const text = readingText(value, quantity);
   const arrival = useArrival(
     text === undefined || !observedAt
       ? undefined
@@ -168,16 +205,20 @@ export const BoundThermostat = (props: ThermostatProps) => {
   const { status, observed, shown, support, mode, fan, entity } = thermostat;
   const { value } = status;
   const { enabled } = thermostat;
-  const detail = observed
-    ? detailLine(observed, thermostat.targets.length > 0)
-    : undefined;
   const observedAt = thermostat.resource.data?.observed_at;
+  const arrivals = readingArrivals({
+    observed,
+    quantities: entity?.quantities,
+    observedAt,
+    glows: status.glows,
+  });
   return (
     <DataCard
       title={thermostat.title}
       className="@container"
       status={status.entries}
       observedAt={observedAt}
+      arrivals={arrivals}
       sources={thermostat.sources}
     >
       <div className="grid gap-1 pb-3">
@@ -188,17 +229,7 @@ export const BoundThermostat = (props: ThermostatProps) => {
           value={value}
           enabled={enabled}
           requested={(target) => thermostat.requested(target.key)}
-          step={(target, direction) =>
-            thermostat.shownCanonical
-              ? stepTarget({
-                  target,
-                  direction,
-                  unit: thermostat.unit,
-                  support,
-                  canonical: thermostat.shownCanonical,
-                })
-              : undefined
-          }
+          step={thermostat.step}
           onStep={(result) => thermostat.sendTarget(result.request)}
         />
         <p
@@ -207,7 +238,7 @@ export const BoundThermostat = (props: ThermostatProps) => {
           data-value={value}
         >
           {/* A blank line keeps the row reserved when there is nothing to say. */}
-          {detail ?? "\u00A0"}
+          {thermostat.detail ?? "\u00A0"}
         </p>
       </div>
       <ul className="my-[-4px] grid list-none">

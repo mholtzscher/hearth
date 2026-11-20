@@ -28,6 +28,12 @@ export const toMilliCelsius = (value: number, unit: TemperatureUnit) =>
     ? Math.round(value * 1000)
     : Math.round(((value - 32) * 1000) / 1.8);
 
+/** A value rounded to a quantity's fraction digits. */
+export const roundTo = (value: number, fractionDigits: number) => {
+  const scale = 10 ** fractionDigits;
+  return Math.round(value * scale) / scale;
+};
+
 /** A canonical value in household units, rounded to the quantity's digits. */
 export const fromMilliCelsius = (
   mCel: number,
@@ -35,9 +41,7 @@ export const fromMilliCelsius = (
   fractionDigits: number
 ) => {
   const celsius = mCel / 1000;
-  const value = unit === "Cel" ? celsius : celsius * 1.8 + 32;
-  const scale = 10 ** fractionDigits;
-  return Math.round(value * scale) / scale;
+  return roundTo(unit === "Cel" ? celsius : celsius * 1.8 + 32, fractionDigits);
 };
 
 // Absorbs float error so a value already on the grid counts as on it.

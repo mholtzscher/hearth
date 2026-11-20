@@ -22,11 +22,16 @@ import type {
   ThermostatSupport,
   ThermostatValues,
 } from "./state";
-import { targetFields, targetsFor } from "./targets";
+import { stepTarget, targetFields, targetsFor } from "./targets";
 import type { Target, TargetKey, TargetRequest } from "./targets";
-import { formatTarget, fromMilliCelsius, temperatureUnit } from "./units";
+import {
+  formatTarget,
+  fromMilliCelsius,
+  roundTo,
+  temperatureUnit,
+} from "./units";
 import type { TemperatureUnit } from "./units";
-import { modeWords, rangeWords } from "./words";
+import { detailLine, modeWords, rangeWords } from "./words";
 
 interface ThermostatData {
   shown: ThermostatValues;
@@ -201,6 +206,24 @@ const statusControls = ({
   return controls;
 };
 
+/** Targets rounded to their displayed digits, so a press steps from what is shown. */
+const roundTargets = (
+  values: ThermostatValues | undefined,
+  digits: number
+): ThermostatValues | undefined => {
+  if (!values) {
+    return undefined;
+  }
+  const rounded = { ...values };
+  for (const field of Object.values(targetFields)) {
+    const value = rounded[field];
+    if (value !== undefined) {
+      rounded[field] = roundTo(value, digits);
+    }
+  }
+  return rounded;
+};
+
 /** The unit, digits, and label targets are shown and stepped in. */
 const targetFormat = (
   entity: FieldEntity | undefined
@@ -281,7 +304,8 @@ export const useThermostat = (props: ThermostatProps) => {
 
   const support: ThermostatSupport | undefined = thermostatSupport(entity);
   const { unit, digits, unitLabel } = targetFormat(entity);
-  const observed = resource.data?.shown;
+  // Core doesn't round household values, so a confirmed 70 °F arrives as 69.9998.
+  const observed = roundTargets(resource.data?.shown, digits);
   const observedCanonical = thermostatValues(canonical);
 
   const requests: Requests = {
@@ -317,6 +341,17 @@ export const useThermostat = (props: ThermostatProps) => {
       shownCanonical?.[field] !== observedCanonical?.[field]
     );
   };
+  /** One −/+ press on a target, or undefined when the press isn't allowed. */
+  const step = (shownTarget: Target, direction: 1 | -1) =>
+    shownCanonical
+      ? stepTarget({
+          target: shownTarget,
+          direction,
+          unit,
+          support,
+          canonical: shownCanonical,
+        })
+      : undefined;
   const sendTarget = (next: TargetRequest) => {
     if (next.operation === "set_range") {
       range.request(next.parameters);
@@ -357,6 +392,8 @@ export const useThermostat = (props: ThermostatProps) => {
     shownCanonical,
     targets,
     requested,
+    detail: observed && detailLine(observed, targets.length > 0),
+    step,
     sendTarget,
     mode,
     fan,

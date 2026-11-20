@@ -173,6 +173,19 @@ describe(stepTarget, () => {
     });
   });
 
+  it("refuses a range step whose other target is outside the bounds", () => {
+    const outside = { ...canonicalPaired, target_temperature_high: 33_000 };
+    expect(
+      stepTarget({
+        target: heat,
+        direction: 1,
+        unit: "[degF]",
+        support,
+        canonical: outside,
+      })
+    ).toBeUndefined();
+  });
+
   it("refuses unknown values, unconvertible units, and read-only targets", () => {
     const base = { direction: 1 as const, support, canonical: canonicalPaired };
     expect(

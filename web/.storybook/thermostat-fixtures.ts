@@ -63,8 +63,9 @@ export const thermostatEntities = ({
     unit: units === "us" ? "[degF]" : "Cel",
     label: units === "us" ? "°F" : "°C",
   };
+  // Core doesn't round household values; the card rounds for display.
   const toShown = (mCel: number) =>
-    roundTenth(units === "us" ? (mCel / 1000) * 1.8 + 32 : mCel / 1000);
+    units === "us" ? (mCel / 1000) * 1.8 + 32 : mCel / 1000;
   const displayQuantities: Record<string, Quantity> = {};
   const canonicalQuantities: Record<string, Quantity> = {};
   const displayState: Record<string, unknown> = { ...state };

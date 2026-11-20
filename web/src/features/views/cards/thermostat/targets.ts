@@ -130,10 +130,10 @@ export const stepTarget = ({
   }
   const shown = stepFrom(target.value, unit, direction);
   const next = toMilliCelsius(shown, unit);
-  if (
-    next < support.temperature_minimum ||
-    next > support.temperature_maximum
-  ) {
+  const inBounds = (value: number) =>
+    value >= support.temperature_minimum &&
+    value <= support.temperature_maximum;
+  if (!inBounds(next)) {
     return undefined;
   }
   if (target.operation === "set_target") {
@@ -144,7 +144,14 @@ export const stepTarget = ({
   }
   const low = target.key === "low" ? next : canonical.target_temperature_low;
   const high = target.key === "high" ? next : canonical.target_temperature_high;
-  if (low === undefined || high === undefined || low > high) {
+  // Core checks both range values, so an out-of-bounds partner refuses too.
+  if (
+    low === undefined ||
+    high === undefined ||
+    low > high ||
+    !inBounds(low) ||
+    !inBounds(high)
+  ) {
     return undefined;
   }
   return {

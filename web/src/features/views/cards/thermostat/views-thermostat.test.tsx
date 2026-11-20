@@ -106,6 +106,8 @@ const targets = () =>
 const detail = () =>
   document.querySelector('[data-slot="thermostat-detail"]')?.textContent;
 const button = (name: RegExp) => screen.getByRole("button", { name });
+const glowing = () =>
+  document.querySelector('[data-slot="card-arrival"]') !== null;
 const disabled = (name: RegExp) => button(name).hasAttribute("disabled");
 const reading = (label: string) =>
   [...document.querySelectorAll('[data-slot="thermostat-target"]')]
@@ -173,6 +175,33 @@ describe(BoundThermostat, () => {
     expect(targets()[0]).toBe("Heat to70°");
     expect(reading("Heat to")?.className).not.toContain("text-violet-text");
     expect(screen.queryByText("Setting heat to 70 °F…")).toBeNull();
+  });
+
+  it("steps again from a confirmed whole-degree target that Core returns unrounded", async () => {
+    // 21_111 mCel is 69.9998 °F: it shows as 70, and + must ask for 71.
+    const api = core({
+      state: { ...heatCool, target_temperature_low: 21_111 },
+    });
+    await mount();
+    expect(targets()[0]).toBe("Heat to70°");
+    fireEvent.click(button(/^Raise heat target/u));
+    await flush();
+    expect(api.posts[0]?.parameters).toStrictEqual({
+      low: 21_667,
+      high: 24_444,
+    });
+  });
+
+  it("lights the card's edge for a changed reading but not for a changed target", async () => {
+    const api = core({ state: heatCool });
+    await mount();
+    expect(glowing()).toBeFalsy();
+    api.report({ target_temperature_high: 25_000 });
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(glowing()).toBeFalsy();
+    api.report({ current_temperature: 20_500 });
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(glowing()).toBeTruthy();
   });
 
   it("returns a rejected target to observed State and says why", async () => {
