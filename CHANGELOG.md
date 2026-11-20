@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.27.0](https://github.com/mholtzscher/hearth/compare/v0.26.0...v0.27.0) (2026-11-20)
+
+
+### Features
+
+* **homekit:** expose Hearth Devices to Apple Home ([#411](https://github.com/mholtzscher/hearth/issues/411)) ([70d2eff](https://github.com/mholtzscher/hearth/commit/70d2effd9d81577598c18ad423626761361c1e30))
+* **web:** add a target-led Thermostat card ([#412](https://github.com/mholtzscher/hearth/issues/412)) ([cd740e3](https://github.com/mholtzscher/hearth/commit/cd740e3294b38c88c8b6f0f3bc254efe45655998))
+* **web:** make type tokens carry whole roles on a seven-size scale ([#410](https://github.com/mholtzscher/hearth/issues/410)) ([422276f](https://github.com/mholtzscher/hearth/commit/422276f4b0343788b147b385b90a9c43b0d95d9d))
+* **web:** retune status and chart colors to measured palette rules ([#408](https://github.com/mholtzscher/hearth/issues/408)) ([5d69488](https://github.com/mholtzscher/hearth/commit/5d694885d1b67054a4b7a008a7bafd4a79d806d7))
+
+
+### Bug Fixes
+
+* **web:** align subsection and dialog headings with the type scale ([#407](https://github.com/mholtzscher/hearth/issues/407)) ([f811554](https://github.com/mholtzscher/hearth/commit/f81155411ee3a58ae4569a67bfa7914d078242f8))
+* **web:** disable Storybook onboarding ([#402](https://github.com/mholtzscher/hearth/issues/402)) ([48dab2f](https://github.com/mholtzscher/hearth/commit/48dab2fceebd50c6b86d8ee21e15217b40dfc4fb))
+* **web:** discover Chromium on PATH on every platform ([#395](https://github.com/mholtzscher/hearth/issues/395)) ([018efed](https://github.com/mholtzscher/hearth/commit/018efed8c0321ad705458afa1075442ce12058d4))
+* **web:** halve four-column view grids instead of wrapping one card ([#391](https://github.com/mholtzscher/hearth/issues/391)) ([afa15d8](https://github.com/mholtzscher/hearth/commit/afa15d84c6de4492bd1634a8d5ae5322e27d6491))
+* **web:** keep status and dimmed timeline text at 4.5:1 contrast ([#409](https://github.com/mholtzscher/hearth/issues/409)) ([c77675d](https://github.com/mholtzscher/hearth/commit/c77675d3c74faf95304a7f92def32c082cf18333))
+* **web:** keep view card heights stable during interaction ([#413](https://github.com/mholtzscher/hearth/issues/413)) ([12cbedf](https://github.com/mholtzscher/hearth/commit/12cbedf7d62f8e8f27237a8595ad9f6a1a6f85e4))
+* **web:** polish the dashboard library ([#389](https://github.com/mholtzscher/hearth/issues/389)) ([9bac9c6](https://github.com/mholtzscher/hearth/commit/9bac9c6e20f13a8d8762ad5dfea17e31e99bf217))
+
 ## [0.26.0](https://github.com/mholtzscher/hearth/compare/v0.25.0...v0.26.0) (2026-11-16)
 
 
