@@ -19,6 +19,7 @@ import { ReadingListEditor } from "../cards/reading-list/editor";
 import { StateTimelineEditor } from "../cards/state-timeline/editor";
 import { StateEditor } from "../cards/state/editor";
 import { headingSchema, noteSchema } from "../cards/text/schema";
+import { ThermostatEditor } from "../cards/thermostat/editor";
 import { TimeSeriesEditor } from "../cards/time-series/editor";
 import type { SensorChoice } from "../cards/time-series/editor";
 import { ToggleListEditor } from "../cards/toggle-list/editor";
@@ -229,6 +230,15 @@ const CardElementEditor = ({
         />
       );
     }
+    case "Thermostat": {
+      return (
+        <ThermostatEditor
+          value={node.props}
+          choices={choices}
+          onChange={(props) => onChange({ ...node, props })}
+        />
+      );
+    }
     case "OutsideNow": {
       return (
         <OutsideNowEditor
@@ -384,6 +394,7 @@ export const ViewEditor = ({
       "ToggleList",
       "AirPurifier",
       "Cover",
+      "Thermostat",
       "OutsideNow",
       "Rain",
       "Wind",

@@ -89,6 +89,8 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"Device name. Use layout card on its own or in a dashboard, and layout tile in a Grid of quick switches. Opening asks " +
 	"for a second press unless confirm_open is false; leave it on for garage doors and doors, and set it false only when " +
 	"the user says the cover is a shade, blind, or similar. " +
+	"For a hearth.thermostat/v1 Entity, use Thermostat bound to the Entity's root; it shows the targets the current mode " +
+	"uses with −/+ controls, the mode and activity, inside temperature and humidity, and Mode and Fan controls. " +
 	"For a weather station, prefer the weather cards over separate Metrics. They bind named slots, each read from an Entity's root: " +
 	"OutsideNow needs an outdoor hearth.temperature/v1 and optionally humidity, wind (speed), wind_direction, rain_rate, and rain_today; " +
 	"it words conditions from the rain rate and wind speed but shows no feels-like or dew point. " +

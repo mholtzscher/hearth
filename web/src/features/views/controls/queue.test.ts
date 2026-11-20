@@ -73,6 +73,36 @@ describe(CommandQueue, () => {
     });
   });
 
+  it("sends a named Operation with its parameters and keeps each Operation's queue separate", async () => {
+    const { queue, commands, execute } = fixture();
+    const range: ControlTarget = {
+      entityId: "ent_thermostat",
+      operation: "set_range",
+    };
+    const mode: ControlTarget = {
+      entityId: "ent_thermostat",
+      operation: "set_mode",
+    };
+    queue.request(range, { low: 21_111, high: 24_444 });
+    queue.request(mode, { mode: "heat_cool" });
+    queue.request(range, { low: 21_667, high: 24_444 });
+    expect(execute).toHaveBeenNthCalledWith(1, "ent_thermostat", {
+      operation: "set_range",
+      parameters: { low: 21_111, high: 24_444 },
+    });
+    expect(execute).toHaveBeenNthCalledWith(2, "ent_thermostat", {
+      operation: "set_mode",
+      parameters: { mode: "heat_cool" },
+    });
+    expect(execute).toHaveBeenCalledTimes(2);
+    commands[0].resolve(satisfied({ low: 21_111, high: 24_444 }));
+    await settle();
+    expect(execute).toHaveBeenNthCalledWith(3, "ent_thermostat", {
+      operation: "set_range",
+      parameters: { low: 21_667, high: 24_444 },
+    });
+  });
+
   it("shows the request as pending, then confirming until the State read lands, then idle", async () => {
     const { queue, commands, refreshes, execute } = fixture();
     const listener = vi.fn<() => void>();

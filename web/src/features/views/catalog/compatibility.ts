@@ -171,8 +171,9 @@ const validDevice = (
   return true;
 };
 
-const validForecastOrCover = (
-  { props }: ElementOf<"Forecast" | "Cover">,
+/** Cards bound to one Entity's whole State. */
+const validSingleSource = (
+  { props }: ElementOf<"Forecast" | "Cover" | "Thermostat">,
   ids: Set<string>
 ): boolean => {
   ids.add(props.source.entity_id);
@@ -323,8 +324,9 @@ const validReferences = (elements: ViewElement[]): boolean => {
         break;
       }
       case "Forecast":
-      case "Cover": {
-        valid = validForecastOrCover(element, ids);
+      case "Cover":
+      case "Thermostat": {
+        valid = validSingleSource(element, ids);
         break;
       }
       case "AirPurifier": {

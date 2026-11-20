@@ -422,7 +422,7 @@
       },
       "compact-reading": {
         "displayName": "Compact reading",
-        "purpose": "Row values in ReadingList, Device, ToggleList, AirPurifier, the timeline ledger, weather rows, and forecast temperatures."
+        "purpose": "Row values in ReadingList, Device, ToggleList, AirPurifier, Thermostat, the timeline ledger, weather rows, and forecast temperatures."
       },
       "caption": {
         "displayName": "Caption",

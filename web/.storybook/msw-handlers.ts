@@ -16,6 +16,12 @@ import {
   observedAt,
 } from "./fixtures";
 import { pairedEntityResponse, pairedHistoryResponse } from "./paired-fixtures";
+import {
+  applyThermostatCommand,
+  thermostatCanonicalState,
+  thermostatShownState,
+} from "./thermostat-fixtures";
+import type { ThermostatState } from "./thermostat-fixtures";
 
 export { fixtureNow } from "./fixtures";
 const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
@@ -46,6 +52,20 @@ const quantitiesOf = (entity: Entity) => {
 
 const canonical = (entity: Entity): Entity => {
   const copy = structuredClone(entity);
+  if (copy.state && copy.type === "hearth.thermostat/v1") {
+    copy.state.value = thermostatCanonicalState(
+      copy.state.value as Record<string, unknown>
+    );
+    for (const [path, quantity] of Object.entries(quantitiesOf(copy))) {
+      if (quantity.unit === "[degF]") {
+        quantitiesOf(copy)[path] = {
+          unit: "mCel",
+          label: "mCel",
+          fraction_digits: 1,
+        };
+      }
+    }
+  }
   if (copy.state && copy.type === "hearth.temperature/v1") {
     copy.state.value = Number(copy.state.value) * 1000;
     copy.quantities = {
@@ -76,6 +96,27 @@ const canonical = (entity: Entity): Entity => {
     }
   }
   return copy;
+};
+
+/** The State a satisfied Command leaves, or undefined for an unsupported Operation. */
+const commandedValue = (
+  entity: Entity,
+  operation: string,
+  parameters: Record<string, unknown>
+): unknown => {
+  if (entity.type === "hearth.thermostat/v1") {
+    const state = thermostatCanonicalState(
+      entity.state?.value as Record<string, unknown>
+    ) as unknown as ThermostatState;
+    const next = applyThermostatCommand(state, operation, parameters);
+    return next && thermostatShownState({ ...next });
+  }
+  if (operation !== "set") {
+    return undefined;
+  }
+  return entity.type === "hearth.colorhs/v1"
+    ? { ...parameters, active: true }
+    : parameters.value;
 };
 
 export const createCoreHandlers = (overrides: Entity[] = []) => {
@@ -329,14 +370,17 @@ export const createCoreHandlers = (overrides: Entity[] = []) => {
       }
       const body = z
         .object({
-          operation: z.literal("set"),
+          operation: z.string(),
           parameters: z.record(z.string(), z.unknown()),
         })
         .parse(await request.json());
-      const value =
-        entity.type === "hearth.colorhs/v1"
-          ? { ...body.parameters, active: true }
-          : body.parameters.value;
+      const value = commandedValue(entity, body.operation, body.parameters);
+      if (value === undefined) {
+        return HttpResponse.json(
+          { detail: "Unsupported Operation" },
+          { status: 400 }
+        );
+      }
       commandNumber += 1;
       const observation_id = `obs_story_command_${commandNumber}`;
       entity.state = {

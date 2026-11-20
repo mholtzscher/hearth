@@ -362,6 +362,38 @@ closing. Core checks the Entity's type on presentation and save.
   travel. A changed displayed position or motion lights the afterglow; identical
   reports stay dark.
 
+Thermostat binds one `hearth.thermostat/v1` Entity's root and reads its whole
+State and support. Core checks the Entity's type through the required `mode`
+field on presentation and save. The card has no layout prop.
+
+- The card leads with the targets the current mode uses. A device with
+  `set_range` shows the low target as **Heat to** in heat, the high target as
+  **Cool to** in cool, and both in heat & cool and auto; a device with
+  `set_target` shows its one target, labeled **Target** outside heat and cool.
+  Off and fan-only show the mode where the targets go. A device with neither
+  setter shows the targets it reports, without controls.
+- Targets show in the household unit with the quantity's digits and no trailing
+  `.0`. Each − or + press moves to the next whole 1 °F or 0.5 °C step, converts
+  it to integer milli-Celsius, and sends `set_target` or `set_range`. A range
+  write carries both targets. A press is disabled outside the advertised
+  `temperature_minimum` and `temperature_maximum`, when it would put the low
+  target above the high target, for a disabled Entity, and when the household
+  unit is neither °F nor °C.
+- A line names the mode and activity, such as **Heat & cool · Heating**.
+  Activity `off` beside another mode reads **Not running**. Inside temperature
+  and humidity follow as reading rows; only those rows light the afterglow, so
+  a target set by a Command never glows.
+- Mode is a segmented control for up to four advertised modes and a select for
+  more. Fan is a select of the exact advertised choices. Each control appears
+  only when the Entity supports its Operation.
+- While a target Command is pending, the target shows the requested value with
+  a dashed violet underline, and a pending mode Command shows the requested
+  mode's targets. One shared line reports pending and failed Commands. If the
+  device rounds a target to its own increment, the reported setting doesn't
+  match and the Command ends unconfirmed; the line says so.
+- The target area keeps the same height in every mode, so changing the mode or
+  a target never moves the card.
+
 Grid accepts 1–4 columns as a ceiling. Two kinds of grid use a 160px minimum
 and can retain two columns on phones: grids made only of ToggleTiles,
 tile-layout AirPurifiers, and tile-layout Covers, and grids made only of Metric

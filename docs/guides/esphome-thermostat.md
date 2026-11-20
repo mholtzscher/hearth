@@ -108,8 +108,11 @@ automatically retry. Acceptance alone is not satisfaction.
 
 The existing developer Command form is manual: enter the supported operation
 and its JSON parameters. Its generic default `set {"value":true}` is not a
-thermostat operation. There is no dedicated thermostat control card. Existing
-numeric and text cards can bind thermostat fields for readings and history.
+thermostat operation. The dashboard's Thermostat card sets the mode, targets,
+and fan from the household unit; see
+[dashboards](../reference/dashboards.md). It doesn't set the dehumidification
+target. Numeric and text cards can still bind thermostat fields for readings and
+history.
 
 ## Rheem humidity and related settings
 
