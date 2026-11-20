@@ -5,7 +5,14 @@ import type { CommandResult } from "../../../api/types";
 /** One controllable Operation on one Entity. */
 export interface ControlTarget {
   entityId: string;
-  operation: "set" | "stop";
+  /** "set" and "stop" for shared controls; the rest are thermostat Operations. */
+  operation:
+    | "set"
+    | "stop"
+    | "set_mode"
+    | "set_target"
+    | "set_range"
+    | "set_fan_mode";
 }
 /**
  * queue: a newer value waits for the Command in flight, then only the latest is sent.

@@ -15,6 +15,7 @@ import { BoundRain } from "../cards/rain/rain";
 import { BoundReadingList } from "../cards/reading-list/reading-list";
 import { BoundStateTimeline } from "../cards/state-timeline/state-timeline";
 import { BoundState } from "../cards/state/state";
+import { BoundThermostat } from "../cards/thermostat/thermostat";
 import { BoundTimeSeries } from "../cards/time-series/time-series";
 import { BoundToggleList } from "../cards/toggle-list/toggle-list";
 import { BoundToggleTile } from "../cards/toggle-tile/toggle-tile";
@@ -237,6 +238,13 @@ const renderCard = (node: CardElement) => {
       return (
         <CardBoundary resetKey={JSON.stringify(node.props)} title={title}>
           <BoundCover {...node.props} />
+        </CardBoundary>
+      );
+    }
+    case "Thermostat": {
+      return (
+        <CardBoundary resetKey={JSON.stringify(node.props)} title={title}>
+          <BoundThermostat {...node.props} />
         </CardBoundary>
       );
     }
