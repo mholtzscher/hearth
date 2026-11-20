@@ -101,6 +101,24 @@ jq -n --arg revision "$REVISION" \
     -H 'Content-Type: application/json' --data-binary @-
 ```
 
+## HomeKit bridge
+
+The [HomeKit Adapter](../guides/homekit.md) registers these Functions:
+
+| Function | Arguments | Result |
+| --- | --- | --- |
+| `list_accessories` | `{}` | Exposures, candidate Devices, and unresolved roles. `truncated` indicates that the response reached a size limit. |
+| `expose_device` | `device_id`, optional `kind`, `name`, and `entities` | Saved exposure and its accessory ID. Each explicit assignment needs `entity_id` and `role`; binary sensors may also set `inverted`. |
+| `unexpose_device` | `device_id` | `unexposed` or `not_exposed`. The bridge retains the accessory's allocated IDs. |
+| `pairing_info` | `{}` | Pairing status and controller count when paired. The unpaired response includes the setup code and URI. |
+| `reset_pairing` | `{"confirm":"reset_all_homekit_pairings"}` | Replaces the bridge identity and pairing keys and returns the new setup credentials. Retains exposures. |
+
+An exposure change reports success after the bridge has reloaded, not after
+Apple Home refreshes. A `reload_failed` result can mean the change was saved
+and is not yet published. A reset disconnects every paired controller. Treat
+`pairing_info` and `reset_pairing` results as credentials: Core retains them
+for 30 days. A later pairing does not erase an earlier result.
+
 ## Read outcomes before deciding to repeat
 
 | Status | What Core knows |
@@ -192,10 +210,12 @@ round them; use the original JSON/text for opaque payloads. The built-in agent
 retains exact result text, including non-success invocation receipts. Detail
 tools retain the full public evidence rather than duplicating it in every result.
 
-## Non-secret data and access
+## Sensitive data and access
 
-Descriptions, schemas, arguments, and results must contain no credentials. Core
-retains valid arguments, descriptor snapshots, and successful results until
+Descriptions, schemas, and arguments must contain no credentials. Function
+results must not contain credentials unless their documented purpose is to
+deliver them, as with HomeKit setup. Core retains valid arguments, descriptor
+snapshots, and successful results until
 terminal history is pruned; running records and current catalogs are not pruned.
 See the [Function retention policy](../../internal/modules/adapters/function_retention.go)
 and [history worker](../../internal/app/hearthd/history_pruning.go) for current

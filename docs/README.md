@@ -21,6 +21,7 @@ work or proposals awaiting an owner decision.
 - [Ecowitt station setup](guides/ecowitt.md): for operators. How do I connect a GW2000/WS90 station over MQTT and inspect its measurements?
 - [ESPHome setup](guides/esphome.md): for operators. How do I configure Native API discovery, static devices and credentials safely?
 - [ESPHome thermostats](guides/esphome-thermostat.md): for operators. How do I inspect thermostat support and safely read back a Command outcome?
+- [HomeKit](guides/homekit.md): for operators. How do I expose selected Devices, pair Apple Home, and back up the bridge?
 - [Levoit purifiers](guides/levoit.md): for operators. How do I configure purifier control and interpret its optimistic evidence?
 - [Application logging](guides/logging.md): for operators and developers. How do I capture diagnostics without confusing logs with durable outcomes or health?
 - [Pirate Weather](guides/pirateweather.md): for operators. How do I configure current readings, forecast States and fresh forecast Functions?
@@ -85,3 +86,4 @@ Records describe decisions at their historical point, not a second current contr
 - [Schedule Automations without replay](adr/0025-schedule-automations-without-replay.md)
 - [Scope persistence failures to operations](adr/0026-scope-persistence-failures-to-operations.md)
 - [Distinguish observed settings from stateless dispatched actions](adr/0027-distinguish-observed-settings-from-stateless-actions.md)
+- [Allow a stateful HomeKit bridge Adapter](adr/0028-allow-a-stateful-homekit-bridge-adapter.md)

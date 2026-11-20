@@ -137,7 +137,8 @@ run = '''
 KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags validation --push=false \
   ./cmd/hearthd ./cmd/hearth-adapter-zigbee2mqtt \
   ./cmd/hearth-adapter-ecowitt ./cmd/hearth-adapter-zwavejs ./cmd/hearth-simulator ./cmd/hearth-adapter-discord \
-  ./cmd/hearth-adapter-pirateweather ./cmd/hearth-adapter-levoit ./cmd/hearth-adapter-august ./cmd/hearth-adapter-esphome
+  ./cmd/hearth-adapter-pirateweather ./cmd/hearth-adapter-levoit ./cmd/hearth-adapter-august ./cmd/hearth-adapter-esphome \
+  ./cmd/hearth-adapter-homekit
 '''
 
 [tasks."web-docker-build"]
@@ -275,7 +276,12 @@ depends = [
   "lint",
   { task = "test", args = ["-tags=integration,e2e"] },
   "vet",
+  "homekit-hap-test",
 ]
+
+[tasks."homekit-hap-test"]
+description = "Check the pinned HomeKit protocol compatibility copy"
+run = '''GO_PACKAGES='github.com/brutella/hap/...' mise run --skip-deps test -- -tags=integration'''
 
 [tasks."validate"]
 description = "Run all validation"

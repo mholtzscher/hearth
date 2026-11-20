@@ -19,3 +19,5 @@ builds:
     main: ./cmd/hearth-adapter-discord
   - id: hearth-adapter-pirateweather
     main: ./cmd/hearth-adapter-pirateweather
+  - id: hearth-adapter-homekit
+    main: ./cmd/hearth-adapter-homekit

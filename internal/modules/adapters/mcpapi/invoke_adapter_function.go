@@ -33,7 +33,7 @@ func (InvocationSuccess) Schema(_ huma.Registry) *huma.Schema { return invocatio
 func registerInvokeAdapterFunction(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[invokeFunctionInput, InvocationSuccess]{
 		Name:        "invoke_adapter_function",
-		Description: "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days and must contain no secrets. Repeating may repeat effects; never automatically retry. Inspect the returned invocation_id for evidence.",
+		Description: "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days. Do not submit secrets. Treat documented credential results, such as unpaired HomeKit setup information, as sensitive. Repeating may repeat effects; never automatically retry. Inspect the returned invocation_id for evidence.",
 		Handler:     h.invoke,
 	})
 }

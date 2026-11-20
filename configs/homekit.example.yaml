@@ -1,0 +1,9 @@
+adapter_id: homekit
+nats_url: nats://127.0.0.1:4222
+core_url: http://127.0.0.1:8080
+data_dir: /var/lib/hearth-adapter-homekit
+bridge_name: Hearth
+listen_port: 21063
+interfaces: []
+resync_interval: 60s
+temperature_display_unit: celsius

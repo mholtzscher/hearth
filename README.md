@@ -118,6 +118,7 @@ Choose the setup guide for your companion:
 | Ecowitt | [GW2000/WS90 weather measurements over MQTT](docs/guides/ecowitt.md) |
 | Pirate Weather | [Current conditions and forecasts](docs/guides/pirateweather.md) |
 | Levoit | [VeSync air purifiers and optimistic Command evidence](docs/guides/levoit.md) |
+| HomeKit | [Selected Devices in Apple Home and Siri](docs/guides/homekit.md) |
 | Discord | [Notification destinations and one-shot sends](docs/guides/discord.md) |
 | August | [Read-only lock monitoring; controls remain blocked](docs/guides/august.md) |
 
