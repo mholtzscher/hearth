@@ -127,7 +127,12 @@ func TestPresentViewRejectionNamesTheViolatedRule(t *testing.T) {
 	if err != nil || !strings.Contains(listed.Tools[0].Description, "at most 16 distinct Entities and Devices") ||
 		!strings.Contains(listed.Tools[0].Description, "one entity_type and field over one window") ||
 		!strings.Contains(listed.Tools[0].Description, "AirPurifier binds a purifier's power and PM2.5 Entities") ||
-		!strings.Contains(listed.Tools[0].Description, "Cover binds one hearth.cover/v1 Entity's root") {
+		!strings.Contains(listed.Tools[0].Description, "Cover binds one hearth.cover/v1 Entity's root") ||
+		!strings.Contains(listed.Tools[0].Description, "Thermostat binds one hearth.thermostat/v1 Entity's root") ||
+		!strings.Contains(
+			listed.Tools[0].Description,
+			"mode-aware targets and controls, mode and activity, and inside temperature and humidity",
+		) {
 		t.Fatalf("description does not state view limits: %+v %v", listed, err)
 	}
 	const sentinel = "sk-submitted-value-must-not-echo"

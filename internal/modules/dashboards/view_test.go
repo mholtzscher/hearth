@@ -33,6 +33,7 @@ var exampleSupport = map[string]string{
 	"hearth.power/v1":            `{"state":{},"operations":{"set":{}}}`,
 	"hearth.colormode/v1":        `{"state":{},"operations":{"set":{}}}`,
 	"hearth.enumsetting/v1":      `{"state":{"choices":["Auto"]},"operations":{"set":{}}}`,
+	"hearth.thermostat/v1":       `{"state":{"modes":["off","heat"],"fan_modes":[],"temperature_minimum":5000,"temperature_maximum":35000,"humidity_minimum":0,"humidity_maximum":100},"operations":{"set_mode":{},"set_target":{}}}`,
 }
 
 // exampleSensorUnits gives the weather example's numeric sensors the stored
@@ -215,6 +216,10 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		"cover-wrong-type":                 schema,
 		"cover-field":                      schema,
 		"cover-unknown-layout":             schema,
+		"thermostat-wrong-entity-type":     schema,
+		"thermostat-field":                 schema,
+		"thermostat-unknown-prop":          schema,
+		"thermostat-missing-source":        schema,
 	}
 	var examples []struct {
 		Name       string          `json:"name"`
