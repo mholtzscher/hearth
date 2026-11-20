@@ -14,8 +14,8 @@ domain language used here.
 
 ### Ownership and boundaries
 
-Core owns the household model and durable evidence. Stateless Adapter processes
-translate external systems into Hearth's language-neutral contracts. Vendor
+Core owns the household model and durable evidence. Adapter processes translate
+between external systems and Hearth's language-neutral contracts. Vendor
 payloads, credentials, connections, and device-specific policies stay outside
 Core. Canonical Device and Entity models must not depend on Home Assistant or
 upstream protocol vocabulary. Adapter Functions may have opaque Adapter-defined
@@ -315,10 +315,12 @@ limits. See [platform lifecycle](../reference/platform.md) and
 
 ### External system boundaries
 
-First-party companions are stateless and use the SDK; their upstream systems
-and specialist brokers remain operator-managed. Their detailed supported
-capabilities, configuration, evidence rules and limitations belong in their
-guides, not in Core's Entity model.
+First-party Adapters use the SDK and normally keep no local durable state.
+Their external systems and specialist brokers remain operator-managed.
+Detailed capabilities, configuration, evidence rules and limitations belong
+in their guides, not in Core's Entity model. The
+[HomeKit bridge decision](../adr/0028-allow-a-stateful-homekit-bridge-adapter.md)
+allows an exception for bridge-owned configuration and pairing state.
 
 - [Zigbee2MQTT](../guides/zigbee2mqtt.md) uses MQTT separately from NATS.
   Health requires explicit availability, a reconciled inventory and proven
@@ -364,6 +366,10 @@ guides, not in Core's Entity model.
 - [Discord](../guides/discord.md) owns its webhook credential and one bounded
   POST per invocation. Its health describes local readiness, not a provider
   probe.
+- [HomeKit](../guides/homekit.md) registers management Functions but no Devices.
+  It uses HTTP to read Core inventory and execute Commands, and consumes
+  Observation Facts for prompt State updates. It stores only HomeKit pairing
+  material, exposures, and accessory identifiers locally.
 
 ## Undecided
 
