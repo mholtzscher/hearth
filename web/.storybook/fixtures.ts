@@ -224,6 +224,41 @@ export const createEntities = (): Entity[] => {
         quantities: { "/position": ranged("%", 100, "%", 0) },
       }
     ),
+    {
+      ...entity(
+        501,
+        "thermostat",
+        "Hallway thermostat",
+        {
+          mode: "heat_cool",
+          activity: "heating",
+          current_temperature: 68,
+          target_temperature_low: 69.8,
+          target_temperature_high: 76,
+          fan_mode: "Automatic",
+          current_humidity: 54,
+        },
+        {
+          quantities: {
+            "/current_temperature": quantity("[degF]", "°F"),
+            "/target_temperature_low": quantity("[degF]", "°F"),
+            "/target_temperature_high": quantity("[degF]", "°F"),
+            "/current_humidity": quantity("%", "%", 0),
+          },
+        }
+      ),
+      support: {
+        state: {
+          modes: ["off", "heat", "cool", "heat_cool", "fan_only"],
+          fan_modes: ["Automatic", "Speed 1", "Speed 2", "Continuous"],
+          temperature_minimum: 10_000,
+          temperature_maximum: 32_222,
+          humidity_minimum: 0,
+          humidity_maximum: 100,
+        },
+        operations: { set_mode: {}, set_range: {}, set_fan_mode: {} },
+      },
+    },
   ];
 };
 

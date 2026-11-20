@@ -120,3 +120,97 @@ export const thermostatEntities = ({
     },
   };
 };
+
+const fromFahrenheit = (value: number) =>
+  Math.round(((value - 32) * 1000) / 1.8);
+
+/** A household °F State as canonical milli-Celsius, for the shared Core double. */
+export const thermostatCanonicalState = (
+  shown: Record<string, unknown>
+): Record<string, unknown> => {
+  const copy = { ...shown };
+  for (const field of temperatureFields) {
+    const value = copy[field];
+    if (typeof value === "number") {
+      copy[field] = fromFahrenheit(value);
+    }
+  }
+  return copy;
+};
+
+/** A canonical State shown in household °F. */
+export const thermostatShownState = (
+  state: Record<string, unknown>
+): Record<string, unknown> => {
+  const copy = { ...state };
+  for (const field of temperatureFields) {
+    const value = copy[field];
+    if (typeof value === "number") {
+      copy[field] = roundTenth((value / 1000) * 1.8 + 32);
+    }
+  }
+  return copy;
+};
+
+const runsHeat = (mode: ThermostatMode) =>
+  mode === "heat" || mode === "heat_cool" || mode === "auto";
+const runsCool = (mode: ThermostatMode) =>
+  mode === "cool" || mode === "heat_cool" || mode === "auto";
+
+/** Synthetic: what equipment would report doing under these settings. */
+const activityFor = (state: ThermostatState): ThermostatActivity => {
+  if (state.mode === "off") {
+    return "off";
+  }
+  if (state.mode === "fan_only") {
+    return "fan";
+  }
+  const room = state.current_temperature;
+  const heatTo = state.target_temperature_low ?? state.target_temperature;
+  const coolTo = state.target_temperature_high ?? state.target_temperature;
+  if (
+    room !== undefined &&
+    heatTo !== undefined &&
+    runsHeat(state.mode) &&
+    room < heatTo
+  ) {
+    return "heating";
+  }
+  if (
+    room !== undefined &&
+    coolTo !== undefined &&
+    runsCool(state.mode) &&
+    room > coolTo
+  ) {
+    return "cooling";
+  }
+  return "idle";
+};
+
+/**
+ * Applies a thermostat Command to canonical State as a satisfied device
+ * would report it. Returns undefined for an Operation the type lacks.
+ */
+export const applyThermostatCommand = (
+  state: ThermostatState,
+  operation: string,
+  parameters: Record<string, unknown>
+): ThermostatState | undefined => {
+  const patches: Record<string, Partial<ThermostatState>> = {
+    set_mode: { mode: parameters.mode as ThermostatMode },
+    set_target: { target_temperature: parameters.temperature as number },
+    set_range: {
+      target_temperature_low: parameters.low as number,
+      target_temperature_high: parameters.high as number,
+    },
+    set_fan_mode: { fan_mode: parameters.fan_mode as string },
+  };
+  const patch = patches[operation];
+  if (!patch) {
+    return undefined;
+  }
+  const next = { ...state, ...patch };
+  return next.activity === undefined
+    ? next
+    : { ...next, activity: activityFor(next) };
+};

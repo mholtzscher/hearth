@@ -110,7 +110,7 @@ const disabled = (name: RegExp) => button(name).hasAttribute("disabled");
 const reading = (label: string) =>
   [...document.querySelectorAll('[data-slot="thermostat-target"]')]
     .find((slot) => slot.textContent?.startsWith(label))
-    ?.querySelector('[data-slot="reading"]');
+    ?.querySelector<HTMLElement>('[data-slot="reading"]');
 
 describe(BoundThermostat, () => {
   beforeEach(() => {
@@ -252,7 +252,7 @@ describe(BoundThermostat, () => {
     core({ state: { ...heatCool, mode: "off", activity: "off" } });
     await mount();
     expect(targets()).toStrictEqual(["ModeOffNo target in this mode."]);
-    expect(detail()).toBe("");
+    expect(detail()).toBe("\u00A0");
     expect(screen.queryByRole("button", { name: /target/u })).toBeNull();
   });
 

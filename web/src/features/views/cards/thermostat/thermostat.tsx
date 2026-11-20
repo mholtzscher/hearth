@@ -203,10 +203,11 @@ export const BoundThermostat = (props: ThermostatProps) => {
         />
         <p
           data-slot="thermostat-detail"
-          className="text-gray-9 data-[value=dimmed]:text-gray-8 min-h-[21px] pt-1"
+          className="text-gray-9 data-[value=dimmed]:text-gray-8 pt-1"
           data-value={value}
         >
-          {detail}
+          {/* A blank line keeps the row reserved when there is nothing to say. */}
+          {detail ?? "\u00A0"}
         </p>
       </div>
       <ul className="my-[-4px] grid list-none">
