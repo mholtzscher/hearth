@@ -19,6 +19,7 @@
 - **Contract decisions:** keep the existing Core API and preserve only the structured failure fields Core sends. Michael confirmed that `pairing_info` returns the setup code and URI only while unpaired, accepts the resulting 30-day Function history exposure, and does not log either credential. Michael chose WindowCovering for garage covers; defer GarageDoorOpener until Hearth has obstruction evidence.
 - **Autonomous continuation:** Production Core verified 201 Entities, HTTP and MCP management, successful reset, and HTTP recovery after consumer deletion within 5 seconds, before the normal 60-second resync. `/tmp/opencode/hearth-homekit-wire.rZNe76/run-3.log` records race-enabled software pairing, encrypted writes and notifications, old-controller revocation on reset, and graceful SIGTERM. CI passed `backend` and `web` on the initial draft revision, `c326e8e`. Full local validation passed with the acceptance follow-up (`/tmp/opencode/hearth-homekit-validate-acceptance.log`). It covers a combined exposure reload, health faults and recovery, and schema and retained history for all five Functions. Decision trail: `/tmp/opencode/hearth-homekit-decisions.tsv`.
 - **Container verification:** Linux amd64 non-root host-network deployment passed the same software pairing, encrypted write/event, reset and shutdown checks (`/tmp/opencode/hearth-homekit-wire.rZNe76/run-docker.log`). Arm64 image build passed; arm64 runtime not tested.
+- **Runtime review:** Reproduced four findings: an unreadable purifier mode with only `active` mapped, contradictory cover target events during movement, delayed shutdown with an admitted mutation, and listing blocked while HAP was stopped. Focused race tests and full validation passed after the fixes (`/tmp/opencode/hearth-homekit-validate-reviewed.log`). A failed pairing reset can still make pairing-status reads busy until recovery. A notification already in flight can overlap a new write; the cover regression exercises Observations processed after admission. Startup still exits on a failed initial inventory read or HAP bind. The household operator plans to run A17 separately.
 
 ## Problem
 
@@ -266,6 +267,8 @@ Temperatures convert between milli-Celsius and Celsius as `c = mCel / 1000` and 
 | `FilterMaintenance.FilterLifeLevel` and `FilterChangeIndication` | `filter_life` percent. Change indication when ≤ 10 | none |
 
 Speed uses the order of support `choices`. Levoit lists `1` through `4`, which gives 25, 50, 75 and 100. The `sleep` mode reads as manual. Levoit's optimistic Observations and later stale polls can make the Home tile flip back and forth. The guide states this limitation, which belongs to the Levoit Adapter.
+
+If `mode` is not assigned, the target mode reads Manual but is not writable. This describes the bridge's controls, not an observed physical mode.
 
 ### Sensors
 

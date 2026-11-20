@@ -83,6 +83,8 @@ func TestHAPCoverTargetRollsBackToObservedPositionOnCoreTimeout(t *testing.T) {
 		target := cover.C(characteristic.TypeTargetPosition)
 		current := cover.C(characteristic.TypeCurrentPosition)
 		motion := cover.C(characteristic.TypePositionState)
+		events := make(chan any, 3)
+		target.OnCValueUpdate(func(_ *characteristic.C, next, _ any, _ *http.Request) { events <- next })
 		request := httptest.NewRequest(http.MethodPut, "/characteristics", http.NoBody)
 		_, status := target.SetValueRequest(float64(70), request)
 		require.Zero(t, status)
@@ -91,10 +93,44 @@ func TestHAPCoverTargetRollsBackToObservedPositionOnCoreTimeout(t *testing.T) {
 		assertHAPValue(t, current, request, 15)
 		assertHAPValue(t, motion, request, characteristic.PositionStateIncreasing)
 		assertHAPValue(t, target, request, float64(70))
+		entity.State = &EntityState{Value: json.RawMessage(`{"position":30,"motion":"opening"}`)}
+		for _, binding := range built.bindings {
+			binding.update(entity)
+		}
+		assertHAPValue(t, current, request, 30)
+		assertHAPValue(t, target, request, float64(70))
+		assert.Empty(t, events, "an intermediate Observation must not publish a different target")
 		close(release)
 		synctest.Wait()
-		assertHAPValue(t, target, request, 15)
+		assertHAPValue(t, target, request, 30)
+		require.Len(t, events, 1)
+		assert.Equal(t, 30, <-events)
 	})
+}
+
+func TestHAPPurifierWithOnlyActiveRoleHasReadableNonWritableMode(t *testing.T) {
+	t.Parallel()
+	const id = "fixture-power"
+	entity := Entity{ID: id, DeviceID: "fixture-purifier", Type: "hearth.power/v1",
+		Enabled: true, Availability: "available", State: &EntityState{Value: json.RawMessage("true")}}
+	exposure := Exposure{
+		DeviceID: entity.DeviceID, Kind: KindAirPurifier, Name: "Purifier", AID: 2,
+		Entities: []RoleAssignment{{Role: "active", EntityID: id}}, Slots: map[string]uint16{"active/" + id: 1},
+	}
+	built, err := buildAccessory(exposure, Inventory{Entities: map[string]Entity{id: entity}}, "celsius",
+		func(string) Entity { return entity }, func(uint64, writeIntent) int {
+			t.Fatal("unmapped purifier mode must not issue a Command")
+			return 0
+		})
+	require.NoError(t, err)
+	mode := built.accessory.Ss[1].C(characteristic.TypeTargetAirPurifierState)
+	require.NotNil(t, mode)
+	read := httptest.NewRequest(http.MethodGet, "/characteristics", http.NoBody)
+	assertHAPValue(t, mode, read, characteristic.TargetAirPurifierStateManual)
+	assert.False(t, mode.IsWritable())
+	entity.Availability = "unavailable"
+	_, status := mode.ValueRequest(read)
+	assert.Equal(t, hapCommunicationFailure, status)
 }
 
 type heldTimeoutExecutor struct {

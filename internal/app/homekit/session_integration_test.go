@@ -42,12 +42,14 @@ func TestRunClaimsAndReleasesSession(t *testing.T) {
 		CoreURL: "http://127.0.0.1:8080", DataDir: t.TempDir(),
 	}
 	ctx, cancel := context.WithCancel(t.Context())
+	started := make(chan struct{})
 	done := make(chan struct{})
 	var runErr error
 	go func() {
 		defer close(done)
 		runErr = runSession(ctx, config, slog.New(slog.DiscardHandler),
 			func(ctx context.Context, _ Config, _ *adapter.Session, _ *slog.Logger) error {
+				close(started)
 				<-ctx.Done()
 				return ctx.Err()
 			})
@@ -66,6 +68,12 @@ func TestRunClaimsAndReleasesSession(t *testing.T) {
 	assert.Equal(t, SoftwareName, online.Health.Runtime.SoftwareName)
 	assert.Equal(t, adapters.AdapterHealthUnknown, online.Health.Status)
 
+	// A persisted claim can be visible before Connect receives its reply.
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Adapter Run did not finish claiming the Session")
+	}
 	cancel()
 	select {
 	case <-done:

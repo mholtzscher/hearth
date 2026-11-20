@@ -3,6 +3,7 @@
 package homekit //nolint:testpackage // Exercises the coordinator with a real HAP listener and store.
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mholtzscher/hearth/entitytypes/powerv1"
+	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
 func TestRebuildPublishesTwoExposureChangesInOneHAPGeneration(t *testing.T) {
@@ -73,6 +75,16 @@ func TestRebuildPublishesTwoExposureChangesInOneHAPGeneration(t *testing.T) {
 		require.NoError(t, result.err)
 		require.True(t, result.changed)
 	}
+	r.stopHAP()
+	result := listAccessories(t.Context(), r)
+	success, ok := result.(adapter.FunctionSucceeded)
+	require.True(t, ok, "listing should not depend on an active HAP listener: %T", result)
+	var list listResult
+	require.NoError(t, json.Unmarshal(success.Result, &list))
+	assert.Equal(t, 2, list.AccessoryCount)
+	require.NoError(t, r.disk.rotatePairing())
+	assert.Equal(t, adapter.FunctionNotExecuted{ReasonCode: reasonBridgeBusy}, pairingInfo(r),
+		"pairing_info must not return credentials from the retired generation")
 }
 
 func readConfigurationNumber(t *testing.T, run *runningHAP) uint64 {

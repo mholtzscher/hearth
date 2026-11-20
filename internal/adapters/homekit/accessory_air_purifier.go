@@ -81,9 +81,11 @@ func purifierCurrentState(e Entity) (any, bool) {
 func mapPurifierMode(b *accessoryBuilder, s *service.AirPurifier, active RoleAssignment) {
 	mode, exists := assignment(b.exposure, roleMode)
 	if !exists {
-		// HAP requires this characteristic even without a mode role.
-		readOnly(s.TargetAirPurifierState.C)
-		b.bind(s.TargetAirPurifierState.C, active.EntityID, func(Entity) (any, bool) { return nil, false }, nil)
+		// HomeKit has no mode control without a mapped Entity.
+		s.TargetAirPurifierState.ValidVals = []int{characteristic.TargetAirPurifierStateManual}
+		b.bind(s.TargetAirPurifierState.C, active.EntityID, func(Entity) (any, bool) {
+			return characteristic.TargetAirPurifierStateManual, true
+		}, nil)
 		return
 	}
 	choices := supportValue[enumsettingv1.Support](b.inventory.Entities[mode.EntityID]).State.Choices

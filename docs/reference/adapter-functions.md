@@ -115,7 +115,9 @@ The [HomeKit Adapter](../guides/homekit.md) registers these Functions:
 
 An exposure change reports success after the bridge has reloaded, not after
 Apple Home refreshes. A `reload_failed` result can mean the change was saved
-and is not yet published. A reset disconnects every paired controller. Treat
+and is not yet published. A reset disconnects every paired controller. If the
+new pairing generation cannot start, reads that include pairing status return
+`bridge_busy` until the bridge recovers. Treat
 `pairing_info` and `reset_pairing` results as credentials: Core retains them
 for 30 days. A later pairing does not erase an earlier result.
 

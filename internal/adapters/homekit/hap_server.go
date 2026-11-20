@@ -20,6 +20,7 @@ const hapStartupLimit = 8 * time.Second
 type runningHAP struct {
 	store  hap.Store
 	setup  SetupIdentity
+	epoch  uint64
 	cancel context.CancelFunc
 	done   chan struct{}
 	err    error
@@ -51,7 +52,7 @@ func launchHAP(
 	server.Addr = net.JoinHostPort("", strconv.Itoa(config.ListenPort))
 	server.Ifaces = config.Interfaces
 	ctx, cancel := context.WithCancel(ctx)
-	run := &runningHAP{store: disk, setup: data.Setup, cancel: cancel, done: make(chan struct{})}
+	run := &runningHAP{store: disk, setup: data.Setup, epoch: data.PairEpoch, cancel: cancel, done: make(chan struct{})}
 	ready := make(chan struct{})
 	server.Ready = func() { close(ready) }
 	go func() {

@@ -37,6 +37,10 @@ advertisement does not prove that the iPhone can reach the advertised address.
 Do not forward either port from the internet. Keep Core HTTP and NATS on
 loopback or a trusted private network.
 
+If the initial Core inventory read fails or the HAP listener cannot start,
+the bridge reports the fault to Core and exits. Fix the dependency before
+restarting the bridge.
+
 Every YAML setting has a corresponding flag and `HEARTH_ADAPTER_HOMEKIT_`
 environment variable. For example, `--listen-port` overrides
 `HEARTH_ADAPTER_HOMEKIT_LISTEN_PORT`, which overrides `listen_port`.
@@ -77,7 +81,8 @@ mapping. For a contact that reports true when open, leave it unset.
 
 The bridge supports lights, switches and outlets, locks, window coverings,
 thermostats, air purifiers, and selected sensors. Only supported controls are
-exposed. A garage cover uses WindowCovering; the bridge does not report
+exposed. Without a `mode` assignment, the bridge presents a read-only Manual
+mode. A garage cover uses WindowCovering; the bridge does not report
 obstruction status or certify that the door is physically closed. A switch
 exposed as an outlet derives `OutletInUse` from power state, not measured draw.
 

@@ -51,11 +51,12 @@ type Runtime struct {
 
 	mu        sync.RWMutex // protects inventory and reader access to the active HAP server
 	inventory Inventory
-	published Inventory // descriptor inputs at the last successful HAP publication
-	hap       *runningHAP
+	published Inventory   // descriptor inputs at the last successful HAP publication
+	hap       *runningHAP // retains the last published pairing store between listeners
 	runner    *commandRunner
 	accessors []*accessoryBuilder
 	mutations chan bridgeMutation
+	stopping  <-chan struct{} // set before publishing the Function server
 }
 
 // NewRuntime opens the bridge's private identity store after the Session claim.
@@ -87,6 +88,7 @@ func NewRuntime(
 func (r *Runtime) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	r.stopping = ctx.Done()
 	r.runner = newCommandRunner(ctx, r.core, r.lookup, r.logger)
 	defer r.stopHAP()
 	defer r.runner.close()
@@ -199,7 +201,7 @@ func (r *Runtime) exposureSnapshot() storeFile { return r.disk.snapshot() }
 func (r *Runtime) pairingStatus() (int, SetupIdentity, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if r.hap == nil || !r.hap.active() {
+	if r.hap == nil || r.hap.epoch != r.disk.pairingEpoch() {
 		return 0, SetupIdentity{}, errReloadFailed
 	}
 	count, err := r.hap.controllerCount()
@@ -315,7 +317,7 @@ func (r *Runtime) startHAP(ctx context.Context) error {
 func (r *Runtime) stopHAP() {
 	r.mu.Lock()
 	run := r.hap
-	r.hap, r.accessors = nil, nil
+	r.accessors = nil
 	r.mu.Unlock()
 	if run != nil {
 		run.stop()
@@ -351,12 +353,22 @@ func (r *Runtime) requestMutation(request bridgeMutation) mutationResult {
 	case r.mutations <- request:
 	case <-request.ctx.Done():
 		return mutationResult{err: request.ctx.Err()}
+	case <-r.stopping:
+		return mutationResult{err: context.Canceled}
 	}
 	select {
 	case result := <-request.reply:
 		return result
 	case <-request.ctx.Done():
 		return mutationResult{err: request.ctx.Err()}
+	case <-r.stopping:
+		// Preserve evidence already returned by the coordinator.
+		select {
+		case result := <-request.reply:
+			return result
+		default:
+			return mutationResult{err: context.Canceled}
+		}
 	}
 }
 

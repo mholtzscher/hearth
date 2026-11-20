@@ -116,9 +116,10 @@ type boundValue struct {
 	entityID string
 	read     func(Entity) (any, bool)
 
-	mu      sync.Mutex
-	serial  uint64
-	pending any
+	publishMu sync.Mutex
+	mu        sync.Mutex
+	serial    uint64
+	pending   any
 }
 
 func (v *boundValue) value(_ *http.Request) (any, int) {
@@ -139,10 +140,28 @@ func (v *boundValue) value(_ *http.Request) (any, int) {
 }
 
 func (v *boundValue) update(entity Entity) {
-	if v.read != nil && entity.reachable() {
-		if value, ok := v.read(entity); ok {
-			_, _ = v.c.SetValueRequest(value, nil)
-		}
+	v.publishMu.Lock()
+	defer v.publishMu.Unlock()
+	v.publish(entity, false)
+}
+
+func (v *boundValue) publish(entity Entity, force bool) {
+	if v.read == nil || !entity.reachable() {
+		return
+	}
+	value, ok := v.read(entity)
+	if !ok {
+		return
+	}
+	v.mu.Lock()
+	pending := v.pending != nil
+	v.mu.Unlock()
+	if pending {
+		return
+	}
+	changed, status := v.c.SetValueRequest(value, nil)
+	if force && changed == nil && status == 0 {
+		v.c.NotifyValue()
 	}
 }
 
@@ -176,15 +195,13 @@ func (v *boundValue) complete(serial uint64, failed bool) {
 		v.mu.Unlock()
 		return
 	}
+	hadPending := v.pending != nil
 	v.pending = nil
 	v.mu.Unlock()
-	if failed && v.read != nil {
-		entity := v.owner.lookup(v.entityID)
-		if entity.reachable() {
-			if _, ok := v.read(entity); ok {
-				v.c.NotifyValue()
-			}
-		}
+	if hadPending || failed {
+		v.publishMu.Lock()
+		defer v.publishMu.Unlock()
+		v.publish(v.owner.lookup(v.entityID), failed)
 	}
 }
 

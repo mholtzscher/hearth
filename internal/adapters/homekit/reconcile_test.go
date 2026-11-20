@@ -1,12 +1,35 @@
 package homekit //nolint:testpackage // Tests the health classification owned by the runtime coordinator.
 
 import (
+	"context"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestBridgeMutationDoesNotWaitForInvocationDeadlineAfterShutdown(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		r := Runtime{mutations: make(chan bridgeMutation), stopping: ctx.Done()}
+		handlerCtx, finish := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer finish()
+		done := make(chan error, 1)
+		go func() { done <- r.resetPairing(handlerCtx) }()
+		<-r.mutations
+		cancel()
+		select {
+		case err := <-done:
+			require.ErrorIs(t, err, context.Canceled)
+		case <-time.After(time.Second):
+			t.Fatal("admitted mutation did not unblock on bridge shutdown")
+		}
+	})
+}
 
 func TestBridgeHealthRequiresHAPAndRecentInventoryAndFacts(t *testing.T) {
 	t.Parallel()

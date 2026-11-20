@@ -163,6 +163,12 @@ func slotKey(a RoleAssignment) (string, error) {
 }
 
 // snapshot returns independent copies; callers cannot mutate the store.
+func (s *store) pairingEpoch() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.data.PairEpoch
+}
+
 func (s *store) snapshot() storeFile {
 	s.mu.Lock()
 	defer s.mu.Unlock()
