@@ -322,6 +322,13 @@ export const catalogExamples = {
       source: source(401, "hearth.cover/v1"),
     },
   },
+  Thermostat: {
+    type: "Thermostat",
+    props: {
+      label: "Hallway thermostat",
+      source: source(501, "hearth.thermostat/v1"),
+    },
+  },
   StateTimeline: {
     type: "StateTimeline",
     props: {

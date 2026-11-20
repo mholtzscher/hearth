@@ -49,6 +49,7 @@ const cardDefaultTitles = {
   ToggleTile: "Power",
   AirPurifier: "Air purifier",
   Cover: "Cover",
+  Thermostat: "Thermostat",
   OutsideNow: "Outside",
   Rain: "Rain",
   Wind: "Wind",

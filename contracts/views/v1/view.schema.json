@@ -1529,6 +1529,36 @@
                   "props"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Thermostat"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "source": {
+                        "$ref": "#/$defs/ThermostatSource"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
               }
             ]
           }
@@ -1754,6 +1784,32 @@
         "entity_type": {
           "type": "string",
           "const": "hearth.cover/v1"
+        },
+        "field": {
+          "type": "string",
+          "const": ""
+        }
+      },
+      "required": [
+        "kind",
+        "entity_id",
+        "entity_type"
+      ],
+      "additionalProperties": false
+    },
+    "ThermostatSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "entity-state"
+        },
+        "entity_id": {
+          "$ref": "#/$defs/EntityID"
+        },
+        "entity_type": {
+          "type": "string",
+          "const": "hearth.thermostat/v1"
         },
         "field": {
           "type": "string",

@@ -12,6 +12,7 @@ import { readingListSchema } from "../cards/reading-list/schema";
 import { stateTimelineSchema } from "../cards/state-timeline/schema";
 import { stateSchema } from "../cards/state/schema";
 import { headingSchema, noteSchema } from "../cards/text/schema";
+import { thermostatSchema } from "../cards/thermostat/schema";
 import { timeSeriesSchema } from "../cards/time-series/schema";
 import { toggleListSchema } from "../cards/toggle-list/schema";
 import { toggleTileSchema } from "../cards/toggle-tile/schema";
@@ -81,6 +82,10 @@ export const elementSchemas = {
     props: airPurifierSchema,
   }),
   Cover: z.strictObject({ type: z.literal("Cover"), props: coverSchema }),
+  Thermostat: z.strictObject({
+    type: z.literal("Thermostat"),
+    props: thermostatSchema,
+  }),
 };
 export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.Stack,
@@ -103,6 +108,7 @@ export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.Forecast,
   elementSchemas.AirPurifier,
   elementSchemas.Cover,
+  elementSchemas.Thermostat,
 ]);
 export const definitionSchema = z.strictObject({
   schema_version: z.literal(1),
