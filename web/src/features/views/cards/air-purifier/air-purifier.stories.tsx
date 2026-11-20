@@ -1,8 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { http, HttpResponse } from "msw";
 import { expect } from "storybook/test";
 
 import { entityId } from "../../../../../.storybook/fixtures";
 import { entityScenario } from "../../../../../.storybook/msw-handlers";
+import { watchHeight } from "../../../../../.storybook/play";
 import { BoundAirPurifier } from "./air-purifier";
 
 const meta = {
@@ -57,6 +59,38 @@ export const FullCard: Story = {
     await expect(
       await canvas.findByRole("switch", { name: /power/iu })
     ).toHaveAttribute("aria-checked", "true");
+  },
+};
+export const NarrowFanFailure: Story = {
+  decorators: [
+    (Story) => (
+      <div className="w-[248px]">
+        <Story />
+      </div>
+    ),
+  ],
+  beforeEach: ({ msw }) => {
+    msw.use(
+      http.post(`/v1/entities/${entityId(305)}/commands`, () =>
+        HttpResponse.json({ detail: "Rejected" }, { status: 502 })
+      )
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const raise = await canvas.findByRole("button", {
+      name: "Raise fan level",
+    });
+    await canvas.findByRole("switch", { name: "Display" });
+    await canvas.findByRole("switch", { name: "Child lock" });
+    await canvas.findByText("Good");
+    await canvas.findByText("Replace the filter soon");
+    await watchHeight(canvas.getByRole("article"), async () => {
+      await userEvent.click(raise);
+      await expect(await canvas.findByRole("alert")).toHaveTextContent(
+        "Fan level: Change rejected. Try again."
+      );
+      await expect(canvas.getByText("Fan level: Rejected.")).toBeVisible();
+    });
   },
 };
 export const Tile: Story = {

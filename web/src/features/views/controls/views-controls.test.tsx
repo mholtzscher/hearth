@@ -474,9 +474,10 @@ describe("Device light controls", () => {
     await flush();
     expect(rows()).toHaveLength(2);
     unchanged();
-    expect(within(idle[0] as HTMLElement).getByRole("alert").textContent).toBe(
-      "The light rejected the change."
-    );
+    const alert = within(idle[0] as HTMLElement).getByRole("alert");
+    expect(
+      within(alert).getByText("The light rejected the change.")
+    ).toBeTruthy();
   });
 
   it("sends the first press and then only the last of the presses made while it was pending", async () => {
@@ -518,10 +519,10 @@ describe("Device light controls", () => {
       await flush();
       core.fail(core.posts[0], status);
       await flush();
-      expect(screen.getByRole("alert").textContent).toBe(text);
+      expect(within(screen.getByRole("alert")).getByText(text)).toBeTruthy();
       expect(power.getAttribute("aria-checked")).toBe("false");
       await act(() => vi.advanceTimersByTimeAsync(20_000));
-      expect(screen.getByRole("alert").textContent).toBe(text);
+      expect(within(screen.getByRole("alert")).getByText(text)).toBeTruthy();
       fireEvent.click(power);
       await flush();
       expect(screen.queryByRole("alert")).toBeNull();

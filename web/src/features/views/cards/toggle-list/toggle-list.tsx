@@ -80,7 +80,7 @@ const SwitchRow = ({
         <StatusList entries={status.entries} />
         {canSet ? (
           <ControlStatus
-            className="text-muted-foreground mt-0.5 min-h-[42px]"
+            className="text-muted-foreground mt-0.5"
             entityId={power.source.entity_id}
             subject="power"
             pending={(value) =>
@@ -89,7 +89,7 @@ const SwitchRow = ({
             idle={power.since}
           />
         ) : (
-          <p className="text-label text-muted-foreground mt-0.5 min-h-[42px]">
+          <p className="text-label text-muted-foreground mt-0.5 h-[21px] truncate">
             {power.entity ? "Read-only" : power.since}
           </p>
         )}
@@ -179,6 +179,7 @@ export const BoundToggleList = ({
   const failed = members.filter(
     (index) => controls[index].phase === "failed"
   ).length;
+  const groupFeedback = groupText(members.length, inProgress, off, failed);
   return (
     <DataCard
       title={title}
@@ -237,10 +238,11 @@ export const BoundToggleList = ({
             Turn all off
           </Button>
           <output
-            className="text-label text-muted-foreground data-[failed]:text-destructive flex-[1_1_9em]"
+            className="text-label text-muted-foreground data-[failed]:text-destructive h-[21px] min-w-0 flex-[1_1_9em] truncate"
             data-failed={failed > 0 || undefined}
+            title={groupFeedback || undefined}
           >
-            {groupText(members.length, inProgress, off, failed)}
+            {groupFeedback}
           </output>
         </div>
       )}

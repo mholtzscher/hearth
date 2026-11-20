@@ -137,8 +137,11 @@ story that reads Entity data needs one awaited assertion on the content that
 defines its state. Without it, the accessibility check audits the loading state
 and the story passes whatever it renders. A story that renders synchronously
 from args needs no play assertion. A phone story also calls
-`expectNoHorizontalOverflow` from `.storybook/play.ts`. Keep the single
-`CssCheck` story as the production CSS loading check.
+`expectNoHorizontalOverflow` from `.storybook/play.ts`. In a card interaction
+story, start from the ready card and wrap the interaction and its assertions in
+`watchHeight` from the same file. Include narrow widths and pending or failed
+feedback where relevant. Keep the single `CssCheck` story as the production
+CSS loading check.
 
 Query controls by their accessible role and name, and fields by their label.
 Use `data-slot` when a test must identify a structural part that has no distinct

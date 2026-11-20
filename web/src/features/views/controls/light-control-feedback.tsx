@@ -117,7 +117,11 @@ const feedbackSummary = (
 const DetailedFeedback = ({ active }: { active: ActiveFeedback[] }) => (
   <div>
     {active.map(({ id, name, pending, state }) => (
-      <div data-slot="control-status" className={controlStatusClasses} key={id}>
+      <div
+        data-slot="control-status"
+        className="text-label text-gray-9 mt-2 min-h-[21px]"
+        key={id}
+      >
         <p
           className={controlStatusLineClasses}
           role={state.phase === "failed" ? "alert" : "status"}

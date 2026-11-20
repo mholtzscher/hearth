@@ -458,11 +458,13 @@ outline with a 3px offset, from the global `:focus-visible` rule. A component
 may move the ring to the part that takes input, as the brightness slider does
 with its thumb, but never restyles it.
 
-**The Stable Height Rule.** Feedback never moves the layout. Each control
-reserves its status line while idle, so a Command that settles in milliseconds
-doesn't move the card. Opening Source never changes a card's or a grid row's
-height. A message longer than the reserved line grows the card only while it
-shows, and Cover tiles never grow.
+**The Stable Height Rule.** At a given width, interacting with a card never
+changes its height or its grid row's height, even briefly. This includes
+hover, focus, control changes, tabs, Command feedback, and opening Source.
+Reserve space for inline states before interaction, or put extra content
+outside the grid flow in a popover or sheet. Command feedback stays on one
+reserved line. Use short failure messages on the card and retain the full
+sentence for screen readers and in a tooltip.
 
 ### Buttons
 
@@ -638,7 +640,8 @@ focus border, and a violet caret.
 ### View cards
 
 **The One Frame Rule.** Every data card in a view uses one frame. Future card
-types follow this contract rather than copying an existing card.
+types follow this contract rather than copying an existing card. New cards
+and their prototypes follow the Stable Height Rule.
 
 Cards on Development pages use the compact card: 12px padding and 14px label
 text.
@@ -758,12 +761,13 @@ a power switch at the end of the reading row and a brightness slider below it.
   control shows the requested value, and its reserved line shows a dusk-blue dot
   and words such as **Turning on…** or **Setting brightness to 40 %…**.
 - A failure returns the control to observed State, and the same line shows a
-  red-pink dot and the problem, such as **The light rejected the change.**,
-  until the next attempt.
+  red-pink dot and a short message, such as **Rejected.**, until the next
+  attempt. The full sentence, such as "The light rejected the change.", is
+  available to screen readers and in a tooltip.
 - A card with more than two controls, such as AirPurifier, reserves one shared
   line at the end of its body instead. It shows the most recently changed
   control's pending words, or its failure after the control's name, such as
-  **Fan level: Change rejected. Try again.**
+  **Fan level: Rejected.**
 
 #### Charts
 

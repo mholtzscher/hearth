@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { StrictMode, useState } from "react";
@@ -392,9 +393,9 @@ describe(BoundCover, () => {
     await flush();
     api.fail(api.posts[0], 502);
     await flush();
-    expect(screen.getByRole("alert").textContent).toBe(
-      "Change rejected. Try again."
-    );
+    expect(
+      within(screen.getByRole("alert")).getByText("Change rejected. Try again.")
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close Garage door" }));
     await flush();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -437,9 +438,11 @@ describe(BoundCover, () => {
     expect(api.posts[0].operation).toBe("stop");
     api.fail(api.posts[0], 504);
     await flush();
-    expect(screen.getByRole("alert").textContent).toBe(
-      "Stop wasn't confirmed as sent. It may still apply."
-    );
+    expect(
+      within(screen.getByRole("alert")).getByText(
+        "Stop wasn't confirmed as sent. It may still apply."
+      )
+    ).toBeTruthy();
   });
 
   it("tile: asks for a second press before opening", async () => {
