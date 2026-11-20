@@ -314,9 +314,11 @@ describe("air purifier view", () => {
     await flush();
     api.fail(api.posts[0]);
     await flush();
-    expect(screen.getByRole("alert").textContent).toBe(
-      "Fan level: Change rejected. Try again."
-    );
+    expect(
+      within(screen.getByRole("alert")).getByText(
+        "Fan level: Change rejected. Try again."
+      )
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Raise fan level" }));
     await flush();
     expect(screen.queryByRole("alert")).toBeNull();

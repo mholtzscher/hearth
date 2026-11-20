@@ -7,6 +7,7 @@ import {
   createCoreHandlers,
   entityScenario,
 } from "../../../../../.storybook/msw-handlers";
+import { watchHeight } from "../../../../../.storybook/play";
 import { BoundToggleTile } from "./toggle-tile";
 
 const meta = {
@@ -73,11 +74,16 @@ export const MeteredPlug: Story = {
     const control = await canvas.findByRole("switch", {
       name: "Office plug power",
     });
+    await canvas.findByText("7.9");
+    await canvas.findByText("2.5");
+    await canvas.findByText(/^24 h range/u);
     await expect(control).toHaveAttribute("aria-checked", "false");
-    await userEvent.click(control);
-    await waitFor(() =>
-      expect(control).toHaveAttribute("aria-checked", "true")
-    );
+    await watchHeight(canvas.getByRole("article"), async () => {
+      await userEvent.click(control);
+      await waitFor(() =>
+        expect(control).toHaveAttribute("aria-checked", "true")
+      );
+    });
   },
 };
 export const Disabled: Story = {
@@ -100,6 +106,14 @@ export const ReadOnly: Story = {
   },
 };
 export const Rejected: Story = {
+  args: { metric: undefined },
+  decorators: [
+    (Story) => (
+      <div className="w-40">
+        <Story />
+      </div>
+    ),
+  ],
   beforeEach: ({ msw }) => {
     msw.use(
       http.post("/v1/entities/:id/commands", () =>
@@ -108,25 +122,31 @@ export const Rejected: Story = {
     );
   },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByRole("switch"));
-    await expect(await canvas.findByRole("alert")).toHaveTextContent(
-      "Change rejected. Try again."
-    );
-    await expect(canvas.getByRole("switch")).toHaveAttribute(
-      "aria-checked",
-      "false"
-    );
+    const control = await canvas.findByRole("switch");
+    await watchHeight(canvas.getByRole("article"), async () => {
+      await userEvent.click(control);
+      const alert = await canvas.findByRole("alert");
+      await expect(alert).toHaveTextContent("Change rejected. Try again.");
+      await expect(within(alert).getByText("Rejected.")).toHaveAttribute(
+        "title",
+        "Change rejected. Try again."
+      );
+      await expect(control).toHaveAttribute("aria-checked", "false");
+    });
   },
 };
 export const SourceDetails: Story = {
+  args: { metric: undefined },
   play: async ({ canvas, canvasElement, userEvent }) => {
     await canvas.findByRole("switch");
-    await userEvent.click(canvas.getByRole("button", { name: "Source" }));
-    await expect(
-      await within(canvasElement.ownerDocument.body).findByRole("link", {
-        name: /Office plug/u,
-      })
-    ).toHaveAttribute("href", `/entities/${entityId(4)}`);
+    await watchHeight(canvas.getByRole("article"), async () => {
+      await userEvent.click(canvas.getByRole("button", { name: "Source" }));
+      await expect(
+        await within(canvasElement.ownerDocument.body).findByRole("link", {
+          name: /Office plug/u,
+        })
+      ).toHaveAttribute("href", `/entities/${entityId(4)}`);
+    });
   },
 };
 export const MeteringUnavailable: Story = {

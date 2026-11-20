@@ -429,11 +429,11 @@ control reserves the row for that line, so the card doesn't move when the line
 appears and clears. A card with more than two controls, such as an AirPurifier
 card, reserves one shared line instead: it shows the most recently changed
 control's pending words, or its failure prefixed by the control's name, such as
-**Fan level: Change rejected. Try again.** A
-failure returns the control to observed State and names the reason under it
-until the next request. After a timeout or a lost connection, the message says
-the change may still apply. A changed reading glows, whatever caused the change,
-except AirPurifier's power and settings readings, as described above.
+**Fan level: Rejected.** A failure returns the control to observed State and
+shows a short message on the reserved line until the next request. Screen
+readers and the tooltip get the full sentence, including whether the change
+may still apply after a timeout or a lost connection. A changed reading glows
+regardless of cause, except for AirPurifier's power and settings readings.
 
 Moving the brightness slider while a light is off sends only `brightness.set`.
 Zigbee2MQTT and Z-Wave lights normally turn on as a result; a device that

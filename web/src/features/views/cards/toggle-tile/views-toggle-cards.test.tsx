@@ -447,7 +447,7 @@ describe("ToggleTile and ToggleList", () => {
       await flush();
       api.fail(api.posts[0], status);
       await flush();
-      expect(screen.getByRole("alert").textContent).toBe(message);
+      expect(within(screen.getByRole("alert")).getByText(message)).toBeTruthy();
       expect(screen.getByText("Off")).toBeTruthy();
       expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe(
         "false"
@@ -788,8 +788,8 @@ describe("ToggleTile and ToggleList", () => {
     await flush();
     await flush();
     expect(screen.getByText("1 of 2 Off · 1 failed")).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toBe(
-      "Change rejected. Try again."
-    );
+    expect(
+      within(screen.getByRole("alert")).getByText("Change rejected. Try again.")
+    ).toBeTruthy();
   });
 });

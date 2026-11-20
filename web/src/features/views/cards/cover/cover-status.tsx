@@ -2,6 +2,7 @@ import { cn } from "../../../../lib/utils";
 import {
   controlStatusClasses,
   controlStatusLineClasses,
+  ControlStatusText,
 } from "../../controls/control-status";
 import { StatusDot } from "../../controls/status-dot";
 import type { CoverLine } from "./data";
@@ -33,56 +34,40 @@ export const CoverStatus = ({
   tile?: boolean;
   on?: boolean;
 }) => {
-  const words =
-    line &&
-    (tile ? (
-      <>
-        <span
-          data-slot="cover-short"
-          aria-hidden="true"
-          className="min-w-0 overflow-hidden text-ellipsis"
-        >
-          {line.short}
-        </span>
-        <span className="sr-only">{line.text}</span>
-      </>
-    ) : (
-      line.text
-    ));
+  const words = line && (
+    <ControlStatusText
+      full={line.text}
+      short={tile || line.alert ? line.short : undefined}
+      slot={tile ? "cover-short" : undefined}
+    />
+  );
+  const status = line?.alert ? undefined : line;
   return (
     <div
       data-cover-status
       data-slot={tile ? "cover-row" : undefined}
       className={cn(
         controlStatusClasses,
-        tile &&
-          "m-0 h-[21px] min-h-0 overflow-hidden text-ellipsis whitespace-nowrap",
+        tile && "m-0",
         on && "text-[color-mix(in_oklch,var(--violet)_14%,var(--gray-9))]"
       )}
     >
       <output
         className={cn(
           controlStatusLineClasses,
-          "data-[tone=warn]:text-warning",
-          tile && "min-w-0"
+          "data-[tone=warn]:text-warning"
         )}
-        data-tone={line && !line.alert ? line.tone : undefined}
-        title={tile && line && !line.alert ? line.text : undefined}
+        data-tone={status?.tone}
       >
-        {line && !line.alert && (
+        {status && (
           <>
-            <StatusDot tone={line.tone} />
+            <StatusDot tone={status.tone} />
             {words}
           </>
         )}
       </output>
       {line?.alert && (
-        <p
-          className={cn(controlStatusLineClasses, tile && "min-w-0")}
-          role="alert"
-          data-tone="error"
-          title={tile ? line.text : undefined}
-        >
+        <p className={controlStatusLineClasses} role="alert" data-tone="error">
           <StatusDot tone="error" />
           {words}
         </p>

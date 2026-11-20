@@ -4,7 +4,9 @@ import { useControls } from "../data/provider";
 import {
   controlStatusClasses,
   controlStatusLineClasses,
+  ControlStatusText,
   powerFailures,
+  shortCommandFailures,
 } from "./control-status";
 import type { ControlState, ControlTarget } from "./queue";
 import { StatusDot } from "./status-dot";
@@ -66,14 +68,17 @@ export const SharedControlStatus = ({
           (state.phase === "pending" || state.phase === "confirming") && (
             <>
               <StatusDot tone="info" />
-              {control.pending(state.requested)}
+              <ControlStatusText full={control.pending(state.requested)} />
             </>
           )}
       </output>
       {state?.phase === "failed" && (
         <p role="alert" data-tone="error" className={controlStatusLineClasses}>
           <StatusDot tone="error" />
-          {control.name}: {powerFailures[state.failure.kind]}
+          <ControlStatusText
+            full={`${control.name}: ${powerFailures[state.failure.kind]}`}
+            short={`${control.name}: ${shortCommandFailures[state.failure.kind]}`}
+          />
         </p>
       )}
     </div>
