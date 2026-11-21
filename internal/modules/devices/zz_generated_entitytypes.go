@@ -19,6 +19,7 @@ import (
 	contractenumsettingv1 "github.com/mholtzscher/hearth/entitytypes/enumsettingv1"
 	contracthourlyforecastv1 "github.com/mholtzscher/hearth/entitytypes/hourlyforecastv1"
 	contractlockv1 "github.com/mholtzscher/hearth/entitytypes/lockv1"
+	contractmediaplayerv1 "github.com/mholtzscher/hearth/entitytypes/mediaplayerv1"
 	contractnumericsensorv1 "github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
 	contractnumericsettingv1 "github.com/mholtzscher/hearth/entitytypes/numericsettingv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
@@ -45,6 +46,7 @@ const (
 	EntityTypeEnumsettingV1      EntityTypeID = "hearth.enumsetting/v1"
 	EntityTypeHourlyforecastV1   EntityTypeID = "hearth.hourlyforecast/v1"
 	EntityTypeLockV1             EntityTypeID = "hearth.lock/v1"
+	EntityTypeMediaplayerV1      EntityTypeID = "hearth.mediaplayer/v1"
 	EntityTypeNumericsensorV1    EntityTypeID = "hearth.numericsensor/v1"
 	EntityTypeNumericsettingV1   EntityTypeID = "hearth.numericsetting/v1"
 	EntityTypePowerV1            EntityTypeID = "hearth.power/v1"
@@ -57,7 +59,7 @@ const (
 )
 
 func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
-	definitions := make([]EntityTypeDefinition, 0, 23)
+	definitions := make([]EntityTypeDefinition, 0, 24)
 	binarysensorV1, err := newBinarysensorV1TypeDefinition(EntityTypeBinarysensorV1)
 	if err != nil {
 		return nil, err
@@ -128,6 +130,11 @@ func NewBuiltinTypeCatalog() (*TypeCatalog, error) {
 		return nil, err
 	}
 	definitions = append(definitions, lockV1)
+	mediaplayerV1, err := newMediaplayerV1TypeDefinition(EntityTypeMediaplayerV1)
+	if err != nil {
+		return nil, err
+	}
+	definitions = append(definitions, mediaplayerV1)
 	numericsensorV1, err := newNumericsensorV1TypeDefinition(EntityTypeNumericsensorV1)
 	if err != nil {
 		return nil, err
@@ -466,6 +473,60 @@ func newLockV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
 		contractlockv1.SetSatisfied,
 	)
 	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractlockv1.ValidateSupport, contractlockv1.ValidateState, contractlockv1.EqualState, set)
+	if err != nil {
+		return EntityTypeDefinition{}, err
+	}
+	return definition, nil
+}
+
+func newMediaplayerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, error) {
+	codecs, err := contractmediaplayerv1.Compile()
+	if err != nil {
+		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.mediaplayer/v1 codecs: %w", err)
+	}
+	setMuted := DefineOperation(
+		OperationName(contractmediaplayerv1.OperationSetMuted),
+		codecs.SetMutedParameters,
+		func(support contractmediaplayerv1.Support) (contractmediaplayerv1.SetMutedSupport, bool) {
+			if support.Operations.SetMuted == nil {
+				return contractmediaplayerv1.SetMutedSupport{}, false
+			}
+			return *support.Operations.SetMuted, true
+		},
+		contractmediaplayerv1.ValidateSetMutedParameters,
+		contractmediaplayerv1.SetMutedDeadline,
+		OutcomeObserved,
+		contractmediaplayerv1.SetMutedSatisfied,
+	)
+	setPlayback := DefineOperation(
+		OperationName(contractmediaplayerv1.OperationSetPlayback),
+		codecs.SetPlaybackParameters,
+		func(support contractmediaplayerv1.Support) (contractmediaplayerv1.SetPlaybackSupport, bool) {
+			if support.Operations.SetPlayback == nil {
+				return contractmediaplayerv1.SetPlaybackSupport{}, false
+			}
+			return *support.Operations.SetPlayback, true
+		},
+		contractmediaplayerv1.ValidateSetPlaybackParameters,
+		contractmediaplayerv1.SetPlaybackDeadline,
+		OutcomeObserved,
+		contractmediaplayerv1.SetPlaybackSatisfied,
+	)
+	setVolume := DefineOperation(
+		OperationName(contractmediaplayerv1.OperationSetVolume),
+		codecs.SetVolumeParameters,
+		func(support contractmediaplayerv1.Support) (contractmediaplayerv1.SetVolumeSupport, bool) {
+			if support.Operations.SetVolume == nil {
+				return contractmediaplayerv1.SetVolumeSupport{}, false
+			}
+			return *support.Operations.SetVolume, true
+		},
+		contractmediaplayerv1.ValidateSetVolumeParameters,
+		contractmediaplayerv1.SetVolumeDeadline,
+		OutcomeObserved,
+		contractmediaplayerv1.SetVolumeSatisfied,
+	)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractmediaplayerv1.ValidateSupport, contractmediaplayerv1.ValidateState, contractmediaplayerv1.EqualState, setMuted, setPlayback, setVolume)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

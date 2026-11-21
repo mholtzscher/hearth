@@ -174,10 +174,10 @@ func (service *Service) normalizeRegistration(adapterID string, registration Reg
 	}
 	switch normalized.Device.Kind {
 	case DeviceKindLight, DeviceKindRelay, DeviceKindSensor, DeviceKindAirPurifier, DeviceKindLock, DeviceKindCover,
-		DeviceKindThermostat:
+		DeviceKindThermostat, DeviceKindSpeaker:
 	default:
 		return Registration{}, errors.New(
-			"device kind must be light, relay, sensor, air-purifier, lock, cover, or thermostat",
+			"device kind must be light, relay, sensor, air-purifier, lock, cover, thermostat, or speaker",
 		)
 	}
 	if !validLength(normalized.Device.Name, maximumNameLength) {

@@ -24,6 +24,7 @@ type Client struct {
 	endpoint string
 	token    string
 	http     *http.Client
+	playerIO chan struct{}
 }
 
 type playerGrouping struct {
@@ -57,12 +58,26 @@ func New(serverURL, token string, transport http.RoundTripper) (*Client, error) 
 	u.Path = "/api"
 	return &Client{
 		endpoint: u.String(), token: token,
+		playerIO: make(chan struct{}, 1),
 		http: &http.Client{
 			Transport: transport, Timeout: requestTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}, nil
 }
+
+// Serialize player observations with controls so an older poll cannot overwrite
+// a newer Command-linked report from this Session.
+func (c *Client) acquirePlayerIO(ctx context.Context) error {
+	select {
+	case c.playerIO <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *Client) releasePlayerIO() { <-c.playerIO }
 
 type statusError int
 

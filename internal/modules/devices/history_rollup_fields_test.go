@@ -17,7 +17,8 @@ func historyRollupFieldsWithoutHistory() []string {
 		"hearth.cover/v1 /position",
 		"hearth.thermostat/v1 /current_temperature", "hearth.thermostat/v1 /target_temperature",
 		"hearth.thermostat/v1 /target_temperature_low", "hearth.thermostat/v1 /target_temperature_high",
-		"hearth.thermostat/v1 /current_humidity", "hearth.thermostat/v1 /target_humidity"}
+		"hearth.thermostat/v1 /current_humidity", "hearth.thermostat/v1 /target_humidity",
+		"hearth.mediaplayer/v1 /volume_percent"}
 }
 
 var historyRollupFieldRow = regexp.MustCompile(`\('([^']+)', '([^']*)'\)`)

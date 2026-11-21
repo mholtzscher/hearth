@@ -262,6 +262,68 @@
         }
       }
     },
+    "hearth.mediaplayer/v1": {
+      "operations": {
+        "set_muted": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:mediaplayer:v1:set-muted-parameters",
+            "title": "Hearth mediaplayer/v1 set_muted parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "muted"
+            ],
+            "properties": {
+              "muted": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "set_playback": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:mediaplayer:v1:set-playback-parameters",
+            "title": "Hearth mediaplayer/v1 set_playback parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "playing",
+                  "paused"
+                ]
+              }
+            }
+          }
+        },
+        "set_volume": {
+          "parameters_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "urn:hearth:schema:entity-type:mediaplayer:v1:set-volume-parameters",
+            "title": "Hearth mediaplayer/v1 set_volume parameters",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "percent"
+            ],
+            "properties": {
+              "percent": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        }
+      }
+    },
     "hearth.numericsensor/v1": {
       "operations": {}
     },

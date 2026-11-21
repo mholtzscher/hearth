@@ -47,6 +47,13 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 	EntityTypeLockV1: {
 		{Path: "", Presence: "always", Value: StringField{Enum: []string{"locked", "unlocked", "locking", "unlocking", "jammed", "unknown"}}},
 	},
+	EntityTypeMediaplayerV1: {
+		{Path: "/grouping", Presence: "always", Value: StringField{Enum: []string{"standalone", "grouped", "unknown"}}},
+		{Path: "/muted", Presence: "sometimes", Value: BooleanField{}},
+		{Path: "/playback", Presence: "always", Value: StringField{Enum: []string{"idle", "playing", "paused", "unknown"}}},
+		{Path: "/title", Presence: "sometimes", Value: StringField{Enum: []string(nil)}},
+		{Path: "/volume_percent", Presence: "sometimes", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}}},
+	},
 	EntityTypeNumericsensorV1: {
 		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: false}, Kind: SupportKind{Reference: SupportReference{Path: "/state/quantity_kind"}, Optional: true}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
 	},

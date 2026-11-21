@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:mediaplayer:v1:set-playback-parameters",
+  "title": "Hearth mediaplayer/v1 set_playback parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["state"],
+  "properties": {"state": {"type": "string", "enum": ["idle", "playing", "paused"]}}
+}

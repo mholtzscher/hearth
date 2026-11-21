@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"time"
 
 	ma "github.com/mholtzscher/hearth/internal/adapters/musicassistant"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -25,7 +25,7 @@ type Config struct {
 	TokenFile string `yaml:"token_file"`
 }
 
-// Run serves the playback Function for one adapter Session.
+// Run serves Functions and player Entities for one adapter Session.
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := platformconfig.ValidateSlug("adapter_id", config.AdapterID); err != nil {
 		return err
@@ -54,12 +54,31 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return err
 	}
 	defer func() { _ = server.Close(context.WithoutCancel(ctx)) }()
-	if err = session.SetHealth(ctx, adapter.HealthReport{
-		Status: adapter.HealthHealthy, SourceObservedAt: time.Now().UTC(),
-	}); err != nil {
-		return err
+	return servePlayers(ctx, session, ma.NewPlayers(client, session, logger))
+}
+
+func servePlayers(ctx context.Context, session *adapter.Session, players *ma.Players) error {
+	lifetime, cancel := context.WithCancel(ctx)
+	defer cancel()
+	polling := lifecycle.StartWorker(lifetime, players.Run)
+	commands := lifecycle.StartWorker(lifetime, func(ctx context.Context) error {
+		return session.ServeCommands(ctx, players.HandleCommand)
+	})
+	watcher := lifecycle.StartWorker(lifetime, session.Wait)
+	select {
+	case <-ctx.Done():
+	case <-polling.Closed():
+	case <-commands.Closed():
+	case <-watcher.Closed():
 	}
-	return session.Wait(ctx)
+	cancel()
+	var result error
+	for _, worker := range []*lifecycle.WorkerHandle{polling, commands, watcher} {
+		if err := worker.Wait(context.WithoutCancel(ctx)); err != nil && !errors.Is(err, context.Canceled) {
+			result = errors.Join(result, err)
+		}
+	}
+	return result
 }
 
 func readToken(path string) (string, error) {

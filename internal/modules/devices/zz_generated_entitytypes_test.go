@@ -714,6 +714,103 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 			t.Error("catalog accepted event support for a closed type")
 		}
 	})
+	t.Run("hearth.mediaplayer/v1", func(t *testing.T) {
+		entity := Entity{ID: EntityID("generated_mediaplayerv1"), TypeID: EntityTypeMediaplayerV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"set_playback\":{\"states\":[\"idle\",\"playing\",\"paused\"]},\"set_volume\":{},\"set_muted\":{}}}")}
+		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {
+			t.Errorf("catalog stateless = %v, %v, want false", stateless, err)
+		}
+		normalizedSupport, err := catalog.NormalizeSupport(entity.TypeID, entity.Support)
+		if err != nil {
+			t.Fatalf("catalog support: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedSupport, []byte("{\"state\":{},\"operations\":{\"set_playback\":{\"states\":[\"idle\",\"playing\",\"paused\"]},\"set_volume\":{},\"set_muted\":{}}}")) {
+			t.Errorf("catalog normalized support = %s, want %s", normalizedSupport, "{\"state\":{},\"operations\":{\"set_playback\":{\"states\":[\"idle\",\"playing\",\"paused\"]},\"set_volume\":{},\"set_muted\":{}}}")
+		}
+		normalizedState, err := catalog.NormalizeState(entity, Value("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}"))
+		if err != nil {
+			t.Fatalf("catalog State: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}")) {
+			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}")
+		}
+		resolvedSetMuted, err := catalog.ResolveCommand(entity, OperationName("set_muted"), CommandParameters("{\"muted\":false}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set_muted: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSetMuted.Parameters, []byte("{\"muted\":false}")) {
+			t.Errorf("catalog normalized set_muted parameters = %s, want %s", resolvedSetMuted.Parameters, "{\"muted\":false}")
+		}
+		if resolvedSetMuted.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set_muted deadline = %v, want %v", resolvedSetMuted.Deadline, 10000*time.Millisecond)
+		}
+		if resolvedSetMuted.Outcome != OutcomeObserved {
+			t.Errorf("catalog set_muted outcome = %v, want %v", resolvedSetMuted.Outcome, OutcomeObserved)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_muted"), Parameters: CommandParameters("{\"muted\":false}")}, Value("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"muted\":false}")); err != nil || !satisfied {
+			t.Errorf("catalog set_muted satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_muted"), Parameters: CommandParameters("{\"muted\":false}")}, Value("{\"playback\":\"playing\",\"grouping\":\"standalone\"}")); err != nil || satisfied {
+			t.Errorf("catalog set_muted unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		entitySetPlaybackInvalid := Entity{ID: EntityID("generated_mediaplayerv1"), TypeID: EntityTypeMediaplayerV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"set_playback\":{\"states\":[\"idle\",\"playing\"]}}}")}
+		resolvedSetPlayback, err := catalog.ResolveCommand(entity, OperationName("set_playback"), CommandParameters("{\"state\":\"paused\"}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set_playback: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSetPlayback.Parameters, []byte("{\"state\":\"paused\"}")) {
+			t.Errorf("catalog normalized set_playback parameters = %s, want %s", resolvedSetPlayback.Parameters, "{\"state\":\"paused\"}")
+		}
+		if resolvedSetPlayback.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set_playback deadline = %v, want %v", resolvedSetPlayback.Deadline, 10000*time.Millisecond)
+		}
+		if _, err := catalog.ResolveCommand(entitySetPlaybackInvalid, OperationName("set_playback"), CommandParameters("{\"state\":\"paused\"}")); err == nil {
+			t.Error("catalog support-invalid set_playback parameters unexpectedly accepted")
+		}
+		if resolvedSetPlayback.Outcome != OutcomeObserved {
+			t.Errorf("catalog set_playback outcome = %v, want %v", resolvedSetPlayback.Outcome, OutcomeObserved)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_playback"), Parameters: CommandParameters("{\"state\":\"paused\"}")}, Value("{\"playback\":\"paused\",\"grouping\":\"standalone\"}")); err != nil || !satisfied {
+			t.Errorf("catalog set_playback satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_playback"), Parameters: CommandParameters("{\"state\":\"paused\"}")}, Value("{\"playback\":\"idle\",\"grouping\":\"standalone\"}")); err != nil || satisfied {
+			t.Errorf("catalog set_playback unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		resolvedSetVolume, err := catalog.ResolveCommand(entity, OperationName("set_volume"), CommandParameters("{\"percent\":0}"))
+		if err != nil {
+			t.Fatalf("catalog resolve set_volume: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSetVolume.Parameters, []byte("{\"percent\":0}")) {
+			t.Errorf("catalog normalized set_volume parameters = %s, want %s", resolvedSetVolume.Parameters, "{\"percent\":0}")
+		}
+		if resolvedSetVolume.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog set_volume deadline = %v, want %v", resolvedSetVolume.Deadline, 10000*time.Millisecond)
+		}
+		if resolvedSetVolume.Outcome != OutcomeObserved {
+			t.Errorf("catalog set_volume outcome = %v, want %v", resolvedSetVolume.Outcome, OutcomeObserved)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_volume"), Parameters: CommandParameters("{\"percent\":0}")}, Value("{\"playback\":\"idle\",\"grouping\":\"standalone\",\"volume_percent\":0}")); err != nil || !satisfied {
+			t.Errorf("catalog set_volume satisfied outcome = %v, %v", satisfied, err)
+		}
+		if satisfied, err := catalog.Satisfies(entity, CommandRecord{OperationName: OperationName("set_volume"), Parameters: CommandParameters("{\"percent\":0}")}, Value("{\"playback\":\"idle\",\"grouping\":\"standalone\"}")); err != nil || satisfied {
+			t.Errorf("catalog set_volume unsatisfied outcome = %v, %v", satisfied, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}"), Value("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}")); err != nil || !equal {
+			t.Errorf("catalog equal State = %v, %v", equal, err)
+		}
+		if equal, err := catalog.EqualState(entity, Value("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"muted\":false}"), Value("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}")); err != nil || equal {
+			t.Errorf("catalog unequal State = %v, %v", equal, err)
+		}
+		if supported, err := catalog.SupportsEntityEvent(entity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type accepted an Entity Event: %v, %v", supported, err)
+		}
+		malformedNonEventEntity := Entity{ID: EntityID("generated_mediaplayerv1"), TypeID: EntityTypeMediaplayerV1, Support: EntitySupport("[]")}
+		if supported, err := catalog.SupportsEntityEvent(malformedNonEventEntity, EntityEventName("single_press")); err != nil || supported {
+			t.Errorf("catalog non-event type with malformed support accepted an Entity Event: %v, %v", supported, err)
+		}
+		if _, err := catalog.NormalizeSupport(entity.TypeID, EntitySupport("{\"events\":{\"names\":[\"single_press\"]},\"operations\":{\"set_playback\":{\"states\":[\"idle\",\"playing\",\"paused\"]},\"set_volume\":{},\"set_muted\":{}},\"state\":{}}")); err == nil {
+			t.Error("catalog accepted event support for a closed type")
+		}
+	})
 	t.Run("hearth.numericsensor/v1", func(t *testing.T) {
 		entity := Entity{ID: EntityID("generated_numericsensorv1"), TypeID: EntityTypeNumericsensorV1, Support: EntitySupport("{\"state\":{\"minimum\":0,\"maximum\":255,\"unit\":\"lqi\"},\"operations\":{}}")}
 		if stateless, err := catalog.IsStateless(entity.TypeID); err != nil || stateless != false {

@@ -173,6 +173,42 @@
         ]
       }
     },
+    "hearth.mediaplayer/v1": {
+      "/grouping": {
+        "value_type": "string",
+        "presence": "always",
+        "enum": [
+          "standalone",
+          "grouped",
+          "unknown"
+        ]
+      },
+      "/muted": {
+        "value_type": "boolean",
+        "presence": "sometimes"
+      },
+      "/playback": {
+        "value_type": "string",
+        "presence": "always",
+        "enum": [
+          "idle",
+          "playing",
+          "paused",
+          "unknown"
+        ]
+      },
+      "/title": {
+        "value_type": "string",
+        "presence": "sometimes"
+      },
+      "/volume_percent": {
+        "value_type": "integer",
+        "presence": "sometimes",
+        "quantity": {
+          "unit": "%"
+        }
+      }
+    },
     "hearth.numericsensor/v1": {
       "": {
         "value_type": "number",

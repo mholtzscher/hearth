@@ -67,15 +67,6 @@ func (c *Client) Functions() []adapter.Function {
 	}
 }
 
-type visiblePlayer struct {
-	playerGrouping
-
-	ID        string `json:"player_id"`
-	Name      string `json:"name"`
-	Kind      string `json:"type"`
-	Available *bool  `json:"available"`
-}
-
 type playerSummary struct {
 	ID        string `json:"player_id"`
 	Name      string `json:"name"`
@@ -93,11 +84,8 @@ func (c *Client) listPlayers(ctx context.Context, request adapter.FunctionReques
 	if json.Unmarshal(request.Arguments, &input) != nil || input == nil || len(input) != 0 {
 		return adapter.FunctionNotExecuted{ReasonCode: invalidInput}
 	}
-	args := struct {
-		ReturnUnavailable bool `json:"return_unavailable"`
-	}{ReturnUnavailable: true}
-	var players []visiblePlayer
-	if err := c.call(ctx, request.InvocationID, "players/all", args, &players); err != nil {
+	players, err := c.playerInventory(ctx, request.InvocationID)
+	if err != nil {
 		return adapter.FunctionFailed{ReasonCode: readFailed}
 	}
 	if players == nil {

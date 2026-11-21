@@ -29,13 +29,18 @@ const (
 type playerState struct {
 	playerGrouping
 
-	ID        string `json:"player_id"`
-	Kind      string `json:"type"`
-	Available bool   `json:"available"`
-	Volume    *int   `json:"volume_level"`
-	Muted     *bool  `json:"volume_muted"`
-	State     string `json:"playback_state"`
-	Source    string `json:"active_source"`
+	ID        string   `json:"player_id"`
+	Name      string   `json:"name"`
+	Kind      string   `json:"type"`
+	Available *bool    `json:"available"`
+	Volume    *int     `json:"volume_level"`
+	Muted     *bool    `json:"volume_muted"`
+	State     string   `json:"playback_state"`
+	Source    string   `json:"active_source"`
+	Features  []string `json:"supported_features"`
+	Media     struct {
+		Title string `json:"title"`
+	} `json:"current_media"`
 }
 
 type queueState struct {
@@ -117,6 +122,10 @@ func (c *Client) playMedia(ctx context.Context, request adapter.FunctionRequest)
 	if reason := c.verifyMedia(ctx, id, target.MediaURI); reason != "" {
 		return adapter.FunctionNotExecuted{ReasonCode: reason}
 	}
+	if err := c.acquirePlayerIO(ctx); err != nil {
+		return adapter.FunctionNotExecuted{ReasonCode: "player_busy"}
+	}
+	defer c.releasePlayerIO()
 	player, err := c.readPlayer(ctx, id, target.PlayerID)
 	if err != nil {
 		return adapter.FunctionNotExecuted{ReasonCode: "player_read_failed"}
@@ -128,7 +137,7 @@ func (c *Client) playMedia(ctx context.Context, request adapter.FunctionRequest)
 	if volumeChanged {
 		var reply json.RawMessage
 		volume := volumeRequest{PlayerID: target.PlayerID, Volume: *target.Volume}
-		if err = c.call(ctx, id, "players/cmd/volume_set", volume, &reply); err != nil {
+		if err = c.call(ctx, id, commandSetVolume, volume, &reply); err != nil {
 			return mutationFailure(err, "volume_rejected")
 		}
 		if reason := c.awaitVolume(ctx, id, target); reason != "" {
@@ -162,10 +171,10 @@ func (c *Client) readPlayer(ctx context.Context, id, playerID string) (playerSta
 }
 
 func (p playerState) rejection(requireVolume bool) string {
-	if !p.Available {
+	if !p.available() {
 		return "player_unavailable"
 	}
-	if p.Kind != "player" || p.grouped() {
+	if p.Kind != playerKind || p.grouped() {
 		return "player_grouped_or_unsupported"
 	}
 	if p.GroupMembers == nil || p.Muted == nil || (requireVolume && !p.hasVolume()) {
@@ -175,6 +184,10 @@ func (p playerState) rejection(requireVolume bool) string {
 		return "player_muted"
 	}
 	return ""
+}
+
+func (p playerState) available() bool {
+	return p.Available != nil && *p.Available
 }
 
 func (p playerState) hasVolume() bool {

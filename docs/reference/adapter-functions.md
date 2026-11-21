@@ -160,7 +160,20 @@ requested, it confirms that volume before starting playback. Success means
 Music Assistant reported the exact track on the player's active queue and the
 player reported playing, at the requested volume if supplied. It does not establish
 the speaker's audible output. An unconfirmed action is not retried. Adapter
-health describes local readiness, not whether Music Assistant can play the track.
+health reflects whether the player inventory can be read, not whether a
+particular track can play.
+
+Music Assistant speakers also appear in Hearth as Devices with a Playback
+Entity (`hearth.mediaplayer/v1`). The adapter polls account-visible speakers
+and reports observed playback, grouping, title, volume, and mute. An offline
+speaker becomes unavailable without losing its last State. `set_playback`,
+`set_volume`, and `set_muted` are Entity Commands, not Adapter Functions. The
+adapter advertises supported controls and refuses to control a grouped speaker.
+A Command is satisfied only by a matching, linked Observation.
+
+`play_media` still takes the Music Assistant `player_id`. It is not an Entity
+Command and uses Music Assistant's account permissions rather than Hearth Entity
+enablement. Use a restricted account to limit every Function's targets.
 
 ## Read outcomes before deciding to repeat
 
