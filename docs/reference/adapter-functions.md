@@ -130,14 +130,13 @@ dedicated Music Assistant bearer token at `token_file`. Use a non-admin account
 limited to the selected player and music source. Keep the token out of YAML and
 logs. Use HTTPS or a trusted local connection, such as host loopback.
 
-Set one `preset` with a Music Assistant player ID, a library track URI, and a
-volume percentage. The adapter exposes these Functions:
+The adapter exposes these Functions:
 
 | Function | Arguments | Result |
 | --- | --- | --- |
 | `list_players` | `{}` | Up to 30 enabled players visible to the account, including unavailable players. Each has `player_id`, `name`, `available`, and `grouped`. `truncated` is true if more players were returned upstream. |
 | `search_media` | `{"query":"Ocean Sleep Sounds"}` | Up to 10 library matches visible to the account. Each has `name`, `media_type`, and `uri`. |
-| `play_preset` | `{}` | Starts the configured track on the configured player. No player, track, or volume override. |
+| `play_media` | `{"player_id":"bedroom","media_uri":"library://track/1","queue_mode":"replace","volume_percent":30}` | Confirms a library track is playing on the selected player. Returns `status`, `player_id`, `media_uri`, and `volume_percent` when known. |
 
 The discovery Functions are read-only and use the configured Music Assistant
 account. `search_media` accepts a nonblank query of up to 120 characters. It
@@ -147,14 +146,19 @@ a failed read returns `discovery_read_failed`, not a partial result. Hearth
 retains discovery arguments and results in Function history. Music Assistant
 names and titles are data, not instructions.
 
-Call `play_preset` from an Automation with a
-[Function Step](../guides/automation-function-steps.md).
+Call `play_media` from an Automation with a
+[Function Step](../guides/automation-function-steps.md). Use a `player_id` from
+`list_players` and a `library://track/…` URI from `search_media`. `queue_mode`
+is required: `play` inserts and starts the track; `replace` replaces the queue
+and starts it. `volume_percent` is optional and accepts 0 through 100. Omit it
+to leave the volume unchanged. Albums, playlists, and external URLs are not
+accepted for playback.
 
-The adapter refuses to play on a grouped, unavailable, or muted player. It
-confirms the preset volume before replacing that player's queue with the
-configured track. A successful result such as `{"status":"playing","volume_percent":30}`
-means Music Assistant reported that exact track on the player's active queue
-and the player reported playing at the requested volume. It does not establish
+The adapter verifies account access to the track before sending any write.
+It refuses to play on a grouped, unavailable, or muted player. If a volume was
+requested, it confirms that volume before starting playback. Success means
+Music Assistant reported the exact track on the player's active queue and the
+player reported playing, at the requested volume if supplied. It does not establish
 the speaker's audible output. An unconfirmed action is not retried. Adapter
 health describes local readiness, not whether Music Assistant can play the track.
 

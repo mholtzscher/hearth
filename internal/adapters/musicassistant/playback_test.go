@@ -15,14 +15,16 @@ import (
 )
 
 const (
-	playerID  = "bedroom-player"
-	trackURI  = "library://track/1"
-	testAuth  = "fixture-token"
-	playerGet = "players/get"
-	volumeSet = "players/cmd/volume_set"
-	queuePlay = "player_queues/play_media"
-	queueGet  = "player_queues/get"
-	idle30    = `{"player_id":"bedroom-player","type":"player","available":true,"group_members":[],"active_group":null,` +
+	playerID   = "bedroom-player"
+	trackURI   = "library://track/1"
+	playArgs   = `{"player_id":"bedroom-player","media_uri":"library://track/1","queue_mode":"replace","volume_percent":30}`
+	testAuth   = "fixture-token"
+	playerGet  = "players/get"
+	mediaCheck = "music/verify_item_uri"
+	volumeSet  = "players/cmd/volume_set"
+	queuePlay  = "player_queues/play_media"
+	queueGet   = "player_queues/get"
+	idle30     = `{"player_id":"bedroom-player","type":"player","available":true,"group_members":[],"active_group":null,` +
 		`"volume_level":30,"volume_muted":false,"playback_state":"idle","active_source":null}`
 	syncFollower = `"active_group":null,"synced_to":"leader"`
 	playing30    = `{"player_id":"bedroom-player","type":"player","available":true,"group_members":[],"active_group":null,` +
@@ -43,7 +45,13 @@ type exchange struct {
 	fail    bool
 }
 
-func readPlayer(body string) exchange { return exchange{command: playerGet, body: body} }
+func readPlayer(body string) exchange {
+	return exchange{command: playerGet, body: body, args: `{"player_id":"bedroom-player"}`}
+}
+
+func verifiedTrack() exchange {
+	return exchange{command: mediaCheck, args: `{"uri":"library://track/1"}`, body: "true"}
+}
 
 func startTrack() exchange {
 	return exchange{
@@ -99,10 +107,7 @@ func newTestClient(t *testing.T, exchanges ...exchange) *musicassistant.Client {
 			t.Errorf("saw %d upstream calls, want %d", seen, len(exchanges))
 		}
 	})
-	client, err := musicassistant.New(
-		"http://music.local:8095/", testAuth,
-		musicassistant.Preset{PlayerID: playerID, TrackURI: trackURI, VolumePercent: 30}, transport,
-	)
+	client, err := musicassistant.New("http://music.local:8095/", testAuth, transport)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,30 +116,26 @@ func newTestClient(t *testing.T, exchanges ...exchange) *musicassistant.Client {
 
 func invoke(t *testing.T, c *musicassistant.Client, args string) adapter.FunctionResult {
 	t.Helper()
-	fn := c.Functions()[0]
-	if fn.Descriptor.Key != "play_preset" {
-		t.Fatalf("unexpected function %s", fn.Descriptor.Key)
-	}
+	fn := discoveryFunction(t, c, "play_media")
 	return fn.Handler(t.Context(), adapter.FunctionRequest{InvocationID: "example", Arguments: json.RawMessage(args)})
 }
 
-func TestPresetConfirmsVolumeAndPlayback(t *testing.T) {
+func TestPlayMediaConfirmsVolumeAndPlayback(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		c := newTestClient(t,
+			verifiedTrack(),
 			readPlayer(strings.Replace(idle30, `"volume_level":30`, `"volume_level":12`, 1)),
 			setVolume(), readPlayer(idle30), startTrack(),
 			readQueue(strings.Replace(correctQueue, trackURI, "library://track/2", 1)), readPlayer(playing30),
 			readQueue(correctQueue), readPlayer(playing30),
 		)
-		result, ok := invoke(t, c, "{}").(adapter.FunctionSucceeded)
-		if !ok || string(result.Result) != `{"status":"playing","volume_percent":30}` {
-			t.Fatalf("unexpected result: %+v", result)
-		}
+		requireDiscovery(t, discoveryFunction(t, c, "play_media"), strings.Replace(playArgs, `30`, `30.0`, 1),
+			`{"status":"playing","player_id":"bedroom-player","media_uri":"library://track/1","volume_percent":30}`)
 	})
 }
 
-func TestPresetRefusesBeforeMutation(t *testing.T) {
+func TestPlayMediaRefusesBeforeMutation(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, body, reason string
@@ -153,7 +154,7 @@ func TestPresetRefusesBeforeMutation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := invoke(t, newTestClient(t, readPlayer(tc.body)), "{}")
+			got := invoke(t, newTestClient(t, verifiedTrack(), readPlayer(tc.body)), playArgs)
 			if got != (adapter.FunctionNotExecuted{ReasonCode: tc.reason}) {
 				t.Fatalf("unexpected outcome: %+v", got)
 			}
@@ -161,13 +162,13 @@ func TestPresetRefusesBeforeMutation(t *testing.T) {
 	}
 }
 
-func TestPresetDoesNotRetryMutations(t *testing.T) {
+func TestPlayMediaDoesNotRetryMutations(t *testing.T) {
 	t.Parallel()
 	t.Run("transport loss", func(t *testing.T) {
 		t.Parallel()
 		call := startTrack()
 		call.fail = true
-		got := invoke(t, newTestClient(t, readPlayer(idle30), call), "{}")
+		got := invoke(t, newTestClient(t, verifiedTrack(), readPlayer(idle30), call), playArgs)
 		if got != (adapter.FunctionUnknown{ReasonCode: "mutation_unconfirmed"}) {
 			t.Fatalf("unexpected outcome: %+v", got)
 		}
@@ -176,7 +177,7 @@ func TestPresetDoesNotRetryMutations(t *testing.T) {
 		t.Parallel()
 		call := startTrack()
 		call.status = http.StatusForbidden
-		got := invoke(t, newTestClient(t, readPlayer(idle30), call), "{}")
+		got := invoke(t, newTestClient(t, verifiedTrack(), readPlayer(idle30), call), playArgs)
 		if got != (adapter.FunctionFailed{ReasonCode: "playback_rejected"}) {
 			t.Fatalf("unexpected outcome: %+v", got)
 		}
@@ -184,38 +185,99 @@ func TestPresetDoesNotRetryMutations(t *testing.T) {
 	t.Run("joined native sync group after setting volume", func(t *testing.T) {
 		t.Parallel()
 		c := newTestClient(t,
+			verifiedTrack(),
 			readPlayer(strings.Replace(idle30, `"volume_level":30`, `"volume_level":12`, 1)),
 			setVolume(), readPlayer(strings.Replace(idle30, `"active_group":null`, syncFollower, 1)),
 		)
-		if got := invoke(t, c, "{}"); got != (adapter.FunctionUnknown{ReasonCode: "player_grouped_or_unsupported"}) {
+		if got := invoke(
+			t,
+			c,
+			playArgs,
+		); got != (adapter.FunctionUnknown{ReasonCode: "player_grouped_or_unsupported"}) {
 			t.Fatalf("unexpected outcome: %+v", got)
 		}
 	})
 }
 
-func TestPresetCannotConfirmPlaybackOnNativeSyncFollower(t *testing.T) {
+func TestPlayMediaCannotConfirmPlaybackOnNativeSyncFollower(t *testing.T) {
 	t.Parallel()
-	c := newTestClient(t, readPlayer(idle30), startTrack(), readQueue(correctQueue),
+	c := newTestClient(t, verifiedTrack(), readPlayer(idle30), startTrack(), readQueue(correctQueue),
 		readPlayer(strings.Replace(playing30, `"active_group":null`, syncFollower, 1)))
-	if got := invoke(t, c, "{}"); got != (adapter.FunctionUnknown{ReasonCode: "player_grouped_or_unsupported"}) {
+	if got := invoke(t, c, playArgs); got != (adapter.FunctionUnknown{ReasonCode: "player_grouped_or_unsupported"}) {
 		t.Fatalf("unexpected outcome: %+v", got)
 	}
 }
 
-func TestPresetRejectsOverrides(t *testing.T) {
+func TestPlayMediaRejectsInvalidArguments(t *testing.T) {
 	t.Parallel()
 	c := newTestClient(t)
-	if got := invoke(t, c, `{"player_id":"other"}`); got != (adapter.FunctionNotExecuted{ReasonCode: "invalid_input"}) {
+	for _, input := range []string{
+		`{}`, `{"player_id":"bedroom-player","media_uri":"library://track/1"}`,
+		strings.Replace(playArgs, trackURI, "https://example.com/audio", 1),
+		strings.Replace(playArgs, trackURI, "library://album/1", 1),
+		strings.Replace(playArgs, `"replace"`, `"add"`, 1),
+		strings.Replace(playArgs, `30`, `null`, 1),
+		strings.Replace(playArgs, `30`, `101`, 1),
+		strings.Replace(playArgs, `30`, `30.5`, 1),
+		strings.Replace(playArgs, `30`, `30,"user":"admin"`, 1),
+		strings.Replace(playArgs, `30`, `30,"volume_percent":50`, 1),
+	} {
+		if got := invoke(t, c, input); got != (adapter.FunctionNotExecuted{ReasonCode: "invalid_input"}) {
+			t.Errorf("%s: unexpected outcome %+v", input, got)
+		}
+	}
+}
+
+func TestPlayMediaRefusesUnverifiedTrack(t *testing.T) {
+	t.Parallel()
+	c := newTestClient(t, exchange{command: mediaCheck, args: `{"uri":"library://track/1"}`, body: "false"})
+	if got := invoke(t, c, playArgs); got != (adapter.FunctionNotExecuted{ReasonCode: "media_unavailable"}) {
 		t.Fatalf("unexpected outcome: %+v", got)
 	}
 }
 
-func TestPresetDoesNotTreatAcknowledgmentAsPlayback(t *testing.T) {
+func TestPlayMediaUsesRequestedTargetWithoutChangingVolume(t *testing.T) {
+	t.Parallel()
+	const (
+		otherPlayer = "office-player"
+		otherTrack  = "library://track/234"
+	)
+	player := func(body string) exchange {
+		got := readPlayer(strings.ReplaceAll(body, playerID, otherPlayer))
+		got.args = `{"player_id":"office-player"}`
+		return got
+	}
+	c := newTestClient(
+		t,
+		exchange{command: mediaCheck, args: `{"uri":"library://track/234"}`, body: "true"},
+		player(strings.Replace(idle30, `"volume_level":30`, `"volume_level":null`, 1)),
+		exchange{
+			command: queuePlay,
+			args:    `{"queue_id":"office-player","media":"library://track/234","option":"play"}`,
+			body:    "null",
+		},
+		exchange{command: queueGet, args: `{"queue_id":"office-player"}`,
+			body: strings.ReplaceAll(strings.ReplaceAll(correctQueue, trackURI, otherTrack), playerID, otherPlayer)},
+		player(strings.Replace(playing30, `"volume_level":30`, `"volume_level":null`, 1)),
+	)
+	requireDiscovery(t, discoveryFunction(t, c, "play_media"),
+		`{"player_id":"office-player","media_uri":"library://track/234","queue_mode":"play"}`,
+		`{"status":"playing","player_id":"office-player","media_uri":"library://track/234"}`)
+}
+
+func TestPlayMediaDoesNotTreatAcknowledgmentAsPlayback(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		c := newTestClient(t, readPlayer(idle30), startTrack(), readQueue(correctQueue), readPlayer(idle30))
+		c := newTestClient(
+			t,
+			verifiedTrack(),
+			readPlayer(idle30),
+			startTrack(),
+			readQueue(correctQueue),
+			readPlayer(idle30),
+		)
 		got := c.Functions()[0].Handler(t.Context(), adapter.FunctionRequest{
-			Arguments: json.RawMessage("{}"),
+			Arguments: json.RawMessage(playArgs),
 			Deadline:  time.Now().Add(100 * time.Millisecond),
 		})
 		if got != (adapter.FunctionUnknown{ReasonCode: "playback_unconfirmed"}) {

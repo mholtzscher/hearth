@@ -25,7 +25,7 @@ const (
 	maxIDRunes      = 128
 )
 
-// Functions advertises account-scoped discovery and one configured playback preset.
+// Functions advertises account-scoped discovery and playback.
 func (c *Client) Functions() []adapter.Function {
 	return []adapter.Function{
 		c.playbackFunction(),

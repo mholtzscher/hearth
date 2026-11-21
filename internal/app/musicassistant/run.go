@@ -17,13 +17,12 @@ import (
 
 const maxTokenFile = 4096
 
-// Config holds the runtime address, mounted secret, and single playback preset.
+// Config holds the runtime addresses and mounted secret.
 type Config struct {
-	AdapterID string    `yaml:"adapter_id"`
-	NATSURL   string    `yaml:"nats_url"`
-	ServerURL string    `yaml:"server_url"`
-	TokenFile string    `yaml:"token_file"`
-	Preset    ma.Preset `yaml:"preset"`
+	AdapterID string `yaml:"adapter_id"`
+	NATSURL   string `yaml:"nats_url"`
+	ServerURL string `yaml:"server_url"`
+	TokenFile string `yaml:"token_file"`
 }
 
 // Run serves the playback Function for one adapter Session.
@@ -38,7 +37,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	client, err := ma.New(config.ServerURL, token, config.Preset, nil)
+	client, err := ma.New(config.ServerURL, token, nil)
 	if err != nil {
 		return err
 	}

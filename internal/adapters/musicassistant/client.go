@@ -19,18 +19,10 @@ const (
 	maxToken       = 4096
 )
 
-// Preset binds one player, one local-library track, and one volume.
-type Preset struct {
-	PlayerID      string `yaml:"player_id"`
-	TrackURI      string `yaml:"track_uri"`
-	VolumePercent int    `yaml:"volume_percent"`
-}
-
 // Client owns one fixed route and its authenticated Music Assistant transport.
 type Client struct {
 	endpoint string
 	token    string
-	preset   Preset
 	http     *http.Client
 }
 
@@ -45,22 +37,13 @@ func (p playerGrouping) grouped() bool {
 }
 
 // New validates config before constructing the playback client.
-func New(serverURL, token string, preset Preset, transport http.RoundTripper) (*Client, error) {
+func New(serverURL, token string, transport http.RoundTripper) (*Client, error) {
 	u, err := url.Parse(serverURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
 		u.User != nil || u.ForceQuery || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return nil, errors.New(
 			"server_url must be an HTTP or HTTPS origin without credentials, path, query, or fragment",
 		)
-	}
-	if !regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`).MatchString(preset.PlayerID) {
-		return nil, errors.New("preset player_id must be a Music Assistant player ID")
-	}
-	if !regexp.MustCompile(`^library://track/[0-9]{1,20}$`).MatchString(preset.TrackURI) {
-		return nil, errors.New("preset track_uri must be a Music Assistant library track URI")
-	}
-	if preset.VolumePercent < 1 || preset.VolumePercent > 100 {
-		return nil, errors.New("preset volume_percent must be between 1 and 100")
 	}
 	if len(token) > maxToken || !regexp.MustCompile(`^[A-Za-z0-9._~-]+$`).MatchString(token) {
 		return nil, errors.New("token file must contain one Music Assistant bearer token")
@@ -73,7 +56,7 @@ func New(serverURL, token string, preset Preset, transport http.RoundTripper) (*
 	}
 	u.Path = "/api"
 	return &Client{
-		endpoint: u.String(), token: token, preset: preset,
+		endpoint: u.String(), token: token,
 		http: &http.Client{
 			Transport: transport, Timeout: requestTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
