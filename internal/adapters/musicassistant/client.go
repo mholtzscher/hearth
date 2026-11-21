@@ -34,6 +34,16 @@ type Client struct {
 	http     *http.Client
 }
 
+type playerGrouping struct {
+	GroupMembers []string `json:"group_members"`
+	ActiveGroup  string   `json:"active_group"`
+	SyncedTo     string   `json:"synced_to"`
+}
+
+func (p playerGrouping) grouped() bool {
+	return p.ActiveGroup != "" || p.SyncedTo != "" || len(p.GroupMembers) != 0
+}
+
 // New validates config before constructing the playback client.
 func New(serverURL, token string, preset Preset, transport http.RoundTripper) (*Client, error) {
 	u, err := url.Parse(serverURL)

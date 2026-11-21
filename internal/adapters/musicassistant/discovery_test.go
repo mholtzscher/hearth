@@ -68,12 +68,15 @@ func TestListPlayersReturnsOnlyDiscoveryFields(t *testing.T) {
 		body: `[
 			{"player_id":"bedroom","name":"Bedroom","type":"player","available":true,"group_members":[],"active_group":null},
 			{"player_id":"office","name":"Office","type":"player","available":false,"active_group":"hidden-id"},
+			{"player_id":"kitchen","name":"Kitchen","type":"player","available":true,"group_members":[],
+			 "active_group":null,"synced_to":"hidden-leader"},
 			{"player_id":"downstairs","name":"Downstairs","type":"group","available":true,"group_members":["hidden-member"]}
 		]`,
 	})
 	requireDiscovery(t, discoveryFunction(t, c, listPlayersKey), "{}",
 		`{"players":[{"player_id":"bedroom","name":"Bedroom","available":true,"grouped":false},`+
 			`{"player_id":"office","name":"Office","available":false,"grouped":true},`+
+			`{"player_id":"kitchen","name":"Kitchen","available":true,"grouped":true},`+
 			`{"player_id":"downstairs","name":"Downstairs","available":true,"grouped":true}],"truncated":false}`)
 }
 

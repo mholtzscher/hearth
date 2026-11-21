@@ -24,7 +24,8 @@ const (
 	queueGet  = "player_queues/get"
 	idle30    = `{"player_id":"bedroom-player","type":"player","available":true,"group_members":[],"active_group":null,` +
 		`"volume_level":30,"volume_muted":false,"playback_state":"idle","active_source":null}`
-	playing30 = `{"player_id":"bedroom-player","type":"player","available":true,"group_members":[],"active_group":null,` +
+	syncFollower = `"active_group":null,"synced_to":"leader"`
+	playing30    = `{"player_id":"bedroom-player","type":"player","available":true,"group_members":[],"active_group":null,` +
 		`"volume_level":30,"volume_muted":false,"playback_state":"playing","active_source":"bedroom-player"}`
 	correctQueue = `{"queue_id":"bedroom-player","active":true,"state":"playing",` +
 		`"current_item":{"media_item":{"uri":"library://track/1"}}}`
@@ -140,6 +141,11 @@ func TestPresetRefusesBeforeMutation(t *testing.T) {
 	}{
 		{"leader", strings.Replace(idle30, `"group_members":[]`, `"group_members":["other"]`, 1), "player_grouped_or_unsupported"},
 		{"follower", strings.Replace(idle30, `"active_group":null`, `"active_group":"other"`, 1), "player_grouped_or_unsupported"},
+		{"native sync follower at preset volume", strings.Replace(idle30, `"active_group":null`, syncFollower, 1),
+			"player_grouped_or_unsupported"},
+		{"native sync follower at another volume", strings.Replace(
+			strings.Replace(idle30, `"active_group":null`, syncFollower, 1), `"volume_level":30`, `"volume_level":12`, 1),
+			"player_grouped_or_unsupported"},
 		{"unavailable", strings.Replace(idle30, `"available":true`, `"available":false`, 1), "player_unavailable"},
 		{"muted", strings.Replace(idle30, `"volume_muted":false`, `"volume_muted":true`, 1), "player_muted"},
 		{"incomplete", strings.Replace(idle30, `"group_members":[]`, `"group_members":null`, 1), "player_state_incomplete"},
@@ -175,16 +181,25 @@ func TestPresetDoesNotRetryMutations(t *testing.T) {
 			t.Fatalf("unexpected outcome: %+v", got)
 		}
 	})
-	t.Run("group changed after setting volume", func(t *testing.T) {
+	t.Run("joined native sync group after setting volume", func(t *testing.T) {
 		t.Parallel()
 		c := newTestClient(t,
 			readPlayer(strings.Replace(idle30, `"volume_level":30`, `"volume_level":12`, 1)),
-			setVolume(), readPlayer(strings.Replace(idle30, `"active_group":null`, `"active_group":"joined"`, 1)),
+			setVolume(), readPlayer(strings.Replace(idle30, `"active_group":null`, syncFollower, 1)),
 		)
 		if got := invoke(t, c, "{}"); got != (adapter.FunctionUnknown{ReasonCode: "player_grouped_or_unsupported"}) {
 			t.Fatalf("unexpected outcome: %+v", got)
 		}
 	})
+}
+
+func TestPresetCannotConfirmPlaybackOnNativeSyncFollower(t *testing.T) {
+	t.Parallel()
+	c := newTestClient(t, readPlayer(idle30), startTrack(), readQueue(correctQueue),
+		readPlayer(strings.Replace(playing30, `"active_group":null`, syncFollower, 1)))
+	if got := invoke(t, c, "{}"); got != (adapter.FunctionUnknown{ReasonCode: "player_grouped_or_unsupported"}) {
+		t.Fatalf("unexpected outcome: %+v", got)
+	}
 }
 
 func TestPresetRejectsOverrides(t *testing.T) {

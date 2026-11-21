@@ -19,15 +19,15 @@ const (
 )
 
 type playerState struct {
-	ID           string   `json:"player_id"`
-	Kind         string   `json:"type"`
-	Available    bool     `json:"available"`
-	GroupMembers []string `json:"group_members"`
-	ActiveGroup  string   `json:"active_group"`
-	Volume       *int     `json:"volume_level"`
-	Muted        *bool    `json:"volume_muted"`
-	State        string   `json:"playback_state"`
-	Source       string   `json:"active_source"`
+	playerGrouping
+
+	ID        string `json:"player_id"`
+	Kind      string `json:"type"`
+	Available bool   `json:"available"`
+	Volume    *int   `json:"volume_level"`
+	Muted     *bool  `json:"volume_muted"`
+	State     string `json:"playback_state"`
+	Source    string `json:"active_source"`
 }
 
 type queueState struct {
@@ -123,7 +123,7 @@ func (p playerState) rejection() string {
 	if !p.Available {
 		return "player_unavailable"
 	}
-	if p.Kind != "player" || p.ActiveGroup != "" || len(p.GroupMembers) > 0 {
+	if p.Kind != "player" || p.grouped() {
 		return "player_grouped_or_unsupported"
 	}
 	if p.GroupMembers == nil || p.Volume == nil || p.Muted == nil {

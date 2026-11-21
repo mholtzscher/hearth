@@ -68,12 +68,12 @@ func (c *Client) Functions() []adapter.Function {
 }
 
 type visiblePlayer struct {
-	ID           string   `json:"player_id"`
-	Name         string   `json:"name"`
-	Kind         string   `json:"type"`
-	Available    *bool    `json:"available"`
-	GroupMembers []string `json:"group_members"`
-	ActiveGroup  string   `json:"active_group"`
+	playerGrouping
+
+	ID        string `json:"player_id"`
+	Name      string `json:"name"`
+	Kind      string `json:"type"`
+	Available *bool  `json:"available"`
 }
 
 type playerSummary struct {
@@ -113,7 +113,7 @@ func (c *Client) listPlayers(ctx context.Context, request adapter.FunctionReques
 		}
 		result.Players = append(result.Players, playerSummary{
 			ID: p.ID, Name: p.Name, Available: *p.Available,
-			Grouped: p.Kind == "group" || p.ActiveGroup != "" || len(p.GroupMembers) != 0,
+			Grouped: p.Kind == "group" || p.grouped(),
 		})
 	}
 	return discoveryResult(result)
