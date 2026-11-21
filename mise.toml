@@ -138,7 +138,7 @@ KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags valida
   ./cmd/hearthd ./cmd/hearth-adapter-zigbee2mqtt \
   ./cmd/hearth-adapter-ecowitt ./cmd/hearth-adapter-zwavejs ./cmd/hearth-simulator ./cmd/hearth-adapter-discord \
   ./cmd/hearth-adapter-pirateweather ./cmd/hearth-adapter-levoit ./cmd/hearth-adapter-august ./cmd/hearth-adapter-esphome \
-  ./cmd/hearth-adapter-homekit
+  ./cmd/hearth-adapter-homekit ./cmd/hearth-adapter-music-assistant
 '''
 
 [tasks."web-docker-build"]

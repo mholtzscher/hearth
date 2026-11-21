@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:mediaplayer:v1:set-muted-parameters",
+  "title": "Hearth mediaplayer/v1 set_muted parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["muted"],
+  "properties": {"muted": {"type": "boolean"}}
+}

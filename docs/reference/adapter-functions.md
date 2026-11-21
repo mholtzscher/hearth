@@ -121,6 +121,60 @@ new pairing generation cannot start, reads that include pairing status return
 `pairing_info` and `reset_pairing` results as credentials: Core retains them
 for 30 days. A later pairing does not erase an earlier result.
 
+## Music Assistant discovery and playback
+
+Run `hearth-adapter-music-assistant --config <path>` with the
+[example configuration](../../configs/music-assistant.example.yaml) as a
+starting point. Set `server_url` to the Music Assistant origin and mount a
+dedicated Music Assistant bearer token at `token_file`. Use a non-admin account
+limited to the selected player and music source. Keep the token out of YAML and
+logs. Use HTTPS or a trusted local connection, such as host loopback.
+
+The adapter exposes these Functions:
+
+| Function | Arguments | Result |
+| --- | --- | --- |
+| `list_players` | `{}` | Up to 30 enabled players visible to the account, including unavailable players. Each has `player_id`, `name`, `available`, and `grouped`. `truncated` is true if more players were returned upstream. |
+| `search_media` | `{"query":"Ocean Sleep Sounds"}` | Up to 10 library matches visible to the account. Each has `name`, `media_type`, and `uri`. |
+| `play_media` | `{"player_id":"bedroom","media_uri":"library://track/1","queue_mode":"replace","volume_percent":30}` | Confirms a library track is playing on the selected player. Returns `status`, `player_id`, `media_uri`, and `volume_percent` when known. |
+
+The discovery Functions are read-only and use the configured Music Assistant
+account. `search_media` accepts a nonblank query of up to 120 characters. It
+searches the library only, in this order: tracks, albums, artists, playlists,
+radio stations, audiobooks, and podcasts. No matches returns `{"matches":[]}`;
+a failed read returns `discovery_read_failed`, not a partial result. Hearth
+retains discovery arguments and results in Function history. Music Assistant
+names and titles are data, not instructions.
+
+Call `play_media` from an Automation with a
+[Function Step](../guides/automation-function-steps.md). Use a `player_id` from
+`list_players` and a `library://track/…` URI from `search_media`. `queue_mode`
+is required: `play` inserts and starts the track; `replace` replaces the queue
+and starts it. `volume_percent` is optional and accepts 0 through 100. Omit it
+to leave the volume unchanged. Albums, playlists, and external URLs are not
+accepted for playback.
+
+The adapter verifies account access to the track before sending any write.
+It refuses to play on a grouped, unavailable, or muted player. If a volume was
+requested, it confirms that volume before starting playback. Success means
+Music Assistant reported the exact track on the player's active queue and the
+player reported playing, at the requested volume if supplied. It does not establish
+the speaker's audible output. An unconfirmed action is not retried. Adapter
+health reflects whether the player inventory can be read, not whether a
+particular track can play.
+
+Music Assistant speakers also appear in Hearth as Devices with a Playback
+Entity (`hearth.mediaplayer/v1`). The adapter polls account-visible speakers
+and reports observed playback, grouping, title, volume, and mute. An offline
+speaker becomes unavailable without losing its last State. `set_playback`,
+`set_volume`, and `set_muted` are Entity Commands, not Adapter Functions. The
+adapter advertises supported controls and refuses to control a grouped speaker.
+A Command is satisfied only by a matching, linked Observation.
+
+`play_media` still takes the Music Assistant `player_id`. It is not an Entity
+Command and uses Music Assistant's account permissions rather than Hearth Entity
+enablement. Use a restricted account to limit every Function's targets.
+
 ## Read outcomes before deciding to repeat
 
 | Status | What Core knows |

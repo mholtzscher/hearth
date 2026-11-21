@@ -1,0 +1,36 @@
+{
+  "manifest_version": 1,
+  "type": "hearth.mediaplayer/v1",
+  "state_schema": "state.schema.json",
+  "support_schema": "support.schema.json",
+  "operations": {
+    "set_playback": {
+      "parameters_schema": "set_playback-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "parameter_validation": [
+        {"op": "in", "left": {"root": "parameters", "path": "/state"}, "right": {"root": "operation_support", "path": "/states"}}
+      ],
+      "satisfied_when": [
+        {"op": "eq", "left": {"root": "parameters", "path": "/state"}, "right": {"root": "state", "path": "/playback"}}
+      ]
+    },
+    "set_volume": {
+      "parameters_schema": "set_volume-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "satisfied_when": [
+        {"op": "eq_optional", "left": {"root": "parameters", "path": "/percent"}, "right": {"root": "state", "path": "/volume_percent"}}
+      ]
+    },
+    "set_muted": {
+      "parameters_schema": "set_muted-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "observed",
+      "satisfied_when": [
+        {"op": "eq_optional", "left": {"root": "parameters", "path": "/muted"}, "right": {"root": "state", "path": "/muted"}}
+      ]
+    }
+  },
+  "examples": "examples.json"
+}

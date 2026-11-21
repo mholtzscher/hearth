@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:mediaplayer:v1:state",
+  "title": "Hearth mediaplayer/v1 Entity state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["playback", "grouping"],
+  "properties": {
+    "playback": {"type": "string", "enum": ["idle", "playing", "paused", "unknown"]},
+    "grouping": {"type": "string", "enum": ["standalone", "grouped", "unknown"]},
+    "title": {"type": "string", "minLength": 1, "maxLength": 200},
+    "volume_percent": {"type": "integer", "minimum": 0, "maximum": 100, "hearth": {"unit": "%"}},
+    "muted": {"type": "boolean"}
+  }
+}
