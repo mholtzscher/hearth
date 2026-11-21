@@ -120,7 +120,7 @@ Choose the setup guide for your companion:
 | Levoit | [VeSync air purifiers and optimistic Command evidence](docs/guides/levoit.md) |
 | HomeKit | [Selected Devices in Apple Home and Siri](docs/guides/homekit.md) |
 | Discord | [Notification destinations and one-shot sends](docs/guides/discord.md) |
-| Music Assistant | [Play a preset track from an Automation](docs/reference/adapter-functions.md#music-assistant-playback) |
+| Music Assistant | [Discover players and media, or play a preset track](docs/reference/adapter-functions.md#music-assistant-discovery-and-playback) |
 | August | [Read-only lock monitoring; controls remain blocked](docs/guides/august.md) |
 
 ## Development

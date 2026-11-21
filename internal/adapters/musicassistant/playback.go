@@ -60,9 +60,8 @@ type playRequest struct {
 	Option  string `json:"option"`
 }
 
-// Functions advertises only the configured preset, not arbitrary playback.
-func (c *Client) Functions() []adapter.Function {
-	return []adapter.Function{{
+func (c *Client) playbackFunction() adapter.Function {
+	return adapter.Function{
 		Descriptor: adapter.FunctionDescriptor{
 			Key:         "play_preset",
 			Description: "Play the configured Music Assistant track on one ungrouped player at the preset volume.",
@@ -74,13 +73,13 @@ func (c *Client) Functions() []adapter.Function {
 			TimeoutMS: int(functionBudget.Milliseconds()),
 		},
 		Handler: c.playPreset,
-	}}
+	}
 }
 
 func (c *Client) playPreset(ctx context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 	var args map[string]json.RawMessage
 	if json.Unmarshal(request.Arguments, &args) != nil || args == nil || len(args) != 0 {
-		return adapter.FunctionNotExecuted{ReasonCode: "invalid_input"}
+		return adapter.FunctionNotExecuted{ReasonCode: invalidInput}
 	}
 	ctx, cancel := context.WithTimeout(ctx, actionTimeout)
 	defer cancel()
@@ -194,7 +193,7 @@ func (c *Client) playingResult() adapter.FunctionResult {
 		Volume int    `json:"volume_percent"`
 	}{Status: playing, Volume: c.preset.VolumePercent})
 	if err != nil {
-		return adapter.FunctionUnknown{ReasonCode: "invalid_response"}
+		return adapter.FunctionUnknown{ReasonCode: invalidResponse}
 	}
 	return adapter.FunctionSucceeded{Result: result}
 }

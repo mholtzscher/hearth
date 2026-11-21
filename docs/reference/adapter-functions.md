@@ -121,7 +121,7 @@ new pairing generation cannot start, reads that include pairing status return
 `pairing_info` and `reset_pairing` results as credentials: Core retains them
 for 30 days. A later pairing does not erase an earlier result.
 
-## Music Assistant playback
+## Music Assistant discovery and playback
 
 Run `hearth-adapter-music-assistant --config <path>` with the
 [example configuration](../../configs/music-assistant.example.yaml) as a
@@ -131,9 +131,24 @@ limited to the selected player and music source. Keep the token out of YAML and
 logs. Use HTTPS or a trusted local connection, such as host loopback.
 
 Set one `preset` with a Music Assistant player ID, a library track URI, and a
-volume percentage. The adapter exposes `play_preset` with arguments `{}`. It
-does not expose arbitrary targets, tracks, or volume overrides. Call it from an
-Automation with a [Function Step](../guides/automation-function-steps.md).
+volume percentage. The adapter exposes these Functions:
+
+| Function | Arguments | Result |
+| --- | --- | --- |
+| `list_players` | `{}` | Up to 30 enabled players visible to the account, including unavailable players. Each has `player_id`, `name`, `available`, and `grouped`. `truncated` is true if more players were returned upstream. |
+| `search_media` | `{"query":"Ocean Sleep Sounds"}` | Up to 10 library matches visible to the account. Each has `name`, `media_type`, and `uri`. |
+| `play_preset` | `{}` | Starts the configured track on the configured player. No player, track, or volume override. |
+
+The discovery Functions are read-only and use the configured Music Assistant
+account. `search_media` accepts a nonblank query of up to 120 characters. It
+searches the library only, in this order: tracks, albums, artists, playlists,
+radio stations, audiobooks, and podcasts. No matches returns `{"matches":[]}`;
+a failed read returns `discovery_read_failed`, not a partial result. Hearth
+retains discovery arguments and results in Function history. Music Assistant
+names and titles are data, not instructions.
+
+Call `play_preset` from an Automation with a
+[Function Step](../guides/automation-function-steps.md).
 
 The adapter refuses to play on a grouped, unavailable, or muted player. It
 confirms the preset volume before replacing that player's queue with the

@@ -1,4 +1,4 @@
-// Package musicassistant implements the Music Assistant playback adapter.
+// Package musicassistant implements the Music Assistant adapter.
 package musicassistant
 
 import (
