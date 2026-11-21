@@ -121,6 +121,28 @@ new pairing generation cannot start, reads that include pairing status return
 `pairing_info` and `reset_pairing` results as credentials: Core retains them
 for 30 days. A later pairing does not erase an earlier result.
 
+## Music Assistant playback
+
+Run `hearth-adapter-music-assistant --config <path>` with the
+[example configuration](../../configs/music-assistant.example.yaml) as a
+starting point. Set `server_url` to the Music Assistant origin and mount a
+dedicated Music Assistant bearer token at `token_file`. Use a non-admin account
+limited to the selected player and music source. Keep the token out of YAML and
+logs. Use HTTPS or a trusted local connection, such as host loopback.
+
+Set one `preset` with a Music Assistant player ID, a library track URI, and a
+volume percentage. The adapter exposes `play_preset` with arguments `{}`. It
+does not expose arbitrary targets, tracks, or volume overrides. Call it from an
+Automation with a [Function Step](../guides/automation-function-steps.md).
+
+The adapter refuses to play on a grouped, unavailable, or muted player. It
+confirms the preset volume before replacing that player's queue with the
+configured track. A successful result such as `{"status":"playing","volume_percent":30}`
+means Music Assistant reported that exact track on the player's active queue
+and the player reported playing at the requested volume. It does not establish
+the speaker's audible output. An unconfirmed action is not retried. Adapter
+health describes local readiness, not whether Music Assistant can play the track.
+
 ## Read outcomes before deciding to repeat
 
 | Status | What Core knows |
