@@ -11,7 +11,9 @@ import (
 // a backfill, so exempting a whole type would hide missing history.
 func historyChangeFieldsWithoutHistory() []string {
 	return []string{"hearth.lock/v1 ", "hearth.colorrgb/v1 /active", "hearth.textsensor/v1 ", "hearth.cover/v1 /motion",
-		"hearth.thermostat/v1 /mode", "hearth.thermostat/v1 /activity", "hearth.thermostat/v1 /fan_mode"}
+		"hearth.thermostat/v1 /mode", "hearth.thermostat/v1 /activity", "hearth.thermostat/v1 /fan_mode",
+		"hearth.mediaplayer/v1 /grouping", "hearth.mediaplayer/v1 /muted", "hearth.mediaplayer/v1 /playback",
+		"hearth.mediaplayer/v1 /title"}
 }
 
 func TestStateChangeBackfillsCoverYesNoAndTextFields(t *testing.T) {

@@ -162,6 +162,7 @@ describe("State field catalog", () => {
       "hearth.colortemp/v1",
       "hearth.colorxy/v1",
       "hearth.cover/v1",
+      "hearth.mediaplayer/v1",
       "hearth.numericsensor/v1",
       "hearth.numericsetting/v1",
       "hearth.pressure/v1",
@@ -180,7 +181,7 @@ describe("State field catalog", () => {
     const fields = Object.values(stateFields).flatMap((typeFields) =>
       Object.values(typeFields)
     );
-    expect(fields).toHaveLength(38);
+    expect(fields).toHaveLength(43);
     expect(stateFields["hearth.lock/v1"][""]).toMatchObject({
       value_type: "string",
       enum: ["locked", "unlocked", "locking", "unlocking", "jammed", "unknown"],
@@ -195,13 +196,28 @@ describe("State field catalog", () => {
       presence: "always",
       enum: ["idle", "opening", "closing"],
     });
-    expect(fields.filter(isQuantityField)).toHaveLength(22);
+    expect(fields.filter(isQuantityField)).toHaveLength(23);
     for (const field of fields) {
       if (!isQuantityField(field) || typeof field.quantity.unit !== "string") {
         continue;
       }
       expect(field.quantity.unit.length).toBeGreaterThan(0);
     }
+  });
+
+  it("exposes media playback state and optional volume to generic cards", () => {
+    const fields = stateFields["hearth.mediaplayer/v1"];
+    expect(textTypes).toContain("hearth.mediaplayer/v1");
+    expect(fields["/playback"]).toStrictEqual({
+      value_type: "string",
+      presence: "always",
+      enum: ["idle", "playing", "paused", "unknown"],
+    });
+    expect(fields["/volume_percent"]).toStrictEqual({
+      value_type: "integer",
+      presence: "sometimes",
+      quantity: { unit: "%" },
+    });
   });
 
   it("declares thermostat mode and activity fields", () => {

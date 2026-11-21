@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:mediaplayer:v1:set-volume-parameters",
+  "title": "Hearth mediaplayer/v1 set_volume parameters",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["percent"],
+  "properties": {"percent": {"type": "integer", "minimum": 0, "maximum": 100}}
+}

@@ -1,0 +1,76 @@
+{
+  "cases": [
+    {
+      "name": "controllable-speaker",
+      "support": {"state": {}, "operations": {"set_playback": {"states": ["idle", "playing", "paused"]}, "set_volume": {}, "set_muted": {}}},
+      "states": [
+        {"value": {"playback": "playing", "grouping": "standalone", "title": "Ocean Sleep Sounds", "volume_percent": 30, "muted": false}, "valid": true},
+        {"value": {"playback": "playing", "grouping": "standalone", "volume_percent": 101}, "valid": false},
+        {"value": {"playback": "unavailable", "grouping": "standalone"}, "valid": false},
+        {"value": {"playback": "idle"}, "valid": false}
+      ],
+      "operations": {
+        "set_playback": {
+          "parameters": [
+            {"value": {"state": "paused"}, "valid": true},
+            {"value": {"state": "unknown"}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"state": "paused"}, "state": {"playback": "paused", "grouping": "standalone"}, "satisfied": true},
+            {"parameters": {"state": "paused"}, "state": {"playback": "idle", "grouping": "standalone"}, "satisfied": false}
+          ]
+        },
+        "set_volume": {
+          "parameters": [
+            {"value": {"percent": 0}, "valid": true},
+            {"value": {"percent": 100}, "valid": true},
+            {"value": {"percent": -1}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"percent": 0}, "state": {"playback": "idle", "grouping": "standalone", "volume_percent": 0}, "satisfied": true},
+            {"parameters": {"percent": 0}, "state": {"playback": "idle", "grouping": "standalone"}, "satisfied": false}
+          ]
+        },
+        "set_muted": {
+          "parameters": [
+            {"value": {"muted": false}, "valid": true},
+            {"value": {}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"muted": false}, "state": {"playback": "playing", "grouping": "standalone", "muted": false}, "satisfied": true},
+            {"parameters": {"muted": false}, "state": {"playback": "playing", "grouping": "standalone"}, "satisfied": false}
+          ]
+        }
+      }
+    },
+    {
+      "name": "speaker-without-pause",
+      "support": {"state": {}, "operations": {"set_playback": {"states": ["idle", "playing"]}}},
+      "states": [
+        {"value": {"playback": "paused", "grouping": "grouped"}, "valid": true},
+        {"value": {"playback": "paused", "grouping": "alone"}, "valid": false}
+      ],
+      "operations": {
+        "set_playback": {
+          "parameters": [
+            {"value": {"state": "idle"}, "valid": true},
+            {"value": {"state": "paused"}, "valid": false}
+          ],
+          "outcomes": [
+            {"parameters": {"state": "idle"}, "state": {"playback": "idle", "grouping": "standalone"}, "satisfied": true},
+            {"parameters": {"state": "idle"}, "state": {"playback": "playing", "grouping": "standalone"}, "satisfied": false}
+          ]
+        }
+      }
+    },
+    {
+      "name": "read-only",
+      "support": {"state": {}, "operations": {}},
+      "states": [
+        {"value": {"playback": "unknown", "grouping": "unknown"}, "valid": true},
+        {"value": {"playback": "unknown", "grouping": "unknown", "muted": "unknown"}, "valid": false}
+      ],
+      "operations": {}
+    }
+  ]
+}

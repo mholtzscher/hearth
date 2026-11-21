@@ -21,3 +21,5 @@ builds:
     main: ./cmd/hearth-adapter-pirateweather
   - id: hearth-adapter-homekit
     main: ./cmd/hearth-adapter-homekit
+  - id: hearth-adapter-music-assistant
+    main: ./cmd/hearth-adapter-music-assistant

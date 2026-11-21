@@ -1,0 +1,4 @@
+adapter_id: music-assistant
+nats_url: nats://127.0.0.1:4222
+server_url: http://127.0.0.1:8095
+token_file: /run/secrets/music_assistant_token
