@@ -13,6 +13,8 @@ type Devices interface {
 	PatchEntity(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
 	PatchDevice(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
+	FetchArtwork(context.Context, devices.EntityID) (devices.Artwork, error)
+	ArtworkETag(context.Context, devices.EntityID) (string, error)
 	ExecuteCommand(
 		context.Context,
 		devices.CommandInput,

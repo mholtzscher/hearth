@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -22,6 +23,8 @@ type Dependencies struct {
 	NewEntityID          func() (EntityID, error)
 	NewCommandID         func() (CommandID, error)
 	NewCorrelationID     func() (CorrelationID, error)
+	// ArtworkTransport fetches media player artwork; nil uses http.DefaultTransport.
+	ArtworkTransport http.RoundTripper
 }
 
 // Stores groups persistence capabilities consumed by Service.
@@ -51,6 +54,7 @@ type Service struct {
 	deviceFacts      DeviceFactNotifier
 	waiters          commandWaiters
 	commandAdmission *lifecycle.AdmissionGroup
+	artwork          *http.Client
 }
 
 type commandWaiters struct {
@@ -79,6 +83,7 @@ func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, depen
 		dependencies.NewCorrelationID = NewCorrelationID
 	}
 	return &Service{
+		artwork:          newArtworkClient(dependencies.ArtworkTransport),
 		logger:           logger,
 		stores:           stores,
 		sender:           sender,

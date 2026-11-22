@@ -64,6 +64,14 @@ func (stub *stubDevices) PatchEntity(
 	return stub.SetEntityEnabled(ctx, id, *patch.Enabled)
 }
 
+func (*stubDevices) FetchArtwork(context.Context, devices.EntityID) (devices.Artwork, error) {
+	panic("unexpected FetchArtwork call")
+}
+
+func (*stubDevices) ArtworkETag(context.Context, devices.EntityID) (string, error) {
+	panic("unexpected ArtworkETag call")
+}
+
 func (*stubDevices) PatchDevice(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error) {
 	panic("unexpected PatchDevice call")
 }
@@ -271,7 +279,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 34 {
+	if len(document.Paths) != 35 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/household"].Get, "get-household", "200", "500")

@@ -28,6 +28,8 @@ type stubDevices struct {
 	patchEntity                   func(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
 	patchDevice                   func(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	getEntity                     func(context.Context, devices.EntityID) (devices.EntityWithState, error)
+	fetchArtwork                  func(context.Context, devices.EntityID) (devices.Artwork, error)
+	artworkETag                   func(context.Context, devices.EntityID) (string, error)
 	setEntityEnabled              func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	listDevices                   func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
 	getDevice                     func(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
@@ -78,6 +80,20 @@ func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityI
 		panic("unexpected GetEntity call")
 	}
 	return stub.getEntity(ctx, entityID)
+}
+
+func (stub *stubDevices) FetchArtwork(ctx context.Context, entityID devices.EntityID) (devices.Artwork, error) {
+	if stub.fetchArtwork == nil {
+		panic("unexpected FetchArtwork call")
+	}
+	return stub.fetchArtwork(ctx, entityID)
+}
+
+func (stub *stubDevices) ArtworkETag(ctx context.Context, entityID devices.EntityID) (string, error) {
+	if stub.artworkETag == nil {
+		panic("unexpected ArtworkETag call")
+	}
+	return stub.artworkETag(ctx, entityID)
 }
 
 func (stub *stubDevices) PatchEntity(

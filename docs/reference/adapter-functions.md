@@ -182,6 +182,30 @@ seconds from that extrapolation, so steady playback does not change State.
 credentials. Music Assistant serves imageproxy images without its bearer token.
 Other artwork, such as a radio station's upstream image, is omitted.
 
+Browsers load artwork from Core, not from Music Assistant:
+`GET /v1/entities/{entity_id}/artwork` fetches the `artwork_url` in that
+Entity's current State and never takes a URL from the caller. Core sends no
+credentials, follows no redirects, waits at most 3 seconds, and serves the
+image only when its bytes are a JPEG, PNG, or WebP image of at most 512 KiB.
+The response's `ETag` identifies the `artwork_url`, not the image bytes, so a
+matching `If-None-Match` returns `304` without another upstream request. This
+assumes an artwork URL names unchanging content, as Music Assistant's
+imageproxy IDs do.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | The image, with `Cache-Control: private, max-age=3600`, `X-Content-Type-Options: nosniff`, and `Content-Security-Policy: default-src 'none'` |
+| `304` | The State still names the same artwork URL |
+| `400` | The Entity ID is malformed |
+| `404` | The Entity is unknown, isn't a media player, or its State names no artwork |
+| `422` | A request parameter fails validation |
+| `502` | The upstream failed, redirected, or sent too many bytes or something other than an allowed image |
+| `504` | The upstream took longer than 3 seconds |
+
+Because Core fetches the URL itself, Core must reach `server_url` too. When
+Music Assistant uses host networking beside containerized Core and adapter,
+set `server_url` to the host's address rather than `127.0.0.1`.
+
 `set_playback`, `set_volume`, `set_muted`, `next_track`, `previous_track`,
 and `seek` are Entity Commands, not Adapter Functions. The adapter refuses to
 control a grouped speaker. `set_playback`, `set_volume`, and `set_muted` are
