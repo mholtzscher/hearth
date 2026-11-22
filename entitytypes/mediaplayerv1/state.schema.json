@@ -10,6 +10,29 @@
     "grouping": {"type": "string", "enum": ["standalone", "grouped", "unknown"]},
     "title": {"type": "string", "minLength": 1, "maxLength": 200},
     "volume_percent": {"type": "integer", "minimum": 0, "maximum": 100, "hearth": {"unit": "%"}},
-    "muted": {"type": "boolean"}
+    "muted": {"type": "boolean"},
+    "artist": {"type": "string", "minLength": 1, "maxLength": 200},
+    "album": {"type": "string", "minLength": 1, "maxLength": 200},
+    "duration_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400,
+      "hearth": {"unit": "s", "quantity_kind": "duration"}
+    },
+    "position_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400,
+      "hearth": {"unit": "s", "quantity_kind": "duration"}
+    },
+    "position_anchored_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "artwork_url": {"type": "string", "maxLength": 2048, "pattern": "^https?://[^/@\\s]+/\\S*$"}
+  },
+  "dependentRequired": {
+    "position_seconds": ["position_anchored_at"],
+    "position_anchored_at": ["position_seconds"]
   }
 }

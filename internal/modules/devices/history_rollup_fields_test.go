@@ -11,14 +11,17 @@ import (
 
 // historyRollupFieldsWithoutHistory lists the exact "type field" keys present
 // when a new Entity type is introduced. Later fields of that type still need
-// a backfill, so exempting a whole type would hide missing history.
+// a backfill, so exempting a whole type would hide missing history. The
+// mediaplayer media fields joined the type before its first release, and its
+// closed State schema means no stored Observation can hold them.
 func historyRollupFieldsWithoutHistory() []string {
 	return []string{"hearth.colorrgb/v1 /red", "hearth.colorrgb/v1 /green", "hearth.colorrgb/v1 /blue",
 		"hearth.cover/v1 /position",
 		"hearth.thermostat/v1 /current_temperature", "hearth.thermostat/v1 /target_temperature",
 		"hearth.thermostat/v1 /target_temperature_low", "hearth.thermostat/v1 /target_temperature_high",
 		"hearth.thermostat/v1 /current_humidity", "hearth.thermostat/v1 /target_humidity",
-		"hearth.mediaplayer/v1 /volume_percent"}
+		"hearth.mediaplayer/v1 /volume_percent", "hearth.mediaplayer/v1 /duration_seconds",
+		"hearth.mediaplayer/v1 /position_seconds"}
 }
 
 var historyRollupFieldRow = regexp.MustCompile(`\('([^']+)', '([^']*)'\)`)

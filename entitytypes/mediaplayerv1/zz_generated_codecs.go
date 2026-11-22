@@ -12,34 +12,43 @@ import (
 )
 
 const (
-	StateSchemaID                 = "urn:hearth:schema:entity-type:mediaplayer:v1:state"
-	SupportSchemaID               = "urn:hearth:schema:entity-type:mediaplayer:v1:support"
-	SetMutedParametersSchemaID    = "urn:hearth:schema:entity-type:mediaplayer:v1:set-muted-parameters"
-	SetPlaybackParametersSchemaID = "urn:hearth:schema:entity-type:mediaplayer:v1:set-playback-parameters"
-	SetVolumeParametersSchemaID   = "urn:hearth:schema:entity-type:mediaplayer:v1:set-volume-parameters"
+	StateSchemaID                   = "urn:hearth:schema:entity-type:mediaplayer:v1:state"
+	SupportSchemaID                 = "urn:hearth:schema:entity-type:mediaplayer:v1:support"
+	NextTrackParametersSchemaID     = "urn:hearth:schema:entity-type:mediaplayer:v1:next-track-parameters"
+	PreviousTrackParametersSchemaID = "urn:hearth:schema:entity-type:mediaplayer:v1:previous-track-parameters"
+	SeekParametersSchemaID          = "urn:hearth:schema:entity-type:mediaplayer:v1:seek-parameters"
+	SetMutedParametersSchemaID      = "urn:hearth:schema:entity-type:mediaplayer:v1:set-muted-parameters"
+	SetPlaybackParametersSchemaID   = "urn:hearth:schema:entity-type:mediaplayer:v1:set-playback-parameters"
+	SetVolumeParametersSchemaID     = "urn:hearth:schema:entity-type:mediaplayer:v1:set-volume-parameters"
 )
 
 // FS contains the authoritative Entity-type JSON Schemas.
 //
-//go:embed "set_muted-parameters.schema.json" "set_playback-parameters.schema.json" "set_volume-parameters.schema.json" "state.schema.json" "support.schema.json"
+//go:embed "next_track-parameters.schema.json" "previous_track-parameters.schema.json" "seek-parameters.schema.json" "set_muted-parameters.schema.json" "set_playback-parameters.schema.json" "set_volume-parameters.schema.json" "state.schema.json" "support.schema.json"
 var FS embed.FS
 
 func SchemaFiles() map[string]string {
 	return map[string]string{
-		StateSchemaID:                 "state.schema.json",
-		SupportSchemaID:               "support.schema.json",
-		SetMutedParametersSchemaID:    "set_muted-parameters.schema.json",
-		SetPlaybackParametersSchemaID: "set_playback-parameters.schema.json",
-		SetVolumeParametersSchemaID:   "set_volume-parameters.schema.json",
+		StateSchemaID:                   "state.schema.json",
+		SupportSchemaID:                 "support.schema.json",
+		NextTrackParametersSchemaID:     "next_track-parameters.schema.json",
+		PreviousTrackParametersSchemaID: "previous_track-parameters.schema.json",
+		SeekParametersSchemaID:          "seek-parameters.schema.json",
+		SetMutedParametersSchemaID:      "set_muted-parameters.schema.json",
+		SetPlaybackParametersSchemaID:   "set_playback-parameters.schema.json",
+		SetVolumeParametersSchemaID:     "set_volume-parameters.schema.json",
 	}
 }
 
 type Codecs struct {
-	State                 *entitytypes.JSONCodec[State]
-	Support               *entitytypes.JSONCodec[Support]
-	SetMutedParameters    *entitytypes.JSONCodec[SetMutedParameters]
-	SetPlaybackParameters *entitytypes.JSONCodec[SetPlaybackParameters]
-	SetVolumeParameters   *entitytypes.JSONCodec[SetVolumeParameters]
+	State                   *entitytypes.JSONCodec[State]
+	Support                 *entitytypes.JSONCodec[Support]
+	NextTrackParameters     *entitytypes.JSONCodec[NextTrackParameters]
+	PreviousTrackParameters *entitytypes.JSONCodec[PreviousTrackParameters]
+	SeekParameters          *entitytypes.JSONCodec[SeekParameters]
+	SetMutedParameters      *entitytypes.JSONCodec[SetMutedParameters]
+	SetPlaybackParameters   *entitytypes.JSONCodec[SetPlaybackParameters]
+	SetVolumeParameters     *entitytypes.JSONCodec[SetVolumeParameters]
 }
 
 //nolint:gochecknoglobals // Only this package's immutable embedded schemas are compiled once.
@@ -50,7 +59,7 @@ func Compile() (*Codecs, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Codecs{State: cloneCodec(shared.State), Support: cloneCodec(shared.Support), SetMutedParameters: cloneCodec(shared.SetMutedParameters), SetPlaybackParameters: cloneCodec(shared.SetPlaybackParameters), SetVolumeParameters: cloneCodec(shared.SetVolumeParameters)}, nil
+	return &Codecs{State: cloneCodec(shared.State), Support: cloneCodec(shared.Support), NextTrackParameters: cloneCodec(shared.NextTrackParameters), PreviousTrackParameters: cloneCodec(shared.PreviousTrackParameters), SeekParameters: cloneCodec(shared.SeekParameters), SetMutedParameters: cloneCodec(shared.SetMutedParameters), SetPlaybackParameters: cloneCodec(shared.SetPlaybackParameters), SetVolumeParameters: cloneCodec(shared.SetVolumeParameters)}, nil
 }
 
 func cloneCodec[T any](codec *entitytypes.JSONCodec[T]) *entitytypes.JSONCodec[T] {
@@ -67,6 +76,18 @@ func compileCodecs() (*Codecs, error) {
 	if err != nil {
 		return nil, err
 	}
+	nextTrackParameters, err := compileCodec[NextTrackParameters](NextTrackParametersSchemaID, SchemaFiles()[NextTrackParametersSchemaID])
+	if err != nil {
+		return nil, err
+	}
+	previousTrackParameters, err := compileCodec[PreviousTrackParameters](PreviousTrackParametersSchemaID, SchemaFiles()[PreviousTrackParametersSchemaID])
+	if err != nil {
+		return nil, err
+	}
+	seekParameters, err := compileCodec[SeekParameters](SeekParametersSchemaID, SchemaFiles()[SeekParametersSchemaID])
+	if err != nil {
+		return nil, err
+	}
 	setMutedParameters, err := compileCodec[SetMutedParameters](SetMutedParametersSchemaID, SchemaFiles()[SetMutedParametersSchemaID])
 	if err != nil {
 		return nil, err
@@ -79,7 +100,7 @@ func compileCodecs() (*Codecs, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Codecs{State: state, Support: support, SetMutedParameters: setMutedParameters, SetPlaybackParameters: setPlaybackParameters, SetVolumeParameters: setVolumeParameters}, nil
+	return &Codecs{State: state, Support: support, NextTrackParameters: nextTrackParameters, PreviousTrackParameters: previousTrackParameters, SeekParameters: seekParameters, SetMutedParameters: setMutedParameters, SetPlaybackParameters: setPlaybackParameters, SetVolumeParameters: setVolumeParameters}, nil
 }
 
 func compileCodec[T any](schemaID, path string) (*entitytypes.JSONCodec[T], error) {

@@ -6,20 +6,38 @@ package mediaplayerv1
 const TypeID = "hearth.mediaplayer/v1"
 
 const (
-	OperationSetMuted    = "set_muted"
-	OperationSetPlayback = "set_playback"
-	OperationSetVolume   = "set_volume"
+	OperationNextTrack     = "next_track"
+	OperationPreviousTrack = "previous_track"
+	OperationSeek          = "seek"
+	OperationSetMuted      = "set_muted"
+	OperationSetPlayback   = "set_playback"
+	OperationSetVolume     = "set_volume"
 )
 
 type State struct {
-	Grouping      string  `json:"grouping"`
-	Muted         *bool   `json:"muted,omitempty"`
-	Playback      string  `json:"playback"`
-	Title         *string `json:"title,omitempty"`
-	VolumePercent *int64  `json:"volume_percent,omitempty"`
+	Album              *string `json:"album,omitempty"`
+	Artist             *string `json:"artist,omitempty"`
+	ArtworkUrl         *string `json:"artwork_url,omitempty"`
+	DurationSeconds    *int64  `json:"duration_seconds,omitempty"`
+	Grouping           string  `json:"grouping"`
+	Muted              *bool   `json:"muted,omitempty"`
+	Playback           string  `json:"playback"`
+	PositionAnchoredAt *string `json:"position_anchored_at,omitempty"`
+	PositionSeconds    *int64  `json:"position_seconds,omitempty"`
+	Title              *string `json:"title,omitempty"`
+	VolumePercent      *int64  `json:"volume_percent,omitempty"`
 }
 
 type StateSupport struct {
+}
+
+type NextTrackSupport struct {
+}
+
+type PreviousTrackSupport struct {
+}
+
+type SeekSupport struct {
 }
 
 type SetMutedSupport struct {
@@ -35,14 +53,27 @@ type SetVolumeSupport struct {
 }
 
 type OperationSupport struct {
-	SetMuted    *SetMutedSupport    `json:"set_muted,omitempty"`
-	SetPlayback *SetPlaybackSupport `json:"set_playback,omitempty"`
-	SetVolume   *SetVolumeSupport   `json:"set_volume,omitempty"`
+	NextTrack     *NextTrackSupport     `json:"next_track,omitempty"`
+	PreviousTrack *PreviousTrackSupport `json:"previous_track,omitempty"`
+	Seek          *SeekSupport          `json:"seek,omitempty"`
+	SetMuted      *SetMutedSupport      `json:"set_muted,omitempty"`
+	SetPlayback   *SetPlaybackSupport   `json:"set_playback,omitempty"`
+	SetVolume     *SetVolumeSupport     `json:"set_volume,omitempty"`
 }
 
 type Support struct {
 	State      StateSupport     `json:"state"`
 	Operations OperationSupport `json:"operations"`
+}
+
+type NextTrackParameters struct {
+}
+
+type PreviousTrackParameters struct {
+}
+
+type SeekParameters struct {
+	PositionSeconds int64 `json:"position_seconds"`
 }
 
 type SetMutedParameters struct {

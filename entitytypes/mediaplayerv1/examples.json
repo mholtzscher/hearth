@@ -44,6 +44,51 @@
       }
     },
     {
+      "name": "controllable-speaker-with-media",
+      "support": {"state": {}, "operations": {"next_track": {}, "previous_track": {}, "seek": {}}},
+      "states": [
+        {"value": {"playback": "playing", "grouping": "standalone", "title": "Nocturne in F-Sharp Minor", "artist": "Nils Frahm", "album": "All Melody", "duration_seconds": 284, "position_seconds": 118, "position_anchored_at": "2026-11-21T20:15:03Z", "artwork_url": "http://10.69.69.60:8095/imageproxy/0f3c1d2e4b5a69788796a5b4c3d2e1f00f3c1d2e4b5a69788796a5b4c3d2e1f0?size=512&fmt=jpeg", "volume_percent": 42, "muted": false}, "valid": true},
+        {"value": {"playback": "paused", "grouping": "standalone", "title": "Ocean Sleep Sounds", "position_seconds": 0, "position_anchored_at": "2026-11-21T20:15:03Z"}, "valid": true},
+        {"value": {"playback": "playing", "grouping": "standalone", "title": "Late Night Radio", "artist": "Station"}, "valid": true},
+        {"value": {"playback": "playing", "grouping": "standalone", "position_seconds": 118}, "valid": false},
+        {"value": {"playback": "playing", "grouping": "standalone", "position_anchored_at": "2026-11-21T20:15:03Z"}, "valid": false},
+        {"value": {"playback": "playing", "grouping": "standalone", "position_seconds": 1, "position_anchored_at": "2026-11-21 20:15:03"}, "valid": false},
+        {"value": {"playback": "playing", "grouping": "standalone", "duration_seconds": 0}, "valid": false},
+        {"value": {"playback": "playing", "grouping": "standalone", "position_seconds": -1, "position_anchored_at": "2026-11-21T20:15:03Z"}, "valid": false},
+        {"value": {"playback": "playing", "grouping": "standalone", "artist": ""}, "valid": false},
+        {"value": {"playback": "playing", "grouping": "standalone", "artwork_url": "file:///etc/passwd"}, "valid": false},
+        {"value": {"playback": "playing", "grouping": "standalone", "artwork_url": "http://user:secret@10.69.69.60:8095/imageproxy/abc"}, "valid": false},
+        {"value": {"playback": "playing", "grouping": "standalone", "artwork_url": "imageproxy/abc"}, "valid": false}
+      ],
+      "operations": {
+        "next_track": {
+          "parameters": [
+            {"value": {}, "valid": true},
+            {"value": {"count": 1}, "valid": false}
+          ],
+          "outcomes": []
+        },
+        "previous_track": {
+          "parameters": [
+            {"value": {}, "valid": true},
+            {"value": {"count": 1}, "valid": false}
+          ],
+          "outcomes": []
+        },
+        "seek": {
+          "parameters": [
+            {"value": {"position_seconds": 0}, "valid": true},
+            {"value": {"position_seconds": 150}, "valid": true},
+            {"value": {"position_seconds": -1}, "valid": false},
+            {"value": {"position_seconds": 1.5}, "valid": false},
+            {"value": {"position_seconds": 86401}, "valid": false},
+            {"value": {}, "valid": false}
+          ],
+          "outcomes": []
+        }
+      }
+    },
+    {
       "name": "speaker-without-pause",
       "support": {"state": {}, "operations": {"set_playback": {"states": ["idle", "playing"]}}},
       "states": [
