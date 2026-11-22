@@ -34,6 +34,7 @@ var exampleSupport = map[string]string{
 	"hearth.colormode/v1":        `{"state":{},"operations":{"set":{}}}`,
 	"hearth.enumsetting/v1":      `{"state":{"choices":["Auto"]},"operations":{"set":{}}}`,
 	"hearth.thermostat/v1":       `{"state":{"modes":["off","heat"],"fan_modes":[],"temperature_minimum":5000,"temperature_maximum":35000,"humidity_minimum":0,"humidity_maximum":100},"operations":{"set_mode":{},"set_target":{}}}`,
+	"hearth.mediaplayer/v1":      `{"state":{},"operations":{"set_playback":{"states":["idle","playing","paused"]},"set_volume":{},"set_muted":{},"next_track":{},"previous_track":{},"seek":{}}}`,
 }
 
 // exampleSensorUnits gives the weather example's numeric sensors the stored
@@ -220,6 +221,10 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		"thermostat-field":                 schema,
 		"thermostat-unknown-prop":          schema,
 		"thermostat-missing-source":        schema,
+		"media-player-wrong-entity-type":   schema,
+		"media-player-field":               schema,
+		"media-player-unknown-layout":      schema,
+		"media-player-missing-source":      schema,
 	}
 	var examples []struct {
 		Name       string          `json:"name"`

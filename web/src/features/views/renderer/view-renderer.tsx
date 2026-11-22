@@ -8,6 +8,7 @@ import { BoundCover } from "../cards/cover/cover";
 import { DataCard, HeadingLevel } from "../cards/data-card";
 import { BoundDevice } from "../cards/device/device";
 import { BoundForecast } from "../cards/forecast/forecast";
+import { BoundMediaPlayer } from "../cards/media-player/media-player";
 import { BoundMetric } from "../cards/metric/metric";
 import { BoundOutsideNow } from "../cards/outside-now/outside-now";
 import { BoundPressure } from "../cards/pressure/pressure";
@@ -51,6 +52,7 @@ const cardDefaultTitles = {
   AirPurifier: "Air purifier",
   Cover: "Cover",
   Thermostat: "Thermostat",
+  MediaPlayer: "Media player",
   OutsideNow: "Outside",
   Rain: "Rain",
   Wind: "Wind",
@@ -64,7 +66,9 @@ const cardDefaultTitles = {
  */
 const isTile = (element: ViewElement | null | undefined) =>
   element?.type === "ToggleTile" ||
-  ((element?.type === "AirPurifier" || element?.type === "Cover") &&
+  ((element?.type === "AirPurifier" ||
+    element?.type === "Cover" ||
+    element?.type === "MediaPlayer") &&
     element.props.layout === "tile");
 
 const gridKind = (graph: Graph, id: string) => {
@@ -245,6 +249,13 @@ const renderCard = (node: CardElement) => {
       return (
         <CardBoundary resetKey={JSON.stringify(node.props)} title={title}>
           <BoundThermostat {...node.props} />
+        </CardBoundary>
+      );
+    }
+    case "MediaPlayer": {
+      return (
+        <CardBoundary resetKey={JSON.stringify(node.props)} title={title}>
+          <BoundMediaPlayer {...node.props} />
         </CardBoundary>
       );
     }

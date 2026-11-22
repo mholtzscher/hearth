@@ -172,8 +172,18 @@ const validDevice = (
 };
 
 /** Cards bound to one Entity's whole State. */
+type SingleSourceElement = ElementOf<
+  "Forecast" | "Cover" | "Thermostat" | "MediaPlayer"
+>;
+
+const isSingleSource = (element: ViewElement): element is SingleSourceElement =>
+  element.type === "Forecast" ||
+  element.type === "Cover" ||
+  element.type === "Thermostat" ||
+  element.type === "MediaPlayer";
+
 const validSingleSource = (
-  { props }: ElementOf<"Forecast" | "Cover" | "Thermostat">,
+  { props }: SingleSourceElement,
   ids: Set<string>
 ): boolean => {
   ids.add(props.source.entity_id);
@@ -305,6 +315,10 @@ const validTimeSeries = (
 const validReferences = (elements: ViewElement[]): boolean => {
   const ids = new Set<string>();
   for (const element of elements) {
+    if (isSingleSource(element)) {
+      validSingleSource(element, ids);
+      continue;
+    }
     let valid = true;
     switch (element.type) {
       case "Metric": {
@@ -321,12 +335,6 @@ const validReferences = (elements: ViewElement[]): boolean => {
       }
       case "Device": {
         valid = validDevice(element, ids);
-        break;
-      }
-      case "Forecast":
-      case "Cover":
-      case "Thermostat": {
-        valid = validSingleSource(element, ids);
         break;
       }
       case "AirPurifier": {

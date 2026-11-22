@@ -189,6 +189,8 @@ describe("view card structure", () => {
     ["single readings", ["Metric", "State"], "reading"],
     ["quick switches", ["ToggleTile", "ToggleTile"], "toggle"],
     ["purifier tiles", ["AirPurifierTile", "AirPurifierTile"], "toggle"],
+    ["speaker tile and switch", ["MediaPlayerTile", "ToggleTile"], "toggle"],
+    ["speaker card mixed with tiles", ["MediaPlayerCard", "ToggleTile"], null],
     [
       "purifier tiles and switches",
       ["AirPurifierTile", "ToggleTile"],
@@ -207,6 +209,18 @@ describe("view card structure", () => {
       const power = { ...source, entity_type: "hearth.power/v1" };
       const elements = Object.fromEntries(
         types.map((type, i) => {
+          if (type.startsWith("MediaPlayer")) {
+            return [
+              `child${i}`,
+              {
+                type: "MediaPlayer",
+                props: {
+                  layout: type === "MediaPlayerTile" ? "tile" : "card",
+                  source: { ...source, entity_type: "hearth.mediaplayer/v1" },
+                },
+              },
+            ];
+          }
           if (type.startsWith("AirPurifier")) {
             return [
               `child${i}`,

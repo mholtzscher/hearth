@@ -11,6 +11,7 @@ import { CoverEditor } from "../cards/cover/editor";
 import { DeviceEditor } from "../cards/device/editor";
 import { ForecastEditor } from "../cards/forecast/editor";
 import { forecastTypes } from "../cards/forecast/schema";
+import { MediaPlayerEditor } from "../cards/media-player/editor";
 import { MetricEditor } from "../cards/metric/editor";
 import { OutsideNowEditor } from "../cards/outside-now/editor";
 import { PressureEditor } from "../cards/pressure/editor";
@@ -239,6 +240,15 @@ const CardElementEditor = ({
         />
       );
     }
+    case "MediaPlayer": {
+      return (
+        <MediaPlayerEditor
+          value={node.props}
+          choices={choices}
+          onChange={(props) => onChange({ ...node, props })}
+        />
+      );
+    }
     case "OutsideNow": {
       return (
         <OutsideNowEditor
@@ -395,6 +405,7 @@ export const ViewEditor = ({
       "AirPurifier",
       "Cover",
       "Thermostat",
+      "MediaPlayer",
       "OutsideNow",
       "Rain",
       "Wind",

@@ -8,6 +8,7 @@ import type {
   EntityStateHistoryEntry,
   HealthTransition,
 } from "../src/api/types";
+import type { MediaPlayerState } from "../src/features/views/cards/media-player/data";
 import {
   createEntities,
   deviceId,
@@ -15,6 +16,10 @@ import {
   fixtureNow,
   observedAt,
 } from "./fixtures";
+import {
+  applyMediaPlayerCommand,
+  artworkHandler,
+} from "./media-player-fixtures";
 import { pairedEntityResponse, pairedHistoryResponse } from "./paired-fixtures";
 import {
   applyThermostatCommand,
@@ -140,6 +145,7 @@ export const createCoreHandlers = (overrides: Entity[] = []) => {
   }));
   let commandNumber = 0;
   return [
+    artworkHandler,
     http.get("/v1/entities", ({ request }) => {
       const device = new URL(request.url).searchParams.get("device_id");
       const items = [...entities.values()].filter(
@@ -374,6 +380,33 @@ export const createCoreHandlers = (overrides: Entity[] = []) => {
           parameters: z.record(z.string(), z.unknown()),
         })
         .parse(await request.json());
+      if (entity.type === "hearth.mediaplayer/v1" && entity.state) {
+        commandNumber += 1;
+        const now = iso(Date.parse(fixtureNow) + commandNumber * 1000);
+        const next = applyMediaPlayerCommand(
+          entity.state.value as MediaPlayerState,
+          body.operation,
+          body.parameters,
+          now
+        );
+        if (!next) {
+          return HttpResponse.json(
+            { detail: "Unsupported Operation" },
+            { status: 400 }
+          );
+        }
+        entity.state = { ...entity.state, value: next.state, observed_at: now };
+        return HttpResponse.json(
+          next.status === "dispatched"
+            ? { command_id: `cmd_story_${commandNumber}`, status: "dispatched" }
+            : {
+                command_id: `cmd_story_${commandNumber}`,
+                status: "satisfied",
+                observation_id: `obs_story_command_${commandNumber}`,
+                value: body.parameters,
+              }
+        );
+      }
       const value = commandedValue(entity, body.operation, body.parameters);
       if (value === undefined) {
         return HttpResponse.json(

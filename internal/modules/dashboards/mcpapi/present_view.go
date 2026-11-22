@@ -30,6 +30,7 @@ func registerPresentView(server *mcptools.Server, h *handler) {
 				"and filter life, all on one Device; layout is card or tile. " +
 				"Cover binds one hearth.cover/v1 Entity's root; layout is card or tile, and confirm_open false skips the second press before opening. " +
 				"Thermostat binds one hearth.thermostat/v1 Entity's root; it shows mode-aware targets and controls, mode and activity, and inside temperature and humidity. " +
+				"MediaPlayer binds one hearth.mediaplayer/v1 Entity's root; layout card (default) shows track information and supported controls, and layout tile is a compact play/pause control. " +
 				"Native power controls send Commands only on a browser gesture, never on presentation or save. " +
 				"A rejection names the violated rule; correct it before presenting again.",
 			Handler: h.presentView,

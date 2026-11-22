@@ -4,6 +4,7 @@ import { airPurifierSchema } from "../cards/air-purifier/schema";
 import { coverSchema } from "../cards/cover/schema";
 import { deviceSchema } from "../cards/device/schema";
 import { forecastSchema } from "../cards/forecast/schema";
+import { mediaPlayerSchema } from "../cards/media-player/schema";
 import { metricSchema } from "../cards/metric/schema";
 import { outsideNowSchema } from "../cards/outside-now/schema";
 import { pressureSchema } from "../cards/pressure/schema";
@@ -86,6 +87,10 @@ export const elementSchemas = {
     type: z.literal("Thermostat"),
     props: thermostatSchema,
   }),
+  MediaPlayer: z.strictObject({
+    type: z.literal("MediaPlayer"),
+    props: mediaPlayerSchema,
+  }),
 };
 export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.Stack,
@@ -109,6 +114,7 @@ export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.AirPurifier,
   elementSchemas.Cover,
   elementSchemas.Thermostat,
+  elementSchemas.MediaPlayer,
 ]);
 export const definitionSchema = z.strictObject({
   schema_version: z.literal(1),

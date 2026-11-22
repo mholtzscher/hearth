@@ -129,6 +129,7 @@ func TestPresentViewRejectionNamesTheViolatedRule(t *testing.T) {
 		!strings.Contains(listed.Tools[0].Description, "AirPurifier binds a purifier's power and PM2.5 Entities") ||
 		!strings.Contains(listed.Tools[0].Description, "Cover binds one hearth.cover/v1 Entity's root") ||
 		!strings.Contains(listed.Tools[0].Description, "Thermostat binds one hearth.thermostat/v1 Entity's root") ||
+		!strings.Contains(listed.Tools[0].Description, "MediaPlayer binds one hearth.mediaplayer/v1 Entity's root") ||
 		!strings.Contains(
 			listed.Tools[0].Description,
 			"mode-aware targets and controls, mode and activity, and inside temperature and humidity",

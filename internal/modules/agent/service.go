@@ -91,6 +91,9 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"the user says the cover is a shade, blind, or similar. " +
 	"For a hearth.thermostat/v1 Entity, use Thermostat bound to the Entity's root; it shows the targets the current mode " +
 	"uses with −/+ controls, the mode and activity, inside temperature and humidity, and Mode and Fan controls. " +
+	"For a hearth.mediaplayer/v1 Entity, use MediaPlayer bound to the Entity's root. Use layout card (the default) " +
+	"for track details, artwork, a timeline, and supported playback and volume controls. Use layout tile in a " +
+	"Grid for a compact play/pause control. Grouped speakers cannot be controlled. " +
 	"For a weather station, prefer the weather cards over separate Metrics. They bind named slots, each read from an Entity's root: " +
 	"OutsideNow needs an outdoor hearth.temperature/v1 and optionally humidity, wind (speed), wind_direction, rain_rate, and rain_today; " +
 	"it words conditions from the rain rate and wind speed but shows no feels-like or dew point. " +
