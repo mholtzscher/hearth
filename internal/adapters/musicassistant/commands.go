@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	contract "github.com/mholtzscher/hearth/entitytypes/mediaplayerv1"
@@ -76,7 +77,76 @@ func (a *Players) playerCommandHandler(
 			return a.executeControl(ctx, cmd.ID, entityID, player, responder, call)
 		}
 	}
+	a.addTransportHandlers(&handlers, player)
 	return mediaplayerv1.NewCommandHandler(entityID, support, handlers)
+}
+
+// addTransportHandlers wires skip and seek. They complete as dispatched: no
+// State relation confirms a track change or a drifting playhead (ADR 0027).
+func (a *Players) addTransportHandlers(handlers *mediaplayerv1.Handlers, player playerState) {
+	target := playerTarget{PlayerID: player.ID}
+	handlers.NextTrack = func(ctx context.Context, cmd mediaplayerv1.NextTrackCommand, responder adapter.Responder) error {
+		if !player.canSkip() {
+			return responder.Reject("The current source cannot skip tracks")
+		}
+		return a.dispatchControl(ctx, cmd.ID, responder, "players/cmd/next", target)
+	}
+	handlers.PreviousTrack = func(
+		ctx context.Context, cmd mediaplayerv1.PreviousTrackCommand, responder adapter.Responder,
+	) error {
+		if !player.canSkip() {
+			return responder.Reject("The current source cannot skip tracks")
+		}
+		return a.dispatchControl(ctx, cmd.ID, responder, "players/cmd/previous", target)
+	}
+	handlers.Seek = func(ctx context.Context, cmd mediaplayerv1.SeekCommand, responder adapter.Responder) error {
+		position := cmd.Parameters.PositionSeconds
+		if _, ok := player.Media.duration(); !player.canSeek() || !ok {
+			return responder.Reject("The current media cannot seek")
+		}
+		// Compare with the exact upstream duration: the rounded one could admit
+		// a position Music Assistant refuses.
+		if float64(position) > *player.Media.Duration {
+			return responder.Reject("Seek position is beyond the end of the current media")
+		}
+		args := struct {
+			PlayerID string `json:"player_id"`
+			Position int64  `json:"position"`
+		}{PlayerID: player.ID, Position: position}
+		return a.dispatchControl(ctx, cmd.ID, responder, "players/cmd/seek", args)
+	}
+}
+
+// dispatchControl sends a control whose effect no Observation can confirm and
+// accepts it once Music Assistant takes it. The next poll reports the result.
+func (a *Players) dispatchControl(
+	ctx context.Context, id string, responder adapter.Responder, method string, args any,
+) error {
+	var reply json.RawMessage
+	if err := a.client.call(ctx, id, method, args, &reply); err != nil {
+		if refused(err) {
+			return responder.Reject("Music Assistant refused the control")
+		}
+		return err
+	}
+	_, err := responder.Accept()
+	return err
+}
+
+func refused(err error) bool {
+	var status statusError
+	return errors.As(err, &status) && status >= http.StatusBadRequest &&
+		status < http.StatusInternalServerError && status != http.StatusRequestTimeout
+}
+
+// canSkip reports whether Music Assistant's queue drives the player, which
+// skips for any speaker, or the speaker skips natively.
+func (p playerState) canSkip() bool {
+	return p.Source == p.ID || slices.Contains(p.Features, "next_previous")
+}
+
+func (p playerState) canSeek() bool {
+	return p.Source == p.ID || slices.Contains(p.Features, "seek")
 }
 
 type playerControl struct {
@@ -90,9 +160,7 @@ func (a *Players) executeControl(
 ) error {
 	var reply json.RawMessage
 	if err := a.client.call(ctx, id, control.method, control.args, &reply); err != nil {
-		var status statusError
-		if errors.As(err, &status) && status >= http.StatusBadRequest &&
-			status < http.StatusInternalServerError && status != http.StatusRequestTimeout {
+		if refused(err) {
 			return responder.Reject("Music Assistant refused the control")
 		}
 		return err
@@ -127,6 +195,12 @@ func supportsControl(support mediaplayerv1.Support, operation string) bool {
 		return support.Operations.SetVolume != nil
 	case contract.OperationSetMuted:
 		return support.Operations.SetMuted != nil
+	case contract.OperationNextTrack:
+		return support.Operations.NextTrack != nil
+	case contract.OperationPreviousTrack:
+		return support.Operations.PreviousTrack != nil
+	case contract.OperationSeek:
+		return support.Operations.Seek != nil
 	default:
 		return false
 	}

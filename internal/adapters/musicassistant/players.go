@@ -36,6 +36,8 @@ type Players struct {
 	known   map[string]string
 	routes  map[string]string
 	last    map[string]string
+	// playheads is guarded by the client's player I/O lock, like every report.
+	playheads playheads
 }
 
 // NewPlayers binds player inventory and Commands to an active Adapter Session.
@@ -43,6 +45,7 @@ func NewPlayers(client *Client, session *adapter.Session, logger *slog.Logger) *
 	return &Players{
 		client: client, session: session, logger: logger,
 		known: make(map[string]string), routes: make(map[string]string), last: make(map[string]string),
+		playheads: make(playheads),
 	}
 }
 
@@ -204,7 +207,7 @@ func (a *Players) observePlayer(
 	ctx context.Context, id string, p playerState, received time.Time, evidence adapter.CommandEvidence,
 ) error {
 	observation, err := mediaplayerv1.NewObservation(mediaplayerv1.ObservationInput{
-		EntityID: id, Support: p.entitySupport(), State: p.entityState(), AdapterReceivedAt: received,
+		EntityID: id, Support: p.entitySupport(), State: a.mediaState(p, received), AdapterReceivedAt: received,
 	})
 	if err != nil {
 		return err
@@ -232,15 +235,34 @@ func (p playerState) entityState() mediaplayerv1.State {
 	if p.hasVolume() {
 		state.VolumePercent = new(int64(*p.Volume))
 	}
-	if p.State != idle && boundedText(p.Media.Title, maxNameRunes) {
-		state.Title = &p.Media.Title
+	if p.State == idle {
+		return state
+	}
+	state.Title = boundedPointer(p.Media.Title)
+	state.Artist = boundedPointer(p.Media.Artist)
+	state.Album = boundedPointer(p.Media.Album)
+	if duration, ok := p.Media.duration(); ok {
+		state.DurationSeconds = &duration
 	}
 	return state
 }
 
+func boundedPointer(text string) *string {
+	if !boundedText(text, maxNameRunes) {
+		return nil
+	}
+	return &text
+}
+
+// entitySupport advertises skip and seek on every player, as it does play and
+// stop: Music Assistant routes them to its queue, an external source, or the
+// speaker. HandleCommand refuses the ones the current source cannot perform.
 func (p playerState) entitySupport() mediaplayerv1.Support {
 	operations := mediaplayerv1.OperationSupport{
-		SetPlayback: &mediaplayerv1.SetPlaybackSupport{States: []string{idle, playing}},
+		SetPlayback:   &mediaplayerv1.SetPlaybackSupport{States: []string{idle, playing}},
+		NextTrack:     &mediaplayerv1.NextTrackSupport{},
+		PreviousTrack: &mediaplayerv1.PreviousTrackSupport{},
+		Seek:          &mediaplayerv1.SeekSupport{},
 	}
 	if slices.Contains(p.Features, "pause") {
 		operations.SetPlayback.States = append(operations.SetPlayback.States, paused)

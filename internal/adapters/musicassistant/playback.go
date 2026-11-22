@@ -29,18 +29,16 @@ const (
 type playerState struct {
 	playerGrouping
 
-	ID        string   `json:"player_id"`
-	Name      string   `json:"name"`
-	Kind      string   `json:"type"`
-	Available *bool    `json:"available"`
-	Volume    *int     `json:"volume_level"`
-	Muted     *bool    `json:"volume_muted"`
-	State     string   `json:"playback_state"`
-	Source    string   `json:"active_source"`
-	Features  []string `json:"supported_features"`
-	Media     struct {
-		Title string `json:"title"`
-	} `json:"current_media"`
+	ID        string       `json:"player_id"`
+	Name      string       `json:"name"`
+	Kind      string       `json:"type"`
+	Available *bool        `json:"available"`
+	Volume    *int         `json:"volume_level"`
+	Muted     *bool        `json:"volume_muted"`
+	State     string       `json:"playback_state"`
+	Source    string       `json:"active_source"`
+	Features  []string     `json:"supported_features"`
+	Media     currentMedia `json:"current_media"`
 }
 
 type queueState struct {
