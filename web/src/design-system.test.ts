@@ -75,6 +75,29 @@ const NUMERIC_SPACING: Record<string, string[]> = {
   "src/features/views/renderer/view-renderer.tsx": ["proportional-nums"],
 };
 
+/**
+ * Durations, delays, and curves outside the motion tokens, by file (DESIGN.md,
+ * Motion). The wind arrow and the cover drawing track physical motion. The rest
+ * move onto the tokens as their components adopt the motion patterns.
+ */
+const ARBITRARY_MOTION: Record<string, string[]> = {
+  "src/app.tsx": [
+    "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_.18s]",
+    "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]",
+    "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_.18s]",
+    "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]",
+  ],
+  "src/components/switch.tsx": ["duration-[160ms]", "duration-[160ms]"],
+  "src/features/conversation/messages.tsx": [
+    "[animation-delay:.2s]",
+    "duration-150",
+    "duration-150",
+  ],
+  "src/features/views/cards/cover/cover-diagram.tsx": ["duration-[900ms]"],
+  "src/features/views/cards/tile-frame.tsx": ["duration-[180ms]"],
+  "src/features/views/cards/wind/wind.tsx": ["duration-[600ms]"],
+};
+
 /** Files that may use a narrow text size; each owns the width rule for it. */
 const NARROW_TEXT_OWNERS = [
   "src/features/views/cards/cover/cover.tsx",
@@ -497,6 +520,28 @@ describe("Hearth theme tokens", () => {
       measured,
       "Each text token in index.css sets its role's line height and tracking. If an exception disappeared, remove it from the list."
     ).toStrictEqual(ARBITRARY_LEADING_AND_TRACKING);
+  });
+
+  it("holds durations, delays, and curves outside the motion tokens to their exceptions", () => {
+    const measured = Object.fromEntries(
+      applicationSource()
+        .map(
+          (file) =>
+            [
+              file,
+              [
+                ...read(file).matchAll(
+                  /(?<![\w-])(?:(?:duration|delay|ease)-(?:\[[^\]\s]+\]|\d+)|\[(?:transition|animation)[\w-]*:[^\]\s]+\])/gu
+                ),
+              ].map((match) => match[0]),
+            ] as const
+        )
+        .filter(([, values]) => values.length > 0)
+    );
+    expect(
+      measured,
+      "Use duration-feedback, duration-state, duration-layout, or duration-travel with ease-out-expo, or an animate-* pattern from index.css. If an exception disappeared, remove it from the list."
+    ).toStrictEqual(ARBITRARY_MOTION);
   });
 
   it("makes digits tabular at the root", () => {

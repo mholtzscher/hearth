@@ -150,6 +150,18 @@ contracts; do not use styling classes as test selectors. For example, use
 `canvas.getByRole("button", { name: "Source" })` for the Source action and
 `canvasElement.querySelector('[data-slot="card-body"]')` for the frame body.
 
+## Show motion in a story
+
+When a component adopts a motion pattern from DESIGN.md (Motion), add a story
+that triggers it. Name it `Motion · <what moves>`, such as `Motion · Afterglow`,
+and add the `motion` tag so the sidebar's tag filter finds it. Its play
+function triggers the change and asserts the settled result; a card story wraps
+the interaction in `watchHeight`. Add a row for the story to the Where it moves
+table on Design system/Motion (`web/src/design-system/motion.mdx`).
+
+Story tests run without a reduced-motion preference. Check the reduced path in
+a browser with reduced motion emulated, and report it as unverified otherwise.
+
 ## Choose a component, editor, or page story
 
 Use the live sidebar or MCP index as the component catalog, not a copied list.

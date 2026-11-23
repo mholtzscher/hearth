@@ -1,0 +1,85 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+
+import * as Motion from "./motion.stories";
+
+<Meta of={Motion} tags={["!manifest"]} />
+
+# Motion
+
+Motion explains a change: it acknowledges an input, shows where something went, reports an outcome, or marks newer data. Every motion uses one of the patterns below with the shared timing tokens. `DESIGN.md` (Motion) holds the full rules.
+
+Stories that show motion in a component or layout are tagged `motion` and named `Motion · <what moves>`. Filter the sidebar by the `motion` tag to see them all, or use [Where it moves](#where-it-moves).
+
+## Timing
+
+Every transition uses `ease-out-expo`; only the pending pulse uses `ease-pulse`. An exit takes the next shorter duration than its entrance. A bare `transition-*` utility defaults to `duration-feedback` on `ease-out-expo`. Values are read from the live CSS.
+
+<Canvas of={Motion.Timing} sourceState="none" />
+
+## Patterns
+
+Each pattern names its reduced-motion behavior. Replay a pattern with its button.
+
+### Arrive
+
+An element entering a sequence fades in while rising 8px at `duration-state`. A block inside an arriving group rises 4px, one feedback step later. Reduced motion: fade.
+
+<Canvas of={Motion.Arrive} sourceState="none" />
+
+### Resolve
+
+Text that arrives in pieces fades in from a 3px blur, piece by piece, at `duration-layout`. Reduced motion: fade.
+
+<Canvas of={Motion.Resolve} sourceState="none" />
+
+### Grow
+
+A disclosure opens from zero height while fading in, at `duration-layout`; closing reverses it. Reduced motion: fade.
+
+<Canvas of={Motion.Grow} sourceState="none" />
+
+### Slide
+
+A panel fades in while moving 12–16px from the edge it opens from: the canvas at `duration-layout`, drawers at `duration-state`. Reduced motion: none.
+
+<Canvas of={Motion.Slide} sourceState="none" />
+
+### Pending
+
+While an outcome is awaited, a dot or icon breathes between full and 40% opacity on the 1.6-second pending pulse, or a dashed icon turns once every 8 seconds. Reduced motion: none.
+
+<Canvas of={Motion.Pending} sourceState="none" />
+
+### Confirm
+
+An icon swap at `duration-feedback`: the old icon shrinks to 50% and fades, and the new icon grows from 50% and a 2px blur, or a check draws its stroke. Reduced motion: fade.
+
+<Canvas of={Motion.Confirm} sourceState="none" />
+
+### Ignite
+
+A line spreads from its center to full width at `duration-layout`. The afterglow then fades it over 10 seconds. Reduced motion: none; the afterglow lights at full width.
+
+<Canvas of={Motion.Ignite} sourceState="none" />
+
+### Give
+
+A whole-card press target shrinks to 98.5% while pressed, at `duration-feedback`. Reduced motion: none.
+
+<Canvas of={Motion.Give} sourceState="none" />
+
+### Refuse
+
+A control shakes 3px sideways, one and a half times, at `duration-layout`. Reduced motion: none.
+
+<Canvas of={Motion.Refuse} sourceState="none" />
+
+## Reduced motion
+
+Under a reduced-motion preference, `index.css` removes every animation and transition, except on elements marked `data-reduced-motion="fade"`. A marked element keeps only opacity and color transitions at feedback or state duration, declared with `motion-reduce:` utilities. Movement, scaling, blur, breathing, rolling, and shaking stop. The workspace is never marked: the canvas and drawers change at once.
+
+## Where it moves
+
+Each component and layout story that shows a pattern in place, by component or layout.
+
+- **Shared controls** (default transition): hover and focus color changes use `duration-feedback` on `ease-out-expo`.
