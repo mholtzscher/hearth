@@ -287,11 +287,7 @@ func NewService(_ context.Context, config Config) (*Service, error) {
 	}
 	chatModel := config.ChatModel
 	if chatModel == nil {
-		if config.Model.Provider.Effective() == ProviderOpenCodeGo {
-			chatModel = newGoChatModel(config.Model)
-		} else {
-			chatModel = newResponsesModel(config.Model)
-		}
+		chatModel = NewChatModel(config.Model)
 	}
 	maxIterations := config.MaxIterations
 	if maxIterations == 0 {
@@ -612,7 +608,7 @@ func (service *Service) SendMessageWithEvents(
 	if err != nil {
 		return fail(turnStageRunner, err)
 	}
-	modelCtx := context.WithValue(turnCtx, modelConversationKey{}, conversationID)
+	modelCtx := WithModelConversation(turnCtx, conversationID)
 	runErr := trace.failure(consumeRunner(agentRunner.Run(withToolPreparing(modelCtx, trace.preparing), input)))
 	if runErr != nil {
 		return fail(runnerFailureStage(runErr), runErr)

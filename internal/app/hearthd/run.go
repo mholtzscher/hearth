@@ -116,6 +116,13 @@ func Run(
 	return runWithOptions(ctx, config, logger, runOptions{})
 }
 
+// RunOnListener runs Core like Run but serves HTTP on an already-bound
+// listener, which it owns and closes. Embedders such as the evaluation worker
+// use it to run several isolated Cores on ephemeral ports.
+func RunOnListener(ctx context.Context, config Config, logger *slog.Logger, listener net.Listener) error {
+	return runWithOptions(ctx, config, logger, runOptions{httpListener: listener})
+}
+
 // runOptions supplies per-instance lifecycle dependencies for process tests.
 // Run uses the configured address and the production shutdown deadline.
 type runOptions struct {
