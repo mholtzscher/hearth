@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { expect } from "storybook/test";
 
 import { entityId, observedAt } from "../../../../.storybook/fixtures";
+import { watchHeight } from "../../../../.storybook/play";
+import { Button } from "../../../components/button";
 import { DataCard } from "./data-card";
 import { statusEntry } from "./status";
 
@@ -70,5 +73,51 @@ export const NoFooter: Story = {
     await expect(
       canvas.queryByRole("button", { name: "Source" })
     ).not.toBeInTheDocument();
+  },
+};
+
+const AfterglowSample = () => {
+  const [sample, setSample] = useState(0);
+  const value = (21.5 + sample / 10).toFixed(1);
+  const updatedAt = new Date(
+    Date.parse(observedAt) + sample * 1000
+  ).toISOString();
+  return (
+    <div className="grid gap-3">
+      <DataCard
+        title="Living room"
+        status={[]}
+        observedAt={updatedAt}
+        arrival={{ updatedAt, shown: value }}
+        sources={[]}
+      >
+        {value} °C
+      </DataCard>
+      <Button
+        variant="outline"
+        onClick={() => setSample((current) => current + 1)}
+      >
+        New reading
+      </Button>
+    </div>
+  );
+};
+
+export const MotionAfterglow: Story = {
+  name: "Motion · Afterglow",
+  tags: ["motion"],
+  render: () => <AfterglowSample />,
+  play: async ({ canvas, userEvent }) => {
+    const card = canvas.getByRole("article", { name: "Living room" });
+    await expect(card.querySelector('[data-slot="card-arrival"]')).toBeNull();
+    await watchHeight(card, async () => {
+      await userEvent.click(
+        canvas.getByRole("button", { name: "New reading" })
+      );
+      await expect(
+        card.querySelector('[data-slot="card-arrival"]')
+      ).toBeInTheDocument();
+      await expect(card).toHaveTextContent("21.6 °C");
+    });
   },
 };

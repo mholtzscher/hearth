@@ -1,9 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
+import { useState } from "react";
+import { expect, waitFor } from "storybook/test";
 
-import { entityId } from "../../../../../.storybook/fixtures";
+import { entityId, observedAt } from "../../../../../.storybook/fixtures";
 import { entityScenario } from "../../../../../.storybook/msw-handlers";
-import { BoundMetric } from "./metric";
+import { watchHeight } from "../../../../../.storybook/play";
+import { Button } from "../../../../components/button";
+import { BoundMetric, Metric } from "./metric";
 
 const meta = {
   title: "Components/Cards/Metric",
@@ -110,5 +113,77 @@ export const NarrowCard: Story = {
     await expect(time).toHaveAttribute("aria-label", "Observed just now");
     await expect(time.firstElementChild).not.toBeVisible();
     await expect(canvas.getByRole("button", { name: "Source" })).toBeVisible();
+  },
+};
+
+const MetricMotionSample = ({ step }: { step: number }) => {
+  const [sample, setSample] = useState(0);
+  return (
+    <div className="grid gap-3">
+      <Metric
+        label="Living room"
+        resource={{
+          status: "ready",
+          metadata: {
+            id: entityId(101),
+            label: "Living room",
+            availability: "available",
+            enabled: true,
+          },
+          data: {
+            value: 21.5 + sample * step,
+            observed_at: new Date(
+              Date.parse(observedAt) + sample * 1000
+            ).toISOString(),
+            format: { unit_label: "°C", fraction_digits: 1 },
+          },
+        }}
+      />
+      <Button
+        variant="outline"
+        onClick={() => setSample((current) => current + 1)}
+      >
+        New reading
+      </Button>
+    </div>
+  );
+};
+
+export const MotionRoll: Story = {
+  name: "Motion · Single-digit roll",
+  tags: ["motion"],
+  render: () => <MetricMotionSample step={0.1} />,
+  play: async ({ canvas, userEvent }) => {
+    const card = canvas.getByRole("article", { name: "Living room" });
+    await watchHeight(card, async () => {
+      await userEvent.click(
+        canvas.getByRole("button", { name: "New reading" })
+      );
+      await expect(
+        card.querySelector('[data-slot="rolling-digit"]')
+      ).toHaveTextContent("6");
+      await waitFor(() =>
+        expect(card.querySelector('[data-slot="rolling-digit"]')).toBeNull()
+      );
+      await expect(canvas.getByText("21.6")).toBeVisible();
+    });
+  },
+};
+
+export const MotionAtomicValue: Story = {
+  name: "Motion · Multi-digit change",
+  tags: ["motion"],
+  render: () => <MetricMotionSample step={2.1} />,
+  play: async ({ canvas, userEvent }) => {
+    const card = canvas.getByRole("article", { name: "Living room" });
+    await watchHeight(card, async () => {
+      await userEvent.click(
+        canvas.getByRole("button", { name: "New reading" })
+      );
+      await expect(canvas.getByText("23.6")).toBeVisible();
+      await expect(
+        card.querySelector('[data-slot="rolling-digit"]')
+      ).toBeNull();
+    });
   },
 };

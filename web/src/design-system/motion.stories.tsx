@@ -379,10 +379,8 @@ export const Ignite: Story = {
         <Card className="relative overflow-hidden">
           <span
             aria-hidden="true"
-            className="animate-ignite pointer-events-none absolute inset-x-0 top-0 h-0.5"
-          >
-            <span className="animate-arrival bg-orange block h-full" />
-          </span>
+            className="animate-arrival bg-orange pointer-events-none absolute inset-x-0 top-0 h-0.5"
+          />
           A changed reading lights the top edge
         </Card>
       )}
