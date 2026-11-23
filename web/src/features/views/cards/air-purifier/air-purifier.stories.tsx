@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, http, HttpResponse } from "msw";
-import { expect } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 
 import { entityId, fixtureEntity } from "../../../../../.storybook/fixtures";
 import {
@@ -94,7 +94,9 @@ export const NarrowFanFailure: Story = {
       await expect(await canvas.findByRole("alert")).toHaveTextContent(
         "Fan level: Change rejected. Try again."
       );
-      await expect(canvas.getByText("Fan level: Rejected.")).toBeVisible();
+      await waitFor(() =>
+        expect(canvas.getByText("Fan level: Rejected.")).toBeVisible()
+      );
     });
   },
 };

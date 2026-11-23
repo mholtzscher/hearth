@@ -76,6 +76,24 @@ export const MotionPending: Story = {
     await waitFor(() => expect(control).not.toHaveAttribute("aria-busy"));
     await expect(control).toHaveAttribute("aria-checked", "true");
     await expect(dot).not.toBeInTheDocument();
+    await expect(canvas.getByRole("status")).toHaveTextContent("Since 3:20 AM");
+    const leaving = canvasElement.querySelector(
+      '[data-slot="pending-status-exit"]'
+    );
+    await expect(leaving).toHaveAttribute("aria-hidden", "true");
+    await expect(leaving && getComputedStyle(leaving, "::before").content).toBe(
+      '"Turning on…"'
+    );
+    await expect(canvas.getByRole("status")).toHaveStyle({ opacity: "0" });
+    await expect(
+      leaving
+        ?.getAnimations()
+        .map((animation) =>
+          animation instanceof CSSAnimation ? animation.animationName : ""
+        )
+    ).toContain("motion-fade-out");
+    await waitFor(() => expect(leaving).not.toBeInTheDocument());
+    await expect(canvas.getByRole("status")).toBeVisible();
   },
 };
 export const Rejected: Story = {

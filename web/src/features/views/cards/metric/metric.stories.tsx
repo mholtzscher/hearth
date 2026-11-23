@@ -159,6 +159,15 @@ export const MotionRoll: Story = {
       await userEvent.click(
         canvas.getByRole("button", { name: "New reading" })
       );
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        await expect(canvas.getByText("21.6")).toBeVisible();
+        const digit = card.querySelector('[data-slot="rolling-digit"]');
+        if (digit) {
+          await expect(digit).not.toBeVisible();
+          await expect(digit.getAnimations()).toHaveLength(0);
+        }
+        return;
+      }
       await expect(
         card.querySelector('[data-slot="rolling-digit"]')
       ).toHaveTextContent("6");

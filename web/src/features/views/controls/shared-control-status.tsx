@@ -5,6 +5,7 @@ import {
   controlStatusClasses,
   controlStatusLineClasses,
   ControlStatusText,
+  PendingStatusExit,
   powerFailures,
   shortCommandFailures,
 } from "./control-status";
@@ -61,20 +62,20 @@ export const SharedControlStatus = ({
   }
   const state = states[selected];
   const control = controls[selected];
+  const pendingText =
+    state?.phase === "pending" || state?.phase === "confirming"
+      ? control.pending(state.requested)
+      : undefined;
   return (
     <div data-slot="control-status" className={controlStatusClasses}>
+      <PendingStatusExit text={pendingText} />
       <output data-tone="info" className={controlStatusLineClasses}>
-        {state &&
-          (state.phase === "pending" || state.phase === "confirming") && (
-            <>
-              <StatusDot tone="info" pending />
-              <ControlStatusText
-                key={control.pending(state.requested)}
-                full={control.pending(state.requested)}
-                fade
-              />
-            </>
-          )}
+        {pendingText !== undefined && (
+          <>
+            <StatusDot tone="info" pending />
+            <ControlStatusText key={pendingText} full={pendingText} fade />
+          </>
+        )}
       </output>
       {state?.phase === "failed" && (
         <p role="alert" data-tone="error" className={controlStatusLineClasses}>

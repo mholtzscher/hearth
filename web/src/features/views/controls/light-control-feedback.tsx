@@ -5,6 +5,7 @@ import {
   controlStatusClasses,
   controlStatusLineClasses,
   lightFailures,
+  PendingStatusExit,
 } from "./control-status";
 import { colorHex, readColor } from "./light-color";
 import type { LightColorControls } from "./light-color";
@@ -206,6 +207,9 @@ const SummaryFeedback = ({
     aria-hidden={hidden || undefined}
     inert={hidden || undefined}
   >
+    <PendingStatusExit
+      text={!hasFailure && summary ? `${summary} · Details` : undefined}
+    />
     <p
       className={`${controlStatusLineClasses} whitespace-nowrap`}
       role={hasFailure ? "alert" : "status"}

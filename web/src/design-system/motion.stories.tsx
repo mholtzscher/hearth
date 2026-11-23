@@ -6,7 +6,13 @@ import {
   CopyIcon,
   RotateCcwIcon,
 } from "lucide-react";
-import { useState } from "react";
+import {
+  addTransitionType,
+  startTransition,
+  useId,
+  useState,
+  ViewTransition,
+} from "react";
 import type { ReactNode } from "react";
 import { expect, userEvent, waitFor } from "storybook/test";
 
@@ -21,6 +27,8 @@ import {
   TableHeader,
   TableRow,
 } from "../components/table";
+import { runTravel, TravelingView } from "../lib/canvas-travel";
+import { prefersReducedMotion } from "../lib/motion";
 import { TokenValue, useLiveStyle } from "./live-style";
 import { MOTION_CURVES, MOTION_DURATIONS } from "./tokens";
 
@@ -164,7 +172,8 @@ const stageOf = (canvasElement: HTMLElement) =>
 const expectReplayRuns = async (
   canvasElement: HTMLElement,
   pattern: string,
-  animationName: string
+  animationName: string,
+  reducedAnimation?: string
 ) => {
   const replay = [...canvasElement.querySelectorAll("button")].find(
     (button) => button.textContent === `Replay ${pattern}`
@@ -173,15 +182,18 @@ const expectReplayRuns = async (
   if (replay) {
     await userEvent.click(replay);
   }
-  await waitFor(() =>
-    expect(
-      stageOf(canvasElement)
-        ?.getAnimations({ subtree: true })
-        .map((animation) =>
-          animation instanceof CSSAnimation ? animation.animationName : ""
-        )
-    ).toContain(animationName)
-  );
+  const expected = prefersReducedMotion() ? reducedAnimation : animationName;
+  const names = () =>
+    stageOf(canvasElement)
+      ?.getAnimations({ subtree: true })
+      .map((animation) =>
+        animation instanceof CSSAnimation ? animation.animationName : ""
+      );
+  if (expected) {
+    await waitFor(() => expect(names()).toContain(expected));
+    return;
+  }
+  await expect(names()).toEqual([]);
 };
 
 /** An element entering a sequence rises 8px; a block inside an arriving group rises 4px. */
@@ -208,7 +220,7 @@ export const Arrive: Story = {
     </Replay>
   ),
   play: ({ canvasElement }) =>
-    expectReplayRuns(canvasElement, "Arrive", "motion-arrive"),
+    expectReplayRuns(canvasElement, "Arrive", "motion-arrive", "motion-fade"),
 };
 
 const RESOLVE_TEXT =
@@ -238,7 +250,7 @@ export const Resolve: Story = {
     </Replay>
   ),
   play: ({ canvasElement }) =>
-    expectReplayRuns(canvasElement, "Resolve", "motion-resolve"),
+    expectReplayRuns(canvasElement, "Resolve", "motion-resolve", "motion-fade"),
 };
 
 /** A disclosure grows to its content height while fading in; closing reverses it. */
@@ -290,6 +302,131 @@ export const Slide: Story = {
     expectReplayRuns(canvasElement, "Slide", "canvas-in"),
 };
 
+const MorphSample = () => {
+  const id = useId();
+  const [ready, setReady] = useState(false);
+  const commit = () => {
+    if (prefersReducedMotion() || !document.startViewTransition) {
+      setReady(true);
+      return;
+    }
+    startTransition(() => {
+      addTransitionType("hearth-morph");
+      setReady(true);
+    });
+  };
+  return (
+    <div className="grid min-h-44 max-w-md content-between gap-4">
+      {ready ? (
+        <ViewTransition
+          key="ready"
+          name={id}
+          default="none"
+          share="hearth-morph-card"
+        >
+          <Card className="text-label">
+            <p>Living room</p>
+            <p className="text-title">21.5 °C</p>
+          </Card>
+        </ViewTransition>
+      ) : (
+        <ViewTransition
+          key="pending"
+          name={id}
+          default="none"
+          share="hearth-morph-card"
+        >
+          <Card className="text-label text-muted-foreground w-2/3">
+            Preparing a view…
+          </Card>
+        </ViewTransition>
+      )}
+      <Button
+        variant="outline"
+        className="justify-self-start"
+        onClick={ready ? () => setReady(false) : commit}
+      >
+        {ready ? "Reset placeholder" : "Commit view"}
+      </Button>
+    </div>
+  );
+};
+
+export const Morph: Story = {
+  render: () => <MorphSample />,
+  play: async ({ canvas }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Commit view" }));
+    await expect(await canvas.findByText("21.5 °C")).toBeVisible();
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Reset placeholder" })
+    );
+    await expect(canvas.getByText("Preparing a view…")).toBeVisible();
+  },
+};
+
+const TravelCards = ({ id }: { id: string }) => (
+  <TravelingView artifactId={id}>
+    <div className="text-label grid gap-2">
+      <Card>Living room · 21.5 °C</Card>
+      <Card>Hallway lamp · On</Card>
+    </div>
+  </TravelingView>
+);
+
+const TravelSample = () => {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="grid max-w-xl gap-4">
+      <div className="grid grid-cols-2 gap-3">
+        <section
+          aria-label="Conversation"
+          className="border-border rounded-card grid min-w-0 content-start gap-2 border p-3"
+        >
+          <p className="text-label text-muted-foreground">Conversation</p>
+          {!open && <TravelCards id={id} />}
+        </section>
+        <section
+          aria-label="Canvas"
+          className="border-border rounded-card grid min-w-0 content-start gap-2 border p-3"
+        >
+          <p className="text-label text-muted-foreground">Canvas</p>
+          {open && <TravelCards id={id} />}
+        </section>
+      </div>
+      <Button
+        variant="outline"
+        className="justify-self-start"
+        onClick={() => runTravel(() => setOpen(!open), !open)}
+      >
+        {open ? "Return to conversation" : "Move to canvas"}
+      </Button>
+    </div>
+  );
+};
+
+export const Travel: Story = {
+  render: () => <TravelSample />,
+  play: async ({ canvas }) => {
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Move to canvas" })
+    );
+    await waitFor(() =>
+      expect(canvas.getByRole("region", { name: "Canvas" })).toHaveTextContent(
+        "Hallway lamp · On"
+      )
+    );
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Return to conversation" })
+    );
+    await waitFor(() =>
+      expect(
+        canvas.getByRole("region", { name: "Conversation" })
+      ).toHaveTextContent("Hallway lamp · On")
+    );
+  },
+};
+
 /** While an outcome is awaited, a dot breathes on the pending pulse and a dashed icon turns at a constant rate. */
 export const Pending: Story = {
   tags: ["motion"],
@@ -321,8 +458,12 @@ export const Pending: Story = {
         .map((animation) =>
           animation instanceof CSSAnimation ? animation.animationName : ""
         );
-    await expect(names("pending-dot")).toContain("view-pending");
-    await expect(names("pending-icon")).toContain("motion-turn");
+    await expect(names("pending-dot")).toEqual(
+      prefersReducedMotion() ? [] : ["view-pending"]
+    );
+    await expect(names("pending-icon")).toEqual(
+      prefersReducedMotion() ? [] : ["motion-turn"]
+    );
   },
 };
 

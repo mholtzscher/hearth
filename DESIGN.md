@@ -715,7 +715,8 @@ conversation shows its history without motion.
   your home…" appears below it after 600ms, so a reply that finishes sooner never
   shows it.
 - Tool activity opens and closes with Grow. A pending tool's dashed icon turns
-  (Pending), and a finished tool's check draws in (Confirm).
+  (Pending), then shrinks out as the finished tool's check draws in (Confirm).
+  With reduced motion, the icons fade.
 - A pending view's placeholders become its cards (Morph).
 - Open in canvas moves the view's cards together into the canvas, and the inline
   header becomes the compact Showing in canvas preview (Travel). Closing
@@ -846,7 +847,8 @@ a power switch at the end of the reading row and a brightness slider below it.
 - The reading keeps showing observed State. While a Command is pending, the
   control shows the requested value, and its reserved line shows a dusk-blue dot
   and words such as **Turning on…** or **Setting brightness to 40 %…**. The dot
-  breathes until the outcome arrives (Pending, see Motion).
+  breathes until the outcome arrives (Pending, see Motion). The pending words
+  fade in and out without moving the row or delaying the outcome announcement.
 - A failure returns the control to observed State. A newly rejected Command
   gives the control a short shake (Refuse); the same line shows a red-pink dot
   and a short message, such as
