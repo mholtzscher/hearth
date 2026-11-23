@@ -706,11 +706,14 @@ focus border, and a violet caret.
 Each part of a conversation moves with a pattern from Motion. Opening a
 conversation shows its history without motion.
 
-- A sent message arrives (Arrive). A reply's Hearth label arrives first and its
-  blocks follow 140ms later, rising 4px.
-- Streamed reply text resolves as it arrives (Resolve).
-- While a reply runs, the Hearth icon breathes (Pending). "Working…" follows the
-  label after 600ms, so a reply that finishes sooner never shows it.
+- A sent message arrives (Arrive), and so does a reply with its Hearth label.
+  Each block of the reply, such as tool activity or a view, arrives as it
+  appears, rising 4px.
+- A reply's text arrives whole when its turn finishes and resolves as one block
+  (Resolve).
+- While a reply runs, the Hearth icon breathes (Pending), and "Looking through
+  your home…" appears below it after 600ms, so a reply that finishes sooner never
+  shows it.
 - Tool activity opens and closes with Grow. A pending tool's dashed icon turns
   (Pending), and a finished tool's check draws in (Confirm).
 - A pending view's placeholders become its cards (Morph).

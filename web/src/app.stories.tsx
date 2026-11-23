@@ -435,7 +435,9 @@ export const PhoneConversation: Story = {
 export const SendMessage: Story = {
   play: async (context) => {
     await askTemperature(context);
-    await expect(await context.canvas.findByText(sentReply)).toBeVisible();
+    // A reply arrives over a few frames before it is fully visible.
+    const reply = await context.canvas.findByText(sentReply);
+    await waitFor(() => expect(reply).toBeVisible());
     await expect(
       context.canvas.getByRole("textbox", { name: "Ask Hearth" })
     ).toHaveValue("");
@@ -451,12 +453,16 @@ export const PendingReply: Story = {
   parameters: { applicationScenario: { turn: "pending" } },
   play: async (context) => {
     await askTemperature(context);
-    await expect(
-      await context.canvas.findByText("Used 1 tool · 1 pending or unknown")
-    ).toBeVisible();
-    await expect(
-      context.canvas.getByText("Looking through your home…")
-    ).toBeVisible();
+    const tools = await context.canvas.findByText(
+      "Used 1 tool · 1 pending or unknown"
+    );
+    await waitFor(() => expect(tools).toBeVisible());
+    // Pending words wait 600ms before they fade in.
+    await waitFor(() =>
+      expect(
+        context.canvas.getByText("Looking through your home…")
+      ).toBeVisible()
+    );
     await expect(
       context.canvas.getByRole("textbox", { name: "Ask Hearth" })
     ).toBeDisabled();
@@ -1007,9 +1013,10 @@ export const PendingView: Story = {
   parameters: { applicationScenario: { turn: "pending-view" } },
   play: async (context) => {
     await askTemperature(context);
-    await expect(
-      await context.canvas.findByRole("heading", { name: "Preparing a view" })
-    ).toBeVisible();
+    const preparing = await context.canvas.findByRole("heading", {
+      name: "Preparing a view",
+    });
+    await waitFor(() => expect(preparing).toBeVisible());
     await expect(
       context.canvas.getByRole("textbox", { name: "Ask Hearth" })
     ).toBeDisabled();
@@ -1187,7 +1194,8 @@ export const StarterQuestion: Story = {
     await context.userEvent.click(
       context.canvas.getByRole("button", { name: "Show me the temperatures" })
     );
-    await expect(await context.canvas.findByText(sentReply)).toBeVisible();
+    const reply = await context.canvas.findByText(sentReply);
+    await waitFor(() => expect(reply).toBeVisible());
     await expect(
       within(context.canvas.getByRole("log")).getByText(
         "Show me the temperatures throughout the house."
@@ -1258,9 +1266,11 @@ export const CancelQueuedMessage: Story = {
         )
       ).not.toBeInTheDocument()
     );
-    await expect(
-      context.canvas.getByText("Looking through your home…")
-    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        context.canvas.getByText("Looking through your home…")
+      ).toBeVisible()
+    );
   },
 };
 
@@ -1462,5 +1472,106 @@ export const ShortPhoneConversation: Story = {
     ).toBeEnabled();
     await expect(window.innerHeight).toBe(540);
     await expectNoHorizontalOverflow(canvasElement);
+  },
+};
+
+/** Names of the CSS animations on an element and its descendants. */
+const animationNames = (element: Element | null | undefined): string[] =>
+  element
+    ?.getAnimations({ subtree: true })
+    .map((animation) =>
+      animation instanceof CSSAnimation ? animation.animationName : ""
+    ) ?? [];
+
+/** The Quiet Load Rule: an opened conversation's history appears without motion. */
+export const MotionOpenedConversation: Story = {
+  name: "Motion · Opened conversation",
+  tags: ["motion"],
+  parameters: { appPath: conversationPath },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText(conversationReply)).toBeVisible();
+    const names = animationNames(canvas.getByRole("log"));
+    await expect(names).not.toContain("motion-arrive");
+    await expect(names).not.toContain("motion-resolve");
+  },
+};
+
+/**
+ * A sent message arrives, the reply arrives with its Hearth label, and its
+ * text resolves. The stored history replaces both without remounting them, so
+ * their motion completes.
+ */
+export const MotionMessageArrival: Story = {
+  name: "Motion · Message arrival",
+  tags: ["motion"],
+  play: async (context) => {
+    await askTemperature(context);
+    const log = within(context.canvas.getByRole("log"));
+    const reply = await log.findByText(sentReply);
+    const prompt = log.getByText("What is the living room temperature?");
+    await expect(
+      animationNames(prompt.closest("[data-reduced-motion]"))
+    ).toContain("motion-arrive");
+    await expect(
+      animationNames(reply.closest('[data-slot="message-markdown"]'))
+    ).toContain("motion-resolve");
+    await waitFor(() =>
+      expect(
+        context.canvas.queryByText("Looking through your home…")
+      ).not.toBeInTheDocument()
+    );
+    // Still the arriving elements: the stored copies did not remount them.
+    await expect(prompt).toBeInTheDocument();
+    await expect(reply).toBeInTheDocument();
+  },
+};
+
+/** While a reply runs, the Hearth icon breathes and the pending words wait 600ms. */
+export const MotionWorking: Story = {
+  name: "Motion · Working",
+  tags: ["motion"],
+  parameters: { applicationScenario: { turn: "pending" } },
+  play: async (context) => {
+    await askTemperature(context);
+    await context.canvas.findByText("Used 1 tool · 1 pending or unknown");
+    const icon = context.canvasElement.querySelector(
+      '[data-slot="reply-icon"]'
+    );
+    await expect(animationNames(icon)).toContain("view-pending");
+    const words = context.canvas.getByText("Looking through your home…");
+    await expect(animationNames(words)).toContain("motion-fade");
+    await waitFor(() => expect(words).toBeVisible());
+  },
+};
+
+/** Copy confirms with the check growing in as the copy icon shrinks out. */
+export const MotionCopy: Story = {
+  name: "Motion · Copy",
+  tags: ["motion"],
+  // The test browser grants no clipboard access; the story checks the confirmation only.
+  beforeEach() {
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.resolve() },
+    });
+    return () => {
+      if (clipboard) {
+        Object.defineProperty(navigator, "clipboard", clipboard);
+      } else {
+        Reflect.deleteProperty(navigator, "clipboard");
+      }
+    };
+  },
+  play: async (context) => {
+    await askTemperature(context);
+    await context.canvas.findByText(sentReply);
+    const copy = await context.canvas.findByRole("button", {
+      name: "Copy response",
+    });
+    await context.userEvent.click(copy);
+    await expect(
+      await context.canvas.findByRole("button", { name: "Response copied" })
+    ).toHaveTextContent("Copied");
   },
 };

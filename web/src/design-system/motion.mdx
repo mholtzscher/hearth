@@ -22,7 +22,7 @@ Each pattern names its reduced-motion behavior. Replay a pattern with its button
 
 ### Arrive
 
-An element entering a sequence fades in while rising 8px at `duration-state`. A block inside an arriving group rises 4px, one feedback step later. Reduced motion: fade.
+An element entering a sequence fades in while rising 8px at `duration-state`. A block inside an arriving group rises 4px. Reduced motion: fade.
 
 <Canvas of={Motion.Arrive} sourceState="none" />
 
@@ -83,3 +83,7 @@ Under a reduced-motion preference, `index.css` removes every animation and trans
 Each component and layout story that shows a pattern in place, by component or layout.
 
 - **Shared controls** (default transition): hover and focus color changes use `duration-feedback` on `ease-out-expo`.
+- **Conversation** (Arrive, Resolve): [Motion · Message arrival](?path=/story/application-workspace--motion-message-arrival). A sent message and its reply arrive, and the reply text resolves.
+- **Conversation** (Quiet Load): [Motion · Opened conversation](?path=/story/application-workspace--motion-opened-conversation). An opened conversation's history appears without motion.
+- **Conversation** (Pending): [Motion · Working](?path=/story/application-workspace--motion-working). The Hearth icon breathes while a reply runs; "Looking through your home…" waits 600ms.
+- **Conversation** (Confirm): [Motion · Copy](?path=/story/application-workspace--motion-copy). Copy changes to Copied.

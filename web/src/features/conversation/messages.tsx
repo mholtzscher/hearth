@@ -41,6 +41,15 @@ import { readAutomationDocument } from "../automations/document";
 import { readDefinition } from "../views/catalog/compatibility";
 import { ViewRenderer } from "../views/renderer/view-renderer";
 import {
+  ArrivalProvider,
+  arriveClass,
+  ReplyArrival,
+  resolveClass,
+  useBlockArrival,
+  useMessageArrival,
+  useTextArrival,
+} from "./arrival";
+import {
   artifactAction,
   artifactFrame,
   artifactHeader,
@@ -68,6 +77,11 @@ const markdownContainerProps = {
   "data-slot": "message-markdown",
   className:
     "min-w-0 max-w-[720px] overflow-x-auto text-pretty proportional-nums [&_:is(p,ul,ol,blockquote)]:max-w-[32em] [&_:is(p,ul,ol,blockquote,pre,table)]:my-3 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul]:list-disc [&_ol]:list-decimal [&_:is(ul,ol)]:ps-6 [&_li]:my-1 [&_li>p]:my-1 [&_:is(h1,h2,h3,h4,h5,h6)]:mt-6 [&_:is(h1,h2,h3,h4,h5,h6)]:mb-2 [&_:is(h1,h2,h3,h4,h5,h6)]:text-title [&_:is(h1,h2,h3,h4,h5,h6)]:text-foreground [&_a]:text-link [&_a]:underline [&_a]:underline-offset-[3px] [&_strong]:font-semibold [&_strong]:text-foreground [&_:not(pre)>code]:rounded-xs [&_:not(pre)>code]:border [&_:not(pre)>code]:border-border [&_:not(pre)>code]:bg-gray-2 [&_:not(pre)>code]:px-[5px] [&_:not(pre)>code]:py-px [&_:not(pre)>code]:[overflow-wrap:anywhere] [&_pre]:overflow-x-auto [&_pre]:rounded-card [&_pre]:border [&_pre]:border-border [&_pre]:bg-card [&_pre]:px-4 [&_pre]:py-3 [&_pre]:text-label [&_blockquote]:border-s [&_blockquote]:border-border [&_blockquote]:ps-3 [&_blockquote]:text-muted-foreground [&_table]:w-full [&_table]:border-separate [&_table]:border-spacing-0 [&_table]:rounded-card [&_table]:border [&_table]:border-border [&_table]:bg-card [&_table]:text-label [&_table]:tabular-nums [&_:is(th,td)]:px-4 [&_:is(th,td)]:py-2.5 [&_:is(th,td)]:text-start [&_:is(th,td)]:align-top [&_th]:font-semibold [&_th]:text-muted-foreground [&_tbody>tr>*]:border-t [&_tbody>tr>*]:border-border",
+};
+const resolvingContainerProps = {
+  ...markdownContainerProps,
+  "data-reduced-motion": "fade",
+  className: cn(markdownContainerProps.className, resolveClass),
 };
 
 const plural = (count: number, noun: string) =>
@@ -146,9 +160,10 @@ const ArtifactBody = ({
 const ArtifactPart = ({ data }: DataMessagePartProps<PresentedArtifact>) => {
   const { select, openId, visible } = useContext(ArtifactContext);
   const [ref, near] = useNearScreen();
+  const arrival = useBlockArrival();
   if (data.artifact.kind === "hearth.automation") {
     return (
-      <div ref={ref}>
+      <div ref={ref} {...arrival}>
         <AutomationArtifactPreview
           artifact={data.artifact}
           open={openId === data.artifact.artifact_id}
@@ -160,7 +175,7 @@ const ArtifactPart = ({ data }: DataMessagePartProps<PresentedArtifact>) => {
   }
   if (data.artifact.kind === "unsupported") {
     return (
-      <div ref={ref}>
+      <div ref={ref} {...arrival}>
         <StatusNotice>
           <p>
             This artifact cannot be shown in this Hearth version. The original
@@ -205,11 +220,13 @@ const ArtifactPart = ({ data }: DataMessagePartProps<PresentedArtifact>) => {
       data-slot="artifact-preview"
       data-kind="view"
       data-open={open || undefined}
+      data-reduced-motion={arrival?.["data-reduced-motion"]}
       className={cn(
         artifactFrame,
         open
           ? "border-violet/45"
-          : "mt-3 rounded-none border-0 bg-transparent p-0"
+          : "mt-3 rounded-none border-0 bg-transparent p-0",
+        arrival?.className
       )}
     >
       <div className={artifactHeader}>
@@ -265,39 +282,46 @@ const ArtifactPart = ({ data }: DataMessagePartProps<PresentedArtifact>) => {
 /** Hold a presentation's place while the model writes it and Core checks it. */
 const PendingArtifactPart = ({
   data,
-}: DataMessagePartProps<{ kind?: string } | null>) => (
-  <Card asChild className={artifactFrame}>
-    <output className="block">
-      <div className={artifactHeader}>
-        <span className={artifactIcon}>
-          <PanelsTopLeftIcon className="size-5" aria-hidden="true" />
-        </span>
-        <div>
-          <h3 className={artifactTitle}>
-            {data?.kind === "automation"
-              ? "Preparing an Automation"
-              : "Preparing a view"}
-          </h3>
-          <p className={artifactSummary}>Putting it together…</p>
+}: DataMessagePartProps<{ kind?: string } | null>) => {
+  const arrival = useBlockArrival();
+  return (
+    <Card
+      asChild
+      className={cn(artifactFrame, arrival?.className)}
+      data-reduced-motion={arrival?.["data-reduced-motion"]}
+    >
+      <output className="block">
+        <div className={artifactHeader}>
+          <span className={artifactIcon}>
+            <PanelsTopLeftIcon className="size-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h3 className={artifactTitle}>
+              {data?.kind === "automation"
+                ? "Preparing an Automation"
+                : "Preparing a view"}
+            </h3>
+            <p className={artifactSummary}>Putting it together…</p>
+          </div>
         </div>
-      </div>
-      <div
-        className="border-border mt-4 grid min-w-0 grid-cols-2 gap-3 overflow-x-auto border-t pt-4"
-        aria-hidden="true"
-      >
-        <Card asChild className="animate-pending h-[157px]">
-          <span />
-        </Card>
-        <Card
-          asChild
-          className="animate-pending h-[157px] [animation-delay:.2s]"
+        <div
+          className="border-border mt-4 grid min-w-0 grid-cols-2 gap-3 overflow-x-auto border-t pt-4"
+          aria-hidden="true"
         >
-          <span />
-        </Card>
-      </div>
-    </output>
-  </Card>
-);
+          <Card asChild className="animate-pending h-[157px]">
+            <span />
+          </Card>
+          <Card
+            asChild
+            className="animate-pending h-[157px] [animation-delay:.2s]"
+          >
+            <span />
+          </Card>
+        </div>
+      </output>
+    </Card>
+  );
+};
 
 const ContextPart = ({ data }: DataMessagePartProps<unknown>) => {
   const automation = automationContextSchema.safeParse(data);
@@ -340,28 +364,37 @@ const ToolGroup = ({
   count: number;
   pending: number;
   children: ReactNode;
-}) => (
-  <details className="group/tools text-label text-muted-foreground">
-    <summary className={activitySummary}>
-      {pending ? (
-        <CircleDashedIcon className={activityIcon} aria-hidden="true" />
-      ) : (
-        <CheckIcon className={activityIcon} aria-hidden="true" />
+}) => {
+  const arrival = useBlockArrival();
+  return (
+    <details
+      className={cn(
+        "group/tools text-label text-muted-foreground",
+        arrival?.className
       )}
-      <span>
-        Used {plural(count, "tool")}
-        {pending ? ` · ${pending} pending or unknown` : ""}
-      </span>
-      <ChevronRightIcon
-        className="-ms-0.5 size-3.5 shrink-0 transition-transform duration-150 ease-out group-open/tools:rotate-90"
-        aria-hidden="true"
-      />
-    </summary>
-    <ul className="border-border ms-[7.5px] mt-1 list-none border-s ps-[15.5px]">
-      {children}
-    </ul>
-  </details>
-);
+      data-reduced-motion={arrival?.["data-reduced-motion"]}
+    >
+      <summary className={activitySummary}>
+        {pending ? (
+          <CircleDashedIcon className={activityIcon} aria-hidden="true" />
+        ) : (
+          <CheckIcon className={activityIcon} aria-hidden="true" />
+        )}
+        <span>
+          Used {plural(count, "tool")}
+          {pending ? ` · ${pending} pending or unknown` : ""}
+        </span>
+        <ChevronRightIcon
+          className="-ms-0.5 size-3.5 shrink-0 transition-transform duration-150 ease-out group-open/tools:rotate-90"
+          aria-hidden="true"
+        />
+      </summary>
+      <ul className="border-border ms-[7.5px] mt-1 list-none border-s ps-[15.5px]">
+        {children}
+      </ul>
+    </details>
+  );
+};
 
 const ToolPart = ({ toolName, argsText, result }: ToolCallMessagePartProps) => (
   <li>
@@ -392,11 +425,23 @@ const ToolPart = ({ toolName, argsText, result }: ToolCallMessagePartProps) => (
 );
 
 const userParts = { data: { by_name: { "hearth-context": ContextPart } } };
-const UserMessage = () => (
-  <div className="rounded-card border-gray-3 bg-gray-2 text-body text-foreground ms-auto mt-8 w-fit max-w-[min(85%,560px)] rounded-br-xs border px-4 py-2.5 [overflow-wrap:break-word] whitespace-pre-wrap proportional-nums first:mt-4">
-    <MessagePrimitive.Parts components={userParts} />
-  </div>
-);
+const UserMessage = () => {
+  const arriving = useMessageArrival();
+  return (
+    <div
+      data-reduced-motion={arriving ? "fade" : undefined}
+      className={cn(
+        "rounded-card border-gray-3 bg-gray-2 text-body text-foreground ms-auto mt-8 w-fit max-w-[min(85%,560px)] rounded-br-xs border px-4 py-2.5 [overflow-wrap:break-word] whitespace-pre-wrap proportional-nums first:mt-4",
+        arriving && arriveClass
+      )}
+    >
+      <MessagePrimitive.Parts components={userParts} />
+    </div>
+  );
+};
+
+const confirmIcon =
+  "[grid-area:1/1] transition-[opacity,scale,filter] duration-feedback motion-reduce:scale-100 motion-reduce:blur-none motion-reduce:transition-opacity";
 
 const CopyResponse = () => {
   const copied = useAuiState((state) => state.message.isCopied);
@@ -405,100 +450,155 @@ const CopyResponse = () => {
       <Button
         variant="ghost"
         size="touch"
-        className="data-[copied]:text-success px-2"
+        className="group/copy data-[copied]:text-success px-2"
         aria-label={copied ? "Response copied" : "Copy response"}
         title={copied ? "Response copied" : "Copy response"}
       >
-        {copied ? (
-          <>
-            <CheckIcon aria-hidden="true" />
-            Copied
-          </>
-        ) : (
-          <>
-            <CopyIcon aria-hidden="true" />
-            Copy
-          </>
-        )}
+        {/* Confirm (DESIGN.md, Motion): the copy icon shrinks out as the check grows in. */}
+        <span className="grid">
+          <CopyIcon
+            aria-hidden="true"
+            data-reduced-motion="fade"
+            className={cn(
+              confirmIcon,
+              "group-data-[copied]/copy:scale-50 group-data-[copied]/copy:opacity-0"
+            )}
+          />
+          <CheckIcon
+            aria-hidden="true"
+            data-reduced-motion="fade"
+            className={cn(
+              confirmIcon,
+              "scale-50 opacity-0 blur-[2px] group-data-[copied]/copy:scale-100 group-data-[copied]/copy:opacity-100 group-data-[copied]/copy:blur-none"
+            )}
+          />
+        </span>
+        {copied ? "Copied" : "Copy"}
       </Button>
     </ActionBarPrimitive.Copy>
   );
 };
 
-const AssistantMessage = () => (
-  <div className="text-body text-gray-9 mt-6 flex flex-col gap-3 [overflow-wrap:break-word]">
-    <div className="text-label text-foreground mb-[-4px] flex min-h-6 items-center gap-2 font-semibold">
-      <HouseIcon className="text-violet size-4 shrink-0" aria-hidden="true" />
-      Hearth
-    </div>
-    <MessagePrimitive.GroupedParts groupBy={toolGroups} indicator="never">
-      {({ part, children }) => {
-        switch (part.type) {
-          case "group-tools": {
-            return (
-              <ToolGroup
-                count={part.indices.length}
-                pending={part.indices.length - part.counts.complete}
-              >
-                {children}
-              </ToolGroup>
-            );
-          }
-          case "tool-call": {
-            return <ToolPart {...part} />;
-          }
-          case "text": {
-            return (
-              <MarkdownTextPrimitive
-                containerProps={markdownContainerProps}
-                remarkPlugins={markdownPlugins}
-                smooth={false}
-                skipHtml
-              />
-            );
-          }
-          case "data": {
-            if (part.name === "hearth-view") {
-              return <ArtifactPart {...part} />;
-            }
-            return part.name === "hearth-view-pending" ? (
-              <PendingArtifactPart {...part} />
-            ) : null;
-          }
-          default: {
-            return null;
-          }
-        }
-      }}
-    </MessagePrimitive.GroupedParts>
-    <AuiIf
-      condition={(s) =>
-        s.message.parts.some(
-          (part) => part.type === "text" && !!part.text.trim()
-        )
+/** Resolve (DESIGN.md, Motion): reply text that arrives fades in from a slight blur. */
+const ReplyText = () => {
+  const resolving = useTextArrival();
+  return (
+    <MarkdownTextPrimitive
+      containerProps={
+        resolving ? resolvingContainerProps : markdownContainerProps
       }
+      remarkPlugins={markdownPlugins}
+      smooth={false}
+      skipHtml
+    />
+  );
+};
+
+const AssistantMessage = () => {
+  const arriving = useMessageArrival();
+  const running = useAuiState(
+    (state) => state.message.status?.type === "running"
+  );
+  return (
+    <div
+      data-reduced-motion={arriving ? "fade" : undefined}
+      className={cn(
+        "text-body text-gray-9 mt-6 flex flex-col gap-3 [overflow-wrap:break-word]",
+        arriving && arriveClass
+      )}
     >
-      <ActionBarPrimitive.Root className="-ms-2 flex" hideWhenRunning>
-        <CopyResponse />
-      </ActionBarPrimitive.Root>
-    </AuiIf>
-  </div>
-);
+      <div className="text-label text-foreground mb-[-4px] flex min-h-6 items-center gap-2 font-semibold">
+        {/* Pending (DESIGN.md, Motion): the icon breathes while the reply runs. */}
+        <HouseIcon
+          data-slot="reply-icon"
+          className={cn(
+            "text-violet size-4 shrink-0",
+            running && "animate-pending"
+          )}
+          aria-hidden="true"
+        />
+        Hearth
+      </div>
+      <ReplyArrival value={arriving}>
+        <MessagePrimitive.GroupedParts groupBy={toolGroups} indicator="never">
+          {({ part, children }) => {
+            switch (part.type) {
+              case "group-tools": {
+                return (
+                  <ToolGroup
+                    count={part.indices.length}
+                    pending={part.indices.length - part.counts.complete}
+                  >
+                    {children}
+                  </ToolGroup>
+                );
+              }
+              case "tool-call": {
+                return <ToolPart {...part} />;
+              }
+              case "text": {
+                return <ReplyText />;
+              }
+              case "data": {
+                if (part.name === "hearth-view") {
+                  return <ArtifactPart {...part} />;
+                }
+                return part.name === "hearth-view-pending" ? (
+                  <PendingArtifactPart {...part} />
+                ) : null;
+              }
+              default: {
+                return null;
+              }
+            }
+          }}
+        </MessagePrimitive.GroupedParts>
+      </ReplyArrival>
+      <AuiIf
+        condition={(s) =>
+          s.message.parts.some(
+            (part) => part.type === "text" && !!part.text.trim()
+          )
+        }
+      >
+        <ActionBarPrimitive.Root className="-ms-2 flex" hideWhenRunning>
+          <CopyResponse />
+        </ActionBarPrimitive.Root>
+      </AuiIf>
+    </div>
+  );
+};
 
 export const ConversationMessages = ({
   select,
   openId,
   visible,
-}: ArtifactDisplay) => {
+  threadKey,
+  historyLoading,
+  messageCount,
+}: ArtifactDisplay & {
+  /** Identifies the conversation, so a newly opened one starts quiet. */
+  threadKey: string;
+  /** Whether the conversation's history is still loading. */
+  historyLoading: boolean;
+  /** How many messages the conversation holds. */
+  messageCount: number;
+}) => {
   const value = useMemo(
     () => ({ select, openId, visible }),
     [openId, select, visible]
   );
   return (
     <ArtifactContext.Provider value={value}>
-      <ThreadPrimitive.Messages
-        components={{ UserMessage, AssistantMessage }}
-      />
+      <ArrivalProvider
+        threadKey={threadKey}
+        historyLoading={historyLoading}
+        messageCount={messageCount}
+      >
+        <ThreadPrimitive.Messages
+          components={{ UserMessage, AssistantMessage }}
+        />
+      </ArrivalProvider>
     </ArtifactContext.Provider>
   );
 };
