@@ -360,7 +360,7 @@ export const Morph: Story = {
     await userEvent.click(
       canvas.getByRole("button", { name: "Reset placeholder" })
     );
-    await expect(canvas.getByText("Preparing a view…")).toBeVisible();
+    await expect(await canvas.findByText("Preparing a view…")).toBeVisible();
   },
 };
 
