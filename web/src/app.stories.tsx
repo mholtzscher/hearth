@@ -1032,8 +1032,38 @@ export const SelectedViewMessage: Story = {
     );
     await editTitle(context, longSelectedTitle);
     await expectSelectedContextFits(context);
-    await askTemperature(context);
-    // History reconciliation replaces the streamed message after the reply arrives.
+    // Wait for the post-turn history response, not the whole stream, in the DOM assertions.
+    const history = Promise.withResolvers<Response>();
+    const listener = new AbortController();
+    const { events } = context.msw;
+    events.on(
+      "response:mocked",
+      ({ request, response }: { request: Request; response: Response }) => {
+        if (
+          request.method === "GET" &&
+          new URL(request.url).pathname ===
+            `/v1/agent${conversationPath}/messages`
+        ) {
+          history.resolve(response);
+        }
+      },
+      { signal: listener.signal }
+    );
+    try {
+      await askTemperature(context);
+      AbortSignal.timeout(5000).addEventListener(
+        "abort",
+        () =>
+          history.reject(
+            new Error("No refreshed conversation history response")
+          ),
+        { once: true, signal: listener.signal }
+      );
+      const response = await history.promise;
+      await expect(response.ok).toBe(true);
+    } finally {
+      listener.abort();
+    }
     await waitFor(() => {
       expect(
         context.canvas.getByRole("textbox", { name: "Ask Hearth" })
