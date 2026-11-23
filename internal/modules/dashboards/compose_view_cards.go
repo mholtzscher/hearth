@@ -167,13 +167,23 @@ type timeSeriesProps struct {
 
 func (p *timeSeriesProps) compile(c *cardCompiler) cardProps {
 	series := make([]cardProps, 0, len(p.Series))
+	seen := make(map[devices.EntityID]bool, len(p.Series))
+	var chartType devices.EntityTypeID
 	for i, item := range p.Series {
-		source := c.root(item.EntityID, fmt.Sprintf("/series/%d/entity_id", i))
-		if c.err == nil {
-			if _, found := devices.BuiltinStateField(source.EntityType, p.Field); !found {
-				c.err = invalidViewArgument(c.path+"/field", "choose a State field shared by the chart's Entities")
-			}
+		path := fmt.Sprintf("/series/%d/entity_id", i)
+		source := c.root(item.EntityID, path)
+		if c.err != nil {
+			break
 		}
+		if seen[item.EntityID] || (i != 0 && chartType != source.EntityType) {
+			c.err = invalidViewArgument(c.path+path, "a TimeSeries needs distinct Entities of one type")
+			break
+		}
+		if _, found := devices.BuiltinStateField(source.EntityType, p.Field); !found {
+			c.err = invalidViewArgument(c.path+"/field", "choose a State field shared by the chart's Entities")
+			break
+		}
+		chartType, seen[item.EntityID] = source.EntityType, true
 		source.Kind, source.Field, source.Window = seriesBindingKind, p.Field, p.Window
 		props := labeledProps(item.Label)
 		props["source"] = source

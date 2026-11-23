@@ -29,6 +29,8 @@ func TestComposeViewSafeArgumentDiagnostics(t *testing.T) {
 		{"stringified children", `{"mode":"create","title":"View","layout":{"type":"Stack","children":"` + sentinel + `"}}`, "type_mismatch", "/layout/children"},
 		{"nested series shape", `{"mode":"create","title":"View","layout":{"type":"Grid","columns":2,"children":[{"type":"TimeSeries","title":"Trend","window":"24h","series":"` + sentinel + `"}]}}`, "type_mismatch", "/layout/children/0/series"},
 		{"no raw graph", `{"mode":"edit","definition":{},"changes":[{"op":"set_title","title":"New"}]}`, "unknown_property", ""},
+		{"no mixed mode fields", `{"mode":"create","title":"View","layout":{"type":"Note","text":"text"},"changes":[{"op":"set_title","title":"New"}]}`, "constraint_violation", ""},
+		{"stringified changes", `{"mode":"edit","changes":"[{}]"}`, "type_mismatch", "/changes"},
 		{"unsupported edit", `{"mode":"edit","changes":[{"op":"set_card"}]}`, "invalid_variant", "/changes/0/op"},
 		{"bad edit field", `{"mode":"edit","changes":[{"op":"set_chart_window","card_id":"trend","window":null}]}`, "constraint_violation", "/changes/0/window"},
 		{"too large", strings.Repeat("x", maxComposeArguments+1), "argument_limit", ""},
@@ -44,6 +46,35 @@ func TestComposeViewSafeArgumentDiagnostics(t *testing.T) {
 			require.NotContains(t, output, sentinel)
 		})
 	}
+}
+
+func TestComposeViewNestedLayoutsPreserveOrderAndOptions(t *testing.T) {
+	t.Parallel()
+	native := testComposeTool(t, dashboards.NewService(nil, nil, nil))
+	result, err := native.InvokableRun(t.Context(), `{
+		"mode":"create","title":"Nested layouts","layout":{"type":"Grid","columns":3,"children":[
+			{"type":"Stack","gap":"small","children":[
+				{"type":"Heading","text":"First"},
+				{"type":"Grid","columns":2,"children":[{"type":"Note","text":"Second"},{"type":"Note","text":"Third"}]}
+			]},
+			{"type":"Stack","children":[{"type":"Heading","text":"Last"}]}
+		]}
+	}`)
+	require.NoError(t, err)
+	artifact, err := dashboards.ParseArtifact([]byte(result))
+	require.NoError(t, err, "tool result: %s", result)
+	definition, err := dashboards.ParseDefinition(artifact.Definition)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"root":"node-1","elements":{
+		"node-1":{"type":"Grid","props":{"columns":3},"children":["node-2","node-7"]},
+		"node-2":{"type":"Stack","props":{"gap":"small"},"children":["node-3","node-4"]},
+		"node-3":{"type":"Heading","props":{"text":"First"}},
+		"node-4":{"type":"Grid","props":{"columns":2},"children":["node-5","node-6"]},
+		"node-5":{"type":"Note","props":{"text":"Second"}},
+		"node-6":{"type":"Note","props":{"text":"Third"}},
+		"node-7":{"type":"Stack","props":{"gap":"medium"},"children":["node-8"]},
+		"node-8":{"type":"Heading","props":{"text":"Last"}}
+	}}`, string(definition.Spec))
 }
 
 func TestComposeViewSourceAndBudgetRejections(t *testing.T) {
@@ -91,6 +122,7 @@ func TestComposeViewSourceAndBudgetRejections(t *testing.T) {
 		{"wrong source type", `{"type":"Pressure","entity_id":"` + first + `"}`, "invalid_definition", "the selected Entity type is not compatible with this card or role", "/layout/entity_id"},
 		{"wrong source field", `{"type":"Metric","source":{"entity_id":"` + first + `","field":"/value"}}`, "invalid_definition", "choose a State field", "/layout/source/field"},
 		{"mixed chart units", `{"type":"TimeSeries","title":"Chart","window":"24h","series":[{"entity_id":"` + first + `"},{"entity_id":"` + second + `"}]}`, "invalid_definition", "share one unit", ""},
+		{"repeated chart source", `{"type":"TimeSeries","title":"Chart","window":"24h","series":[{"entity_id":"` + first + `"},{"entity_id":"` + first + `"}]}`, "invalid_definition", "distinct Entities of one type", "/layout/series/1/entity_id"},
 		{"unknown series field", `{"type":"TimeSeries","title":"Chart","window":"24h","field":"/value","series":[{"entity_id":"` + first + `"}]}`, "invalid_definition", "field shared by the chart", "/layout/field"},
 		{"invalid period count", `{"type":"Forecast","entity_id":"` + daily + `","periods":12}`, "invalid_definition", "daily forecasts show 3 to 8", "/layout/periods"},
 		{"weather unit", `{"type":"Rain","rate":"` + first + `"}`, "invalid_definition", "rain rates need a numeric sensor in mm/h", ""},

@@ -26,9 +26,13 @@ const composeModeField = "mode"
 const composeTypeField = "type"
 
 const composeViewDescription = "Present a live dashboard draft without saving or sending Commands. " +
-	"Use mode create with title and a nested layout of cards, Stacks, or Grids, binding exact Entity or Device IDs from discovery. " +
+	"For create, put mode, title, and layout at the top level. Use a nested layout of cards, Stacks, or Grids and bind exact Entity or Device IDs from discovery. " +
 	"Use mode edit only with the current user-selected draft, to change its title, forecast periods, or a chart window. " +
 	"Other draft edits belong in the dashboard editor. Pass native objects and arrays, not JSON strings. " +
+	"Follow the keys for each card type. Omit unused optional fields; never send null. " +
+	"AirPurifier begins with {\"type\":\"AirPurifier\",\"layout\":\"card\",\"power\":\"<power Entity ID>\",\"pm25\":\"<PM2.5 Entity ID>\"}. " +
+	"Do not put entity_id on AirPurifier. Bind the fan mode to mode, not fan_level (numbered speeds only). " +
+	"Grid requires columns. OutsideNow uses wind_direction; Wind uses direction. " +
 	"A view has at most 32 nodes, 8 levels, and 16 distinct Entities and Devices."
 
 //go:embed compose_view.schema.json
@@ -94,7 +98,8 @@ func (t composeViewTool) InvokableRun(ctx context.Context, arguments string, _ .
 	}
 	object, _ := value.(map[string]any)
 	if object != nil {
-		// Bound the recursive input before evaluating its schema.
+		// Bound recursion before schema evaluation, even on unexpected
+		// children: incompatible union branches also inspect the input.
 		var nodes int
 		if path, tooLarge := composeLayoutLimit(object["layout"], "/layout", 1, &nodes); tooLarge {
 			return rejectComposeArguments(ctx, "layout_limit", path)
@@ -319,7 +324,7 @@ func composeVariant(s *jsonschema.Schema, instance any) (int, string) {
 	if s == nil || !ok || len(s.OneOf) == 0 {
 		return -1, ""
 	}
-	for _, key := range []string{composeModeField, composeTypeField, "op"} {
+	for _, key := range []string{composeTypeField, "op"} {
 		if s.OneOf[0].Properties[key] == nil {
 			continue
 		}

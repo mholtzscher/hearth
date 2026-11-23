@@ -119,7 +119,7 @@ func TestComposeViewCatalogParity(t *testing.T) {
 		node, found := nodes[name]
 		require.True(t, found, "portable kind %q needs an authoring fixture", name)
 		if len(node.Children) != 0 {
-			continue // Covered in the shared fixtures and nested layout case.
+			continue // Cover containers in shared fixtures and TestComposeViewNestedLayoutsPreserveOrderAndOptions.
 		}
 		if len(shape.AnyOf) > 0 {
 			shape = shape.AnyOf[0] // Forecast arms share the same keys.
