@@ -74,6 +74,41 @@ const askTemperature = async ({ canvas, userEvent }: InteractionContext) => {
   await userEvent.click(canvas.getByRole("button", { name: "Send message" }));
 };
 
+/** Start DOM assertions only after the mock returns post-turn history. */
+const sendAndWaitForHistory = async (
+  { msw }: InteractionContext,
+  send: () => Promise<void>
+) => {
+  const history = Promise.withResolvers<Response>();
+  const listener = new AbortController();
+  msw.events.on(
+    "response:mocked",
+    ({ request, response }: { request: Request; response: Response }) => {
+      if (
+        request.method === "GET" &&
+        new URL(request.url).pathname ===
+          `/v1/agent${conversationPath}/messages`
+      ) {
+        history.resolve(response);
+      }
+    },
+    { signal: listener.signal }
+  );
+  try {
+    await send();
+    AbortSignal.timeout(5000).addEventListener(
+      "abort",
+      () =>
+        history.reject(new Error("No refreshed conversation history response")),
+      { once: true, signal: listener.signal }
+    );
+    const response = await history.promise;
+    await expect(response.ok).toBe(true);
+  } finally {
+    listener.abort();
+  }
+};
+
 const editTitle = async (
   { canvas, userEvent }: InteractionContext,
   title: string
@@ -1032,38 +1067,7 @@ export const SelectedViewMessage: Story = {
     );
     await editTitle(context, longSelectedTitle);
     await expectSelectedContextFits(context);
-    // Wait for the post-turn history response, not the whole stream, in the DOM assertions.
-    const history = Promise.withResolvers<Response>();
-    const listener = new AbortController();
-    const { events } = context.msw;
-    events.on(
-      "response:mocked",
-      ({ request, response }: { request: Request; response: Response }) => {
-        if (
-          request.method === "GET" &&
-          new URL(request.url).pathname ===
-            `/v1/agent${conversationPath}/messages`
-        ) {
-          history.resolve(response);
-        }
-      },
-      { signal: listener.signal }
-    );
-    try {
-      await askTemperature(context);
-      AbortSignal.timeout(5000).addEventListener(
-        "abort",
-        () =>
-          history.reject(
-            new Error("No refreshed conversation history response")
-          ),
-        { once: true, signal: listener.signal }
-      );
-      const response = await history.promise;
-      await expect(response.ok).toBe(true);
-    } finally {
-      listener.abort();
-    }
+    await sendAndWaitForHistory(context, () => askTemperature(context));
     await waitFor(() => {
       expect(
         context.canvas.getByRole("textbox", { name: "Ask Hearth" })
@@ -1073,6 +1077,38 @@ export const SelectedViewMessage: Story = {
         context.canvas.getByText(`Selected view: ${longSelectedTitle}`)
       ).toBeVisible();
     });
+  },
+};
+
+export const MotionReplyContinuity: Story = {
+  name: "Motion · Previous reply stays open",
+  tags: ["motion"],
+  parameters: { appPath: conversationPath },
+  play: async (context) => {
+    const { canvas, userEvent } = context;
+    await canvas.findByText(conversationReply);
+    await sendAndWaitForHistory(context, () => askTemperature(context));
+    const prompt = canvas.getByRole("textbox", { name: "Ask Hearth" });
+    await waitFor(() => expect(prompt).toBeEnabled());
+    await expect(await canvas.findByText(sentReply)).toBeVisible();
+
+    const [summary] = canvas
+      .getAllByText("Used 1 tool", { exact: true })
+      .slice(-1);
+    const disclosure = summary.closest("details");
+    await userEvent.click(summary);
+    await expect(disclosure).toHaveAttribute("open");
+    await sendAndWaitForHistory(context, async () => {
+      await userEvent.click(prompt);
+      await userEvent.paste("Check the hallway too.");
+      await userEvent.click(
+        canvas.getByRole("button", { name: "Send message" })
+      );
+    });
+    await waitFor(() => expect(prompt).toBeEnabled());
+    await expect(canvas.getByText("Check the hallway too.")).toBeVisible();
+    await expect(disclosure).toBeInTheDocument();
+    await expect(disclosure).toHaveAttribute("open");
   },
 };
 
