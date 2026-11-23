@@ -247,7 +247,7 @@ export const Grow: Story = {
   render: () => (
     <details
       data-reduced-motion="fade"
-      className="group/grow text-label text-muted-foreground details-content:duration-layout max-w-md details-content:h-0 details-content:overflow-clip details-content:opacity-0 details-content:transition-[height,opacity,content-visibility] details-content:transition-discrete open:details-content:h-auto open:details-content:opacity-100 motion-reduce:details-content:transition-[opacity,content-visibility]"
+      className="group/grow text-label text-muted-foreground details-content:duration-state open:details-content:duration-layout max-w-md details-content:h-0 details-content:overflow-clip details-content:opacity-0 details-content:transition-[height,opacity,content-visibility] details-content:transition-discrete open:details-content:h-auto open:details-content:opacity-100 motion-reduce:details-content:transition-[opacity,content-visibility]"
     >
       <summary className="hover:text-foreground flex min-h-7 w-fit cursor-pointer list-none items-center gap-2 rounded-md [&::-webkit-details-marker]:hidden">
         Used 2 tools

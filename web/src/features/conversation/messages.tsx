@@ -47,7 +47,7 @@ import {
   resolveClass,
   useBlockArrival,
   useMessageArrival,
-  useTextArrival,
+  useReplyArrival,
 } from "./arrival";
 import {
   artifactAction,
@@ -356,6 +356,33 @@ const ContextPart = ({ data }: DataMessagePartProps<unknown>) => {
 const activitySummary =
   "flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md hover:text-foreground pointer-coarse:min-h-11 [&::-webkit-details-marker]:hidden";
 const activityIcon = "size-4 shrink-0";
+/** Grow (DESIGN.md, Motion): a disclosure opens to its content height and closes one step faster. */
+const growDisclosure =
+  "details-content:h-0 details-content:overflow-clip details-content:opacity-0 details-content:transition-[height,opacity,content-visibility] details-content:transition-discrete details-content:duration-state open:details-content:h-auto open:details-content:opacity-100 open:details-content:duration-layout motion-reduce:details-content:transition-[opacity,content-visibility]";
+const activityChevron = "-ms-0.5 size-3.5 shrink-0 transition-transform";
+
+/**
+ * A pending activity's dashed icon turns while its reply runs (Pending); a
+ * finished one's check draws in when it finishes during an arriving reply
+ * (Confirm). History shows still icons.
+ */
+const ActivityIcon = ({ done }: { done: boolean }) => {
+  const running = useAuiState(
+    (state) => state.message.status?.type === "running"
+  );
+  const arriving = useReplyArrival();
+  return done ? (
+    <CheckIcon
+      className={cn(activityIcon, arriving && "[&_path]:animate-draw")}
+      aria-hidden="true"
+    />
+  ) : (
+    <CircleDashedIcon
+      className={cn(activityIcon, running && "animate-turn")}
+      aria-hidden="true"
+    />
+  );
+};
 const ToolGroup = ({
   count,
   pending,
@@ -370,22 +397,19 @@ const ToolGroup = ({
     <details
       className={cn(
         "group/tools text-label text-muted-foreground",
+        growDisclosure,
         arrival?.className
       )}
-      data-reduced-motion={arrival?.["data-reduced-motion"]}
+      data-reduced-motion="fade"
     >
       <summary className={activitySummary}>
-        {pending ? (
-          <CircleDashedIcon className={activityIcon} aria-hidden="true" />
-        ) : (
-          <CheckIcon className={activityIcon} aria-hidden="true" />
-        )}
+        <ActivityIcon done={!pending} />
         <span>
           Used {plural(count, "tool")}
           {pending ? ` · ${pending} pending or unknown` : ""}
         </span>
         <ChevronRightIcon
-          className="-ms-0.5 size-3.5 shrink-0 transition-transform duration-150 ease-out group-open/tools:rotate-90"
+          className={cn(activityChevron, "group-open/tools:rotate-90")}
           aria-hidden="true"
         />
       </summary>
@@ -398,19 +422,18 @@ const ToolGroup = ({
 
 const ToolPart = ({ toolName, argsText, result }: ToolCallMessagePartProps) => (
   <li>
-    <details className="group/tool">
+    <details
+      className={cn("group/tool", growDisclosure)}
+      data-reduced-motion="fade"
+    >
       <summary className={activitySummary}>
-        {result === undefined ? (
-          <CircleDashedIcon className={activityIcon} aria-hidden="true" />
-        ) : (
-          <CheckIcon className={activityIcon} aria-hidden="true" />
-        )}
+        <ActivityIcon done={result !== undefined} />
         <span className="min-w-0 [overflow-wrap:anywhere]">
           {toolName}{" "}
           {result === undefined ? "· outcome unknown or pending" : "· complete"}
         </span>
         <ChevronRightIcon
-          className="-ms-0.5 size-3.5 shrink-0 transition-transform duration-150 ease-out group-open/tool:rotate-90"
+          className={cn(activityChevron, "group-open/tool:rotate-90")}
           aria-hidden="true"
         />
       </summary>
@@ -481,7 +504,7 @@ const CopyResponse = () => {
 
 /** Resolve (DESIGN.md, Motion): reply text that arrives fades in from a slight blur. */
 const ReplyText = () => {
-  const resolving = useTextArrival();
+  const resolving = useReplyArrival();
   return (
     <MarkdownTextPrimitive
       containerProps={

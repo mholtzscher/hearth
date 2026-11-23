@@ -94,5 +94,5 @@ const blockArrival: BlockArrivalProps = {
 export const useBlockArrival = (): BlockArrivalProps | undefined =>
   useContext(ReplyArrivalContext) ? blockArrival : undefined;
 
-/** Whether text that appears in this reply resolves. */
-export const useTextArrival = (): boolean => useContext(ReplyArrivalContext);
+/** Whether this reply is arriving, so what appears in it moves. */
+export const useReplyArrival = (): boolean => useContext(ReplyArrivalContext);

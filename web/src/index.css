@@ -139,6 +139,8 @@
   --animate-refuse: motion-refuse var(--transition-duration-layout)
     var(--ease-out-expo);
   --animate-turn: motion-turn 8s linear infinite;
+  --animate-draw: motion-draw var(--transition-duration-feedback)
+    var(--ease-out-expo) both;
   /* Words that accompany Pending wait 600ms, so a quick outcome never shows them. */
   --animate-pending-words: motion-fade var(--transition-duration-state)
     var(--ease-out-expo) 600ms both;
@@ -324,6 +326,17 @@
   }
   80% {
     translate: -2px 0;
+  }
+}
+/* A 24-unit icon's check stroke draws from its start (Confirm). */
+@keyframes motion-draw {
+  from {
+    stroke-dasharray: 24;
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dasharray: 24;
+    stroke-dashoffset: 0;
   }
 }
 @keyframes motion-turn {
