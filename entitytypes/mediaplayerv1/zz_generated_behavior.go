@@ -19,10 +19,25 @@ func ValidateSupport(support Support) error {
 func EqualState(left, right State) bool { return reflect.DeepEqual(left, right) }
 
 const (
-	SetMutedDeadline    time.Duration = 10000 * time.Millisecond
-	SetPlaybackDeadline time.Duration = 10000 * time.Millisecond
-	SetVolumeDeadline   time.Duration = 10000 * time.Millisecond
+	NextTrackDeadline     time.Duration = 10000 * time.Millisecond
+	PreviousTrackDeadline time.Duration = 10000 * time.Millisecond
+	SeekDeadline          time.Duration = 10000 * time.Millisecond
+	SetMutedDeadline      time.Duration = 10000 * time.Millisecond
+	SetPlaybackDeadline   time.Duration = 10000 * time.Millisecond
+	SetVolumeDeadline     time.Duration = 10000 * time.Millisecond
 )
+
+func ValidateNextTrackParameters(support Support, operationSupport NextTrackSupport, parameters NextTrackParameters) error {
+	return nil
+}
+
+func ValidatePreviousTrackParameters(support Support, operationSupport PreviousTrackSupport, parameters PreviousTrackParameters) error {
+	return nil
+}
+
+func ValidateSeekParameters(support Support, operationSupport SeekSupport, parameters SeekParameters) error {
+	return nil
+}
 
 func ValidateSetMutedParameters(support Support, operationSupport SetMutedSupport, parameters SetMutedParameters) error {
 	return nil

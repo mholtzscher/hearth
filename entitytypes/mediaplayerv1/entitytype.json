@@ -30,6 +30,24 @@
       "satisfied_when": [
         {"op": "eq_optional", "left": {"root": "parameters", "path": "/muted"}, "right": {"root": "state", "path": "/muted"}}
       ]
+    },
+    "next_track": {
+      "parameters_schema": "next_track-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "dispatched",
+      "satisfied_when": []
+    },
+    "previous_track": {
+      "parameters_schema": "previous_track-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "dispatched",
+      "satisfied_when": []
+    },
+    "seek": {
+      "parameters_schema": "seek-parameters.schema.json",
+      "deadline_ms": 10000,
+      "outcome": "dispatched",
+      "satisfied_when": []
     }
   },
   "examples": "examples.json"

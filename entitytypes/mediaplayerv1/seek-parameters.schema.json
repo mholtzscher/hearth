@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:mediaplayer:v1:seek-parameters",
+  "title": "Hearth mediaplayer/v1 seek parameters",
+  "description": "Dispatch a seek to a playhead position in whole seconds. Dispatch does not confirm the new position.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["position_seconds"],
+  "properties": {"position_seconds": {"type": "integer", "minimum": 0, "maximum": 86400}}
+}

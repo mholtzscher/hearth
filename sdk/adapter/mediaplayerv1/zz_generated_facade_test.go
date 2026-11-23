@@ -123,6 +123,309 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 	})
+	t.Run("controllable-speaker-with-media", func(t *testing.T) {
+		support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {}, \"operations\": {\"next_track\": {}, \"previous_track\": {}, \"seek\": {}}}"))
+		if err != nil {
+			t.Fatalf("support: %v", err)
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"title\": \"Nocturne in F-Sharp Minor\", \"artist\": \"Nils Frahm\", \"album\": \"All Melody\", \"duration_seconds\": 284, \"position_seconds\": 118, \"position_anchored_at\": \"2026-11-21T20:15:03Z\", \"artwork_url\": \"http://10.69.69.60:8095/imageproxy/0f3c1d2e4b5a69788796a5b4c3d2e1f00f3c1d2e4b5a69788796a5b4c3d2e1f0?size=512&fmt=jpeg\", \"volume_percent\": 42, \"muted\": false}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			if codecErr != nil {
+				t.Errorf("State example 1 marked valid but rejected by State codec: %v", codecErr)
+			}
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
+					t.Errorf("State example 1 marked valid but rejected by Observation constructor: %v", observationErr)
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"paused\", \"grouping\": \"standalone\", \"title\": \"Ocean Sleep Sounds\", \"position_seconds\": 0, \"position_anchored_at\": \"2026-11-21T20:15:03Z\"}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			if codecErr != nil {
+				t.Errorf("State example 2 marked valid but rejected by State codec: %v", codecErr)
+			}
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
+					t.Errorf("State example 2 marked valid but rejected by Observation constructor: %v", observationErr)
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"title\": \"Late Night Radio\", \"artist\": \"Station\"}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			if codecErr != nil {
+				t.Errorf("State example 3 marked valid but rejected by State codec: %v", codecErr)
+			}
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
+					t.Errorf("State example 3 marked valid but rejected by Observation constructor: %v", observationErr)
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"position_seconds\": 118}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 4 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 4 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"position_anchored_at\": \"2026-11-21T20:15:03Z\"}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 5 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 5 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"position_seconds\": 1, \"position_anchored_at\": \"2026-11-21 20:15:03\"}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 6 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 6 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"duration_seconds\": 0}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 7 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 7 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"position_seconds\": -1, \"position_anchored_at\": \"2026-11-21T20:15:03Z\"}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 8 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 8 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"artist\": \"\"}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 9 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 9 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"artwork_url\": \"file:///etc/passwd\"}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 10 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 10 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"artwork_url\": \"http://user:secret@10.69.69.60:8095/imageproxy/abc\"}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 11 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 11 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("{\"playback\": \"playing\", \"grouping\": \"standalone\", \"artwork_url\": \"imageproxy/abc\"}")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 12 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 12 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+	})
 	t.Run("speaker-without-pause", func(t *testing.T) {
 		support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {}, \"operations\": {\"set_playback\": {\"states\": [\"idle\", \"playing\"]}}}"))
 		if err != nil {
@@ -491,6 +794,365 @@ func TestGeneratedCommandConformance(t *testing.T) {
 		} else {
 			adaptertest.RequireValidationError(t, err, "reject command handler without set_volume handler")
 		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			SetMuted: func(_ context.Context, command SetMutedCommand, _ adapter.Responder) error {
+				setMutedCalls = append(setMutedCalls, command)
+				return nil
+			},
+			SetPlayback: func(_ context.Context, command SetPlaybackCommand, _ adapter.Responder) error {
+				setPlaybackCalls = append(setPlaybackCalls, command)
+				return nil
+			},
+			SetVolume: func(_ context.Context, command SetVolumeCommand, _ adapter.Responder) error {
+				setVolumeCalls = append(setVolumeCalls, command)
+				return nil
+			},
+			NextTrack: func(_ context.Context, _ NextTrackCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported next_track operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported next_track operation")
+		}
+		{
+			before := len(setMutedCalls) + len(setPlaybackCalls) + len(setVolumeCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_next_track_absent", CorrelationID: "cor_next_track_absent", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "next_track", Parameters: json.RawMessage(`null`), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unsupported next_track operation was accepted")
+			}
+			if total := len(setMutedCalls) + len(setPlaybackCalls) + len(setVolumeCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			SetMuted: func(_ context.Context, command SetMutedCommand, _ adapter.Responder) error {
+				setMutedCalls = append(setMutedCalls, command)
+				return nil
+			},
+			SetPlayback: func(_ context.Context, command SetPlaybackCommand, _ adapter.Responder) error {
+				setPlaybackCalls = append(setPlaybackCalls, command)
+				return nil
+			},
+			SetVolume: func(_ context.Context, command SetVolumeCommand, _ adapter.Responder) error {
+				setVolumeCalls = append(setVolumeCalls, command)
+				return nil
+			},
+			PreviousTrack: func(_ context.Context, _ PreviousTrackCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported previous_track operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported previous_track operation")
+		}
+		{
+			before := len(setMutedCalls) + len(setPlaybackCalls) + len(setVolumeCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_previous_track_absent", CorrelationID: "cor_previous_track_absent", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "previous_track", Parameters: json.RawMessage(`null`), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unsupported previous_track operation was accepted")
+			}
+			if total := len(setMutedCalls) + len(setPlaybackCalls) + len(setVolumeCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			SetMuted: func(_ context.Context, command SetMutedCommand, _ adapter.Responder) error {
+				setMutedCalls = append(setMutedCalls, command)
+				return nil
+			},
+			SetPlayback: func(_ context.Context, command SetPlaybackCommand, _ adapter.Responder) error {
+				setPlaybackCalls = append(setPlaybackCalls, command)
+				return nil
+			},
+			SetVolume: func(_ context.Context, command SetVolumeCommand, _ adapter.Responder) error {
+				setVolumeCalls = append(setVolumeCalls, command)
+				return nil
+			},
+			Seek: func(_ context.Context, _ SeekCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported seek operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported seek operation")
+		}
+		{
+			before := len(setMutedCalls) + len(setPlaybackCalls) + len(setVolumeCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_seek_absent", CorrelationID: "cor_seek_absent", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "seek", Parameters: json.RawMessage(`null`), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unsupported seek operation was accepted")
+			}
+			if total := len(setMutedCalls) + len(setPlaybackCalls) + len(setVolumeCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
+	})
+	t.Run("controllable-speaker-with-media", func(t *testing.T) {
+		support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {}, \"operations\": {\"next_track\": {}, \"previous_track\": {}, \"seek\": {}}}"))
+		if err != nil {
+			t.Fatalf("support: %v", err)
+		}
+		nextTrackCalls := []NextTrackCommand{}
+		previousTrackCalls := []PreviousTrackCommand{}
+		seekCalls := []SeekCommand{}
+		handler, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			NextTrack: func(_ context.Context, command NextTrackCommand, _ adapter.Responder) error {
+				nextTrackCalls = append(nextTrackCalls, command)
+				return nil
+			},
+			PreviousTrack: func(_ context.Context, command PreviousTrackCommand, _ adapter.Responder) error {
+				previousTrackCalls = append(previousTrackCalls, command)
+				return nil
+			},
+			Seek: func(_ context.Context, command SeekCommand, _ adapter.Responder) error {
+				seekCalls = append(seekCalls, command)
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("command handler: %v", err)
+		}
+		deadline := time.Date(2026, time.June, 15, 12, 0, 0, 0, time.UTC)
+		if err := handler(context.Background(), adapter.Command{ID: "cmd_next_track_one", CorrelationID: "cor_next_track_one", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "next_track", Parameters: json.RawMessage("{}"), Deadline: deadline.Format(time.RFC3339Nano)}, nil); err != nil {
+			t.Fatalf("next_track command: %v", err)
+		}
+		if len(nextTrackCalls) != 1 {
+			t.Fatalf("next_track handler calls = %d, want 1", len(nextTrackCalls))
+		}
+		receivedNextTrack := nextTrackCalls[0]
+		if receivedNextTrack.ID != "cmd_next_track_one" || receivedNextTrack.CorrelationID != "cor_next_track_one" || receivedNextTrack.EntityID != "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab" {
+			t.Errorf("next_track command identity = %+v", receivedNextTrack)
+		}
+		if !receivedNextTrack.Deadline.Equal(deadline) {
+			t.Errorf("next_track command deadline = %v", receivedNextTrack.Deadline)
+		}
+		if entitytypetest.CanonicalValue(t, receivedNextTrack.Parameters) != entitytypetest.CanonicalJSON(t, json.RawMessage("{}")) {
+			t.Errorf("next_track command parameters = %+v", receivedNextTrack.Parameters)
+		}
+		if err := handler(context.Background(), adapter.Command{ID: "cmd_previous_track_one", CorrelationID: "cor_previous_track_one", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "previous_track", Parameters: json.RawMessage("{}"), Deadline: deadline.Format(time.RFC3339Nano)}, nil); err != nil {
+			t.Fatalf("previous_track command: %v", err)
+		}
+		if len(previousTrackCalls) != 1 {
+			t.Fatalf("previous_track handler calls = %d, want 1", len(previousTrackCalls))
+		}
+		receivedPreviousTrack := previousTrackCalls[0]
+		if receivedPreviousTrack.ID != "cmd_previous_track_one" || receivedPreviousTrack.CorrelationID != "cor_previous_track_one" || receivedPreviousTrack.EntityID != "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab" {
+			t.Errorf("previous_track command identity = %+v", receivedPreviousTrack)
+		}
+		if !receivedPreviousTrack.Deadline.Equal(deadline) {
+			t.Errorf("previous_track command deadline = %v", receivedPreviousTrack.Deadline)
+		}
+		if entitytypetest.CanonicalValue(t, receivedPreviousTrack.Parameters) != entitytypetest.CanonicalJSON(t, json.RawMessage("{}")) {
+			t.Errorf("previous_track command parameters = %+v", receivedPreviousTrack.Parameters)
+		}
+		if err := handler(context.Background(), adapter.Command{ID: "cmd_seek_one", CorrelationID: "cor_seek_one", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "seek", Parameters: json.RawMessage("{\"position_seconds\": 0}"), Deadline: deadline.Format(time.RFC3339Nano)}, nil); err != nil {
+			t.Fatalf("seek command: %v", err)
+		}
+		if len(seekCalls) != 1 {
+			t.Fatalf("seek handler calls = %d, want 1", len(seekCalls))
+		}
+		receivedSeek := seekCalls[0]
+		if receivedSeek.ID != "cmd_seek_one" || receivedSeek.CorrelationID != "cor_seek_one" || receivedSeek.EntityID != "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab" {
+			t.Errorf("seek command identity = %+v", receivedSeek)
+		}
+		if !receivedSeek.Deadline.Equal(deadline) {
+			t.Errorf("seek command deadline = %v", receivedSeek.Deadline)
+		}
+		if entitytypetest.CanonicalValue(t, receivedSeek.Parameters) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\"position_seconds\": 0}")) {
+			t.Errorf("seek command parameters = %+v", receivedSeek.Parameters)
+		}
+		{
+			if _, _, decodeErr := codecs.NextTrackParameters.Decode(json.RawMessage("{}")); decodeErr != nil {
+				t.Errorf("next_track parameter example 1 marked valid but rejected by parameters codec: %v", decodeErr)
+			}
+		}
+		{
+			raw := json.RawMessage("{\"count\": 1}")
+			before := len(nextTrackCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_next_track_invalid_2", CorrelationID: "cor_next_track_invalid_2", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "next_track", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Errorf("invalid next_track parameter example 2 was accepted")
+			}
+			if len(nextTrackCalls) != before {
+				t.Errorf("next_track handler invoked for invalid next_track parameter example 2")
+			}
+		}
+		{
+			if _, _, decodeErr := codecs.PreviousTrackParameters.Decode(json.RawMessage("{}")); decodeErr != nil {
+				t.Errorf("previous_track parameter example 1 marked valid but rejected by parameters codec: %v", decodeErr)
+			}
+		}
+		{
+			raw := json.RawMessage("{\"count\": 1}")
+			before := len(previousTrackCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_previous_track_invalid_2", CorrelationID: "cor_previous_track_invalid_2", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "previous_track", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Errorf("invalid previous_track parameter example 2 was accepted")
+			}
+			if len(previousTrackCalls) != before {
+				t.Errorf("previous_track handler invoked for invalid previous_track parameter example 2")
+			}
+		}
+		{
+			if _, _, decodeErr := codecs.SeekParameters.Decode(json.RawMessage("{\"position_seconds\": 0}")); decodeErr != nil {
+				t.Errorf("seek parameter example 1 marked valid but rejected by parameters codec: %v", decodeErr)
+			}
+		}
+		{
+			if _, _, decodeErr := codecs.SeekParameters.Decode(json.RawMessage("{\"position_seconds\": 150}")); decodeErr != nil {
+				t.Errorf("seek parameter example 2 marked valid but rejected by parameters codec: %v", decodeErr)
+			}
+		}
+		{
+			raw := json.RawMessage("{\"position_seconds\": -1}")
+			before := len(seekCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_seek_invalid_3", CorrelationID: "cor_seek_invalid_3", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "seek", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Errorf("invalid seek parameter example 3 was accepted")
+			}
+			if len(seekCalls) != before {
+				t.Errorf("seek handler invoked for invalid seek parameter example 3")
+			}
+		}
+		{
+			raw := json.RawMessage("{\"position_seconds\": 1.5}")
+			before := len(seekCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_seek_invalid_4", CorrelationID: "cor_seek_invalid_4", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "seek", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Errorf("invalid seek parameter example 4 was accepted")
+			}
+			if len(seekCalls) != before {
+				t.Errorf("seek handler invoked for invalid seek parameter example 4")
+			}
+		}
+		{
+			raw := json.RawMessage("{\"position_seconds\": 86401}")
+			before := len(seekCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_seek_invalid_5", CorrelationID: "cor_seek_invalid_5", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "seek", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Errorf("invalid seek parameter example 5 was accepted")
+			}
+			if len(seekCalls) != before {
+				t.Errorf("seek handler invoked for invalid seek parameter example 5")
+			}
+		}
+		{
+			raw := json.RawMessage("{}")
+			before := len(seekCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_seek_invalid_6", CorrelationID: "cor_seek_invalid_6", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "seek", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Errorf("invalid seek parameter example 6 was accepted")
+			}
+			if len(seekCalls) != before {
+				t.Errorf("seek handler invoked for invalid seek parameter example 6")
+			}
+		}
+		{
+			before := len(nextTrackCalls) + len(previousTrackCalls) + len(seekCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_wrong_entity", CorrelationID: "cor_wrong_entity", EntityID: "ent_6ba7b810-9b21-11d1-80b4-00c04fd430c8", OperationName: "next_track", Parameters: json.RawMessage("{}"), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for wrong entity ID was accepted")
+			}
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_unknown_operation", CorrelationID: "cor_unknown_operation", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "unknown", Parameters: json.RawMessage("{}"), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unknown operation was accepted")
+			}
+			if total := len(nextTrackCalls) + len(previousTrackCalls) + len(seekCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			PreviousTrack: func(_ context.Context, _ PreviousTrackCommand, _ adapter.Responder) error { return nil },
+			Seek:          func(_ context.Context, _ SeekCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler without next_track handler was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler without next_track handler")
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			NextTrack: func(_ context.Context, _ NextTrackCommand, _ adapter.Responder) error { return nil },
+			Seek:      func(_ context.Context, _ SeekCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler without previous_track handler was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler without previous_track handler")
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			NextTrack:     func(_ context.Context, _ NextTrackCommand, _ adapter.Responder) error { return nil },
+			PreviousTrack: func(_ context.Context, _ PreviousTrackCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler without seek handler was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler without seek handler")
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			NextTrack: func(_ context.Context, command NextTrackCommand, _ adapter.Responder) error {
+				nextTrackCalls = append(nextTrackCalls, command)
+				return nil
+			},
+			PreviousTrack: func(_ context.Context, command PreviousTrackCommand, _ adapter.Responder) error {
+				previousTrackCalls = append(previousTrackCalls, command)
+				return nil
+			},
+			Seek: func(_ context.Context, command SeekCommand, _ adapter.Responder) error {
+				seekCalls = append(seekCalls, command)
+				return nil
+			},
+			SetMuted: func(_ context.Context, _ SetMutedCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported set_muted operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported set_muted operation")
+		}
+		{
+			before := len(nextTrackCalls) + len(previousTrackCalls) + len(seekCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_set_muted_absent", CorrelationID: "cor_set_muted_absent", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "set_muted", Parameters: json.RawMessage(`null`), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unsupported set_muted operation was accepted")
+			}
+			if total := len(nextTrackCalls) + len(previousTrackCalls) + len(seekCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			NextTrack: func(_ context.Context, command NextTrackCommand, _ adapter.Responder) error {
+				nextTrackCalls = append(nextTrackCalls, command)
+				return nil
+			},
+			PreviousTrack: func(_ context.Context, command PreviousTrackCommand, _ adapter.Responder) error {
+				previousTrackCalls = append(previousTrackCalls, command)
+				return nil
+			},
+			Seek: func(_ context.Context, command SeekCommand, _ adapter.Responder) error {
+				seekCalls = append(seekCalls, command)
+				return nil
+			},
+			SetPlayback: func(_ context.Context, _ SetPlaybackCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported set_playback operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported set_playback operation")
+		}
+		{
+			before := len(nextTrackCalls) + len(previousTrackCalls) + len(seekCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_set_playback_absent", CorrelationID: "cor_set_playback_absent", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "set_playback", Parameters: json.RawMessage(`null`), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unsupported set_playback operation was accepted")
+			}
+			if total := len(nextTrackCalls) + len(previousTrackCalls) + len(seekCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			NextTrack: func(_ context.Context, command NextTrackCommand, _ adapter.Responder) error {
+				nextTrackCalls = append(nextTrackCalls, command)
+				return nil
+			},
+			PreviousTrack: func(_ context.Context, command PreviousTrackCommand, _ adapter.Responder) error {
+				previousTrackCalls = append(previousTrackCalls, command)
+				return nil
+			},
+			Seek: func(_ context.Context, command SeekCommand, _ adapter.Responder) error {
+				seekCalls = append(seekCalls, command)
+				return nil
+			},
+			SetVolume: func(_ context.Context, _ SetVolumeCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported set_volume operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported set_volume operation")
+		}
+		{
+			before := len(nextTrackCalls) + len(previousTrackCalls) + len(seekCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_set_volume_absent", CorrelationID: "cor_set_volume_absent", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "set_volume", Parameters: json.RawMessage(`null`), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unsupported set_volume operation was accepted")
+			}
+			if total := len(nextTrackCalls) + len(previousTrackCalls) + len(seekCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
 	})
 	t.Run("speaker-without-pause", func(t *testing.T) {
 		support, _, err := codecs.Support.Decode(json.RawMessage("{\"state\": {}, \"operations\": {\"set_playback\": {\"states\": [\"idle\", \"playing\"]}}}"))
@@ -561,6 +1223,66 @@ func TestGeneratedCommandConformance(t *testing.T) {
 				setPlaybackCalls = append(setPlaybackCalls, command)
 				return nil
 			},
+			NextTrack: func(_ context.Context, _ NextTrackCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported next_track operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported next_track operation")
+		}
+		{
+			before := len(setPlaybackCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_next_track_absent", CorrelationID: "cor_next_track_absent", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "next_track", Parameters: json.RawMessage(`null`), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unsupported next_track operation was accepted")
+			}
+			if total := len(setPlaybackCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			SetPlayback: func(_ context.Context, command SetPlaybackCommand, _ adapter.Responder) error {
+				setPlaybackCalls = append(setPlaybackCalls, command)
+				return nil
+			},
+			PreviousTrack: func(_ context.Context, _ PreviousTrackCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported previous_track operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported previous_track operation")
+		}
+		{
+			before := len(setPlaybackCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_previous_track_absent", CorrelationID: "cor_previous_track_absent", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "previous_track", Parameters: json.RawMessage(`null`), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unsupported previous_track operation was accepted")
+			}
+			if total := len(setPlaybackCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			SetPlayback: func(_ context.Context, command SetPlaybackCommand, _ adapter.Responder) error {
+				setPlaybackCalls = append(setPlaybackCalls, command)
+				return nil
+			},
+			Seek: func(_ context.Context, _ SeekCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported seek operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported seek operation")
+		}
+		{
+			before := len(setPlaybackCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_seek_absent", CorrelationID: "cor_seek_absent", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "seek", Parameters: json.RawMessage(`null`), Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Error("command for unsupported seek operation was accepted")
+			}
+			if total := len(setPlaybackCalls); total != before {
+				t.Errorf("misrouted command invoked a handler: calls = %d, want %d", total, before)
+			}
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			SetPlayback: func(_ context.Context, command SetPlaybackCommand, _ adapter.Responder) error {
+				setPlaybackCalls = append(setPlaybackCalls, command)
+				return nil
+			},
 			SetMuted: func(_ context.Context, _ SetMutedCommand, _ adapter.Responder) error { return nil },
 		}); err == nil {
 			t.Error("command handler for unsupported set_muted operation was accepted")
@@ -606,6 +1328,27 @@ func TestGeneratedCommandConformance(t *testing.T) {
 			t.Error("command handler with no supported operations was accepted")
 		} else {
 			adaptertest.RequireValidationError(t, err, "reject command handler with no supported operations")
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			NextTrack: func(_ context.Context, _ NextTrackCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported next_track operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported next_track operation")
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			PreviousTrack: func(_ context.Context, _ PreviousTrackCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported previous_track operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported previous_track operation")
+		}
+		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
+			Seek: func(_ context.Context, _ SeekCommand, _ adapter.Responder) error { return nil },
+		}); err == nil {
+			t.Error("command handler for unsupported seek operation was accepted")
+		} else {
+			adaptertest.RequireValidationError(t, err, "reject command handler for unsupported seek operation")
 		}
 		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", support, Handlers{
 			SetMuted: func(_ context.Context, _ SetMutedCommand, _ adapter.Responder) error { return nil },

@@ -484,6 +484,48 @@ func newMediaplayerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, erro
 	if err != nil {
 		return EntityTypeDefinition{}, fmt.Errorf("compile hearth.mediaplayer/v1 codecs: %w", err)
 	}
+	nextTrack := DefineOperation[contractmediaplayerv1.State, contractmediaplayerv1.Support, contractmediaplayerv1.NextTrackSupport, contractmediaplayerv1.NextTrackParameters](
+		OperationName(contractmediaplayerv1.OperationNextTrack),
+		codecs.NextTrackParameters,
+		func(support contractmediaplayerv1.Support) (contractmediaplayerv1.NextTrackSupport, bool) {
+			if support.Operations.NextTrack == nil {
+				return contractmediaplayerv1.NextTrackSupport{}, false
+			}
+			return *support.Operations.NextTrack, true
+		},
+		contractmediaplayerv1.ValidateNextTrackParameters,
+		contractmediaplayerv1.NextTrackDeadline,
+		OutcomeDispatched,
+		nil,
+	)
+	previousTrack := DefineOperation[contractmediaplayerv1.State, contractmediaplayerv1.Support, contractmediaplayerv1.PreviousTrackSupport, contractmediaplayerv1.PreviousTrackParameters](
+		OperationName(contractmediaplayerv1.OperationPreviousTrack),
+		codecs.PreviousTrackParameters,
+		func(support contractmediaplayerv1.Support) (contractmediaplayerv1.PreviousTrackSupport, bool) {
+			if support.Operations.PreviousTrack == nil {
+				return contractmediaplayerv1.PreviousTrackSupport{}, false
+			}
+			return *support.Operations.PreviousTrack, true
+		},
+		contractmediaplayerv1.ValidatePreviousTrackParameters,
+		contractmediaplayerv1.PreviousTrackDeadline,
+		OutcomeDispatched,
+		nil,
+	)
+	seek := DefineOperation[contractmediaplayerv1.State, contractmediaplayerv1.Support, contractmediaplayerv1.SeekSupport, contractmediaplayerv1.SeekParameters](
+		OperationName(contractmediaplayerv1.OperationSeek),
+		codecs.SeekParameters,
+		func(support contractmediaplayerv1.Support) (contractmediaplayerv1.SeekSupport, bool) {
+			if support.Operations.Seek == nil {
+				return contractmediaplayerv1.SeekSupport{}, false
+			}
+			return *support.Operations.Seek, true
+		},
+		contractmediaplayerv1.ValidateSeekParameters,
+		contractmediaplayerv1.SeekDeadline,
+		OutcomeDispatched,
+		nil,
+	)
 	setMuted := DefineOperation(
 		OperationName(contractmediaplayerv1.OperationSetMuted),
 		codecs.SetMutedParameters,
@@ -526,7 +568,7 @@ func newMediaplayerV1TypeDefinition(id EntityTypeID) (EntityTypeDefinition, erro
 		OutcomeObserved,
 		contractmediaplayerv1.SetVolumeSatisfied,
 	)
-	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractmediaplayerv1.ValidateSupport, contractmediaplayerv1.ValidateState, contractmediaplayerv1.EqualState, setMuted, setPlayback, setVolume)
+	definition, err := DefineEntityType(id, codecs.State, codecs.Support, contractmediaplayerv1.ValidateSupport, contractmediaplayerv1.ValidateState, contractmediaplayerv1.EqualState, nextTrack, previousTrack, seek, setMuted, setPlayback, setVolume)
 	if err != nil {
 		return EntityTypeDefinition{}, err
 	}

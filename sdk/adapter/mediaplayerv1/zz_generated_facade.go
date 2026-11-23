@@ -18,6 +18,15 @@ type Support = contractmediaplayerv1.Support
 type State = contractmediaplayerv1.State
 type StateSupport = contractmediaplayerv1.StateSupport
 type OperationSupport = contractmediaplayerv1.OperationSupport
+type NextTrackSupport = contractmediaplayerv1.NextTrackSupport
+type NextTrackParameters = contractmediaplayerv1.NextTrackParameters
+type NextTrackCommand = typed.Command[NextTrackParameters]
+type PreviousTrackSupport = contractmediaplayerv1.PreviousTrackSupport
+type PreviousTrackParameters = contractmediaplayerv1.PreviousTrackParameters
+type PreviousTrackCommand = typed.Command[PreviousTrackParameters]
+type SeekSupport = contractmediaplayerv1.SeekSupport
+type SeekParameters = contractmediaplayerv1.SeekParameters
+type SeekCommand = typed.Command[SeekParameters]
 type SetMutedSupport = contractmediaplayerv1.SetMutedSupport
 type SetMutedParameters = contractmediaplayerv1.SetMutedParameters
 type SetMutedCommand = typed.Command[SetMutedParameters]
@@ -29,9 +38,12 @@ type SetVolumeParameters = contractmediaplayerv1.SetVolumeParameters
 type SetVolumeCommand = typed.Command[SetVolumeParameters]
 
 type Handlers struct {
-	SetMuted    typed.Handler[SetMutedParameters]
-	SetPlayback typed.Handler[SetPlaybackParameters]
-	SetVolume   typed.Handler[SetVolumeParameters]
+	NextTrack     typed.Handler[NextTrackParameters]
+	PreviousTrack typed.Handler[PreviousTrackParameters]
+	Seek          typed.Handler[SeekParameters]
+	SetMuted      typed.Handler[SetMutedParameters]
+	SetPlayback   typed.Handler[SetPlaybackParameters]
+	SetVolume     typed.Handler[SetVolumeParameters]
 }
 
 type ObservationInput struct {
@@ -75,6 +87,72 @@ func NewCommandHandler(entityID string, support Support, handlers Handlers) (ada
 		return nil, validationError(fmt.Errorf("invalid Entity support: %w", err))
 	}
 	var routes []typed.Route
+	if support.Operations.NextTrack != nil {
+		if handlers.NextTrack == nil {
+			return nil, validationError(errors.New("next_track handler is required when the operation is supported"))
+		}
+		nextTrackSupport := *support.Operations.NextTrack
+		nextTrackRoute, err := typed.Operation(entityID, contractmediaplayerv1.OperationNextTrack, func(raw json.RawMessage) (NextTrackParameters, error) {
+			parameters, _, err := codecs.NextTrackParameters.Decode(raw)
+			if err != nil {
+				return NextTrackParameters{}, err
+			}
+			if err := contractmediaplayerv1.ValidateNextTrackParameters(support, nextTrackSupport, parameters); err != nil {
+				return NextTrackParameters{}, err
+			}
+			return parameters, nil
+		}, handlers.NextTrack)
+		if err != nil {
+			return nil, validationError(err)
+		}
+		routes = append(routes, nextTrackRoute)
+	} else if handlers.NextTrack != nil {
+		return nil, validationError(errors.New("next_track handler was provided for an unsupported operation"))
+	}
+	if support.Operations.PreviousTrack != nil {
+		if handlers.PreviousTrack == nil {
+			return nil, validationError(errors.New("previous_track handler is required when the operation is supported"))
+		}
+		previousTrackSupport := *support.Operations.PreviousTrack
+		previousTrackRoute, err := typed.Operation(entityID, contractmediaplayerv1.OperationPreviousTrack, func(raw json.RawMessage) (PreviousTrackParameters, error) {
+			parameters, _, err := codecs.PreviousTrackParameters.Decode(raw)
+			if err != nil {
+				return PreviousTrackParameters{}, err
+			}
+			if err := contractmediaplayerv1.ValidatePreviousTrackParameters(support, previousTrackSupport, parameters); err != nil {
+				return PreviousTrackParameters{}, err
+			}
+			return parameters, nil
+		}, handlers.PreviousTrack)
+		if err != nil {
+			return nil, validationError(err)
+		}
+		routes = append(routes, previousTrackRoute)
+	} else if handlers.PreviousTrack != nil {
+		return nil, validationError(errors.New("previous_track handler was provided for an unsupported operation"))
+	}
+	if support.Operations.Seek != nil {
+		if handlers.Seek == nil {
+			return nil, validationError(errors.New("seek handler is required when the operation is supported"))
+		}
+		seekSupport := *support.Operations.Seek
+		seekRoute, err := typed.Operation(entityID, contractmediaplayerv1.OperationSeek, func(raw json.RawMessage) (SeekParameters, error) {
+			parameters, _, err := codecs.SeekParameters.Decode(raw)
+			if err != nil {
+				return SeekParameters{}, err
+			}
+			if err := contractmediaplayerv1.ValidateSeekParameters(support, seekSupport, parameters); err != nil {
+				return SeekParameters{}, err
+			}
+			return parameters, nil
+		}, handlers.Seek)
+		if err != nil {
+			return nil, validationError(err)
+		}
+		routes = append(routes, seekRoute)
+	} else if handlers.Seek != nil {
+		return nil, validationError(errors.New("seek handler was provided for an unsupported operation"))
+	}
 	if support.Operations.SetMuted != nil {
 		if handlers.SetMuted == nil {
 			return nil, validationError(errors.New("set_muted handler is required when the operation is supported"))

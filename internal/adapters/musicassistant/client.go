@@ -22,6 +22,8 @@ const (
 // Client owns one fixed route and its authenticated Music Assistant transport.
 type Client struct {
 	endpoint string
+	// origin is server_url without a trailing slash; artwork URLs are rebuilt on it.
+	origin   string
 	token    string
 	http     *http.Client
 	playerIO chan struct{}
@@ -55,9 +57,11 @@ func New(serverURL, token string, transport http.RoundTripper) (*Client, error) 
 		protocols.SetHTTP1(true)
 		transport = &http.Transport{Protocols: protocols}
 	}
+	u.Path = ""
+	origin := u.String()
 	u.Path = "/api"
 	return &Client{
-		endpoint: u.String(), token: token,
+		endpoint: u.String(), origin: origin, token: token,
 		playerIO: make(chan struct{}, 1),
 		http: &http.Client{
 			Transport: transport, Timeout: requestTimeout,

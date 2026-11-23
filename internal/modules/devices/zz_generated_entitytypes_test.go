@@ -733,6 +733,57 @@ func TestGeneratedBuiltinCatalogWiring(t *testing.T) {
 		if !entitytypetest.EqualJSON(t, normalizedState, []byte("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}")) {
 			t.Errorf("catalog normalized State = %s, want %s", normalizedState, "{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}")
 		}
+		entityNextTrack := Entity{ID: EntityID("generated_mediaplayerv1"), TypeID: EntityTypeMediaplayerV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"next_track\":{},\"previous_track\":{},\"seek\":{}}}")}
+		resolvedNextTrack, err := catalog.ResolveCommand(entityNextTrack, OperationName("next_track"), CommandParameters("{}"))
+		if err != nil {
+			t.Fatalf("catalog resolve next_track: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedNextTrack.Parameters, []byte("{}")) {
+			t.Errorf("catalog normalized next_track parameters = %s, want %s", resolvedNextTrack.Parameters, "{}")
+		}
+		if resolvedNextTrack.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog next_track deadline = %v, want %v", resolvedNextTrack.Deadline, 10000*time.Millisecond)
+		}
+		if resolvedNextTrack.Outcome != OutcomeDispatched {
+			t.Errorf("catalog next_track outcome = %v, want %v", resolvedNextTrack.Outcome, OutcomeDispatched)
+		}
+		if _, err := catalog.Satisfies(entityNextTrack, CommandRecord{OperationName: OperationName("next_track"), Parameters: CommandParameters("{}")}, Value("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}")); err == nil {
+			t.Error("catalog next_track satisfies unexpectedly succeeded for dispatched operation")
+		}
+		entityPreviousTrack := Entity{ID: EntityID("generated_mediaplayerv1"), TypeID: EntityTypeMediaplayerV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"next_track\":{},\"previous_track\":{},\"seek\":{}}}")}
+		resolvedPreviousTrack, err := catalog.ResolveCommand(entityPreviousTrack, OperationName("previous_track"), CommandParameters("{}"))
+		if err != nil {
+			t.Fatalf("catalog resolve previous_track: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedPreviousTrack.Parameters, []byte("{}")) {
+			t.Errorf("catalog normalized previous_track parameters = %s, want %s", resolvedPreviousTrack.Parameters, "{}")
+		}
+		if resolvedPreviousTrack.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog previous_track deadline = %v, want %v", resolvedPreviousTrack.Deadline, 10000*time.Millisecond)
+		}
+		if resolvedPreviousTrack.Outcome != OutcomeDispatched {
+			t.Errorf("catalog previous_track outcome = %v, want %v", resolvedPreviousTrack.Outcome, OutcomeDispatched)
+		}
+		if _, err := catalog.Satisfies(entityPreviousTrack, CommandRecord{OperationName: OperationName("previous_track"), Parameters: CommandParameters("{}")}, Value("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}")); err == nil {
+			t.Error("catalog previous_track satisfies unexpectedly succeeded for dispatched operation")
+		}
+		entitySeek := Entity{ID: EntityID("generated_mediaplayerv1"), TypeID: EntityTypeMediaplayerV1, Support: EntitySupport("{\"state\":{},\"operations\":{\"next_track\":{},\"previous_track\":{},\"seek\":{}}}")}
+		resolvedSeek, err := catalog.ResolveCommand(entitySeek, OperationName("seek"), CommandParameters("{\"position_seconds\":0}"))
+		if err != nil {
+			t.Fatalf("catalog resolve seek: %v", err)
+		}
+		if !entitytypetest.EqualJSON(t, resolvedSeek.Parameters, []byte("{\"position_seconds\":0}")) {
+			t.Errorf("catalog normalized seek parameters = %s, want %s", resolvedSeek.Parameters, "{\"position_seconds\":0}")
+		}
+		if resolvedSeek.Deadline != 10000*time.Millisecond {
+			t.Errorf("catalog seek deadline = %v, want %v", resolvedSeek.Deadline, 10000*time.Millisecond)
+		}
+		if resolvedSeek.Outcome != OutcomeDispatched {
+			t.Errorf("catalog seek outcome = %v, want %v", resolvedSeek.Outcome, OutcomeDispatched)
+		}
+		if _, err := catalog.Satisfies(entitySeek, CommandRecord{OperationName: OperationName("seek"), Parameters: CommandParameters("{\"position_seconds\":0}")}, Value("{\"playback\":\"playing\",\"grouping\":\"standalone\",\"title\":\"Ocean Sleep Sounds\",\"volume_percent\":30,\"muted\":false}")); err == nil {
+			t.Error("catalog seek satisfies unexpectedly succeeded for dispatched operation")
+		}
 		resolvedSetMuted, err := catalog.ResolveCommand(entity, OperationName("set_muted"), CommandParameters("{\"muted\":false}"))
 		if err != nil {
 			t.Fatalf("catalog resolve set_muted: %v", err)

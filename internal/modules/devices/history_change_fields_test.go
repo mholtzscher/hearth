@@ -8,12 +8,15 @@ import (
 
 // historyChangeFieldsWithoutHistory lists the exact "type field" keys present
 // when a new Entity type is introduced. Later fields of that type still need
-// a backfill, so exempting a whole type would hide missing history.
+// a backfill, so exempting a whole type would hide missing history. The
+// mediaplayer media fields joined the type before its first release, and its
+// closed State schema means no stored Observation can hold them.
 func historyChangeFieldsWithoutHistory() []string {
 	return []string{"hearth.lock/v1 ", "hearth.colorrgb/v1 /active", "hearth.textsensor/v1 ", "hearth.cover/v1 /motion",
 		"hearth.thermostat/v1 /mode", "hearth.thermostat/v1 /activity", "hearth.thermostat/v1 /fan_mode",
 		"hearth.mediaplayer/v1 /grouping", "hearth.mediaplayer/v1 /muted", "hearth.mediaplayer/v1 /playback",
-		"hearth.mediaplayer/v1 /title"}
+		"hearth.mediaplayer/v1 /title", "hearth.mediaplayer/v1 /artist", "hearth.mediaplayer/v1 /album",
+		"hearth.mediaplayer/v1 /position_anchored_at", "hearth.mediaplayer/v1 /artwork_url"}
 }
 
 func TestStateChangeBackfillsCoverYesNoAndTextFields(t *testing.T) {

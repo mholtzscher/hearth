@@ -165,11 +165,33 @@ particular track can play.
 
 Music Assistant speakers also appear in Hearth as Devices with a Playback
 Entity (`hearth.mediaplayer/v1`). The adapter polls account-visible speakers
-and reports observed playback, grouping, title, volume, and mute. An offline
-speaker becomes unavailable without losing its last State. `set_playback`,
-`set_volume`, and `set_muted` are Entity Commands, not Adapter Functions. The
-adapter advertises supported controls and refuses to control a grouped speaker.
-A Command is satisfied only by a matching, linked Observation.
+and reports observed playback, grouping, volume, and mute, plus the current
+media's title, artist, album, duration, playhead, and artwork when Music
+Assistant reports them. An idle speaker reports no media fields. An offline
+speaker becomes unavailable without losing its last State.
+
+The playhead is an anchor: `position_seconds` was true at
+`position_anchored_at`, an adapter-clock UTC time. While a speaker plays, a
+reader advances the position itself; the adapter publishes a new anchor only
+when playback changes, the media changes, or the playhead drifts more than 2
+seconds from that extrapolation, so steady playback does not change State.
+
+`artwork_url` is published only for Music Assistant's own
+`/imageproxy/<id>` artwork. The adapter rebuilds it on the configured
+`server_url`, keeping only the image ID, `size`, and `fmt`, so it never carries
+credentials. Music Assistant serves imageproxy images without its bearer token.
+Other artwork, such as a radio station's upstream image, is omitted.
+
+`set_playback`, `set_volume`, `set_muted`, `next_track`, `previous_track`,
+and `seek` are Entity Commands, not Adapter Functions. The adapter refuses to
+control a grouped speaker. `set_playback`, `set_volume`, and `set_muted` are
+satisfied only by a matching, linked Observation. Skip and seek complete as
+`dispatched` once Music Assistant accepts them, because no Observation can
+confirm a track change or a moving playhead. The adapter advertises them on
+every speaker and refuses one the current source cannot perform. Skip needs
+Music Assistant's queue or the speaker's native `next_previous` support. Seek
+needs Music Assistant's queue or the speaker's native `seek` support, media
+with a known duration, and a position within that duration.
 
 `play_media` still takes the Music Assistant `player_id`. It is not an Entity
 Command and uses Music Assistant's account permissions rather than Hearth Entity

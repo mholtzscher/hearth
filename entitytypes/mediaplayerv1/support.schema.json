@@ -26,7 +26,10 @@
           }
         },
         "set_volume": {"type": "object", "additionalProperties": false, "maxProperties": 0},
-        "set_muted": {"type": "object", "additionalProperties": false, "maxProperties": 0}
+        "set_muted": {"type": "object", "additionalProperties": false, "maxProperties": 0},
+        "next_track": {"type": "object", "additionalProperties": false, "maxProperties": 0},
+        "previous_track": {"type": "object", "additionalProperties": false, "maxProperties": 0},
+        "seek": {"type": "object", "additionalProperties": false, "maxProperties": 0}
       }
     }
   }

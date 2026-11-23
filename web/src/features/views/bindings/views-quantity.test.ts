@@ -181,7 +181,7 @@ describe("State field catalog", () => {
     const fields = Object.values(stateFields).flatMap((typeFields) =>
       Object.values(typeFields)
     );
-    expect(fields).toHaveLength(43);
+    expect(fields).toHaveLength(49);
     expect(stateFields["hearth.lock/v1"][""]).toMatchObject({
       value_type: "string",
       enum: ["locked", "unlocked", "locking", "unlocking", "jammed", "unknown"],
@@ -196,7 +196,7 @@ describe("State field catalog", () => {
       presence: "always",
       enum: ["idle", "opening", "closing"],
     });
-    expect(fields.filter(isQuantityField)).toHaveLength(23);
+    expect(fields.filter(isQuantityField)).toHaveLength(25);
     for (const field of fields) {
       if (!isQuantityField(field) || typeof field.quantity.unit !== "string") {
         continue;
@@ -217,6 +217,15 @@ describe("State field catalog", () => {
       value_type: "integer",
       presence: "sometimes",
       quantity: { unit: "%" },
+    });
+    expect(fields["/duration_seconds"]).toStrictEqual({
+      value_type: "integer",
+      presence: "sometimes",
+      quantity: { unit: "s", quantity_kind: "duration" },
+    });
+    expect(fields["/artist"]).toStrictEqual({
+      value_type: "string",
+      presence: "sometimes",
     });
   });
 

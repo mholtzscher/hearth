@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:entity-type:mediaplayer:v1:previous-track-parameters",
+  "title": "Hearth mediaplayer/v1 previous_track parameters",
+  "description": "Dispatch a skip request. Dispatch does not confirm that the track changed.",
+  "type": "object",
+  "additionalProperties": false,
+  "maxProperties": 0
+}

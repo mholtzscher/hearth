@@ -39,6 +39,60 @@ func TestGeneratedConformance(t *testing.T) {
 			return ValidateState(decodedSupport, decodedState)
 		},
 		Operations: map[string]entitytypetest.OperationProbe{
+			"next_track": {
+				Dispatched: true,
+				ValidateParameters: func(support, parameters json.RawMessage) error {
+					decodedSupport, _, err := codecs.Support.Decode(support)
+					if err != nil {
+						return err
+					}
+					if decodedSupport.Operations.NextTrack == nil {
+						return errors.New("next_track support is required by this conformance case")
+					}
+					nextTrackSupport := *decodedSupport.Operations.NextTrack
+					decodedParameters, _, err := codecs.NextTrackParameters.Decode(parameters)
+					if err != nil {
+						return err
+					}
+					return ValidateNextTrackParameters(decodedSupport, nextTrackSupport, decodedParameters)
+				},
+			},
+			"previous_track": {
+				Dispatched: true,
+				ValidateParameters: func(support, parameters json.RawMessage) error {
+					decodedSupport, _, err := codecs.Support.Decode(support)
+					if err != nil {
+						return err
+					}
+					if decodedSupport.Operations.PreviousTrack == nil {
+						return errors.New("previous_track support is required by this conformance case")
+					}
+					previousTrackSupport := *decodedSupport.Operations.PreviousTrack
+					decodedParameters, _, err := codecs.PreviousTrackParameters.Decode(parameters)
+					if err != nil {
+						return err
+					}
+					return ValidatePreviousTrackParameters(decodedSupport, previousTrackSupport, decodedParameters)
+				},
+			},
+			"seek": {
+				Dispatched: true,
+				ValidateParameters: func(support, parameters json.RawMessage) error {
+					decodedSupport, _, err := codecs.Support.Decode(support)
+					if err != nil {
+						return err
+					}
+					if decodedSupport.Operations.Seek == nil {
+						return errors.New("seek support is required by this conformance case")
+					}
+					seekSupport := *decodedSupport.Operations.Seek
+					decodedParameters, _, err := codecs.SeekParameters.Decode(parameters)
+					if err != nil {
+						return err
+					}
+					return ValidateSeekParameters(decodedSupport, seekSupport, decodedParameters)
+				},
+			},
 			"set_muted": {
 				ValidateParameters: func(support, parameters json.RawMessage) error {
 					decodedSupport, _, err := codecs.Support.Decode(support)
