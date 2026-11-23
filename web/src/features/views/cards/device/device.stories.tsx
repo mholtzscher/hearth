@@ -43,6 +43,8 @@ export const Lamp: Story = {
   },
 };
 export const NarrowLampFailure: Story = {
+  name: "Motion · Light failure status",
+  tags: ["motion"],
   decorators: [
     (Story) => (
       <div className="w-[248px]">

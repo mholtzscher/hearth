@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { delay, http, HttpResponse } from "msw";
-import { expect } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 
 import { entityId, fixtureEntity } from "../../../../../.storybook/fixtures";
 import {
@@ -85,6 +85,8 @@ export const MotionCoverTile: Story = {
 };
 
 export const ConfirmOpening: Story = {
+  name: "Motion · Rejected tile opening",
+  tags: ["motion"],
   args: { layout: "tile" },
   decorators: [
     (Story) => (
@@ -114,11 +116,13 @@ export const ConfirmOpening: Story = {
       await expect(await canvas.findByRole("alert")).toHaveTextContent(
         "Change rejected. Try again."
       );
-      await expect(canvas.getByText("Rejected.")).toBeVisible();
+      await waitFor(() => expect(canvas.getByText("Rejected.")).toBeVisible());
     });
   },
 };
 export const ConfirmOpeningCard: Story = {
+  name: "Motion · Rejected Open control",
+  tags: ["motion"],
   decorators: [
     (Story) => (
       <div className="w-[248px]">

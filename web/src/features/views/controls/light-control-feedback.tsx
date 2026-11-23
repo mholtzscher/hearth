@@ -1,9 +1,11 @@
 import type { CommandFailure } from "../../../api/commands";
 import { useControls } from "../data/provider";
+import { statusFade } from "./command-motion";
 import {
   controlStatusClasses,
   controlStatusLineClasses,
   lightFailures,
+  PendingStatusExit,
 } from "./control-status";
 import { colorHex, readColor } from "./light-color";
 import type { LightColorControls } from "./light-color";
@@ -127,10 +129,19 @@ const DetailedFeedback = ({ active }: { active: ActiveFeedback[] }) => (
           role={state.phase === "failed" ? "alert" : "status"}
           data-tone={state.phase === "failed" ? "error" : "info"}
         >
-          <StatusDot tone={state.phase === "failed" ? "error" : "info"} />
-          {state.phase === "failed"
-            ? `${name}: ${lightFailures[state.failure.kind]}`
-            : pending(state.requested)}
+          <StatusDot
+            tone={state.phase === "failed" ? "error" : "info"}
+            pending={state.phase !== "failed"}
+          />
+          <span
+            key={state.phase}
+            data-reduced-motion="fade"
+            className={statusFade}
+          >
+            {state.phase === "failed"
+              ? `${name}: ${lightFailures[state.failure.kind]}`
+              : pending(state.requested)}
+          </span>
         </p>
       </div>
     ))}
@@ -162,7 +173,18 @@ const InlineFeedback = ({
       {summary}
     </span>
     {summary && (
-      <span aria-hidden="true">{hasFailure ? "Failed" : "Pending"}</span>
+      <span
+        key={summary}
+        aria-hidden="true"
+        data-reduced-motion="fade"
+        className={`inline-flex items-baseline gap-1.5 ${statusFade}`}
+      >
+        <StatusDot
+          tone={hasFailure ? "error" : "info"}
+          pending={!hasFailure && !hidden}
+        />
+        {hasFailure ? "Failed" : "Pending"}
+      </span>
     )}
   </span>
 );
@@ -185,6 +207,9 @@ const SummaryFeedback = ({
     aria-hidden={hidden || undefined}
     inert={hidden || undefined}
   >
+    <PendingStatusExit
+      text={!hasFailure && summary ? `${summary} · Details` : undefined}
+    />
     <p
       className={`${controlStatusLineClasses} whitespace-nowrap`}
       role={hasFailure ? "alert" : "status"}
@@ -196,8 +221,15 @@ const SummaryFeedback = ({
           className="relative flex max-w-full cursor-pointer items-baseline gap-1.5 p-0 text-start font-[inherit] text-inherit before:absolute before:inset-x-0 before:-inset-y-[11.5px]"
           onClick={onDetails}
         >
-          <StatusDot tone={hasFailure ? "error" : "info"} />
-          <span className="overflow-hidden text-ellipsis">
+          <StatusDot
+            tone={hasFailure ? "error" : "info"}
+            pending={!hasFailure && !hidden}
+          />
+          <span
+            key={summary}
+            data-reduced-motion="fade"
+            className={`overflow-hidden text-ellipsis ${statusFade}`}
+          >
             {summary} · Details
           </span>
         </button>

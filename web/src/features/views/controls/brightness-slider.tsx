@@ -1,8 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
+import { cn } from "../../../lib/utils";
 import type { FieldEntity } from "../bindings/entity";
 import { useControl } from "../data/provider";
+import { useRefusal } from "./command-motion";
 import { ControlStatus } from "./control-status";
 import { sliderClasses, sliderLabelClasses } from "./slider-styles";
 
@@ -39,6 +41,7 @@ export const BrightnessSlider = ({
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const working = state.phase === "pending" || state.phase === "confirming";
+  const refusal = useRefusal(state);
   const observed =
     typeof entity.state?.value === "number" ? entity.state.value : undefined;
   const target =
@@ -75,7 +78,7 @@ export const BrightnessSlider = ({
       <input
         id={id}
         type="range"
-        className={sliderClasses}
+        className={cn(sliderClasses, refusal)}
         min={MIN}
         max={MAX}
         step={1}

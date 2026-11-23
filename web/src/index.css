@@ -135,6 +135,8 @@
     var(--ease-out-expo) both;
   --animate-fade: motion-fade var(--transition-duration-feedback)
     var(--ease-out-expo) both;
+  --animate-fade-out: motion-fade-out var(--transition-duration-feedback)
+    var(--ease-out-expo) both;
   --animate-resolve: motion-resolve var(--transition-duration-layout)
     var(--ease-out-expo) both;
   --animate-ignite: motion-ignite var(--transition-duration-layout)
@@ -310,6 +312,16 @@
     visibility 0s;
 }
 
+@utility pending-status-handoff {
+  &:has(> [data-slot="pending-status-exit"]) > :is(output, p) {
+    opacity: 0;
+
+    & [data-reduced-motion="fade"] {
+      animation-play-state: paused;
+    }
+  }
+}
+
 html:active-view-transition-type(hearth-travel)::view-transition-old(root),
 ::view-transition-old(*.hearth-travel) {
   opacity: 0;
@@ -381,6 +393,14 @@ html:active-view-transition-type(hearth-morph)::view-transition-new(root) {
 }
 @keyframes motion-fade {
   from {
+    opacity: var(--motion-fade-from, 0);
+  }
+}
+@keyframes motion-fade-out {
+  from {
+    opacity: 0.8;
+  }
+  to {
     opacity: 0;
   }
 }

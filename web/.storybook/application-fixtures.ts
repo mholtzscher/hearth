@@ -221,6 +221,7 @@ export interface ApplicationScenario {
     | "pending-view"
     | "view-ready"
     | "reused-view-call"
+    | "tool-complete"
     | "fail-once"
     | "queue-collision";
   /** The queued collision stays pending until this story-local barrier releases a failed turn. */
@@ -230,6 +231,7 @@ export interface ApplicationScenario {
   dashboards?: "empty";
   conversations?: "searchable" | "empty" | "error";
   messages?:
+    | "compact-view"
     | "long"
     | "rich"
     | "automation-create"
@@ -243,8 +245,16 @@ export interface ApplicationScenario {
 export const createApplicationHandlers = (
   scenario: ApplicationScenario = {}
 ) => {
+  const initialMessages =
+    scenario.messages === "compact-view"
+      ? loadedMessages.map((message) =>
+          message.role === "tool"
+            ? { ...message, artifacts: [compactArtifact] }
+            : message
+        )
+      : loadedMessages;
   const histories = new Map<string, AgentMessage[]>([
-    [conversationId, structuredClone(loadedMessages)],
+    [conversationId, structuredClone(initialMessages)],
   ]);
   if (scenario.conversations === "empty") {
     histories.clear();
@@ -574,7 +584,7 @@ export const createApplicationHandlers = (
                 controller.close();
               })();
             }
-            if (outcome && viewReady) {
+            if (outcome && (viewReady || scenario.turn === "tool-complete")) {
               // Leave time to see each placeholder, without putting the first
               // view's commit at the edge of Storybook's assertion window.
               const delay = reusedViewCall ? 600 : 900;

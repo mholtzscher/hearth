@@ -1,14 +1,40 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { CommandFailure } from "../../../api/commands";
 import { cn } from "../../../lib/utils";
 import { useControl } from "../data/provider";
+import { statusFade } from "./command-motion";
 import { StatusDot } from "./status-dot";
 
 export const controlStatusClasses =
-  "mt-2 h-[21px] min-w-0 text-label text-gray-9";
+  "pending-status-handoff relative mt-2 h-[21px] min-w-0 text-label text-gray-9";
 export const controlStatusLineClasses =
   "flex min-w-0 items-baseline gap-1.5 empty:hidden data-[tone=error]:text-destructive";
+
+/** Keep only the departing words, not the live status, dot, or hit target. */
+export const PendingStatusExit = ({ text }: { text?: string }) => {
+  const [display, setDisplay] = useState<{
+    current?: string;
+    leaving?: string;
+  }>({ current: text });
+  if (text !== display.current) {
+    setDisplay({ current: text, leaving: text ? undefined : display.current });
+  }
+  if (!display.leaving) {
+    return null;
+  }
+  return (
+    <span
+      aria-hidden="true"
+      data-slot="pending-status-exit"
+      data-exit-text={display.leaving}
+      data-reduced-motion="fade"
+      className="animate-fade-out pointer-events-none absolute inset-x-0 top-0 truncate ps-3 opacity-0 before:content-[attr(data-exit-text)]"
+      onAnimationEnd={() => setDisplay({ current: text })}
+    />
+  );
+};
 
 export const shortCommandFailures: Record<CommandFailure["kind"], string> = {
   disabled: "Disabled.",
@@ -25,14 +51,17 @@ export const ControlStatusText = ({
   full,
   short = full,
   slot,
+  fade = false,
 }: {
   full: ReactNode;
   short?: ReactNode;
   slot?: string;
+  fade?: boolean;
 }) => (
   <>
     <span
-      className="min-w-0 truncate"
+      className={cn("min-w-0 truncate", fade && statusFade)}
+      data-reduced-motion={fade ? "fade" : undefined}
       data-slot={slot ?? "control-status-text"}
       aria-hidden={short !== full || undefined}
       title={typeof full === "string" ? full : undefined}
@@ -87,16 +116,18 @@ export const ControlStatus = ({
 }) => {
   const [state] = useControl({ entityId, operation: "set" });
   const working = state.phase === "pending" || state.phase === "confirming";
+  const pendingText = working ? pending(state.requested) : undefined;
   return (
     <div
       data-slot="control-status"
       className={cn(controlStatusClasses, className)}
     >
+      <PendingStatusExit text={pendingText} />
       <output data-tone="info" className={controlStatusLineClasses}>
-        {working && (
+        {pendingText !== undefined && (
           <>
-            <StatusDot tone="info" />
-            <ControlStatusText full={pending(state.requested)} />
+            <StatusDot tone="info" pending />
+            <ControlStatusText key={pendingText} full={pendingText} fade />
           </>
         )}
         {state.phase === "idle" && idle && <ControlStatusText full={idle} />}
@@ -111,6 +142,7 @@ export const ControlStatus = ({
               ]
             }
             short={shortCommandFailures[state.failure.kind]}
+            fade
           />
         </p>
       )}

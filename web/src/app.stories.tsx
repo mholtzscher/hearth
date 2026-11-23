@@ -20,6 +20,7 @@ import { expectNoHorizontalOverflow } from "../.storybook/play";
 import { getDashboard } from "./api/dashboards";
 import type { CommandRecord } from "./api/types";
 import App, { appRoutes } from "./app";
+import { prefersReducedMotion } from "./lib/motion";
 
 const meta = {
   title: "Application/Workspace",
@@ -1665,12 +1666,13 @@ export const MotionMessageArrival: Story = {
     const log = within(context.canvas.getByRole("log"));
     const reply = await log.findByText(sentReply);
     const prompt = log.getByText("What is the living room temperature?");
+    const reduced = prefersReducedMotion();
     await expect(
       animationNames(prompt.closest("[data-reduced-motion]"))
-    ).toContain("motion-arrive");
+    ).toContain(reduced ? "motion-fade" : "motion-arrive");
     await expect(
       animationNames(reply.closest('[data-slot="message-markdown"]'))
-    ).toContain("motion-resolve");
+    ).toContain(reduced ? "motion-fade" : "motion-resolve");
     await waitFor(() =>
       expect(
         context.canvas.queryByText("Looking through your home…")
@@ -1693,7 +1695,9 @@ export const MotionWorking: Story = {
     const icon = context.canvasElement.querySelector(
       '[data-slot="reply-icon"]'
     );
-    await expect(animationNames(icon)).toContain("view-pending");
+    await expect(animationNames(icon)).toEqual(
+      prefersReducedMotion() ? [] : ["view-pending"]
+    );
     const words = context.canvas.getByText("Looking through your home…");
     await expect(animationNames(words)).toContain("motion-fade");
     await waitFor(() => expect(words).toBeVisible());
@@ -1743,8 +1747,8 @@ export const MotionToolActivity: Story = {
       "Used 1 tool · 1 pending or unknown"
     );
     const group = summary.closest("details");
-    await expect(animationNames(group?.querySelector("summary svg"))).toContain(
-      "motion-turn"
+    await expect(animationNames(group?.querySelector("summary svg"))).toEqual(
+      prefersReducedMotion() ? [] : ["motion-turn"]
     );
     await context.userEvent.click(summary);
     await expect(group).toHaveAttribute("open");
@@ -1756,18 +1760,40 @@ export const MotionToolActivity: Story = {
   },
 };
 
-/** A tool that finishes during an arriving reply draws its check. */
+/** The same tool goes from waiting to confirmed in the live reply. */
 export const MotionToolComplete: Story = {
   name: "Motion · Tool completes",
   tags: ["motion"],
+  parameters: { applicationScenario: { turn: "tool-complete" } },
   play: async (context) => {
     await askTemperature(context);
+    const waiting = await context.canvas.findByText(
+      "Used 1 tool · 1 pending or unknown"
+    );
+    const pendingIcon = waiting
+      .closest("summary")
+      ?.querySelector('[data-slot="tool-pending-icon"]');
+    await waitFor(() => expect(pendingIcon).toBeVisible());
     const summary = await context.canvas.findByText("Used 1 tool", {
       exact: true,
     });
+    const reduced = prefersReducedMotion();
+    const completeIcon = summary
+      .closest("summary")
+      ?.querySelector('[data-slot="tool-complete-icon"]');
+    await expect(animationNames(completeIcon)).toContain(
+      reduced ? "motion-fade" : "motion-draw"
+    );
+    await expect(pendingIcon).toBeInTheDocument();
     await expect(
-      animationNames(summary.closest("summary")?.querySelector("svg"))
-    ).toContain("motion-draw");
+      pendingIcon
+        ?.getAnimations()
+        .flatMap((animation) =>
+          animation instanceof CSSTransition
+            ? [animation.transitionProperty]
+            : []
+        )
+    ).toEqual(reduced ? ["opacity"] : ["opacity", "scale"]);
   },
 };
 
@@ -1823,24 +1849,24 @@ export const MotionReusedViewCall: Story = {
   },
 };
 
-/** Opening a view moves its cards together; closing returns them to the reply. */
+/** Leave the view in the reply so navigation to the story doesn't consume Travel. */
 export const MotionCanvasTravel: Story = {
   name: "Motion · Canvas travel",
   tags: ["motion"],
-  parameters: { appPath: conversationPath },
-  play: async ({ canvas, userEvent }) => {
-    await canvas.findByText(conversationReply);
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "Open in canvas" })
-    );
-    const view = await canvas.findByRole("region", { name: "View canvas" });
+  parameters: {
+    appPath: conversationPath,
+    applicationScenario: { messages: "compact-view" },
+    docs: {
+      description: {
+        story:
+          "Select Open in canvas, then Close view to replay both directions.",
+      },
+    },
+  },
+  play: async ({ canvas }) => {
     await expect(
-      await within(view).findByRole("switch", { name: "Hallway lamp power" })
+      await canvas.findByRole("switch", { name: "Hallway lamp power" })
     ).toHaveAttribute("aria-checked", "true");
-    await userEvent.click(
-      within(view).getByRole("button", { name: "Close view" })
-    );
-    await waitFor(() => expect(view).not.toBeInTheDocument());
     await expect(
       await canvas.findByRole("button", { name: "Open in canvas" })
     ).toBeVisible();

@@ -7,6 +7,7 @@ import { usePowerReadings } from "../../bindings/power";
 import type { PowerData, PowerReading } from "../../bindings/power";
 import { useNumericReads } from "../../bindings/registry";
 import type { MetricData, Resolved, SeriesData } from "../../bindings/types";
+import { useRefusal } from "../../controls/command-motion";
 import { ControlStatus } from "../../controls/control-status";
 import { supportsOperation } from "../../controls/support";
 import { useControl, useRead } from "../../data/provider";
@@ -370,6 +371,7 @@ export const BoundToggleTile = ({ source, label, metric }: ToggleTileProps) => {
     operation: "set",
   });
   const working = control.phase === "pending" || control.phase === "confirming";
+  const refusal = useRefusal(control);
   const status = cardStatus(power.resource);
   const metricStatus = reading && cardStatus(reading);
   const data = status.value === "empty" ? undefined : power.resource.data;
@@ -399,6 +401,7 @@ export const BoundToggleTile = ({ source, label, metric }: ToggleTileProps) => {
   return (
     <TileFrame
       title={title}
+      className={refusal}
       on={!!on && status.value === "live"}
       interactive={canSet}
       working={working}

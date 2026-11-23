@@ -3,6 +3,7 @@ import { Minus, Plus } from "lucide-react";
 import { Button } from "../../../../components/button";
 import { cn } from "../../../../lib/utils";
 import type { FieldEntity } from "../../bindings/entity";
+import { useRefusal } from "../../controls/command-motion";
 import { useControl } from "../../data/provider";
 
 const filledPipClass = (active: boolean, enabled: boolean) => {
@@ -28,6 +29,7 @@ export const FanStepper = ({
     operation: "set",
   });
   const working = control.phase === "pending" || control.phase === "confirming";
+  const refusal = useRefusal(control);
   const raw = working ? control.requested : entity.state?.value;
   const level =
     typeof raw === "string" && /^\d+$/u.test(raw) ? Number(raw) : undefined;
@@ -44,7 +46,10 @@ export const FanStepper = ({
         )}
       </div>
       <fieldset
-        className="m-0 grid min-w-0 grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 border-0 p-0"
+        className={cn(
+          "m-0 grid min-w-0 grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 border-0 p-0",
+          refusal
+        )}
         aria-label={label}
       >
         <Button

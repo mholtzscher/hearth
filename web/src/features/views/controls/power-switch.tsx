@@ -1,6 +1,8 @@
 import { Switch } from "../../../components/switch";
+import { cn } from "../../../lib/utils";
 import type { FieldEntity } from "../bindings/entity";
 import { useControl } from "../data/provider";
+import { useRefusal } from "./command-motion";
 
 /**
  * A power Entity's switch. While a Command is pending it shows the requested
@@ -21,11 +23,12 @@ export const PowerSwitch = ({
     operation: "set",
   });
   const working = state.phase === "pending" || state.phase === "confirming";
+  const refusal = useRefusal(state);
   const on = working ? state.requested === true : entity.state?.value === true;
   return (
     <Switch
       size="touch"
-      className={className ?? "ms-auto"}
+      className={cn(className ?? "ms-auto", refusal)}
       checked={on}
       aria-label={label}
       disabled={!entity.enabled}

@@ -451,24 +451,44 @@ const activityChevron = "-ms-0.5 size-3.5 shrink-0 transition-transform";
 
 /**
  * A pending activity's dashed icon turns while its reply runs (Pending); a
- * finished one's check draws in when it finishes during an arriving reply
- * (Confirm). History shows still icons.
+ * finished one's circle shrinks away as the check draws in (Confirm).
+ * History shows still icons.
  */
 const ActivityIcon = ({ done }: { done: boolean }) => {
   const running = useAuiState(
     (state) => state.message.status?.type === "running"
   );
   const arriving = useReplyArrival();
-  return done ? (
-    <CheckIcon
-      className={cn(activityIcon, arriving && "[&_path]:animate-draw")}
-      aria-hidden="true"
-    />
-  ) : (
-    <CircleDashedIcon
-      className={cn(activityIcon, running && "animate-turn")}
-      aria-hidden="true"
-    />
+  return (
+    <span aria-hidden="true" className={cn(activityIcon, "grid")}>
+      {(!done || arriving) && (
+        <span
+          data-slot="tool-pending-icon"
+          data-reduced-motion="fade"
+          className={cn(
+            "[grid-area:1/1]",
+            arriving &&
+              "duration-feedback transition-[opacity,scale] motion-reduce:transition-opacity",
+            done && "opacity-0 motion-safe:scale-50"
+          )}
+        >
+          <CircleDashedIcon
+            className={cn("size-4", running && !done && "animate-turn")}
+          />
+        </span>
+      )}
+      {done && (
+        <CheckIcon
+          data-slot="tool-complete-icon"
+          data-reduced-motion={arriving ? "fade" : undefined}
+          className={cn(
+            "size-4 [grid-area:1/1]",
+            arriving &&
+              "motion-reduce:animate-fade motion-safe:[&_path]:animate-draw"
+          )}
+        />
+      )}
+    </span>
   );
 };
 const ToolGroup = ({

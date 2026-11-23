@@ -3,6 +3,7 @@ import {
   controlStatusClasses,
   controlStatusLineClasses,
   ControlStatusText,
+  PendingStatusExit,
 } from "../../controls/control-status";
 import { StatusDot } from "../../controls/status-dot";
 import type { CoverLine } from "./data";
@@ -24,6 +25,13 @@ export const coverSourceNote = (
   </>
 );
 
+const pendingCoverText = (line: CoverLine | undefined, tile: boolean) => {
+  if (line?.tone !== "info" || line.alert) {
+    return;
+  }
+  return tile ? line.short : line.text;
+};
+
 /** The reserved line beneath a cover's controls. Pending words are a polite status; a failure is an alert. */
 export const CoverStatus = ({
   line,
@@ -36,7 +44,9 @@ export const CoverStatus = ({
 }) => {
   const words = line && (
     <ControlStatusText
+      key={line.text}
       full={line.text}
+      fade={line.tone === "info" || line.alert}
       short={tile || line.alert ? line.short : undefined}
       slot={tile ? "cover-short" : undefined}
     />
@@ -52,6 +62,7 @@ export const CoverStatus = ({
         on && "text-[color-mix(in_oklch,var(--violet)_14%,var(--gray-9))]"
       )}
     >
+      <PendingStatusExit text={pendingCoverText(status, tile)} />
       <output
         className={cn(
           controlStatusLineClasses,
@@ -61,7 +72,7 @@ export const CoverStatus = ({
       >
         {status && (
           <>
-            <StatusDot tone={status.tone} />
+            <StatusDot tone={status.tone} pending={status.tone === "info"} />
             {words}
           </>
         )}

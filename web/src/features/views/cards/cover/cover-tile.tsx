@@ -1,4 +1,5 @@
 import { cn } from "../../../../lib/utils";
+import { useRefusal } from "../../controls/command-motion";
 import { Reading } from "../reading";
 import { TileFrame, tileActionClass } from "../tile-frame";
 import { coverSourceNote, CoverStatus } from "./cover-status";
@@ -50,6 +51,9 @@ const tileVerbText = (
  */
 export const CoverTile = ({ props }: { props: CoverProps }) => {
   const cover = useCover(props);
+  const line = cover.line("tile");
+  const setRefusal = useRefusal(cover.setState);
+  const stopRefusal = useRefusal(cover.stopState);
   const { data, status, title } = cover;
   const busy = cover.setPending || cover.moving;
   const verb = tileVerb(busy, cover.canStop, cover.canSet, data?.position);
@@ -87,6 +91,7 @@ export const CoverTile = ({ props }: { props: CoverProps }) => {
   return (
     <TileFrame
       title={title}
+      className={setRefusal ?? stopRefusal}
       classNames={{ body: "gap-0.5" }}
       on={open}
       interactive={interactive}
@@ -111,7 +116,7 @@ export const CoverTile = ({ props }: { props: CoverProps }) => {
           className={tileActionClass}
           aria-label={`${title}, ${word}${position ? `, ${position}` : ""}. ${verbText}`}
           aria-busy={busy || undefined}
-          title={cover.line("tile")?.text}
+          title={line?.text}
           disabled={!cover.enabled}
           onClick={press}
         >
@@ -135,7 +140,7 @@ export const CoverTile = ({ props }: { props: CoverProps }) => {
       <p data-slot="cover-row" className={cn(rowClass, "text-gray-8", onColor)}>
         {verbText || " "}
       </p>
-      <CoverStatus line={cover.line("tile")} tile on={open} />
+      <CoverStatus line={line} tile on={open} />
     </TileFrame>
   );
 };

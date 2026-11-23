@@ -395,6 +395,8 @@ export const useThermostat = (props: ThermostatProps) => {
     detail: observed && detailLine(observed, targets.length > 0),
     step,
     sendTarget,
+    target,
+    range,
     mode,
     fan,
     controls,
