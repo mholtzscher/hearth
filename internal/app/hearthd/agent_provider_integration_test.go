@@ -13,9 +13,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
-	dashboardmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
-	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func TestAgentAssemblySelectsGoWithoutOpenAICredential(t *testing.T) {
@@ -44,12 +42,26 @@ func TestAgentAssemblySelectsGoWithoutOpenAICredential(t *testing.T) {
 	}))
 	defer peer.Close()
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "assembly.db"))
-	catalog := mcpapi.New(mcpapi.Config{Name: "agent-assembly-test", Version: "1"})
-	dashboardmcp.Register(catalog, dashboards.NewService(nil, nil, nil))
+	catalog := newMCPServer(
+		&stubDevices{},
+		&stubAutomations{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
+		nil,
+		testDevicesPresenter(),
+	)
 	config := Config{
 		Agent: AgentConfig{Provider: agent.ProviderOpenCodeGo, BaseURL: peer.URL + "/v1", ReasoningEffort: "max"},
 	}
-	service, err := startAgentService(t.Context(), config, catalog, database, slog.New(slog.DiscardHandler))
+	service, err := startAgentService(
+		t.Context(),
+		config,
+		catalog,
+		dashboards.NewService(nil, nil, nil),
+		database,
+		slog.New(slog.DiscardHandler),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

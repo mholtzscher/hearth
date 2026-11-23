@@ -4,7 +4,6 @@ package agent //nolint:testpackage // Exercises both native providers, real pres
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -31,16 +30,12 @@ func TestVisualOnlyCompletion(t *testing.T) {
 
 func testVisualOnlyCompletion(t *testing.T, provider Provider) {
 	t.Helper()
-	definition := dashboardDefinitionFixture(t, "Temperatures", false)
-	arguments, err := json.Marshal(map[string]json.RawMessage{"definition": definition})
-	if err != nil {
-		t.Fatal(err)
-	}
+	arguments := []byte(composeArgumentsFixture(t, "Temperatures", false))
 	peer, requests := newVisualOnlyPeer(t, provider, arguments)
 	defer peer.Close()
 	store := newConversationStore(t, MinimumConversationRetention)
 	service, err := NewService(t.Context(), Config{
-		DB: store.database, Tools: mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil))),
+		DB: store.database, ViewAuthoring: dashboards.NewService(nil, nil, nil),
 		Model: ModelConfig{Provider: provider, APIKey: "test-key", Model: "fixture", BaseURL: peer.URL + "/v1"},
 	})
 	if err != nil {
@@ -89,7 +84,7 @@ func newVisualOnlyPeer(t *testing.T, provider Provider, arguments []byte) (*http
 			calls, finish := "", "stop"
 			if first {
 				calls = fmt.Sprintf(
-					`[{"index":0,"id":"view-call","type":"function","function":{"name":"present_view","arguments":%q}}]`,
+					`[{"index":0,"id":"view-call","type":"function","function":{"name":"compose_view","arguments":%q}}]`,
 					arguments,
 				)
 				finish = "tool_calls"
@@ -101,7 +96,7 @@ func newVisualOnlyPeer(t *testing.T, provider Provider, arguments []byte) (*http
 		output := "[]"
 		if first {
 			output = fmt.Sprintf(
-				`[{"id":"fc_view","type":"function_call","call_id":"view-call","name":"present_view","arguments":%q,"status":"completed"}]`,
+				`[{"id":"fc_view","type":"function_call","call_id":"view-call","name":"compose_view","arguments":%q,"status":"completed"}]`,
 				arguments,
 			)
 		}
@@ -119,13 +114,13 @@ func TestVisualOnlyCompletionRequiresSuccessfulPresentation(t *testing.T) {
 			if calls == 1 {
 				return schema.AssistantMessage(
 					"",
-					[]schema.ToolCall{nativeTestCall("bad-view", "present_view", `{}`)},
+					[]schema.ToolCall{nativeTestCall("bad-view", composeViewToolName, `{}`)},
 				), nil
 			}
 			return schema.AssistantMessage("", nil), nil
 		},
 	})
-	service.tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil)))
+	configureViewAuthoring(t, service, dashboards.NewService(nil, nil, nil))
 	conversation := mustCreateConversation(t, service)
 	var events []TurnEvent
 	_, err := service.SendMessageWithEvents(t.Context(), conversation.ID, MessageInput{Text: "Show temperatures"},
@@ -137,7 +132,7 @@ func TestVisualOnlyCompletionRequiresSuccessfulPresentation(t *testing.T) {
 		t.Fatalf("events=%+v", events)
 	}
 	history, err := service.History(t.Context(), conversation.ID)
-	if err != nil || len(history) != 3 || history[2].ToolName != "present_view" || len(history[2].Artifacts) != 0 {
+	if err != nil || len(history) != 3 || history[2].ToolName != composeViewToolName || len(history[2].Artifacts) != 0 {
 		t.Fatalf("history=%+v error=%v", history, err)
 	}
 }

@@ -10,7 +10,17 @@ import (
 	"github.com/mholtzscher/hearth/entitytypes"
 )
 
-const MaxDefinitionBytes = 16 * 1024
+const (
+	MaxDefinitionBytes = 16 * 1024
+	MaxViewNodes       = 32
+	MaxViewDepth       = 8
+	maxViewResources   = 16
+
+	viewTitleProperty = "title"
+	timeSeriesNode    = "TimeSeries"
+	stateTimelineNode = "StateTimeline"
+	toggleListNode    = "ToggleList"
+)
 
 //nolint:gochecknoglobals // The embedded immutable schema is compiled once.
 var codecOnce sync.Once
@@ -73,7 +83,7 @@ type viewGraph struct {
 type viewNode struct {
 	Type     string          `json:"type"`
 	Props    json.RawMessage `json:"props"`
-	Children []string        `json:"children"`
+	Children []string        `json:"children,omitempty"`
 }
 
 func validateGraph(raw json.RawMessage) error {
@@ -81,14 +91,14 @@ func validateGraph(raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		return invalidDefinition("spec is not an element graph")
 	}
-	if len(g.Elements) < 1 || len(g.Elements) > 32 {
+	if len(g.Elements) < 1 || len(g.Elements) > MaxViewNodes {
 		return invalidDefinition("a view has 1 to 32 elements")
 	}
 	seen := map[string]bool{}
 	var visit func(string, int) error
 	visit = func(id string, depth int) error {
 		node, ok := g.Elements[id]
-		if !ok || seen[id] || depth > 8 {
+		if !ok || seen[id] || depth > MaxViewDepth {
 			return invalidDefinition(
 				"root and every child must name an existing element, each used once, at most 8 levels deep",
 			)
@@ -120,7 +130,7 @@ func ReadDefinition(raw json.RawMessage) (json.RawMessage, error) {
 	if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {
 		return nil, fmt.Errorf("%w: invalid retained envelope", ErrInvalidDefinition)
 	}
-	for _, k := range []string{"schema_version", "catalog_version", "title", "spec"} {
+	for _, k := range []string{"schema_version", "catalog_version", viewTitleProperty, "spec"} {
 		if len(obj[k]) == 0 || bytes.Equal(obj[k], []byte("null")) {
 			return nil, fmt.Errorf("%w: invalid retained envelope", ErrInvalidDefinition)
 		}

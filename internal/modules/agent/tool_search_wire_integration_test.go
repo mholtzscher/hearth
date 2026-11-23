@@ -12,28 +12,21 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/cloudwego/eino/schema"
+
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 )
 
-// Synthetic peers prove the full compact MCP schema survives both provider
+// Synthetic peers prove the full native schema survives both provider
 // adapters after search; they do not establish hosted-model behavior.
-//
-//nolint:gocognit // One comparable wire journey for both provider adapters.
 func TestToolSearchDashboardProviderWire(t *testing.T) {
 	t.Parallel()
 	for _, provider := range []Provider{ProviderOpenCodeGo, ProviderOpenAI} {
 		t.Run(string(provider), func(t *testing.T) {
 			t.Parallel()
-			server := dashboardMCPServer(dashboards.NewService(nil, nil, nil))
-			want := dashboardAdvertisedSchema(t, server)
-			rawSchema, err := json.Marshal(want)
-			if err != nil {
+			var want map[string]any
+			if err := json.Unmarshal(composeViewSchema, &want); err != nil {
 				t.Fatal(err)
-			}
-			for _, marker := range []string{`"$defs"`, `"$ref"`, `"$id"`, `"description"`} {
-				if !strings.Contains(string(rawSchema), marker) {
-					t.Fatalf("published compact schema missing %s", marker)
-				}
 			}
 			requests := make(chan map[string]any, 2)
 			var count atomic.Int32
@@ -50,7 +43,7 @@ func TestToolSearchDashboardProviderWire(t *testing.T) {
 			store := newConversationStore(t, MinimumConversationRetention)
 			service, err := NewService(
 				t.Context(),
-				Config{DB: store.database, Tools: mustBridgeTools(t, server), Model: ModelConfig{
+				Config{DB: store.database, ViewAuthoring: dashboards.NewService(nil, nil, nil), Model: ModelConfig{
 					Provider: provider, APIKey: "test-key", BaseURL: peer.URL + "/v1", Model: "fixture",
 				}},
 			)
@@ -58,17 +51,23 @@ func TestToolSearchDashboardProviderWire(t *testing.T) {
 				t.Fatal(err)
 			}
 			conversation := mustCreateConversation(t, service)
-			if _, err = service.SendMessage(
+			legacy := seedLegacyDashboardHistory(t, service, conversation.ID, provider)
+			turn, err := service.SendMessage(
 				t.Context(),
 				conversation.ID,
 				MessageInput{Text: "Show a view"},
-			); err != nil {
+			)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(turn.ToolCalls, []string{"tool_search"}) {
+				t.Fatalf("new turn executed a historical call: %v", turn.ToolCalls)
 			}
 			first, second := <-requests, <-requests
 			assertSearchWireSchema(t, first, provider, nil)
 			assertSearchWireSchema(t, second, provider, want)
 			assertSearchWireContinuation(t, second, provider)
+			assertLegacyDashboardHistory(t, service, conversation.ID, first, provider, legacy)
 		})
 	}
 }
@@ -82,7 +81,7 @@ func writeSearchWireResponse(w http.ResponseWriter, provider Provider, step int3
 				goChatStream(
 					"private-search-reasoning",
 					"",
-					`[{"index":0,"id":"wire-search","type":"function","function":{"name":"tool_search","arguments":"{\"query\":\"select:present_view\"}"}}]`,
+					`[{"index":0,"id":"wire-search","type":"function","function":{"name":"tool_search","arguments":"{\"query\":\"select:compose_view,present_view\"}"}}]`,
 					"tool_calls",
 				),
 			)
@@ -93,7 +92,7 @@ func writeSearchWireResponse(w http.ResponseWriter, provider Provider, step int3
 	}
 	output := responsesFinalFixture
 	if step == 1 {
-		output = `[{"id":"rs_search","type":"reasoning","summary":[],"encrypted_content":"private-search-reasoning"},{"id":"fc_search","type":"function_call","call_id":"wire-search","name":"tool_search","arguments":"{\"query\":\"select:present_view\"}","status":"completed"}]`
+		output = `[{"id":"rs_search","type":"reasoning","summary":[],"encrypted_content":"private-search-reasoning"},{"id":"fc_search","type":"function_call","call_id":"wire-search","name":"tool_search","arguments":"{\"query\":\"select:compose_view,present_view\"}","status":"completed"}]`
 	}
 	writeResponsesStream(
 		w,
@@ -125,10 +124,12 @@ func assertSearchWireSchema(t *testing.T, request map[string]any, provider Provi
 			foundSkill = true
 		case "tool_search":
 			foundSearch = true
-		case "present_view":
+		case legacyViewToolName:
+			t.Error("wire advertised retired present_view")
+		case composeViewToolName:
 			foundView = true
 			if entry["strict"] != false || !reflect.DeepEqual(entry["parameters"], want) {
-				t.Errorf("wire present_view schema differs from advertised MCP schema")
+				t.Errorf("wire compose_view schema differs from its recursive input contract")
 			}
 		}
 	}
@@ -163,14 +164,14 @@ func assertSearchWireContinuation(t *testing.T, request map[string]any, provider
 					strings.Contains(string(calls), `"name":"tool_search"`)
 			}
 			result = result ||
-				(item["role"] == "tool" && item["tool_call_id"] == "wire-search" && item["content"] == `{"matches":["present_view"]}`)
+				(item["role"] == "tool" && item["tool_call_id"] == "wire-search" && item["content"] == `{"matches":["compose_view"]}`)
 		} else {
 			reasoning = reasoning ||
 				(item["type"] == "reasoning" && item["encrypted_content"] == "private-search-reasoning")
 			call = call ||
 				(item["type"] == "function_call" && item["call_id"] == "wire-search" && item["name"] == "tool_search")
 			result = result ||
-				(item["type"] == "function_call_output" && item["call_id"] == "wire-search" && item["output"] == `{"matches":["present_view"]}`)
+				(item["type"] == "function_call_output" && item["call_id"] == "wire-search" && item["output"] == `{"matches":["compose_view"]}`)
 		}
 	}
 	if !reasoning || !call || !result {
@@ -181,5 +182,74 @@ func assertSearchWireContinuation(t *testing.T, request map[string]any, provider
 			result,
 			entries,
 		)
+	}
+}
+
+func seedLegacyDashboardHistory(t *testing.T, service *Service, id string, provider Provider) dashboards.Artifact {
+	t.Helper()
+	raw := dashboardDefinitionFixture(t, "Legacy dashboard", false)
+	const artifactID = "view_018f0f4a-7b29-7000-8000-000000000001"
+	artifact := dashboards.Artifact{Kind: "hearth.view", ArtifactID: artifactID, Definition: raw}
+	output, err := json.Marshal(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := `{"definition":` + string(raw) + `}`
+	search := legacyProviderCall(provider, "old-search", "tool_search", `{"query":"select:present_view"}`)
+	view := legacyProviderCall(provider, "old-view", legacyViewToolName, args)
+	for _, message := range []*schema.Message{
+		newUserMessage(MessageInput{Text: "Show the old view"}, provider),
+		search,
+		{Role: schema.Tool, ToolCallID: "old-search", ToolName: "tool_search", Content: `{"matches":["present_view"]}`},
+		view,
+		{Role: schema.Tool, ToolCallID: "old-view", ToolName: legacyViewToolName, Content: string(output)},
+	} {
+		if persistErr := service.persistMessage(t.Context(), id, message); persistErr != nil {
+			t.Fatal(persistErr)
+		}
+	}
+	return artifact
+}
+
+func legacyProviderCall(provider Provider, id, name, args string) *schema.Message {
+	message := schema.AssistantMessage("", []schema.ToolCall{nativeTestCall(id, name, args)})
+	if provider == ProviderOpenCodeGo {
+		message.Extra = map[string]any{goChatMessageKey: fmt.Sprintf(
+			`{"role":"assistant","content":null,"reasoning_content":"retained-legacy-reasoning","tool_calls":[{"id":%q,"type":"function","function":{"name":%q,"arguments":%q}}]}`,
+			id,
+			name,
+			args,
+		)}
+	} else {
+		message.Extra = map[string]any{responsesOutputKey: fmt.Sprintf(
+			`[{"id":"rs_%s","type":"reasoning","summary":[],"encrypted_content":"retained-legacy-reasoning"},{"id":"fc_%s","type":"function_call","call_id":%q,"name":%q,"arguments":%q,"status":"completed"}]`,
+			id,
+			id,
+			id,
+			name,
+			args,
+		)}
+	}
+	return message
+}
+
+func assertLegacyDashboardHistory(
+	t *testing.T, service *Service, id string, request map[string]any, provider Provider, expected dashboards.Artifact,
+) {
+	t.Helper()
+	input := request["input"]
+	if provider == ProviderOpenCodeGo {
+		input = request["messages"]
+	}
+	raw, err := json.Marshal(input)
+	if err != nil || !strings.Contains(string(raw), "retained-legacy-reasoning") ||
+		!strings.Contains(string(raw), "old-view") {
+		t.Errorf("provider continuation lost legacy call identity or private metadata: %v", err)
+	}
+	history, err := service.History(t.Context(), id)
+	if err != nil || len(history) < 5 || history[4].ToolCallID != "old-view" ||
+		history[4].ToolName != legacyViewToolName || len(history[4].Artifacts) != 1 ||
+		!reflect.DeepEqual(history[4].Artifacts[0].Artifact, expected) {
+		t.Fatalf("legacy artifact/identity did not survive: %+v, %v", history, err)
 	}
 }

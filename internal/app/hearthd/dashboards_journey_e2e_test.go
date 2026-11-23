@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -27,32 +27,86 @@ import (
 
 // This deterministic model proves the production tool/persistence journey, not
 // hosted-model selection quality. The live browser check uses a real provider.
-type dashboardJourneyModel struct {
-	mu         sync.Mutex
-	definition json.RawMessage
-}
+type dashboardJourneyModel struct{}
 
-func (m *dashboardJourneyModel) Generate(
+func (*dashboardJourneyModel) Generate(
 	_ context.Context,
 	messages []*schema.Message,
-	_ ...model.Option,
+	options ...model.Option,
 ) (*schema.Message, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if messages[len(messages)-1].Role == schema.Tool {
-		return schema.AssistantMessage("Your live view is ready. Save it when you are happy with it.", nil), nil
+	last := messages[len(messages)-1]
+	if last.ToolName == "compose_view" {
+		return schema.AssistantMessage("", nil), nil
 	}
-	arguments := `{"definition":` + string(m.definition) + `}`
+	var edit bool
+	for _, message := range slices.Backward(messages) {
+		if message.Role == schema.User {
+			edit = strings.Contains(message.Content, "Selected view draft")
+			break
+		}
+	}
+	if !edit && last.Role == schema.User {
+		return dashboardJourneyCall("discover-temperature", "list_entities", "{}"), nil
+	}
+	tools := model.GetCommonOptions(nil, options...).Tools
+	for _, info := range tools {
+		if info.Name == "present_view" {
+			return nil, errors.New("retired dashboard tool was advertised")
+		}
+	}
+	if !slices.ContainsFunc(tools, func(info *schema.ToolInfo) bool { return info.Name == "compose_view" }) {
+		return dashboardJourneyCall("discover-view", "tool_search", `{"query":"select:compose_view"}`), nil
+	}
+	if edit {
+		return dashboardJourneyCall(
+			"native-view-edit",
+			"compose_view",
+			`{"mode":"edit","changes":[{"op":"set_title","title":"Evening temperatures"},{"op":"set_chart_window","card_id":"node-5","window":"7d"}]}`,
+		), nil
+	}
+	for _, message := range slices.Backward(messages) {
+		if message.ToolName == "list_entities" {
+			return composeDiscoveredTemperature(message.Content)
+		}
+	}
+	return nil, errors.New("no inventory result before composition")
+}
+
+func composeDiscoveredTemperature(raw string) (*schema.Message, error) {
+	var inventory struct {
+		Items []struct {
+			ID   string `json:"entity_id"`
+			Name string `json:"name"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(raw), &inventory); err != nil {
+		return nil, err
+	}
+	for _, entity := range inventory.Items {
+		if entity.Name != "Journey temperature" {
+			continue
+		}
+		args := fmt.Sprintf(
+			`{"mode":"create","title":"Household temperatures","layout":{"type":"Stack","children":[{"type":"Heading","text":"Indoor conditions"},{"type":"Grid","columns":2,"children":[{"type":"Metric","label":"Current","source":{"entity_id":%q}},{"type":"TimeSeries","title":"Temperature history","series":[{"entity_id":%q}],"window":"24h"}]}]}}`,
+			entity.ID,
+			entity.ID,
+		)
+		return dashboardJourneyCall("native-view-create", "compose_view", args), nil
+	}
+	return nil, errors.New("the journey temperature was not discovered")
+}
+
+func dashboardJourneyCall(id, tool, arguments string) *schema.Message {
 	return schema.AssistantMessage(
 		"",
 		[]schema.ToolCall{
 			{
-				ID:       "native-view-call",
+				ID:       id,
 				Type:     "function",
-				Function: schema.FunctionCall{Name: "present_view", Arguments: arguments},
+				Function: schema.FunctionCall{Name: tool, Arguments: arguments},
 			},
 		},
-	), nil
+	)
 }
 
 func (*dashboardJourneyModel) Stream(
@@ -63,19 +117,8 @@ func (*dashboardJourneyModel) Stream(
 	return nil, errors.New("fixture uses non-streaming generation")
 }
 
-func (m *dashboardJourneyModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	for _, tool := range tools {
-		if tool.Name == "present_view" {
-			return m, nil
-		}
-	}
-	return nil, errors.New("production catalog omitted present_view")
-}
-
-func (m *dashboardJourneyModel) setDefinition(raw json.RawMessage) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.definition = raw
+func (m *dashboardJourneyModel) WithTools([]*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return m, nil
 }
 
 type journeyDashboard struct {
@@ -168,9 +211,10 @@ func assertJourneyTurnHistory(
 	turn journeyTurn,
 	want json.RawMessage,
 	title string,
+	callID string,
 ) journeyArtifact {
 	t.Helper()
-	if !reflect.DeepEqual(turn.ToolCalls, []string{"present_view"}) || len(turn.Artifacts) != 1 {
+	if len(turn.ToolCalls) == 0 || turn.ToolCalls[len(turn.ToolCalls)-1] != "compose_view" || len(turn.Artifacts) != 1 {
 		t.Fatalf("agent turn for %q = %+v", title, turn)
 	}
 	artifact := turn.Artifacts[0]
@@ -186,8 +230,8 @@ func assertJourneyTurnHistory(
 			break
 		}
 	}
-	if message == nil || message.ToolCallID != "native-view-call" ||
-		message.ToolName != "present_view" || len(message.Artifacts) != 1 {
+	if message == nil || message.ToolCallID != callID ||
+		message.ToolName != "compose_view" || len(message.Artifacts) != 1 {
 		t.Fatalf("missing native call artifact for %q: %+v", title, history)
 	}
 	assertJourneyArtifact(t, "agent history", message.Artifacts[0], want, title)
@@ -212,19 +256,39 @@ func dashboardRequest(
 	return raw
 }
 
-func journeyTemperatureView(id string) json.RawMessage {
-	return journeyTemperatureViewTitled(id, "Household temperatures")
-}
-
-func journeyTemperatureViewTitled(id, title string) json.RawMessage {
+func journeyTemperatureView(id, title, window string) json.RawMessage {
 	return json.RawMessage(
 		fmt.Sprintf(
-			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":%q,"spec":{"root":"layout","elements":{"layout":{"type":"Stack","props":{"gap":"medium"},"children":["current","chart"]},"current":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":%q,"entity_type":"hearth.temperature/v1"}}},"chart":{"type":"TimeSeries","props":{"title":"Last 24 hours","series":[{"source":{"kind":"entity-series","entity_id":%q,"entity_type":"hearth.temperature/v1","window":"24h"}}]}}}}}`,
+			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":%q,"spec":{"root":"node-1","elements":{"node-1":{"type":"Stack","props":{"gap":"medium"},"children":["node-2","node-3"]},"node-2":{"type":"Heading","props":{"text":"Indoor conditions"}},"node-3":{"type":"Grid","props":{"columns":2},"children":["node-4","node-5"]},"node-4":{"type":"Metric","props":{"label":"Current","source":{"kind":"entity-state","entity_id":%q,"entity_type":"hearth.temperature/v1"}}},"node-5":{"type":"TimeSeries","props":{"title":"Temperature history","series":[{"source":{"kind":"entity-series","entity_id":%q,"entity_type":"hearth.temperature/v1","window":%q}}]}}}}}`,
 			title,
 			id,
 			id,
+			window,
 		),
 	)
+}
+
+func assertDashboardToolsPrivate(t *testing.T, core *functionCoreRun) {
+	t.Helper()
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "dashboard-journey", Version: "1"}, nil).
+		Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: "http://" + core.address + "/mcp"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if closeErr := session.Close(); closeErr != nil {
+			t.Error(closeErr)
+		}
+	}()
+	listed, err := session.ListTools(t.Context(), nil)
+	if err != nil || len(listed.Tools) == 0 {
+		t.Fatalf("production /mcp list: %v", err)
+	}
+	for _, tool := range listed.Tools {
+		if tool.Name == "present_view" || tool.Name == "compose_view" {
+			t.Fatalf("production /mcp exposed %s", tool.Name)
+		}
+	}
 }
 
 func TestDashboardProductionJourney(t *testing.T) {
@@ -285,34 +349,9 @@ func TestDashboardProductionJourney(t *testing.T) {
 		raw := dashboardRequest(t, client, core, http.MethodGet, "/v1/entities/"+entityID, "", http.StatusOK)
 		return strings.Contains(string(raw), string(observationID)), nil
 	})
-	definition := journeyTemperatureView(entityID)
-	revised := journeyTemperatureViewTitled(entityID, "Evening temperatures")
-	peer.setDefinition(definition)
-	mcpClient, err := mcp.NewClient(&mcp.Implementation{Name: "dashboard-journey", Version: "1"}, nil).
-		Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: "http://" + core.address + "/mcp"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	presented := decodeNotification[journeyArtifact](
-		t,
-		automationFunctionsMCP(
-			t,
-			mcpClient,
-			"present_view",
-			`{"definition":`+string(definition)+`}`,
-		),
-	)
-	assertJourneyArtifact(t, "external presentation", presented, definition, "Household temperatures")
-	if closeErr := mcpClient.Close(); closeErr != nil {
-		t.Fatal(closeErr)
-	}
-	listed := decodeNotification[struct {
-		Items      []struct{} `json:"items"`
-		NextCursor string     `json:"next_cursor"`
-	}](t, dashboardRequest(t, client, core, http.MethodGet, "/v1/dashboards", "", http.StatusOK))
-	if listed.Items == nil || len(listed.Items) != 0 || listed.NextCursor != "" {
-		t.Fatalf("presentation saved a dashboard: %+v", listed)
-	}
+	definition := journeyTemperatureView(entityID, "Household temperatures", "24h")
+	revised := journeyTemperatureView(entityID, "Evening temperatures", "7d")
+	assertDashboardToolsPrivate(t, core)
 	conversation := decodeNotification[struct {
 		ID string `json:"id"`
 	}](t, dashboardRequest(t, client, core, http.MethodPost, "/v1/agent/conversations", "", http.StatusOK))
@@ -329,7 +368,26 @@ func TestDashboardProductionJourney(t *testing.T) {
 			http.StatusOK,
 		),
 	)
-	assertJourneyTurnHistory(t, client, core, path, turn, definition, "Household temperatures")
+	if want := []string{"list_entities", "tool_search", "compose_view"}; !slices.Equal(turn.ToolCalls, want) {
+		t.Fatalf("production discovery and composition = %v, want %v", turn.ToolCalls, want)
+	}
+	artifact := assertJourneyTurnHistory(
+		t,
+		client,
+		core,
+		path,
+		turn,
+		definition,
+		"Household temperatures",
+		"native-view-create",
+	)
+	listed := decodeNotification[struct {
+		Items      []struct{} `json:"items"`
+		NextCursor string     `json:"next_cursor"`
+	}](t, dashboardRequest(t, client, core, http.MethodGet, "/v1/dashboards", "", http.StatusOK))
+	if listed.Items == nil || len(listed.Items) != 0 || listed.NextCursor != "" {
+		t.Fatalf("presentation saved a dashboard: %+v", listed)
+	}
 	saved := decodeNotification[journeyDashboard](
 		t,
 		dashboardRequest(
@@ -338,7 +396,7 @@ func TestDashboardProductionJourney(t *testing.T) {
 			core,
 			http.MethodPost,
 			"/v1/dashboards",
-			`{"definition":`+string(definition)+`}`,
+			`{"definition":`+string(artifact.Definition)+`}`,
 			http.StatusCreated,
 		),
 	)
@@ -346,17 +404,25 @@ func TestDashboardProductionJourney(t *testing.T) {
 		t.Fatalf("initial revision: %d", saved.Revision)
 	}
 	assertJourneyDefinition(t, "created dashboard", saved.Definition, definition, "Household temperatures")
-	peer.setDefinition(revised)
 	contextBody := fmt.Sprintf(
-		`{"text":"Rename this view","view_context":{"definition":%s,"source_dashboard_id":%q,"source_revision":1}}`,
-		definition,
+		`{"text":"Rename this view and switch the chart to 7d","view_context":{"definition":%s,"source_dashboard_id":%q,"source_revision":1}}`,
+		saved.Definition,
 		saved.ID,
 	)
 	revisedTurn := decodeNotification[journeyTurn](
 		t,
 		dashboardRequest(t, client, core, http.MethodPost, path, contextBody, http.StatusOK),
 	)
-	revisedArtifact := assertJourneyTurnHistory(t, client, core, path, revisedTurn, revised, "Evening temperatures")
+	revisedArtifact := assertJourneyTurnHistory(
+		t,
+		client,
+		core,
+		path,
+		revisedTurn,
+		revised,
+		"Evening temperatures",
+		"native-view-edit",
+	)
 	unchanged := decodeNotification[journeyDashboard](
 		t,
 		dashboardRequest(t, client, core, http.MethodGet, "/v1/dashboards/"+saved.ID, "", http.StatusOK),

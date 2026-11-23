@@ -37,6 +37,7 @@ type binding struct {
 
 const (
 	seriesBindingKind = "entity-series"
+	deviceBindingKind = "device"
 	// numericValueKind marks a binding that reads a numeric field.
 	numericValueKind = "numeric"
 	// textValueKind marks a binding that reads a yes/no or text field.
@@ -56,24 +57,24 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		return nil, err
 	}
 	extractors := map[string]func(json.RawMessage) ([]binding, error){
-		"Metric":        metricBindings,
-		"TimeSeries":    seriesBindings,
-		"State":         stateBindings,
-		"ReadingList":   listBindings,
-		"Device":        deviceBindings,
-		"StateTimeline": timelineBindings,
-		"WeekPattern":   weekPatternBindings,
-		"ToggleTile":    toggleTileBindings,
-		"ToggleList":    toggleListBindings,
-		"OutsideNow":    outsideNowBindings,
-		"Rain":          rainBindings,
-		"Wind":          windBindings,
-		"Pressure":      pressureBindings,
-		"Forecast":      forecastBindings,
-		"AirPurifier":   airPurifierBindings,
-		"Cover":         coverBindings,
-		"Thermostat":    thermostatBindings,
-		"MediaPlayer":   mediaPlayerBindings,
+		"Metric":          metricBindings,
+		timeSeriesNode:    seriesBindings,
+		"State":           stateBindings,
+		"ReadingList":     listBindings,
+		"Device":          deviceBindings,
+		stateTimelineNode: timelineBindings,
+		"WeekPattern":     weekPatternBindings,
+		"ToggleTile":      toggleTileBindings,
+		toggleListNode:    toggleListBindings,
+		"OutsideNow":      outsideNowBindings,
+		"Rain":            rainBindings,
+		"Wind":            windBindings,
+		"Pressure":        pressureBindings,
+		"Forecast":        forecastBindings,
+		"AirPurifier":     airPurifierBindings,
+		"Cover":           coverBindings,
+		"Thermostat":      thermostatBindings,
+		"MediaPlayer":     mediaPlayerBindings,
 	}
 	var all []binding
 	ids := map[string]bool{}
@@ -91,7 +92,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		rowIDs := map[string]bool{}
 		window, entityType, field := "", "", ""
 		for _, b := range bindings {
-			if b.Kind == "device" {
+			if b.Kind == deviceBindingKind {
 				if _, idErr := devices.ParseDeviceID(b.DeviceID); idErr != nil {
 					return nil, invalidDefinition("device_id must be a canonical Device ID")
 				}
@@ -106,7 +107,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 				return nil, invalidDefinition("entity_id must be a canonical Entity ID")
 			}
 			ids[b.EntityID] = true
-			if node.Type == "TimeSeries" {
+			if node.Type == timeSeriesNode {
 				identity := b.EntityID + ":" + b.Field
 				if chartIDs[identity] || (window != "" && window != b.Window) ||
 					(entityType != "" && (entityType != b.EntityType || field != b.Field)) {
@@ -118,14 +119,14 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 				window, entityType, field = b.Window, b.EntityType, b.Field
 				b.Chart = key
 			}
-			if node.Type == "StateTimeline" {
+			if node.Type == stateTimelineNode {
 				identity := b.EntityID + ":" + b.Field
 				if rowIDs[identity] {
 					return nil, invalidDefinition("a StateTimeline shows each Entity field once")
 				}
 				rowIDs[identity] = true
 			}
-			if node.Type == "ToggleList" {
+			if node.Type == toggleListNode {
 				if rowIDs[b.EntityID] {
 					return nil, invalidDefinition("a ToggleList shows each power Entity once")
 				}
@@ -134,8 +135,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 			all = append(all, b)
 		}
 	}
-	const maxEntities = 16
-	if len(ids) > maxEntities {
+	if len(ids) > maxViewResources {
 		return nil, invalidDefinition("a view references at most 16 distinct Entities and Devices")
 	}
 	return all, nil
@@ -330,7 +330,7 @@ func validateBindingResources(
 	entityBindings := make([]binding, 0, len(bindings))
 	checkedDevices := make(map[string]bool)
 	for _, b := range bindings {
-		if b.Kind == "device" {
+		if b.Kind == deviceBindingKind {
 			if checkedDevices[b.DeviceID] {
 				continue
 			}

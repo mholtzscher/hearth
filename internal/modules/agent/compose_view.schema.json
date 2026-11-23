@@ -1,0 +1,229 @@
+{
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object", "required": ["mode", "title", "layout"], "additionalProperties": false,
+      "properties": {"mode": {"const": "create"}, "title": {"$ref": "#/$defs/title"}, "layout": {"$ref": "#/$defs/node"}}
+    },
+    {
+      "type": "object", "required": ["mode", "changes"], "additionalProperties": false,
+      "properties": {
+        "mode": {"const": "edit"},
+        "changes": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/change"}}
+      }
+    }
+  ],
+  "$defs": {
+    "entity": {"type": "string", "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "device": {"type": "string", "pattern": "^dev_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "key": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Exact element key in the selected draft."},
+    "title": {"type": "string", "minLength": 1, "maxLength": 80},
+    "label": {"type": "string", "minLength": 1, "maxLength": 120},
+    "window": {"enum": ["1h", "6h", "24h", "7d"]},
+    "periods": {"type": "integer", "minimum": 3, "maximum": 48, "description": "Hourly: 6–48 (default 24). Daily: 3–8 (default 8)."},
+    "field": {"type": "string", "maxLength": 64, "pattern": "^(?:/[a-z][a-z0-9_]*)*$", "description": "State JSON Pointer, e.g. /position. Omit or use \"\" for a scalar root; not /value unless it is an actual member of the State."},
+    "source": {
+      "type": "object", "required": ["entity_id"], "additionalProperties": false,
+      "properties": {"entity_id": {"$ref": "#/$defs/entity"}, "field": {"$ref": "#/$defs/field"}}
+    },
+    "entity_label": {
+      "type": "object", "required": ["entity_id"], "additionalProperties": false,
+      "properties": {"entity_id": {"$ref": "#/$defs/entity"}, "label": {"$ref": "#/$defs/label"}}
+    },
+    "words": {
+      "description": "Custom text for Boolean fields only.",
+      "type": "object", "required": ["true", "false"], "additionalProperties": false,
+      "properties": {"true": {"type": "string", "minLength": 1, "maxLength": 40}, "false": {"type": "string", "minLength": 1, "maxLength": 40}}
+    },
+    "rows": {
+      "type": "array", "minItems": 1, "maxItems": 12,
+      "items": {
+        "type": "object", "required": ["source"], "additionalProperties": false,
+        "properties": {"source": {"$ref": "#/$defs/source"}, "label": {"$ref": "#/$defs/label"}, "words": {"$ref": "#/$defs/words"}}
+      }
+    },
+    "meter": {
+      "description": "Live numeric reading with history and an optional second live reading, all from the power Entity's Device.",
+      "type": "object", "required": ["source", "window"], "additionalProperties": false,
+      "properties": {
+        "source": {"$ref": "#/$defs/source"}, "window": {"$ref": "#/$defs/window"},
+        "detail": {
+          "type": "object", "required": ["source"], "additionalProperties": false,
+          "properties": {"source": {"$ref": "#/$defs/source"}, "label": {"$ref": "#/$defs/label"}}
+        }
+      }
+    },
+    "card_layout": {"enum": ["card", "tile"]},
+    "children": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/node"}},
+    "node": {
+      "oneOf": [
+        {
+          "type": "object", "required": ["type", "children"], "additionalProperties": false,
+          "properties": {"type": {"const": "Stack"}, "gap": {"enum": ["small", "medium", "large"], "default": "medium"}, "children": {"$ref": "#/$defs/children"}}
+        },
+        {
+          "type": "object", "required": ["type", "columns", "children"], "additionalProperties": false,
+          "properties": {"type": {"const": "Grid"}, "columns": {"enum": [1, 2, 3, 4]}, "children": {"$ref": "#/$defs/children"}}
+        },
+        {
+          "type": "object", "required": ["type", "text"], "additionalProperties": false,
+          "properties": {"type": {"const": "Heading"}, "text": {"$ref": "#/$defs/label"}}
+        },
+        {
+          "type": "object", "required": ["type", "text"], "additionalProperties": false,
+          "properties": {"type": {"const": "Note"}, "text": {"type": "string", "minLength": 1, "maxLength": 500}}
+        },
+        {
+          "type": "object", "required": ["type", "source"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "Metric"}, "source": {"$ref": "#/$defs/source", "description": "Numeric State field."},
+            "label": {"$ref": "#/$defs/label"}, "trend": {"$ref": "#/$defs/window"}, "range": {"const": true, "description": "Only for a numeric field with declared bounds."}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "title", "series", "window"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "TimeSeries"}, "title": {"$ref": "#/$defs/label"},
+            "series": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/entity_label"}, "description": "Distinct Entities of the same type and unit. The numeric field and window apply to all series."},
+            "field": {"$ref": "#/$defs/field"}, "window": {"$ref": "#/$defs/window"}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "source"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "State"}, "source": {"$ref": "#/$defs/source", "description": "Boolean or text State field."},
+            "label": {"$ref": "#/$defs/label"}, "words": {"$ref": "#/$defs/words"}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "title", "rows"], "additionalProperties": false,
+          "properties": {"type": {"const": "ReadingList"}, "title": {"$ref": "#/$defs/label"}, "rows": {"$ref": "#/$defs/rows"}}
+        },
+        {
+          "type": "object", "required": ["type", "device_id"], "additionalProperties": false,
+          "properties": {"type": {"const": "Device"}, "device_id": {"$ref": "#/$defs/device"}, "label": {"$ref": "#/$defs/label"}}
+        },
+        {
+          "type": "object", "required": ["type", "title", "style", "window", "rows"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "StateTimeline"}, "title": {"$ref": "#/$defs/label"},
+            "style": {"enum": ["lanes", "ledger", "feed"], "description": "Lanes compare rows on one axis; ledger shows row totals; feed shows changes newest first."},
+            "window": {"$ref": "#/$defs/window"}, "rows": {"$ref": "#/$defs/rows", "description": "Distinct Boolean or text Entity fields."}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "source"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "WeekPattern"}, "source": {"$ref": "#/$defs/source", "description": "Boolean State field only."},
+            "label": {"$ref": "#/$defs/label"}, "words": {"$ref": "#/$defs/words"}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "ToggleTile"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Power Entity."},
+            "label": {"$ref": "#/$defs/label"}, "metric": {"$ref": "#/$defs/meter"}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "title", "rows"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "ToggleList"}, "title": {"$ref": "#/$defs/label"},
+            "rows": {"type": "array", "minItems": 1, "maxItems": 12, "items": {"$ref": "#/$defs/entity_label"}, "description": "Distinct power Entities."},
+            "all_off": {"const": true, "description": "Offer a Turn all off button."}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "temperature"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "OutsideNow"}, "label": {"$ref": "#/$defs/label"}, "temperature": {"$ref": "#/$defs/entity"},
+            "humidity": {"$ref": "#/$defs/entity"}, "wind": {"$ref": "#/$defs/entity", "description": "Sustained wind speed."},
+            "wind_direction": {"$ref": "#/$defs/entity", "description": "Direction in deg."},
+            "rain_rate": {"$ref": "#/$defs/entity", "description": "Rain rate in mm/h."},
+            "rain_today": {"$ref": "#/$defs/entity", "description": "Daily rain counter in mm."}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "rate"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "Rain"}, "label": {"$ref": "#/$defs/label"},
+            "rate": {"$ref": "#/$defs/entity", "description": "Rain rate in mm/h."},
+            "storm": {"$ref": "#/$defs/entity", "description": "Storm rain counter in mm."},
+            "totals": {
+              "description": "Bind the station's own counters in mm; do not integrate the rate.",
+              "type": "object", "additionalProperties": false,
+              "properties": {"day": {"$ref": "#/$defs/entity"}, "week": {"$ref": "#/$defs/entity"}, "month": {"$ref": "#/$defs/entity"}, "year": {"$ref": "#/$defs/entity"}}
+            },
+            "trend": {"$ref": "#/$defs/window"}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "speed"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "Wind"}, "label": {"$ref": "#/$defs/label"}, "speed": {"$ref": "#/$defs/entity", "description": "Sustained wind speed."},
+            "gust": {"$ref": "#/$defs/entity"}, "direction": {"$ref": "#/$defs/entity", "description": "Direction in deg."},
+            "max_gust": {"$ref": "#/$defs/entity", "description": "Maximum gust today."}, "trend": {"$ref": "#/$defs/window"}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "Pressure"}, "label": {"$ref": "#/$defs/label"},
+            "entity_id": {"$ref": "#/$defs/entity", "description": "Choose the relative or absolute pressure Entity that matches the request."},
+            "trend": {"$ref": "#/$defs/window"}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "Forecast"}, "label": {"$ref": "#/$defs/label"},
+            "entity_id": {"$ref": "#/$defs/entity", "description": "An hourly or daily forecast Entity, not a station sensor."}, "periods": {"$ref": "#/$defs/periods"}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "layout", "power", "pm25"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "AirPurifier"}, "layout": {"$ref": "#/$defs/card_layout"}, "label": {"$ref": "#/$defs/label"},
+            "power": {"$ref": "#/$defs/entity"}, "pm25": {"$ref": "#/$defs/entity", "description": "Numeric sensor in µg/m³. Use a distinct Entity from the same Device for each role."},
+            "mode": {"$ref": "#/$defs/entity", "description": "Enum with 2 to 5 choices."}, "fan_level": {"$ref": "#/$defs/entity", "description": "Enum whose choices are 1 to N, N from 2 to 10."},
+            "display": {"$ref": "#/$defs/entity"}, "child_lock": {"$ref": "#/$defs/entity"}, "filter_life": {"$ref": "#/$defs/entity", "description": "Numeric sensor in %."}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "layout", "entity_id"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "Cover"}, "layout": {"$ref": "#/$defs/card_layout"}, "label": {"$ref": "#/$defs/label"},
+            "entity_id": {"$ref": "#/$defs/entity"}, "confirm_open": {"type": "boolean", "description": "Omit unless the user explicitly asks to change Open confirmation. Defaults to true."}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "properties": {"type": {"const": "Thermostat"}, "label": {"$ref": "#/$defs/label"}, "entity_id": {"$ref": "#/$defs/entity"}}
+        },
+        {
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "properties": {
+            "type": {"const": "MediaPlayer"}, "layout": {"$ref": "#/$defs/card_layout", "description": "Full card (default) or play/pause tile."},
+            "label": {"$ref": "#/$defs/label"}, "entity_id": {"$ref": "#/$defs/entity"}
+          }
+        }
+      ]
+    },
+    "change": {
+      "oneOf": [
+        {
+          "type": "object", "required": ["op", "title"], "additionalProperties": false,
+          "properties": {"op": {"const": "set_title"}, "title": {"$ref": "#/$defs/title"}}
+        },
+        {
+          "type": "object", "required": ["op", "card_id", "periods"], "additionalProperties": false,
+          "properties": {"op": {"const": "set_forecast_periods"}, "card_id": {"$ref": "#/$defs/key"}, "periods": {"$ref": "#/$defs/periods"}}
+        },
+        {
+          "type": "object", "required": ["op", "card_id", "window"], "additionalProperties": false,
+          "properties": {"op": {"const": "set_chart_window"}, "card_id": {"$ref": "#/$defs/key"}, "window": {"$ref": "#/$defs/window"}}
+        }
+      ]
+    }
+  }
+}

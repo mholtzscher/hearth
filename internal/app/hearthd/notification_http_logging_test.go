@@ -33,7 +33,7 @@ func TestNotificationHTTPUsesInjectedLogger(t *testing.T) {
 			&stubNotifications{},
 			&stubDevices{},
 			&stubFunctions{},
-			logger, nil,
+			logger,
 			testDevicesPresenter(),
 		), nil, household.Settings{},
 	)
