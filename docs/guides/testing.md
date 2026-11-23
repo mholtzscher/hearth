@@ -140,6 +140,14 @@ The workflow owns the model, permissions, and repository context settings;
 PR-supplied `.pr_agent.toml` files are ignored. It reads PR content through
 GitHub's API without checking out or executing PR code.
 
+## Agent evaluation
+
+Deterministic fixtures do not show whether Agent changes, such as prompt, tool
+text, or model settings, make the hosted model behave better or worse. Compare
+revisions with [agent evaluation](agent-evaluation.md) before shipping such a
+change. Its scenarios and checks run in CI with a scripted model; hosted
+comparisons are manual.
+
 ## Completion gate
 
 Dashboard conformance examples in `contracts/views/v1/examples.json` run through

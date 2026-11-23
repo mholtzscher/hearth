@@ -10,6 +10,8 @@ behavior or proof of external delivery.
 The [minimal example](../../configs/simulator.example.yaml) declares one power
 Entity. The [validation inventory](../../configs/scripted.simulator.yaml) includes
 multiple Adapters, Entity types, fault cases, notifications, and Functions.
+[Agent evaluation](../guides/agent-evaluation.md) uses its own copy, so changes
+here do not shift what evaluation scenarios measure.
 Use `mise run simulator-start` and `mise run simulator-stop` for the managed
 worktree-local stack.
 

@@ -270,6 +270,13 @@ description = "Verify the built Storybook's component APIs and story snippets"
 depends = ["web-install"]
 run = '''pnpm --dir web run check-storybook-manifest'''
 
+[tasks."agent-eval"]
+description = "Evaluate Agent changes with hosted-model trials (manual; see docs/guides/agent-evaluation.md)"
+run = '''
+#!/usr/bin/env bash
+exec go run ./internal/cmd/agenteval "$@"
+'''
+
 [tasks."validate-backend"]
 description = "Run Go and validation-script checks"
 depends = [
