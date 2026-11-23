@@ -1732,3 +1732,45 @@ export const MotionReusedViewCall: Story = {
     await expect(secondPending).not.toBeInTheDocument();
   },
 };
+
+/** Opening a view moves its cards together; closing returns them to the reply. */
+export const MotionCanvasTravel: Story = {
+  name: "Motion · Canvas travel",
+  tags: ["motion"],
+  parameters: { appPath: conversationPath },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText(conversationReply);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Open in canvas" })
+    );
+    const view = await canvas.findByRole("region", { name: "View canvas" });
+    await expect(
+      await within(view).findByRole("switch", { name: "Hallway lamp power" })
+    ).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(
+      within(view).getByRole("button", { name: "Close view" })
+    );
+    await waitFor(() => expect(view).not.toBeInTheDocument());
+    await expect(
+      await canvas.findByRole("button", { name: "Open in canvas" })
+    ).toBeVisible();
+  },
+};
+
+export const MotionTabletDrawer: Story = {
+  ...TabletRecentDrawer,
+  name: "Motion · Tablet Recent drawer",
+  tags: ["motion"],
+};
+
+export const MotionPhoneDrawer: Story = {
+  ...PhoneNavigation,
+  name: "Motion · Phone navigation drawer",
+  tags: ["motion"],
+};
+
+export const MotionPhoneCanvas: Story = {
+  ...PhoneCanvas,
+  name: "Motion · Phone canvas without travel",
+  tags: ["motion"],
+};

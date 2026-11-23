@@ -40,6 +40,7 @@ import { automationContextSchema, viewContextSchema } from "../../api/agent";
 import { Button } from "../../components/button";
 import { Card } from "../../components/card";
 import { StatusNotice } from "../../components/notice";
+import { TravelingView } from "../../lib/canvas-travel";
 import { cn } from "../../lib/utils";
 import { readAutomationDocument } from "../automations/document";
 import { readDefinition } from "../views/catalog/compatibility";
@@ -290,12 +291,14 @@ const ReadyArtifact = ({
         </div>
       </ViewTransition>
       {!open && (
-        <PlaceholderMotion.Provider value={morphName}>
-          <ArtifactBody
-            definition={data.artifact.definition}
-            live={visible && near}
-          />
-        </PlaceholderMotion.Provider>
+        <TravelingView artifactId={data.artifact.artifact_id}>
+          <PlaceholderMotion.Provider value={morphName}>
+            <ArtifactBody
+              definition={data.artifact.definition}
+              live={visible && near}
+            />
+          </PlaceholderMotion.Provider>
+        </TravelingView>
       )}
     </Card>
   );

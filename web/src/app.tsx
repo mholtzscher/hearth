@@ -119,9 +119,10 @@ const historyClassNames = (nav: NavMode, drawerOpen: boolean) => {
   let root: string | undefined;
   if (nav === "rail") {
     root = cn(
-      "border-border bg-card invisible fixed inset-y-0 left-[104px] z-[60] w-[min(320px,85vw)] -translate-x-3 border-t-0 border-r px-3 pt-3 pb-4 opacity-0 shadow-[12px_0_40px_#0006] [--history-bg:var(--gray-1)] [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_.18s]",
-      drawerOpen &&
-        "visible translate-x-0 opacity-100 [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]"
+      "border-border bg-card fixed inset-y-0 left-[104px] z-[60] w-[min(320px,85vw)] border-t-0 border-r px-3 pt-3 pb-4 shadow-[12px_0_40px_#0006] [--history-bg:var(--gray-1)]",
+      drawerOpen
+        ? "slide-drawer-in visible translate-x-0 opacity-100"
+        : "slide-drawer-out invisible -translate-x-3 opacity-0"
     );
   } else if (nav === "bar") {
     root =
@@ -490,10 +491,11 @@ const HouseholdSidebar = ({
         "group/sidebar border-border bg-background flex min-h-0 flex-col gap-6 border-r px-4 pt-7 pb-4",
         nav === "rail" && "gap-4 px-1.5 pt-6",
         nav === "bar" &&
-          "bg-card invisible fixed inset-y-0 left-0 z-[60] w-[min(320px,85vw)] -translate-x-3 gap-4 px-3 pt-4 pb-[max(16px,var(--safe-bottom,env(safe-area-inset-bottom)))] opacity-0 shadow-[12px_0_40px_#0006] [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_.18s]",
+          "bg-card fixed inset-y-0 left-0 z-[60] w-[min(320px,85vw)] gap-4 px-3 pt-4 pb-[max(16px,var(--safe-bottom,env(safe-area-inset-bottom)))] shadow-[12px_0_40px_#0006]",
         nav === "bar" &&
-          drawerOpen &&
-          "visible translate-x-0 opacity-100 [transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]"
+          (drawerOpen
+            ? "slide-drawer-in visible translate-x-0 opacity-100"
+            : "slide-drawer-out invisible -translate-x-3 opacity-0")
       )}
       data-nav={nav}
       aria-label="Hearth navigation"

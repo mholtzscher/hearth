@@ -44,6 +44,10 @@ A panel fades in while moving 12–16px from the edge it opens from: the canvas 
 
 <Canvas of={Motion.Slide} sourceState="none" />
 
+### Travel
+
+The view’s cards move together across the workspace at `duration-travel`. They return at `duration-layout`. The header changes without showing both labels at once. Phone and reduced-motion layouts switch at once.
+
 ### Pending
 
 While an outcome is awaited, a dot or icon breathes between full and 40% opacity on the 1.6-second pending pulse, or a dashed icon turns once every 8 seconds. Reduced motion: none.
@@ -91,3 +95,5 @@ Each component and layout story that shows a pattern in place, by component or l
 - **Tool activity** (Grow, Pending): [Motion · Tool activity](?path=/story/application-workspace--motion-tool-activity). A pending tool's dashed icon turns while the reply runs, and the activity grows open.
 - **Tool activity** (Confirm): [Motion · Tool completes](?path=/story/application-workspace--motion-tool-complete). A tool that finishes during an arriving reply draws its check.
 - **Conversation layout** (Morph): [Motion · View ready](?path=/story/application-workspace--motion-view-ready) and [Motion · Two views with a reused call ID](?path=/story/application-workspace--motion-reused-view-call). Each placeholder becomes its committed view’s first cards.
+- **Workspace layout** (Travel): [Motion · Canvas travel](?path=/story/application-workspace--motion-canvas-travel); [Motion · Phone canvas without travel](?path=/story/application-workspace--motion-phone-canvas).
+- **Workspace drawers** (Slide): [Motion · Tablet Recent drawer](?path=/story/application-workspace--motion-tablet-drawer); [Motion · Phone navigation drawer](?path=/story/application-workspace--motion-phone-drawer).

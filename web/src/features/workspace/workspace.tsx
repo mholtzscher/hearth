@@ -72,7 +72,8 @@ interface WorkspaceValue {
   editorEpoch: number;
   selectArtifact: (
     artifact: PresentedArtifact,
-    onSelected?: () => void
+    onSelected?: () => void,
+    transition?: (action: () => void) => void
   ) => void;
   receiveArtifact: (
     artifact: PresentedArtifact,
@@ -84,7 +85,7 @@ interface WorkspaceValue {
   reload: () => Promise<void>;
   discard: () => Promise<void>;
   customize: () => void;
-  closeDraft: () => void;
+  closeDraft: (transition?: (action: () => void) => void) => void;
   composerFocusRequested: boolean;
   finishComposerFocus: () => void;
   navigateRetainingDraft: (path: string) => void;
@@ -268,21 +269,25 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     resetEditor();
     setError("");
   }, [resetEditor, setDraft]);
-  const closeDraft = useCallback(() => {
-    if (saving) {
-      return;
-    }
-    if (
-      draft &&
-      !isAutomationDraft(draft) &&
-      editorValid &&
-      isUneditedGeneratedView(draft)
-    ) {
-      clearDraft();
-    } else {
-      choose(clearDraft);
-    }
-  }, [choose, clearDraft, draft, editorValid, saving]);
+  const closeDraft = useCallback(
+    (transition?: (action: () => void) => void) => {
+      if (saving) {
+        return;
+      }
+      const close = transition ? () => transition(clearDraft) : clearDraft;
+      if (
+        draft &&
+        !isAutomationDraft(draft) &&
+        editorValid &&
+        isUneditedGeneratedView(draft)
+      ) {
+        close();
+      } else {
+        choose(close);
+      }
+    },
+    [choose, clearDraft, draft, editorValid, saving]
+  );
   const openDashboard = useCallback(
     async (id: string) => {
       loadSequence.current += 1;
@@ -320,7 +325,11 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     [draft, location.pathname, resetEditor, setDraft]
   );
   const selectArtifact = useCallback(
-    (item: PresentedArtifact, onSelected?: () => void) => {
+    (
+      item: PresentedArtifact,
+      onSelected?: () => void,
+      transition?: (action: () => void) => void
+    ) => {
       if (item.artifact.kind === "unsupported") {
         setError(
           "This artifact cannot be edited in this Hearth version. Its original tool result is retained in the conversation."
@@ -373,17 +382,24 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
         try {
           loadSequence.current += 1;
           draftBackend.current = getBaseUrl();
-          setDraft(
+          const next =
             artifact.kind === "hearth.automation"
               ? fromAutomationArtifact(
                   artifact,
                   isAutomationDraft(draft) ? draft : null
                 )
-              : fromArtifact(item, isAutomationDraft(draft) ? null : draft)
-          );
-          resetEditor();
-          setError("");
-          onSelected?.();
+              : fromArtifact(item, isAutomationDraft(draft) ? null : draft);
+          const apply = () => {
+            setDraft(next);
+            resetEditor();
+            setError("");
+            onSelected?.();
+          };
+          if (transition) {
+            transition(apply);
+          } else {
+            apply();
+          }
         } catch (error_) {
           setError(
             error_ instanceof Error
