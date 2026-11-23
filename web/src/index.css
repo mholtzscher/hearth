@@ -110,10 +110,20 @@
   /* 721px and 981px in rem, ordered with Tailwind's own breakpoints. */
   --breakpoint-tablet: 45.0625rem;
   --breakpoint-desktop: 61.3125rem;
+  /*
+   * Motion (DESIGN.md, Motion): one curve for every transition, the pending
+   * pulse for breathing, and four durations named by what they do.
+   */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-pulse: cubic-bezier(0.45, 0, 0.55, 1);
+  --transition-duration-feedback: 140ms;
+  --transition-duration-state: 180ms;
+  --transition-duration-layout: 240ms;
+  --transition-duration-travel: 360ms;
   --animate-arrival: view-arrival 10s var(--ease-out-expo) forwards;
-  --animate-pending: view-pending 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-  --animate-canvas-in: canvas-in 0.24s var(--ease-out-expo);
+  --animate-pending: view-pending 1.6s var(--ease-pulse) infinite;
+  --animate-canvas-in: canvas-in var(--transition-duration-layout)
+    var(--ease-out-expo);
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
 }
@@ -218,10 +228,15 @@
     background: color-mix(in oklch, var(--violet) 40%, transparent);
     color: var(--gray-10);
   }
+  /*
+   * Reduced motion removes all motion except on an element marked
+   * data-reduced-motion="fade", which keeps only opacity and color fades,
+   * declared with motion-reduce: utilities (DESIGN.md, Motion).
+   */
   @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
+    *:not([data-reduced-motion="fade"]),
+    *:not([data-reduced-motion="fade"])::before,
+    *:not([data-reduced-motion="fade"])::after {
       animation: none !important;
       transition: none !important;
       scroll-behavior: auto !important;

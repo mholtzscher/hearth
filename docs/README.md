@@ -87,3 +87,4 @@ Records describe decisions at their historical point, not a second current contr
 - [Scope persistence failures to operations](adr/0026-scope-persistence-failures-to-operations.md)
 - [Distinguish observed settings from stateless dispatched actions](adr/0027-distinguish-observed-settings-from-stateless-actions.md)
 - [Allow a stateful HomeKit bridge Adapter](adr/0028-allow-a-stateful-homekit-bridge-adapter.md)
+- [Adopt a shared motion vocabulary for the dashboard](adr/0029-adopt-a-shared-motion-vocabulary.md)
