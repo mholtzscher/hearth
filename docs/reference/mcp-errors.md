@@ -1,8 +1,11 @@
 # MCP result and failure contracts
 
-The `/mcp` endpoint and built-in Agent share one server catalog. The Agent's
+The `/mcp` endpoint and built-in Agent share an MCP server catalog. The Agent's
 [MCP bridge](../../internal/modules/agent/mcp_tools.go) excludes direct Automation
 definition writes; its available tools are not identical to the external catalog.
+Dashboard authoring uses the Agent's native `compose_view` tool, not external
+MCP. External discovery and calls expose neither `compose_view` nor the removed
+`present_view`.
 MCP failure results are not HTTP Problem Details. A tool failure does not authorize
 an action retry or prove that no effect occurred.
 
@@ -47,7 +50,12 @@ operation files, rather than a separate handwritten inventory:
 - [Adapters and Functions](../../internal/modules/adapters/mcpapi/register.go)
 - [Automations](../../internal/modules/automations/mcpapi/register.go)
 - [Notifications](../../internal/modules/notifications/mcpapi/register.go)
-- [Dashboards](../../internal/modules/dashboards/mcpapi/register.go)
+
+The native `compose_view` tool accepts up to 32 KiB of arguments. Invalid shape
+returns `invalid_arguments` with safe diagnostics; an invalid composition or edit
+returns `invalid_definition`. `draft_required` means an edit needs a selected
+draft, while `draft_selected` means a separate view needs a turn without one.
+These native Agent observations are not external MCP results.
 
 The unauthenticated endpoint shares HTTP's trusted-household boundary.
 Adapter and Automation prose, descriptors, schemas, and results are untrusted
@@ -142,8 +150,8 @@ the server boundary independently. The Agent preserves server text unchanged
 when available and uses structured content only as a fallback.
 
 These intentionally replace text-only input failures and `code: explanation`
-modeled failure text. Tool names, success projections, domain numeric bounds,
-receipt identities, and execution/retry policy are unchanged.
+modeled failure text. Success projections, domain numeric bounds, receipt
+identities, and execution/retry policy are unchanged.
 
 ## Verification owners
 

@@ -33,6 +33,125 @@ const activity = (id: string) => ({
 });
 
 describe("conversation projections", () => {
+  it.each(["compose_view", "present_view"])(
+    "tracks pending and committed %s views without treating a rejection as an artifact",
+    (name) => {
+      let live = reduceTurn(
+        emptyTurn(),
+        { type: "tool.preparing", call_id: "view", name },
+        "turn",
+        null
+      );
+      expect(pendingArtifactCalls(live)).toStrictEqual([
+        { id: "view:view:0", kind: "view" },
+      ]);
+      live = reduceTurn(
+        live,
+        { type: "tool.started", call_id: "view", name, arguments: "{}" },
+        "turn",
+        null
+      );
+      expect(pendingArtifactCalls(live)).toHaveLength(1);
+      live = reduceTurn(
+        live,
+        { type: "tool.finished", call_id: "view", result: "rejected" },
+        "turn",
+        null
+      );
+      expect(pendingArtifactCalls(live)).toStrictEqual([]);
+      expect(live.artifacts).toStrictEqual([]);
+      const presented = reduceTurn(
+        emptyTurn(),
+        { type: "view.presented", call_id: "view", artifact },
+        "turn",
+        null
+      );
+      expect(presented.artifacts).toStrictEqual([{ artifact, base: null }]);
+    }
+  );
+
+  it("keeps mixed historical tool names and resets reused call occurrences per user turn", () => {
+    const nextView = { ...artifact, artifact_id: "view-2" };
+    const thirdView = { ...artifact, artifact_id: "view-3" };
+    const items = projectHistory([
+      row(1, "user"),
+      row(2, "assistant", {
+        calls: [
+          { id: "same", name: "present_view", arguments: '{"old":true}' },
+        ],
+      }),
+      row(3, "tool", {
+        tool_call_id: "same",
+        tool_name: "present_view",
+        content: "old result",
+        artifacts: [artifact],
+      }),
+      row(4, "assistant", {
+        calls: [
+          { id: "same", name: "compose_view", arguments: '{"mode":"create"}' },
+        ],
+      }),
+      row(5, "tool", {
+        tool_call_id: "same",
+        tool_name: "compose_view",
+        content: "new result",
+        artifacts: [nextView],
+      }),
+      row(6, "user"),
+      row(7, "assistant", {
+        calls: [
+          { id: "same", name: "compose_view", arguments: '{"mode":"edit"}' },
+        ],
+      }),
+      row(8, "tool", {
+        tool_call_id: "same",
+        tool_name: "compose_view",
+        content: "edit result",
+        artifacts: [thirdView],
+      }),
+    ]);
+    expect(items[1].activities[0]).toMatchObject({
+      name: "present_view",
+      arguments: '{"old":true}',
+      result: "old result",
+      presentationKey: "view:same:0",
+    });
+    expect(items[2].artifacts[0]).toMatchObject({
+      artifact: nextView,
+      presentationKey: "view:same:1",
+    });
+    expect(items[4].artifacts[0]).toMatchObject({
+      artifact: thirdView,
+      presentationKey: "view:same:0",
+    });
+  });
+
+  it.each(["compose_view", "present_view"])(
+    "retains %s call identity and artifact in committed history",
+    (name) => {
+      const items = projectHistory([
+        row(1, "user"),
+        row(2, "assistant", {
+          calls: [{ id: "call-1", name, arguments: "{}" }],
+        }),
+        row(3, "tool", {
+          tool_call_id: "call-1",
+          tool_name: name,
+          content: "view",
+          artifacts: [artifact],
+        }),
+      ]);
+      expect(items[1].activities[0]).toMatchObject({
+        id: "call-1",
+        name,
+        result: "view",
+      });
+      expect(items[1].artifacts).toStrictEqual([
+        { artifact, base: null, presentationKey: "view:call-1:0" },
+      ]);
+    }
+  );
+
   it("groups consecutive assistant messages into one reply per user turn", () => {
     const replies = groupReplies([
       { id: "u1", role: "user", text: "temps", activities: [], artifacts: [] },
@@ -226,55 +345,68 @@ describe("conversation projections", () => {
     ]);
   });
 
-  it("pairs each reused view call with its own placeholder in live and stored replies", () => {
-    const nextView = { ...artifact, artifact_id: "view-2" };
-    const tool = { call_id: "same", name: "present_view" };
-    const result = '{"kind":"hearth.view"}';
-    let live = emptyTurn();
-    const pendingIds: string[] = [];
-    for (const view of [artifact, nextView]) {
-      live = reduceTurn(live, { type: "tool.preparing", ...tool }, "run", null);
-      const pending = pendingArtifactCalls(live);
-      expect(pending).toHaveLength(1);
-      pendingIds.push(pending[0].id);
-      live = reduceTurn(live, { type: "tool.started", ...tool }, "run", null);
-      expect(pendingArtifactCalls(live)).toStrictEqual(pending);
-      live = reduceTurn(
-        live,
-        { type: "tool.finished", ...tool, result },
-        "run",
-        null
+  it.each(["compose_view", "present_view"])(
+    "pairs each reused %s call with its own placeholder in live and stored replies",
+    (name) => {
+      const nextView = { ...artifact, artifact_id: "view-2" };
+      const tool = { call_id: "same", name };
+      const result = '{"kind":"hearth.view"}';
+      let live = emptyTurn();
+      const pendingIds: string[] = [];
+      for (const view of [artifact, nextView]) {
+        live = reduceTurn(
+          live,
+          { type: "tool.preparing", ...tool },
+          "run",
+          null
+        );
+        const pending = pendingArtifactCalls(live);
+        expect(pending).toHaveLength(1);
+        pendingIds.push(pending[0].id);
+        live = reduceTurn(live, { type: "tool.started", ...tool }, "run", null);
+        expect(pendingArtifactCalls(live)).toStrictEqual(pending);
+        live = reduceTurn(
+          live,
+          { type: "tool.finished", ...tool, result },
+          "run",
+          null
+        );
+        expect(pendingArtifactCalls(live)).toStrictEqual(pending);
+        live = reduceTurn(
+          live,
+          { type: "view.presented", ...tool, artifact: view },
+          "run",
+          null
+        );
+        expect(pendingArtifactCalls(live)).toStrictEqual([]);
+      }
+      expect(new Set(pendingIds).size).toBe(2);
+      expect(pendingIds).toStrictEqual(["view:same:0", "view:same:1"]);
+      expect(live.activities.map((call) => call.key)).toStrictEqual([
+        "run:same:0",
+        "run:same:1",
+      ]);
+      const replies = groupReplies(
+        projectHistory(
+          [artifact, nextView].flatMap((view, index) => [
+            row(index * 2 + 1, "assistant", {
+              calls: [{ id: tool.call_id, name: tool.name, arguments: "{}" }],
+            }),
+            row(index * 2 + 2, "tool", {
+              tool_call_id: tool.call_id,
+              content: result,
+              artifacts: [view],
+            }),
+          ])
+        )
       );
-      expect(pendingArtifactCalls(live)).toStrictEqual(pending);
-      live = reduceTurn(
-        live,
-        { type: "view.presented", ...tool, artifact: view },
-        "run",
-        null
-      );
-      expect(pendingArtifactCalls(live)).toStrictEqual([]);
+      expect(live.artifacts).toMatchObject([
+        { artifact, presentationKey: pendingIds[0] },
+        { artifact: nextView, presentationKey: pendingIds[1] },
+      ]);
+      expect(replies[0].artifacts).toStrictEqual(live.artifacts);
     }
-    expect(new Set(pendingIds).size).toBe(2);
-    const replies = groupReplies(
-      projectHistory(
-        [artifact, nextView].flatMap((view, index) => [
-          row(index * 2 + 1, "assistant", {
-            calls: [{ id: tool.call_id, name: tool.name, arguments: "{}" }],
-          }),
-          row(index * 2 + 2, "tool", {
-            tool_call_id: tool.call_id,
-            content: result,
-            artifacts: [view],
-          }),
-        ])
-      )
-    );
-    expect(live.artifacts).toMatchObject([
-      { artifact, presentationKey: pendingIds[0] },
-      { artifact: nextView, presentationKey: pendingIds[1] },
-    ]);
-    expect(replies[0].artifacts).toStrictEqual(live.artifacts);
-  });
+  );
 
   it("pairs legacy name-only batches locally without treating synthetic IDs as global", () => {
     const items = projectHistory([

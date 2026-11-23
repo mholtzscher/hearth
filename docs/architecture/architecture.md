@@ -266,8 +266,9 @@ See [Conditions](../reference/automation-conditions.md),
 [Function Steps](../guides/automation-function-steps.md), and
 [schedules](../reference/automation-schedules.md).
 
-The Agent is required in Core and uses the shared MCP tool catalog in memory.
-It presents validated view drafts; saving or replacing a dashboard requires
+The Agent is required in Core and uses the shared MCP tool catalog in memory
+alongside its native dashboard authoring tool. It presents validated view drafts;
+saving or replacing a dashboard requires
 explicit browser action, with revision checks for replacement. The dashboards
 module owns saved definitions, while Devices owns field interpretation and
 history queries. Artifacts remain in committed tool results; unsupported stored

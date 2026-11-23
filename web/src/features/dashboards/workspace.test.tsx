@@ -799,7 +799,7 @@ describe("dashboard workspace", () => {
       if (path.endsWith("/messages/stream")) {
         sentBody = JSON.parse(String(init?.body));
         return new Response(
-          `data: ${JSON.stringify({ type: "view.presented", call_id: "c", artifact })}\n\ndata: {"type":"turn.finished"}\n\n`
+          `data: ${JSON.stringify({ type: "tool.started", call_id: "c", name: "compose_view", arguments: JSON.stringify({ mode: "edit", changes: [{ op: "set_title", title: "Warmer view" }] }) })}\n\ndata: ${JSON.stringify({ type: "tool.finished", call_id: "c", result: "ok" })}\n\ndata: ${JSON.stringify({ type: "view.presented", call_id: "c", artifact })}\n\ndata: {"type":"turn.finished"}\n\n`
         );
       }
       if (path.endsWith("/messages")) {
@@ -816,7 +816,7 @@ describe("dashboard workspace", () => {
               message_id: 2,
               role: "assistant",
               content: "",
-              calls: [{ id: "c", name: "present_view", arguments: "{}" }],
+              calls: [{ id: "c", name: "compose_view", arguments: "{}" }],
               created_at: "",
             },
             {

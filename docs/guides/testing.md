@@ -161,7 +161,9 @@ fixtures do not establish model selection quality.
 
 Unset `GO_PACKAGES` and run `mise run validate` after final integration. It covers
 generation, formatting, module tidying, lint, all default test levels, generated
-fixture execution, vet, frontend tests/build, and Storybook tests/build. Install
+fixture execution, vet, frontend tests/build, and Storybook tests/build. Browser
+fixtures cover pending `compose_view` calls and new and legacy view history;
+they do not establish backend authoring or provider continuation. Install
 the Storybook browser before this gate. Local Go tests are non-race; CI enables
 race detection.
 

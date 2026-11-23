@@ -1744,13 +1744,13 @@ describe("agent page", () => {
     await event({
       type: "tool.preparing",
       call_id: "rejected",
-      name: "present_view",
+      name: "compose_view",
     });
     await expect(log.findByText("Preparing a view")).resolves.toBeTruthy();
     await event({
       type: "tool.started",
       call_id: "rejected",
-      name: "present_view",
+      name: "compose_view",
       arguments: "{}",
     });
     expect(log.getAllByText("Preparing a view")).toHaveLength(1);
@@ -1778,13 +1778,13 @@ describe("agent page", () => {
     await event({
       type: "tool.preparing",
       call_id: "accepted",
-      name: "present_view",
+      name: "compose_view",
     });
     await expect(log.findByText("Preparing a view")).resolves.toBeTruthy();
     await event({
       type: "tool.started",
       call_id: "accepted",
-      name: "present_view",
+      name: "compose_view",
       arguments: "{}",
     });
     await event({
