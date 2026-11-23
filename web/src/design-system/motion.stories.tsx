@@ -403,7 +403,7 @@ export const Give: Story = {
     <Card asChild>
       <button
         type="button"
-        className="text-label duration-feedback w-60 text-start transition-[scale] active:scale-[0.985]"
+        className="text-label duration-feedback w-60 text-start transition-[scale] motion-safe:active:scale-[0.985]"
       >
         Press and hold this card
       </button>
