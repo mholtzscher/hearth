@@ -139,6 +139,9 @@
   --animate-refuse: motion-refuse var(--transition-duration-layout)
     var(--ease-out-expo);
   --animate-turn: motion-turn 8s linear infinite;
+  /* Words that accompany Pending wait 600ms, so a quick outcome never shows them. */
+  --animate-pending-words: motion-fade var(--transition-duration-state)
+    var(--ease-out-expo) 600ms both;
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
 }

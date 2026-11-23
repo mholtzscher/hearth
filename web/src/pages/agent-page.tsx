@@ -33,6 +33,7 @@ import type {
   LiveTurn,
   PresentedArtifact,
 } from "../features/conversation/runtime";
+import { useTurnMessageIds } from "../features/conversation/turn-ids";
 import { Canvas } from "../features/dashboards/canvas";
 import { useWorkspace } from "../features/dashboards/workspace";
 import { usePhoneBarSlot } from "../features/workspace/phone-bar-slot";
@@ -133,12 +134,12 @@ const messageStatus = (
 
 const convertMessage = (
   item: ConversationItem,
-  conversationId: string,
+  messageId: string,
   running: boolean
 ): ThreadMessageLike => {
   const text = item.text ? [{ type: "text" as const, text: item.text }] : [];
   return {
-    id: `${conversationId}:${item.id}`,
+    id: messageId,
     role: item.role,
     ...(item.role === "assistant"
       ? { status: messageStatus(item, running) }
@@ -593,6 +594,7 @@ const AgentPage = () => {
     [items, optimistic, live, queued]
   );
   const replies = useMemo(() => groupReplies(allItems), [allItems]);
+  const messageId = useTurnMessageIds(session.key, replies, optimistic?.id);
   const sendBlocked = sendIsBlocked({
     busy,
     loading,
@@ -606,7 +608,8 @@ const AgentPage = () => {
     isLoading: loading,
     isSendDisabled: sendBlocked,
     suggestions: STARTERS,
-    convertMessage: (item) => convertMessage(item, session.key, busy),
+    convertMessage: (item, index) =>
+      convertMessage(item, messageId(item, index), busy),
     onNew: async (message) => {
       const text = message.content
         .filter((part) => part.type === "text")
@@ -699,9 +702,16 @@ const AgentPage = () => {
                       select={select}
                       openId={draft?.origin_artifact_id ?? null}
                       visible={!narrow || !mobileCanvas}
+                      threadKey={session.key}
+                      historyLoading={loading}
+                      messageCount={replies.length}
                     />
+                    {/* Pending (DESIGN.md, Motion): the words wait 600ms, so a quick reply never shows them. */}
                     {busy && (
-                      <output className="text-label text-muted-foreground mt-3 block">
+                      <output
+                        data-reduced-motion="fade"
+                        className="animate-pending-words text-label text-muted-foreground mt-3 block"
+                      >
                         Looking through your home…
                       </output>
                     )}

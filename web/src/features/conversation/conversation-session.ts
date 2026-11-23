@@ -289,7 +289,7 @@ export class ConversationSession {
       failedPrompt: "",
       live,
       optimistic: {
-        id: `pending-user-${Date.now()}`,
+        id: `pending-user-${crypto.randomUUID()}`,
         role: "user",
         text: prompt,
         activities: [],

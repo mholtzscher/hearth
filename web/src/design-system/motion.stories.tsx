@@ -184,7 +184,7 @@ const expectReplayRuns = async (
   );
 };
 
-/** An element entering a sequence rises 8px; a block inside an arriving group rises 4px, one feedback step later. */
+/** An element entering a sequence rises 8px; a block inside an arriving group rises 4px. */
 export const Arrive: Story = {
   tags: ["motion"],
   render: () => (
@@ -200,7 +200,6 @@ export const Arrive: Story = {
           <p
             data-reduced-motion="fade"
             className="animate-arrive motion-reduce:animate-fade text-label text-muted-foreground [--motion-rise:4px]"
-            style={{ animationDelay: "var(--transition-duration-feedback)" }}
           >
             A block inside the arriving group
           </p>
