@@ -26,6 +26,7 @@ func Register(api huma.API, service Devices, presenter *devices.Presenter, logge
 	registerUpdateDevice(api, handler)
 	registerListEntities(api, handler)
 	registerGetEntity(api, handler)
+	registerGetEntityArtwork(api, handler)
 	registerUpdateEntity(api, handler)
 	registerExecuteEntityCommand(api, handler)
 	registerListEntityCommands(api, handler)
