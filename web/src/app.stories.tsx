@@ -1702,3 +1702,33 @@ export const MotionViewReady: Story = {
     ).toHaveAttribute("aria-checked", "true");
   },
 };
+
+/** Two batches in one reply can use the same provider call ID. */
+export const MotionReusedViewCall: Story = {
+  name: "Motion · Two views with a reused call ID",
+  tags: ["motion"],
+  parameters: { applicationScenario: { turn: "reused-view-call" } },
+  play: async (context) => {
+    await askTemperature(context);
+    const { canvas } = context;
+    const firstPending = await canvas.findByRole("heading", {
+      name: "Preparing a view",
+    });
+    const morning = await canvas.findByRole("heading", {
+      name: "Morning overview",
+    });
+    const secondPending = await canvas.findByRole("heading", {
+      name: "Preparing a view",
+    });
+    await expect(secondPending).not.toBe(firstPending);
+    await expect(
+      await canvas.findByRole("heading", {
+        name: "Evening overview",
+      })
+    ).toBeVisible();
+    await expect(await canvas.findByText(conversationReply)).toBeVisible();
+    await expect(morning).toBeVisible();
+    await expect(firstPending).not.toBeInTheDocument();
+    await expect(secondPending).not.toBeInTheDocument();
+  },
+};

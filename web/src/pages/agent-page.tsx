@@ -163,8 +163,8 @@ const convertMessage = (
             })),
             ...item.artifacts.map((presentation) => ({
               type: "data-hearth-view" as const,
-              id: presentation.callId
-                ? `presentation:${presentation.callId}`
+              id: presentation.presentationKey
+                ? `presentation:${presentation.presentationKey}`
                 : presentation.artifact.artifact_id,
               data: presentation,
             })),
@@ -172,7 +172,10 @@ const convertMessage = (
             ...(running
               ? (item.pendingArtifacts ?? []).map(({ id, kind }) => ({
                   type: "data-hearth-view" as const,
-                  id: `presentation:${id}`,
+                  id:
+                    kind === "view"
+                      ? `presentation:${id}`
+                      : `pending-automation:${id}`,
                   data: { pending: kind },
                 }))
               : []),

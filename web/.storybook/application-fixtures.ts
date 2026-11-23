@@ -61,6 +61,87 @@ const compactArtifact = {
     },
   } satisfies ViewDefinition,
 };
+const secondView = {
+  ...compactArtifact,
+  artifact_id: "view_story_followup",
+  definition: { ...compactArtifact.definition, title: "Evening overview" },
+};
+type FixtureView = typeof compactArtifact;
+
+const fixtureToolResult = (
+  started: { call_id: string; name: string; arguments: string },
+  messageId: number,
+  view?: FixtureView
+) => {
+  const { call_id: id, name, arguments: args } = started;
+  const result = view ? JSON.stringify(view) : '{"value":21.5}';
+  const rows: AgentMessage[] = [
+    {
+      message_id: messageId,
+      role: "assistant",
+      content: "",
+      created_at: fixtureNow,
+      calls: [{ id, name, arguments: args }],
+    },
+    {
+      message_id: messageId + 1,
+      role: "tool",
+      content: result,
+      tool_call_id: id,
+      tool_name: name,
+      ...(view && { artifacts: [view] }),
+      created_at: fixtureNow,
+    },
+  ];
+  const events: TurnEvent[] = [{ type: "tool.finished", call_id: id, result }];
+  if (view) {
+    events.push({ type: "view.presented", call_id: id, artifact: view });
+  }
+  return { rows, events };
+};
+
+const fixtureTurnOutcome = (
+  messages: AgentMessage[],
+  prompt: { text: string; view_context?: AgentMessage["view_context"] },
+  started: Parameters<typeof fixtureToolResult>[0] & { type: "tool.started" },
+  viewReady: boolean,
+  reusedViewCall: boolean
+) => {
+  const next = messages.length + 1;
+  const reply = viewReady ? conversationReply : sentReply;
+  const first = fixtureToolResult(
+    started,
+    next + 1,
+    viewReady ? compactArtifact : undefined
+  );
+  const second = reusedViewCall
+    ? fixtureToolResult(started, next + 3, secondView)
+    : undefined;
+  const history: AgentMessage[] = [
+    ...messages,
+    {
+      message_id: next,
+      role: "user",
+      content: prompt.text,
+      view_context: prompt.view_context,
+      created_at: fixtureNow,
+    },
+    ...first.rows,
+    ...(second?.rows ?? []),
+    {
+      message_id: next + (reusedViewCall ? 5 : 3),
+      role: "assistant",
+      content: reply,
+      created_at: fixtureNow,
+    },
+  ];
+  const finished = { type: "turn.finished", reply } as const;
+  return {
+    history,
+    results: second ? [...first.events, started] : [...first.events, finished],
+    followup: second ? [...second.events, finished] : undefined,
+  };
+};
 const automationHeader = {
   kind: "hearth.automation",
   schema_version: 1,
@@ -139,6 +220,7 @@ export interface ApplicationScenario {
     | "pending"
     | "pending-view"
     | "view-ready"
+    | "reused-view-call"
     | "fail-once"
     | "queue-collision";
   /** The queued collision stays pending until this story-local barrier releases a failed turn. */
@@ -401,11 +483,13 @@ export const createApplicationHandlers = (
           scenario.turn === "pending" ||
           scenario.turn === "pending-view" ||
           scenario.turn === "queue-collision";
+        const reusedViewCall = scenario.turn === "reused-view-call";
+        const viewReady = scenario.turn === "view-ready" || reusedViewCall;
         const toolStarted = {
           type: "tool.started",
           call_id: "read-temperature",
           name:
-            scenario.turn === "pending-view" || scenario.turn === "view-ready"
+            scenario.turn === "pending-view" || viewReady
               ? "present_view"
               : "get_entity",
           arguments:
@@ -446,73 +530,24 @@ export const createApplicationHandlers = (
             : []),
           toolStarted,
         ];
-        const viewReady = scenario.turn === "view-ready";
-        const resultEvents: TurnEvent[] = [];
-        if (!pending) {
-          const messages = histories.get(String(params.id)) ?? [];
-          const next = messages.length + 1;
-          const result = viewReady
-            ? JSON.stringify(compactArtifact)
-            : '{"value":21.5}';
-          const reply = viewReady ? conversationReply : sentReply;
-          histories.set(String(params.id), [
-            ...messages,
-            {
-              message_id: next,
-              role: "user",
-              content: text,
-              view_context,
-              created_at: fixtureNow,
-            },
-            {
-              message_id: next + 1,
-              role: "assistant",
-              content: "",
-              created_at: fixtureNow,
-              calls: [
-                {
-                  id: toolStarted.call_id,
-                  name: toolStarted.name,
-                  arguments: toolStarted.arguments,
-                },
-              ],
-            },
-            {
-              message_id: next + 2,
-              role: "tool",
-              content: result,
-              tool_call_id: toolStarted.call_id,
-              tool_name: toolStarted.name,
-              ...(viewReady ? { artifacts: [compactArtifact] } : {}),
-              created_at: fixtureNow,
-            },
-            {
-              message_id: next + 3,
-              role: "assistant",
-              content: reply,
-              created_at: fixtureNow,
-            },
-          ]);
-          resultEvents.push(
-            {
-              type: "tool.finished",
-              call_id: toolStarted.call_id,
-              result,
-            },
-            ...(viewReady
-              ? [
-                  {
-                    type: "view.presented" as const,
-                    call_id: toolStarted.call_id,
-                    artifact: compactArtifact,
-                  },
-                ]
-              : []),
-            { type: "turn.finished", reply }
-          );
+        const outcome = pending
+          ? undefined
+          : fixtureTurnOutcome(
+              histories.get(String(params.id)) ?? [],
+              { text, view_context },
+              toolStarted,
+              viewReady,
+              reusedViewCall
+            );
+        if (outcome) {
+          histories.set(String(params.id), outcome.history);
         }
         const encoder = new TextEncoder();
+        let canceled = false;
         const stream = new ReadableStream<Uint8Array>({
+          cancel() {
+            canceled = true;
+          },
           start(controller) {
             const emit = (batch: TurnEvent[]) => {
               for (const event of batch) {
@@ -528,7 +563,7 @@ export const createApplicationHandlers = (
             ) {
               void (async () => {
                 await scenario.queuedTurnFailure;
-                if (request.signal.aborted) {
+                if (canceled || request.signal.aborted) {
                   return;
                 }
                 controller.enqueue(
@@ -539,16 +574,30 @@ export const createApplicationHandlers = (
                 controller.close();
               })();
             }
-            if (viewReady) {
+            if (outcome && viewReady) {
+              // Leave time to see each placeholder, without putting the first
+              // view's commit at the edge of Storybook's assertion window.
+              const delay = reusedViewCall ? 600 : 900;
               setTimeout(() => {
-                if (request.signal.aborted) {
+                if (canceled || request.signal.aborted) {
                   return;
                 }
-                emit(resultEvents);
-                controller.close();
-              }, 900);
-            } else if (!pending) {
-              emit(resultEvents);
+                emit(outcome.results);
+                const { followup } = outcome;
+                if (followup) {
+                  setTimeout(() => {
+                    if (canceled || request.signal.aborted) {
+                      return;
+                    }
+                    emit(followup);
+                    controller.close();
+                  }, delay);
+                } else {
+                  controller.close();
+                }
+              }, delay);
+            } else if (outcome) {
+              emit(outcome.results);
               controller.close();
             }
           },
