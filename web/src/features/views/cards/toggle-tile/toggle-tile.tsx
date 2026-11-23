@@ -401,6 +401,8 @@ export const BoundToggleTile = ({ source, label, metric }: ToggleTileProps) => {
       title={title}
       on={!!on && status.value === "live"}
       interactive={canSet}
+      working={working}
+      stateObservedAt={data?.observed_at}
       metered={!!metric}
       status={status.entries}
       observedAt={oldestObservation(displayed)}

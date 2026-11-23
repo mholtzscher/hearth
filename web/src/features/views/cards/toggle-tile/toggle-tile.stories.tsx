@@ -86,6 +86,57 @@ export const MeteredPlug: Story = {
     });
   },
 };
+
+export const MotionObservedSpread: Story = {
+  name: "Motion · Press and observe",
+  tags: ["motion"],
+  args: { metric: undefined },
+  beforeEach: ({ msw }) => {
+    msw.use(...createCoreHandlers([], { commandDelayMs: 550 }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const control = await canvas.findByRole("switch", {
+      name: "Office plug power",
+    });
+    const tile = canvas.getByRole("article", { name: "Office plug" });
+    const { left, top, width, height } = tile.getBoundingClientRect();
+    await watchHeight(tile, async () => {
+      await userEvent.pointer({
+        keys: "[MouseLeft]",
+        target: control,
+        coords: { clientX: left + width * 0.25, clientY: top + height * 0.65 },
+      });
+      await expect(await canvas.findByText("Turning on…")).toBeVisible();
+      await expect(control).toHaveAttribute("aria-checked", "false");
+      await expect(tile).not.toHaveAttribute("data-on");
+      await waitFor(() => expect(tile).toHaveAttribute("data-on", "true"));
+      await expect(control).toHaveAttribute("aria-checked", "true");
+      await expect(tile.style.getPropertyValue("--tile-origin")).toMatch(
+        /^25% 65%$/u
+      );
+    });
+  },
+};
+
+export const MotionKeyboardSpread: Story = {
+  ...MotionObservedSpread,
+  name: "Motion · Keyboard press",
+  play: async ({ canvas, userEvent }) => {
+    const control = await canvas.findByRole("switch", {
+      name: "Office plug power",
+    });
+    const tile = canvas.getByRole("article", { name: "Office plug" });
+    await watchHeight(tile, async () => {
+      control.focus();
+      await userEvent.keyboard("{Enter}");
+      await expect(await canvas.findByText("Turning on…")).toBeVisible();
+      await expect(control).toHaveAttribute("aria-checked", "false");
+      await waitFor(() => expect(tile).toHaveAttribute("data-on", "true"));
+      await expect(tile.style.getPropertyValue("--tile-origin")).toBe("");
+      await expect(control).toHaveFocus();
+    });
+  },
+};
 export const Disabled: Story = {
   beforeEach: ({ msw }) => {
     msw.use(entityScenario(4, "disabled"));

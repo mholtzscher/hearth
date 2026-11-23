@@ -119,12 +119,21 @@ const commandedValue = (
   if (operation !== "set") {
     return undefined;
   }
+  if (
+    entity.type === "hearth.cover/v1" &&
+    typeof parameters.position === "number"
+  ) {
+    return { position: parameters.position, motion: "idle" };
+  }
   return entity.type === "hearth.colorhs/v1"
     ? { ...parameters, active: true }
     : parameters.value;
 };
 
-export const createCoreHandlers = (overrides: Entity[] = []) => {
+export const createCoreHandlers = (
+  overrides: Entity[] = [],
+  { commandDelayMs }: { commandDelayMs?: number } = {}
+) => {
   const entities = new Map(
     [...createEntities(), ...overrides].map((entity) => [entity.id, entity])
   );
@@ -413,6 +422,9 @@ export const createCoreHandlers = (overrides: Entity[] = []) => {
           { detail: "Unsupported Operation" },
           { status: 400 }
         );
+      }
+      if (commandDelayMs !== undefined) {
+        await delay(commandDelayMs);
       }
       commandNumber += 1;
       const observation_id = `obs_story_command_${commandNumber}`;

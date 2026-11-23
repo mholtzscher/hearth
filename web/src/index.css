@@ -144,6 +144,8 @@
   --animate-turn: motion-turn 8s linear infinite;
   --animate-roll: motion-roll var(--transition-duration-layout)
     var(--ease-out-expo);
+  --animate-spread: motion-spread var(--transition-duration-travel)
+    var(--ease-out-expo);
   --animate-draw: motion-draw var(--transition-duration-feedback)
     var(--ease-out-expo) both;
   /* Words that accompany Pending wait 600ms, so a quick outcome never shows them. */
@@ -396,6 +398,14 @@ html:active-view-transition-type(hearth-morph)::view-transition-new(root) {
 @keyframes motion-roll {
   from {
     translate: 0 var(--roll-distance);
+  }
+}
+@keyframes motion-spread {
+  from {
+    clip-path: circle(0% at var(--tile-origin, 50% 50%));
+  }
+  to {
+    clip-path: circle(150% at var(--tile-origin, 50% 50%));
   }
 }
 /* One and a half shakes of 3px. */
