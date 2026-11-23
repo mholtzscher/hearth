@@ -219,6 +219,8 @@ export const WhiteAndColor: Story = {
   },
 };
 export const InlineFeedback: Story = {
+  name: "Motion · Rejected color",
+  tags: ["motion"],
   args: { inlineFeedback: true },
   beforeEach: ({ msw }) => {
     msw.use(

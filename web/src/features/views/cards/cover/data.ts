@@ -292,6 +292,8 @@ export const useCover = (props: CoverProps) => {
     target,
     confirm,
     setPending: working(setState),
+    setState,
+    stopState,
     move,
     stop,
     line,

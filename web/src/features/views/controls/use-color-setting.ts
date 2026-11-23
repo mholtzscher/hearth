@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FieldEntity } from "../bindings/entity";
 import { useControl } from "../data/provider";
 import { KEYBOARD_SETTLE_MS } from "./brightness-slider";
+import { useRefusal } from "./command-motion";
 import type { ControlValue } from "./queue";
 
 /** Local drag/keyboard preview over the shared, durable Command control state. */
@@ -24,6 +25,7 @@ export const useColorSetting = <T extends ControlValue>({
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const dragging = useRef(false);
   const pending = state.phase === "pending" || state.phase === "confirming";
+  const refusal = useRefusal(state);
   const observed = read(entity.state?.value);
   const target = (pending ? read(state.requested) : undefined) ?? observed;
   const value = draft ?? target ?? fallback;
@@ -63,6 +65,7 @@ export const useColorSetting = <T extends ControlValue>({
     observed,
     pending,
     failed: state.phase === "failed",
+    refusal,
     begin: () => {
       dragging.current = true;
       cancelTimer();

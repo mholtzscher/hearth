@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 
 import { NativeSelect } from "../../../../components/native-select";
 import { SegmentedControl } from "../../../../components/segmented-control";
+import { cn } from "../../../../lib/utils";
 import type { Quantity } from "../../bindings/quantity";
+import { useRefusal } from "../../controls/command-motion";
 import { SharedControlStatus } from "../../controls/shared-control-status";
 import { DataCard } from "../data-card";
 import { useArrival } from "../observation";
@@ -114,11 +116,13 @@ const ModeControl = ({
   value,
   enabled,
   onChange,
+  refusal,
 }: {
   modes: ThermostatMode[];
   value: ThermostatMode;
   enabled: boolean;
   onChange: (mode: ThermostatMode) => void;
+  refusal?: string;
 }) => {
   if (modes.length === 0) {
     return null;
@@ -127,6 +131,7 @@ const ModeControl = ({
     return (
       <ControlRow label="Mode">
         <NativeSelect
+          className={refusal}
           size="touch"
           aria-label="Mode"
           value={value}
@@ -143,7 +148,7 @@ const ModeControl = ({
     );
   }
   return (
-    <div className="border-border grid gap-2 border-t py-3">
+    <div className={cn("border-border grid gap-2 border-t py-3", refusal)}>
       <span className="text-gray-9">Mode</span>
       <SegmentedControl
         label="Mode"
@@ -166,15 +171,18 @@ const FanControl = ({
   value,
   enabled,
   onChange,
+  refusal,
 }: {
   choices: string[];
   value: string | undefined;
   enabled: boolean;
   onChange: (fan: string) => void;
+  refusal?: string;
 }) =>
   choices.length === 0 ? null : (
     <ControlRow label="Fan">
       <NativeSelect
+        className={refusal}
         size="touch"
         aria-label="Fan"
         value={value ?? ""}
@@ -203,6 +211,10 @@ const FanControl = ({
 export const BoundThermostat = (props: ThermostatProps) => {
   const thermostat = useThermostat(props);
   const { status, observed, shown, support, mode, fan, entity } = thermostat;
+  const modeRefusal = useRefusal(mode.state);
+  const fanRefusal = useRefusal(fan.state);
+  const targetRefusal = useRefusal(thermostat.target.state);
+  const rangeRefusal = useRefusal(thermostat.range.state);
   const { value } = status;
   const { enabled } = thermostat;
   const observedAt = thermostat.resource.data?.observed_at;
@@ -229,6 +241,9 @@ export const BoundThermostat = (props: ThermostatProps) => {
           value={value}
           enabled={enabled}
           requested={(target) => thermostat.requested(target.key)}
+          refusal={(target) =>
+            target.key === "single" ? targetRefusal : rangeRefusal
+          }
           step={thermostat.step}
           onStep={(result) => thermostat.sendTarget(result.request)}
         />
@@ -265,6 +280,7 @@ export const BoundThermostat = (props: ThermostatProps) => {
         <ModeControl
           modes={support?.modes ?? []}
           value={shown.mode}
+          refusal={modeRefusal}
           enabled={enabled}
           onChange={(next) => mode.request({ mode: next })}
         />
@@ -273,6 +289,7 @@ export const BoundThermostat = (props: ThermostatProps) => {
         <FanControl
           choices={support?.fan_modes ?? []}
           value={shown.fan_mode}
+          refusal={fanRefusal}
           enabled={enabled}
           onChange={(next) => fan.request({ fan_mode: next })}
         />

@@ -51,6 +51,8 @@ export const AllOff: Story = {
   },
 };
 export const NarrowGroupFailure: Story = {
+  name: "Motion · Rejected row switches",
+  tags: ["motion"],
   decorators: [
     (Story) => (
       <div className="w-[248px]">

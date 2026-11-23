@@ -4,7 +4,10 @@ import { expect, userEvent, waitFor } from "storybook/test";
 
 import { entityId } from "../../../../../.storybook/fixtures";
 import { pairedEntityResponse } from "../../../../../.storybook/paired-fixtures";
-import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
+import {
+  expectNoHorizontalOverflow,
+  watchHeight,
+} from "../../../../../.storybook/play";
 import {
   applyThermostatCommand,
   thermostatEntities,
@@ -176,16 +179,23 @@ export const Pending: Story = {
 
 /** A rejected Command returns the target to observed State and says why. */
 export const Rejected: Story = {
+  name: "Motion · Rejected target",
+  tags: ["motion"],
   beforeEach: ({ msw }) => {
     msw.use(...thermostatCore({ state: heatCool }, "reject"));
   },
   play: async ({ canvas }) => {
-    await userEvent.click(
-      await canvas.findByRole("button", { name: /^Lower cool target/u })
-    );
-    await expect(await canvas.findByRole("alert")).toHaveTextContent(
-      "Targets: Change rejected. Try again."
-    );
+    const control = await canvas.findByRole("button", {
+      name: /^Lower cool target/u,
+    });
+    const observedName = control.getAttribute("aria-label");
+    await watchHeight(canvas.getByRole("article"), async () => {
+      await userEvent.click(control);
+      await expect(await canvas.findByRole("alert")).toHaveTextContent(
+        "Targets: Change rejected. Try again."
+      );
+      await expect(control).toHaveAttribute("aria-label", observedName);
+    });
   },
 };
 

@@ -67,8 +67,12 @@ export const SharedControlStatus = ({
         {state &&
           (state.phase === "pending" || state.phase === "confirming") && (
             <>
-              <StatusDot tone="info" />
-              <ControlStatusText full={control.pending(state.requested)} />
+              <StatusDot tone="info" pending />
+              <ControlStatusText
+                key={control.pending(state.requested)}
+                full={control.pending(state.requested)}
+                fade
+              />
             </>
           )}
       </output>
@@ -78,6 +82,7 @@ export const SharedControlStatus = ({
           <ControlStatusText
             full={`${control.name}: ${powerFailures[state.failure.kind]}`}
             short={`${control.name}: ${shortCommandFailures[state.failure.kind]}`}
+            fade
           />
         </p>
       )}

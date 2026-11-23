@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { expect } from "storybook/test";
 
 import { entityId, fixtureEntity } from "../../../../../.storybook/fixtures";
@@ -65,6 +65,8 @@ export const FullCard: Story = {
   },
 };
 export const NarrowFanFailure: Story = {
+  name: "Motion · Rejected fan level",
+  tags: ["motion"],
   decorators: [
     (Story) => (
       <div className="w-[248px]">
@@ -146,6 +148,36 @@ export const Disabled: Story = {
   },
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("Disabled")).toBeVisible();
+  },
+};
+
+export const MotionRejectedTile: Story = {
+  ...Tile,
+  name: "Motion · Rejected tile power",
+  tags: ["motion"],
+  beforeEach: ({ msw }) => {
+    msw.use(
+      http.post(`/v1/entities/${entityId(301)}/commands`, async () => {
+        await delay(450);
+        return HttpResponse.json({ detail: "Rejected" }, { status: 502 });
+      })
+    );
+  },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const control = await canvas.findByRole("switch", { name: /power/iu });
+    const tile = canvas.getByRole("article");
+    await watchHeight(tile, async () => {
+      await userEvent.click(control);
+      await expect(await canvas.findByText("Turning off…")).toBeVisible();
+      await expect(
+        canvasElement.querySelector('[data-slot="pending-command-dot"]')
+      ).toBeInTheDocument();
+      await expect(await canvas.findByRole("alert")).toHaveTextContent(
+        "Change rejected. Try again."
+      );
+      await expect(control).toHaveAttribute("aria-checked", "true");
+      await expect(tile).toHaveAttribute("data-on", "true");
+    });
   },
 };
 export const TileWithModeUnavailable: Story = {

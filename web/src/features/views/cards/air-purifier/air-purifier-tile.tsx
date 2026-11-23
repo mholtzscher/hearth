@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { useRefusal } from "../../controls/command-motion";
 import { ControlStatus } from "../../controls/control-status";
 import { supportsOperation } from "../../controls/support";
 import { useControl } from "../../data/provider";
@@ -169,6 +170,7 @@ export const AirPurifierTile = ({
     operation: "set",
   });
   const working = control.phase === "pending" || control.phase === "confirming";
+  const refusal = useRefusal(control);
   const power = rows.find((row) => row.key === "power");
   const pm = rows.find((row) => row.key === "pm25");
   if (!power || !pm) {
@@ -184,6 +186,7 @@ export const AirPurifierTile = ({
   return (
     <TileFrame
       title={title}
+      className={refusal}
       on={on && power.status.value === "live"}
       interactive={canSet}
       working={working}

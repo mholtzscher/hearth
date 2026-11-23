@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { CommandFailure } from "../../../api/commands";
 import { cn } from "../../../lib/utils";
 import { useControl } from "../data/provider";
+import { statusFade } from "./command-motion";
 import { StatusDot } from "./status-dot";
 
 export const controlStatusClasses =
@@ -25,14 +26,17 @@ export const ControlStatusText = ({
   full,
   short = full,
   slot,
+  fade = false,
 }: {
   full: ReactNode;
   short?: ReactNode;
   slot?: string;
+  fade?: boolean;
 }) => (
   <>
     <span
-      className="min-w-0 truncate"
+      className={cn("min-w-0 truncate", fade && statusFade)}
+      data-reduced-motion={fade ? "fade" : undefined}
       data-slot={slot ?? "control-status-text"}
       aria-hidden={short !== full || undefined}
       title={typeof full === "string" ? full : undefined}
@@ -95,8 +99,12 @@ export const ControlStatus = ({
       <output data-tone="info" className={controlStatusLineClasses}>
         {working && (
           <>
-            <StatusDot tone="info" />
-            <ControlStatusText full={pending(state.requested)} />
+            <StatusDot tone="info" pending />
+            <ControlStatusText
+              key={pending(state.requested)}
+              full={pending(state.requested)}
+              fade
+            />
           </>
         )}
         {state.phase === "idle" && idle && <ControlStatusText full={idle} />}
@@ -111,6 +119,7 @@ export const ControlStatus = ({
               ]
             }
             short={shortCommandFailures[state.failure.kind]}
+            fade
           />
         </p>
       )}

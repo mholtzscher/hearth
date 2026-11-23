@@ -79,6 +79,31 @@ export const NeverObserved: Story = {
     );
   },
 };
+
+export const MotionRefuse: Story = {
+  name: "Motion · Rejected brightness",
+  tags: ["motion"],
+  beforeEach: ({ msw }) => {
+    msw.use(
+      http.post("/v1/entities/:id/commands", async () => {
+        await delay(450);
+        return HttpResponse.json({ detail: "Rejected" }, { status: 502 });
+      })
+    );
+  },
+  play: async ({ canvas }) => {
+    const slider = canvas.getByRole("slider");
+    await fireEvent.change(slider, { target: { value: "65" } });
+    await fireEvent.focusOut(slider);
+    await expect(
+      await canvas.findByText("Setting brightness to 65 %…")
+    ).toBeVisible();
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "The light rejected the change."
+    );
+    await expect(slider).toHaveAttribute("aria-valuetext", "64 %");
+  },
+};
 export const FirstObservation: Story = {
   args: { entity: fixtureEntity(13, { state: null }) },
   beforeEach: ({ msw }) => {

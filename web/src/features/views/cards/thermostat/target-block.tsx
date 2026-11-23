@@ -21,6 +21,7 @@ const TargetSlot = ({
   digits,
   value,
   requested,
+  refusal,
   enabled,
   step,
   onStep,
@@ -29,6 +30,7 @@ const TargetSlot = ({
   digits: number;
   value: ValueTreatment;
   requested: boolean;
+  refusal?: string;
   enabled: boolean;
   step: (direction: 1 | -1) => StepResult | undefined;
   onStep: (result: StepResult) => void;
@@ -58,7 +60,7 @@ const TargetSlot = ({
         <span className="text-muted-foreground">°</span>
       </Reading>
       {target.operation && (
-        <div className="flex gap-1.5 self-end">
+        <div className={cn("flex gap-1.5 self-end", refusal)}>
           <Button
             variant="outline"
             size="icon-touch"
@@ -113,6 +115,7 @@ export const TargetBlock = ({
   value,
   enabled,
   requested,
+  refusal,
   step,
   onStep,
 }: {
@@ -122,6 +125,7 @@ export const TargetBlock = ({
   value: ValueTreatment;
   enabled: boolean;
   requested: (target: Target) => boolean;
+  refusal: (target: Target) => string | undefined;
   step: (target: Target, direction: 1 | -1) => StepResult | undefined;
   onStep: (result: StepResult) => void;
 }) => (
@@ -136,6 +140,7 @@ export const TargetBlock = ({
           digits={digits}
           value={value}
           requested={requested(target)}
+          refusal={refusal(target)}
           enabled={enabled}
           step={(direction) => step(target, direction)}
           onStep={onStep}

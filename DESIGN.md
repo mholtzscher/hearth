@@ -847,8 +847,9 @@ a power switch at the end of the reading row and a brightness slider below it.
   control shows the requested value, and its reserved line shows a dusk-blue dot
   and words such as **Turning on…** or **Setting brightness to 40 %…**. The dot
   breathes until the outcome arrives (Pending, see Motion).
-- A failure returns the control to observed State with a short shake (Refuse),
-  and the same line shows a red-pink dot and a short message, such as
+- A failure returns the control to observed State. A newly rejected Command
+  gives the control a short shake (Refuse); the same line shows a red-pink dot
+  and a short message, such as
   **Rejected.**, until the next attempt. The full sentence, such as "The light
   rejected the change.", is available to screen readers and in a tooltip.
 - A card with more than two controls, such as AirPurifier, reserves one shared

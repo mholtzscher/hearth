@@ -85,6 +85,8 @@ export const MotionCoverTile: Story = {
 };
 
 export const ConfirmOpening: Story = {
+  name: "Motion · Rejected tile opening",
+  tags: ["motion"],
   args: { layout: "tile" },
   decorators: [
     (Story) => (
@@ -119,6 +121,8 @@ export const ConfirmOpening: Story = {
   },
 };
 export const ConfirmOpeningCard: Story = {
+  name: "Motion · Rejected Open control",
+  tags: ["motion"],
   decorators: [
     (Story) => (
       <div className="w-[248px]">

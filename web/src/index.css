@@ -381,7 +381,7 @@ html:active-view-transition-type(hearth-morph)::view-transition-new(root) {
 }
 @keyframes motion-fade {
   from {
-    opacity: 0;
+    opacity: var(--motion-fade-from, 0);
   }
 }
 @keyframes motion-resolve {

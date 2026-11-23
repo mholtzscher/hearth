@@ -36,7 +36,9 @@ export const CoverStatus = ({
 }) => {
   const words = line && (
     <ControlStatusText
+      key={line.text}
       full={line.text}
+      fade={line.tone === "info" || line.alert}
       short={tile || line.alert ? line.short : undefined}
       slot={tile ? "cover-short" : undefined}
     />
@@ -61,7 +63,7 @@ export const CoverStatus = ({
       >
         {status && (
           <>
-            <StatusDot tone={status.tone} />
+            <StatusDot tone={status.tone} pending={status.tone === "info"} />
             {words}
           </>
         )}

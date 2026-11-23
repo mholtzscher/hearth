@@ -163,7 +163,10 @@ const Temperature = ({ control }: { control: TemperatureControl }) => {
   const snap = (value: number) =>
     Math.max(minimum, Math.min(maximum, Math.round(value / step) * step));
   return (
-    <fieldset disabled={!entity.enabled} className="m-0 min-w-0 border-0 p-0">
+    <fieldset
+      disabled={!entity.enabled}
+      className={cn("m-0 min-w-0 border-0 p-0", setting.refusal)}
+    >
       <legend className="sr-only">White temperature</legend>
       {!entity.enabled && (
         <p className={hintClasses}>This Entity is disabled.</p>
@@ -397,7 +400,10 @@ const Color = ({ control }: { control: ColorControl }) => {
     setting.cancel();
   };
   return (
-    <fieldset className="m-0 min-w-0 border-0 p-0" disabled={!entity.enabled}>
+    <fieldset
+      className={cn("m-0 min-w-0 border-0 p-0", setting.refusal)}
+      disabled={!entity.enabled}
+    >
       <legend className="sr-only">Light color</legend>
       {!entity.enabled && (
         <p className={hintClasses}>This Entity is disabled.</p>

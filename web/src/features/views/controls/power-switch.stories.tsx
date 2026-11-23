@@ -83,3 +83,30 @@ export const Disabled: Story = {
     await expect(canvas.getByRole("switch")).toBeDisabled();
   },
 };
+
+export const MotionRefuse: Story = {
+  name: "Motion · Rejected switch",
+  tags: ["motion"],
+  beforeEach: ({ msw }) => {
+    msw.use(
+      http.post("/v1/entities/:id/commands", async () => {
+        await delay(450);
+        return HttpResponse.json({ detail: "Rejected" }, { status: 502 });
+      })
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const control = canvas.getByRole("switch");
+    await userEvent.click(control);
+    await expect(control).toHaveAttribute("aria-checked", "true");
+    await waitFor(() =>
+      expect(control).toHaveAttribute("aria-checked", "false")
+    );
+    await expect(getComputedStyle(control).animationName).toBe(
+      matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "none"
+        : "motion-refuse"
+    );
+    await expect(control).toHaveFocus();
+  },
+};

@@ -157,6 +157,8 @@ export const ReadOnly: Story = {
   },
 };
 export const Rejected: Story = {
+  name: "Motion · Rejected tile",
+  tags: ["motion"],
   args: { metric: undefined },
   decorators: [
     (Story) => (

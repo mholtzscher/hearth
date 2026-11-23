@@ -5,6 +5,8 @@ import {
 } from "lucide-react";
 
 import { Button } from "../../../../components/button";
+import { cn } from "../../../../lib/utils";
+import { useRefusal } from "../../controls/command-motion";
 import { DataCard } from "../data-card";
 import { Reading } from "../reading";
 import { CoverDiagram } from "./cover-diagram";
@@ -14,8 +16,23 @@ import { useCover } from "./data";
 import type { CoverProps } from "./schema";
 import { coverWord } from "./words";
 
+const useButtonRefusals = (cover: ReturnType<typeof useCover>) => {
+  const setRefusal = useRefusal(cover.setState);
+  const stop = useRefusal(cover.stopState);
+  const failedPosition =
+    cover.setState.phase === "failed"
+      ? (cover.setState.requested as { position: number }).position
+      : undefined;
+  return {
+    open: failedPosition === 100 && setRefusal,
+    close: failedPosition === 0 && setRefusal,
+    stop,
+  };
+};
+
 export const CoverCard = ({ props }: { props: CoverProps }) => {
   const cover = useCover(props);
+  const refusal = useButtonRefusals(cover);
   const { data, status, title } = cover;
   const word = data ? coverWord(data.position, data.motion) : "—";
   const confirming =
@@ -72,7 +89,10 @@ export const CoverCard = ({ props }: { props: CoverProps }) => {
                 variant={confirming ? "default" : "outline"}
                 size="touch"
                 type="button"
-                className="data-[requested]:border-violet data-[requested]:bg-violet-soft data-[requested]:text-violet-text data-[confirm]:border-primary data-[confirm]:bg-primary data-[confirm]:text-primary-foreground data-[confirm]:hover:bg-orange-hover min-w-0 touch-manipulation px-2.5 data-[confirm]:transition-none @max-[250px]:gap-1 @max-[250px]:px-1"
+                className={cn(
+                  "data-[requested]:border-violet data-[requested]:bg-violet-soft data-[requested]:text-violet-text data-[confirm]:border-primary data-[confirm]:bg-primary data-[confirm]:text-primary-foreground data-[confirm]:hover:bg-orange-hover min-w-0 touch-manipulation px-2.5 data-[confirm]:transition-none @max-[250px]:gap-1 @max-[250px]:px-1",
+                  refusal.open
+                )}
                 data-requested={cover.target === 100 || undefined}
                 data-confirm={confirming || undefined}
                 aria-label={
@@ -92,7 +112,10 @@ export const CoverCard = ({ props }: { props: CoverProps }) => {
                 variant="outline"
                 size="touch"
                 type="button"
-                className="min-w-0 touch-manipulation px-2.5 @max-[250px]:gap-1 @max-[250px]:px-1"
+                className={cn(
+                  "min-w-0 touch-manipulation px-2.5 @max-[250px]:gap-1 @max-[250px]:px-1",
+                  refusal.stop
+                )}
                 aria-label={`Stop ${title}`}
                 disabled={disabled}
                 onClick={() => cover.stop()}
@@ -108,7 +131,10 @@ export const CoverCard = ({ props }: { props: CoverProps }) => {
                 variant="outline"
                 size="touch"
                 type="button"
-                className="data-[requested]:border-violet data-[requested]:bg-violet-soft data-[requested]:text-violet-text min-w-0 touch-manipulation px-2.5 @max-[250px]:gap-1 @max-[250px]:px-1"
+                className={cn(
+                  "data-[requested]:border-violet data-[requested]:bg-violet-soft data-[requested]:text-violet-text min-w-0 touch-manipulation px-2.5 @max-[250px]:gap-1 @max-[250px]:px-1",
+                  refusal.close
+                )}
                 data-requested={cover.target === 0 || undefined}
                 aria-label={`Close ${title}`}
                 disabled={disabled}

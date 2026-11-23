@@ -1,5 +1,7 @@
 import { SegmentedControl } from "../../../../components/segmented-control";
+import { cn } from "../../../../lib/utils";
 import type { FieldEntity } from "../../bindings/entity";
+import { useRefusal } from "../../controls/command-motion";
 import { useControl } from "../../data/provider";
 import { choiceWords, choicesOf } from "./category";
 
@@ -15,9 +17,10 @@ export const ModeControl = ({
     operation: "set",
   });
   const working = control.phase === "pending" || control.phase === "confirming";
+  const refusal = useRefusal(control);
   const shown = working ? control.requested : entity.state?.value;
   return (
-    <div className="border-border grid gap-2 border-t py-3">
+    <div className={cn("border-border grid gap-2 border-t py-3", refusal)}>
       <span className="text-gray-9">Mode</span>
       <SegmentedControl
         label={label}
