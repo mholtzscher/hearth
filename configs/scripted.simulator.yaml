@@ -40,6 +40,29 @@ adapters:
         output_schema: {type: object}
         hold: true
     devices:
+      - binding_key: hallway-thermostat
+        name: Hallway thermostat
+        kind: thermostat
+        entities:
+          - key: thermostat
+            name: Thermostat
+            type: hearth.thermostat/v1
+            support:
+              state:
+                modes: [off, heat, cool, heat_cool]
+                fan_modes: [auto, on]
+                temperature_minimum: 10000
+                temperature_maximum: 30000
+                humidity_minimum: 20
+                humidity_maximum: 80
+              operations: {set_target: {}, set_range: {}, set_mode: {}, set_fan_mode: {}, set_humidity: {}}
+            initial: {mode: heat, current_temperature: 18500, target_temperature: 19000}
+            commands:
+              set_target: {behavior: accept-and-publish, apply_parameters: true}
+              set_range: {behavior: accept-and-publish, apply_parameters: true}
+              set_mode: {behavior: accept-and-publish, apply_parameters: true}
+              set_fan_mode: {behavior: accept-and-publish, apply_parameters: true}
+              set_humidity: {behavior: accept-and-publish, apply_parameters: true}
       # This is an independent reported-state series, not a physical travel model.
       - binding_key: simulated-garage-door
         name: Simulated garage door

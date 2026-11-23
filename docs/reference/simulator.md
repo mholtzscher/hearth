@@ -65,7 +65,13 @@ Each operation under `commands` accepts:
 - `behavior: reject`: reject with optional `reason`.
 - `apply_parameters`: defaults to true. Parameters shaped `{"value": X}` replace
   scalar State or an object's existing `value` member if the candidate validates.
-  Other parameter shapes leave State unchanged. This is not a device physics model.
+  For `hearth.thermostat/v1`, supported setters instead update their corresponding
+  State fields: `set_target` (`temperature`) sets `target_temperature`;
+  `set_range` (`low`, `high`) sets `target_temperature_low` and
+  `target_temperature_high`; `set_mode` (`mode`), `set_fan_mode` (`fan_mode`),
+  and `set_humidity` (`humidity`) set `mode`, `fan_mode`, and `target_humidity`.
+  Temperatures are integer milli-Celsius. Other parameter shapes leave State
+  unchanged. This is not a device physics model.
 - `mark_available: true`: report availability before an accepted Command.
   It is invalid with reject behavior.
 
