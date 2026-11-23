@@ -8,13 +8,19 @@ import type {
 } from "../src/api/agent";
 import { viewContextSchema } from "../src/api/agent";
 import type { Dashboard } from "../src/api/dashboards";
+import type { ViewDefinition } from "../src/features/views/catalog";
 import {
   automation,
   automationHandlers,
   automationId,
   definition as automationDefinition,
 } from "./automation-fixtures";
-import { dashboardDefinition, entityId, fixtureNow } from "./fixtures";
+import {
+  catalogExamples,
+  dashboardDefinition,
+  entityId,
+  fixtureNow,
+} from "./fixtures";
 
 export const conversationId = "conversation_story_morning";
 export const queuedConversationId = "aconv_01920000000070008000000000000001";
@@ -30,6 +36,30 @@ const artifact = {
   kind: "hearth.view" as const,
   artifact_id: "view_story_morning",
   definition: dashboardDefinition,
+};
+const compactArtifact = {
+  ...artifact,
+  definition: {
+    ...dashboardDefinition,
+    spec: {
+      root: "root",
+      elements: {
+        root: {
+          type: "Stack",
+          props: { gap: "small" },
+          children: ["heading", "readings"],
+        },
+        heading: catalogExamples.Heading,
+        readings: {
+          type: "Grid",
+          props: { columns: 2 },
+          children: ["humidity", "lamp"],
+        },
+        humidity: catalogExamples.Metric,
+        lamp: catalogExamples.Device,
+      },
+    },
+  } satisfies ViewDefinition,
 };
 const automationHeader = {
   kind: "hearth.automation",
@@ -104,7 +134,13 @@ const loadedMessages: AgentMessage[] = [
 
 export interface ApplicationScenario {
   server?: "ready" | "not-ready" | "unavailable";
-  turn?: "reply" | "pending" | "pending-view" | "fail-once" | "queue-collision";
+  turn?:
+    | "reply"
+    | "pending"
+    | "pending-view"
+    | "view-ready"
+    | "fail-once"
+    | "queue-collision";
   /** The queued collision stays pending until this story-local barrier releases a failed turn. */
   queuedTurnFailure?: Promise<void>;
   historyFailure?: boolean;
@@ -369,7 +405,9 @@ export const createApplicationHandlers = (
           type: "tool.started",
           call_id: "read-temperature",
           name:
-            scenario.turn === "pending-view" ? "present_view" : "get_entity",
+            scenario.turn === "pending-view" || scenario.turn === "view-ready"
+              ? "present_view"
+              : "get_entity",
           arguments:
             scenario.turn === "queue-collision"
               ? JSON.stringify({ entity_id: entityId(4) })
@@ -408,9 +446,15 @@ export const createApplicationHandlers = (
             : []),
           toolStarted,
         ];
+        const viewReady = scenario.turn === "view-ready";
+        const resultEvents: TurnEvent[] = [];
         if (!pending) {
           const messages = histories.get(String(params.id)) ?? [];
           const next = messages.length + 1;
+          const result = viewReady
+            ? JSON.stringify(compactArtifact)
+            : '{"value":21.5}';
+          const reply = viewReady ? conversationReply : sentReply;
           histories.set(String(params.id), [
             ...messages,
             {
@@ -426,41 +470,58 @@ export const createApplicationHandlers = (
               content: "",
               created_at: fixtureNow,
               calls: [
-                { id: "read-temperature", name: "get_entity", arguments: "{}" },
+                {
+                  id: toolStarted.call_id,
+                  name: toolStarted.name,
+                  arguments: toolStarted.arguments,
+                },
               ],
             },
             {
               message_id: next + 2,
               role: "tool",
-              content: '{"value":21.5}',
+              content: result,
+              tool_call_id: toolStarted.call_id,
+              tool_name: toolStarted.name,
+              ...(viewReady ? { artifacts: [compactArtifact] } : {}),
               created_at: fixtureNow,
-              tool_call_id: "read-temperature",
-              tool_name: "get_entity",
             },
             {
               message_id: next + 3,
               role: "assistant",
-              content: sentReply,
+              content: reply,
               created_at: fixtureNow,
             },
           ]);
-          events.push(
+          resultEvents.push(
             {
               type: "tool.finished",
-              call_id: "read-temperature",
-              result: '{"value":21.5}',
+              call_id: toolStarted.call_id,
+              result,
             },
-            { type: "turn.finished", reply: sentReply }
+            ...(viewReady
+              ? [
+                  {
+                    type: "view.presented" as const,
+                    call_id: toolStarted.call_id,
+                    artifact: compactArtifact,
+                  },
+                ]
+              : []),
+            { type: "turn.finished", reply }
           );
         }
         const encoder = new TextEncoder();
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
-            for (const event of events) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
-              );
-            }
+            const emit = (batch: TurnEvent[]) => {
+              for (const event of batch) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
+                );
+              }
+            };
+            emit(events);
             if (
               scenario.turn === "queue-collision" &&
               scenario.queuedTurnFailure
@@ -478,7 +539,16 @@ export const createApplicationHandlers = (
                 controller.close();
               })();
             }
-            if (!pending) {
+            if (viewReady) {
+              setTimeout(() => {
+                if (request.signal.aborted) {
+                  return;
+                }
+                emit(resultEvents);
+                controller.close();
+              }, 900);
+            } else if (!pending) {
+              emit(resultEvents);
               controller.close();
             }
           },

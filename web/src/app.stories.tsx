@@ -1680,3 +1680,25 @@ export const MotionToolComplete: Story = {
     ).toContain("motion-draw");
   },
 };
+
+/** The pending placeholders hand off to the committed view in the same reply. */
+export const MotionViewReady: Story = {
+  name: "Motion · View ready",
+  tags: ["motion"],
+  parameters: { applicationScenario: { turn: "view-ready" } },
+  play: async (context) => {
+    await askTemperature(context);
+    const { canvas } = context;
+    await canvas.findByRole("heading", { name: "Preparing a view" });
+    const ready = await canvas.findByRole("heading", {
+      name: "Morning overview",
+    });
+    await waitFor(() => expect(ready).toBeVisible());
+    await expect(
+      canvas.queryByRole("heading", { name: "Preparing a view" })
+    ).not.toBeInTheDocument();
+    await expect(
+      await canvas.findByRole("switch", { name: "Hallway lamp power" })
+    ).toHaveAttribute("aria-checked", "true");
+  },
+};

@@ -88,7 +88,6 @@ const ARBITRARY_MOTION: Record<string, string[]> = {
     "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]",
   ],
   "src/components/switch.tsx": ["duration-[160ms]", "duration-[160ms]"],
-  "src/features/conversation/messages.tsx": ["[animation-delay:.2s]"],
   "src/features/views/cards/cover/cover-diagram.tsx": ["duration-[900ms]"],
   "src/features/views/cards/tile-frame.tsx": ["duration-[180ms]"],
   "src/features/views/cards/wind/wind.tsx": ["duration-[600ms]"],
@@ -171,7 +170,12 @@ const countClassSelectors = (css: string): number => {
       if (!list.startsWith("@")) {
         // An attribute value such as [href$=".pdf"] is not a class.
         count += selectors(list).filter((selector) =>
-          /\.[A-Za-z_-]/u.test(selector.replaceAll(/\[[^\]]*\]/gu, ""))
+          /\.[A-Za-z_-]/u.test(
+            selector
+              .replaceAll(/\[[^\]]*\]/gu, "")
+              // A view-transition class selects a browser snapshot, not a DOM element.
+              .replaceAll(/::view-transition-(?:group|old|new)\([^)]*\)/gu, "")
+          )
         ).length;
       }
       prelude = "";
@@ -255,6 +259,14 @@ describe("design system wrapper classification", () => {
 });
 
 describe("countClassSelectors", () => {
+  it("allows snapshot classes without allowing element classes", () => {
+    expect(
+      countClassSelectors(
+        "::view-transition-new(*.morph) { opacity: 1; } .card::view-transition-old(*.morph) { opacity: 0; }"
+      )
+    ).toBe(1);
+  });
+
   it("counts each selector in a list that contains a class", () => {
     expect(countClassSelectors(".a, .b:hover, p { color: red }")).toBe(2);
   });

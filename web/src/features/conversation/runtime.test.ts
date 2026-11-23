@@ -140,7 +140,11 @@ describe("conversation projections", () => {
       "second",
     ]);
     expect(items[1].artifacts).toStrictEqual([
-      { artifact, base: { dashboard_id: "dash-1", revision: 2 } },
+      {
+        artifact,
+        base: { dashboard_id: "dash-1", revision: 2 },
+        callId: "other",
+      },
     ]);
     expect(items[3].activities[0].result).toBe("new turn");
   });

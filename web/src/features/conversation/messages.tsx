@@ -22,12 +22,16 @@ import {
   PanelsTopLeftIcon,
 } from "lucide-react";
 import {
+  addTransitionType,
   createContext,
+  startTransition,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
+  ViewTransition,
 } from "react";
 import type { ReactNode } from "react";
 import remarkGfm from "remark-gfm";
@@ -39,7 +43,11 @@ import { StatusNotice } from "../../components/notice";
 import { cn } from "../../lib/utils";
 import { readAutomationDocument } from "../automations/document";
 import { readDefinition } from "../views/catalog/compatibility";
-import { ViewRenderer } from "../views/renderer/view-renderer";
+import {
+  PLACEHOLDER_CARD_COUNT,
+  PlaceholderMotion,
+  ViewRenderer,
+} from "../views/renderer/view-renderer";
 import {
   ArrivalProvider,
   arriveClass,
@@ -157,13 +165,20 @@ const ArtifactBody = ({
   );
 };
 
-const ArtifactPart = ({ data }: DataMessagePartProps<PresentedArtifact>) => {
+const ReadyArtifact = ({
+  data,
+  near,
+  morphName,
+}: {
+  data: PresentedArtifact;
+  near: boolean;
+  morphName?: string;
+}) => {
   const { select, openId, visible } = useContext(ArtifactContext);
-  const [ref, near] = useNearScreen();
   const arrival = useBlockArrival();
   if (data.artifact.kind === "hearth.automation") {
     return (
-      <div ref={ref} {...arrival}>
+      <div {...arrival}>
         <AutomationArtifactPreview
           artifact={data.artifact}
           open={openId === data.artifact.artifact_id}
@@ -175,7 +190,7 @@ const ArtifactPart = ({ data }: DataMessagePartProps<PresentedArtifact>) => {
   }
   if (data.artifact.kind === "unsupported") {
     return (
-      <div ref={ref} {...arrival}>
+      <div {...arrival}>
         <StatusNotice>
           <p>
             This artifact cannot be shown in this Hearth version. The original
@@ -216,7 +231,6 @@ const ArtifactPart = ({ data }: DataMessagePartProps<PresentedArtifact>) => {
   // An inline view's cards are the frame; a narrow column keeps "Open" on the title row and names the action in full.
   return (
     <Card
-      ref={ref}
       data-slot="artifact-preview"
       data-kind="view"
       data-open={open || undefined}
@@ -226,54 +240,62 @@ const ArtifactPart = ({ data }: DataMessagePartProps<PresentedArtifact>) => {
         open
           ? "border-violet/45"
           : "mt-3 rounded-none border-0 bg-transparent p-0",
-        arrival?.className
+        !morphName && arrival?.className
       )}
     >
-      <div className={artifactHeader}>
-        <span className={artifactIcon}>
-          <PanelsTopLeftIcon className="size-5" aria-hidden="true" />
-        </span>
-        <div>
-          <h3 className={artifactTitle}>{title}</h3>
-          <p className={artifactSummary}>{summary}</p>
-        </div>
-        {open ? (
-          <Button
-            variant="ghost"
-            size="touch"
-            className={artifactAction(true, true)}
-            onClick={() => select(data)}
-          >
-            <CheckIcon className="size-4 shrink-0" aria-hidden="true" />
-            Showing in canvas
-          </Button>
-        ) : (
-          <Button
-            variant="outline"
-            size="touch"
-            className={artifactAction(false, true)}
-            onClick={() => select(data)}
-            aria-label="Open in canvas"
-          >
-            <span>
-              Open
-              <span
-                data-slot="artifact-open-detail"
-                className="@max-[440px]:hidden"
-              >
-                {" "}
-                in canvas
+      <ViewTransition
+        name={morphName}
+        default="none"
+        share="hearth-morph-header"
+      >
+        <div className={artifactHeader}>
+          <span className={artifactIcon}>
+            <PanelsTopLeftIcon className="size-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h3 className={artifactTitle}>{title}</h3>
+            <p className={artifactSummary}>{summary}</p>
+          </div>
+          {open ? (
+            <Button
+              variant="ghost"
+              size="touch"
+              className={artifactAction(true, true)}
+              onClick={() => select(data)}
+            >
+              <CheckIcon className="size-4 shrink-0" aria-hidden="true" />
+              Showing in canvas
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="touch"
+              className={artifactAction(false, true)}
+              onClick={() => select(data)}
+              aria-label="Open in canvas"
+            >
+              <span>
+                Open
+                <span
+                  data-slot="artifact-open-detail"
+                  className="@max-[440px]:hidden"
+                >
+                  {" "}
+                  in canvas
+                </span>
               </span>
-            </span>
-            <ArrowRightIcon className="size-4 shrink-0" aria-hidden="true" />
-          </Button>
-        )}
-      </div>
+              <ArrowRightIcon className="size-4 shrink-0" aria-hidden="true" />
+            </Button>
+          )}
+        </div>
+      </ViewTransition>
       {!open && (
-        <ArtifactBody
-          definition={data.artifact.definition}
-          live={visible && near}
-        />
+        <PlaceholderMotion.Provider value={morphName}>
+          <ArtifactBody
+            definition={data.artifact.definition}
+            live={visible && near}
+          />
+        </PlaceholderMotion.Provider>
       )}
     </Card>
   );
@@ -281,8 +303,12 @@ const ArtifactPart = ({ data }: DataMessagePartProps<PresentedArtifact>) => {
 
 /** Hold a presentation's place while the model writes it and Core checks it. */
 const PendingArtifactPart = ({
-  data,
-}: DataMessagePartProps<{ kind?: string } | null>) => {
+  kind,
+  morphName,
+}: {
+  kind: "view" | "automation";
+  morphName?: string;
+}) => {
   const arrival = useBlockArrival();
   return (
     <Card
@@ -290,36 +316,95 @@ const PendingArtifactPart = ({
       className={cn(artifactFrame, arrival?.className)}
       data-reduced-motion={arrival?.["data-reduced-motion"]}
     >
-      <output className="block">
-        <div className={artifactHeader}>
-          <span className={artifactIcon}>
-            <PanelsTopLeftIcon className="size-5" aria-hidden="true" />
-          </span>
-          <div>
-            <h3 className={artifactTitle}>
-              {data?.kind === "automation"
-                ? "Preparing an Automation"
-                : "Preparing a view"}
-            </h3>
-            <p className={artifactSummary}>Putting it together…</p>
+      <output className="block" data-slot="pending-presentation">
+        <ViewTransition
+          name={morphName}
+          default="none"
+          share="hearth-morph-header"
+        >
+          <div className={artifactHeader}>
+            <span className={artifactIcon}>
+              <PanelsTopLeftIcon className="size-5" aria-hidden="true" />
+            </span>
+            <div>
+              <h3 className={artifactTitle}>
+                {kind === "automation"
+                  ? "Preparing an Automation"
+                  : "Preparing a view"}
+              </h3>
+              <p className={artifactSummary}>Putting it together…</p>
+            </div>
           </div>
-        </div>
+        </ViewTransition>
         <div
           className="border-border mt-4 grid min-w-0 grid-cols-2 gap-3 overflow-x-auto border-t pt-4"
           aria-hidden="true"
         >
-          <Card asChild className="animate-pending h-[157px]">
-            <span />
-          </Card>
-          <Card
-            asChild
-            className="animate-pending h-[157px] [animation-delay:.2s]"
-          >
-            <span />
-          </Card>
+          {Array.from({ length: PLACEHOLDER_CARD_COUNT }, (_, index) => {
+            const name = `${morphName}-card-${index}`;
+            return (
+              <ViewTransition
+                key={name}
+                name={morphName ? name : undefined}
+                default="none"
+                share="hearth-morph-card"
+              >
+                <Card asChild className="animate-pending h-[157px]">
+                  <span />
+                </Card>
+              </ViewTransition>
+            );
+          })}
         </div>
       </output>
     </Card>
+  );
+};
+
+type ArtifactData = PresentedArtifact | { pending: "view" | "automation" };
+
+/**
+ * The stream is an external store, whose updates are synchronous. Hold the
+ * visible placeholder until React can replace it in a transition. Only views
+ * that actually had a visible placeholder use Morph; history stays still.
+ */
+const ArtifactPart = ({ data }: DataMessagePartProps<ArtifactData>) => {
+  const { visible } = useContext(ArtifactContext);
+  const [ref, near] = useNearScreen();
+  const name = `presentation-${useId()}`;
+  const pending = "pending" in data ? data.pending : undefined;
+  const [appearance, setAppearance] = useState({
+    waiting: pending === "view",
+    morph: pending === "view",
+  });
+  const { waiting, morph } = appearance;
+  const animate = visible && near;
+  useEffect(() => {
+    if (!pending && waiting) {
+      startTransition(() => {
+        addTransitionType("hearth-morph");
+        setAppearance({ waiting: false, morph: true });
+      });
+    }
+  }, [pending, waiting]);
+  const placeholder = pending ?? (waiting && animate ? "view" : undefined);
+  return (
+    <div ref={ref}>
+      {placeholder ? (
+        <PendingArtifactPart
+          kind={placeholder}
+          morphName={placeholder === "view" ? name : undefined}
+        />
+      ) : (
+        "artifact" in data && (
+          <ReadyArtifact
+            data={data}
+            near={near}
+            morphName={morph && animate ? name : undefined}
+          />
+        )
+      )}
+    </div>
   );
 };
 
@@ -566,9 +651,7 @@ const AssistantMessage = () => {
                 if (part.name === "hearth-view") {
                   return <ArtifactPart {...part} />;
                 }
-                return part.name === "hearth-view-pending" ? (
-                  <PendingArtifactPart {...part} />
-                ) : null;
+                return null;
               }
               default: {
                 return null;

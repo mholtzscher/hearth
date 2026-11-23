@@ -11,6 +11,8 @@ export interface Activity {
 export interface PresentedArtifact {
   artifact: Artifact;
   base: Base;
+  /** Matches a view to its pending presentation within the same reply. */
+  callId?: string;
 }
 /** Pending presentations retain their kind until the committed artifact arrives. */
 export interface ConversationItem {
@@ -102,7 +104,13 @@ export const projectHistory = (rows: AgentMessage[]): ConversationItem[] => {
       for (const artifact of row.artifacts ?? []) {
         if (!seen.has(artifact.artifact_id)) {
           seen.add(artifact.artifact_id);
-          batch.artifacts.push({ artifact, base });
+          batch.artifacts.push({
+            artifact,
+            base,
+            ...(artifact.kind === "hearth.view" && row.tool_call_id
+              ? { callId: row.tool_call_id }
+              : {}),
+          });
         }
       }
     }
@@ -154,13 +162,24 @@ export const emptyTurn = (): LiveTurn => ({
 export const pendingArtifactCalls = (
   turn: LiveTurn
 ): NonNullable<ConversationItem["pendingArtifacts"]> => {
+  if (turn.terminal) {
+    return [];
+  }
+  const presented = new Set(turn.artifacts.map((item) => item.callId));
   const calls = [
     ...turn.preparing,
-    ...turn.activities.filter((call) => call.result === undefined),
+    ...turn.activities.filter(
+      (call) =>
+        call.result === undefined ||
+        // A successful tool result precedes the committed view event. Keep the
+        // placeholder across that gap, including when the result was truncated.
+        (call.name === "present_view" &&
+          /"kind"\s*:\s*"hearth\.view"/u.test(call.result))
+    ),
   ];
   const pending = new Map<string, "view" | "automation">();
   for (const call of calls) {
-    if (call.name === "present_view") {
+    if (call.name === "present_view" && !presented.has(call.id)) {
       pending.set(call.id, "view");
     }
     if (call.name === "present_automation") {
@@ -169,6 +188,19 @@ export const pendingArtifactCalls = (
   }
   return [...pending].map(([id, kind]) => ({ id, kind }));
 };
+
+const streamedPresentation = (
+  event: TurnEvent,
+  artifact: Artifact,
+  base: Base
+): PresentedArtifact => ({
+  artifact,
+  base,
+  ...(event.type === "view.presented" && event.call_id
+    ? { callId: event.call_id }
+    : {}),
+});
+
 export const reduceTurn = (
   turn: LiveTurn,
   event: TurnEvent,
@@ -225,7 +257,10 @@ export const reduceTurn = (
   ) {
     return {
       ...turn,
-      artifacts: [...turn.artifacts, { artifact: event.artifact, base }],
+      artifacts: [
+        ...turn.artifacts,
+        streamedPresentation(event, event.artifact, base),
+      ],
     };
   }
   if (event.type === "turn.failed") {

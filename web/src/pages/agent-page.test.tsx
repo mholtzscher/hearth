@@ -1792,6 +1792,7 @@ describe("agent page", () => {
       call_id: "accepted",
       result: JSON.stringify(artifact),
     });
+    expect(log.getByText("Preparing a view")).toBeTruthy();
     await event({ type: "view.presented", call_id: "accepted", artifact });
     await expect(
       log.findByRole("heading", { name: "Warm house" })

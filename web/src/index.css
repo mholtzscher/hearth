@@ -279,9 +279,41 @@
     ::view-transition-new(*) {
       animation: none !important;
     }
+    ::view-transition-old(*.hearth-morph-card) {
+      opacity: 0;
+    }
+    ::view-transition-new(*.hearth-morph-header),
+    ::view-transition-new(*.hearth-morph-card) {
+      animation: var(--animate-fade) !important;
+    }
   }
 }
 
+/* Morph pairs only the header and matched card boxes, not the whole viewport. */
+html:active-view-transition-type(hearth-morph)::view-transition-old(root) {
+  opacity: 0;
+  animation: none;
+}
+html:active-view-transition-type(hearth-morph)::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-group(*.hearth-morph-card),
+::view-transition-group(*.hearth-morph-header) {
+  animation-duration: var(--transition-duration-travel);
+  animation-timing-function: var(--ease-out-expo);
+}
+::view-transition-old(*.hearth-morph-card),
+::view-transition-new(*.hearth-morph-card) {
+  animation-duration: 120ms;
+  animation-timing-function: var(--ease-out-expo);
+}
+::view-transition-old(*.hearth-morph-header) {
+  opacity: 0;
+  animation: none;
+}
+::view-transition-new(*.hearth-morph-header) {
+  animation: var(--animate-fade);
+}
 @keyframes view-pending {
   50% {
     opacity: 0.4;
