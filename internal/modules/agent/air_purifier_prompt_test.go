@@ -8,8 +8,8 @@ import (
 func TestAirPurifierGuidanceBindsRolesExplicitly(t *testing.T) {
 	t.Parallel()
 	for _, instruction := range []string{
-		"kind air-purifier, use AirPurifier", "PM2.5 numeric sensor in µg/m³",
-		"mode, fan_level, display, child_lock, and filter_life", "Identify Display and Child lock by their Entity names",
+		"kind air-purifier, use AirPurifier", "power Entity as entity_id", "PM2.5 sensor in µg/m³ as pm25",
+		"fan_mode, fan_level, display, child_lock, and filter_life", "Identify Display and Child lock by their Entity names",
 		"Omit a role you cannot identify", "layout tile in a Grid of quick switches",
 		"Every bound Entity must belong to the power Entity's Device",
 	} {

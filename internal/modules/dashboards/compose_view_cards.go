@@ -422,9 +422,9 @@ func validateForecastPeriods(entityType devices.EntityTypeID, periods int, path 
 type airPurifierProps struct {
 	Layout     string           `json:"layout"`
 	Label      string           `json:"label"`
-	Power      devices.EntityID `json:"power"`
+	Power      devices.EntityID `json:"entity_id"`
 	PM25       devices.EntityID `json:"pm25"`
-	Mode       devices.EntityID `json:"mode"`
+	Mode       devices.EntityID `json:"fan_mode"`
 	FanLevel   devices.EntityID `json:"fan_level"`
 	Display    devices.EntityID `json:"display"`
 	ChildLock  devices.EntityID `json:"child_lock"`
@@ -434,9 +434,11 @@ type airPurifierProps struct {
 func (p *airPurifierProps) compile(c *cardCompiler) cardProps {
 	props := labeledProps(p.Label)
 	props["layout"] = p.Layout
-	props["power"] = c.root(p.Power, "/power", devices.EntityTypePowerV1)
+	props["power"] = c.root(p.Power, "/entity_id", devices.EntityTypePowerV1)
 	props["pm25"] = c.root(p.PM25, "/pm25", devices.EntityTypeNumericsensorV1)
-	c.optionalRoot(props, "mode", p.Mode, devices.EntityTypeEnumsettingV1)
+	if p.Mode != "" {
+		props["mode"] = c.root(p.Mode, "/fan_mode", devices.EntityTypeEnumsettingV1)
+	}
 	c.optionalRoot(props, "fan_level", p.FanLevel, devices.EntityTypeEnumsettingV1)
 	c.optionalRoot(props, "display", p.Display, devices.EntityTypePowerV1)
 	c.optionalRoot(props, "child_lock", p.ChildLock, devices.EntityTypePowerV1)

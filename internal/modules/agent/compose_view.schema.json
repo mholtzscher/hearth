@@ -180,11 +180,11 @@
           }
         },
         {
-          "type": "object", "required": ["type", "layout", "power", "pm25"], "additionalProperties": false,
+          "type": "object", "required": ["type", "layout", "entity_id", "pm25"], "additionalProperties": false,
           "properties": {
             "type": {"const": "AirPurifier"}, "layout": {"$ref": "#/$defs/card_layout"}, "label": {"$ref": "#/$defs/label"},
-            "power": {"$ref": "#/$defs/entity"}, "pm25": {"$ref": "#/$defs/entity", "description": "Numeric sensor in µg/m³. Use a distinct Entity from the same Device for each role."},
-            "mode": {"$ref": "#/$defs/entity", "description": "Enum with 2 to 5 choices."}, "fan_level": {"$ref": "#/$defs/entity", "description": "Enum whose choices are 1 to N, N from 2 to 10."},
+            "entity_id": {"$ref": "#/$defs/entity", "description": "The purifier's power Entity."}, "pm25": {"$ref": "#/$defs/entity", "description": "Numeric sensor in µg/m³. Use a distinct Entity from the same Device for each role."},
+            "fan_mode": {"$ref": "#/$defs/entity", "description": "Enum with 2 to 5 modes, such as auto and sleep."}, "fan_level": {"$ref": "#/$defs/entity", "description": "Enum whose choices are 1 to N, N from 2 to 10."},
             "display": {"$ref": "#/$defs/entity"}, "child_lock": {"$ref": "#/$defs/entity"}, "filter_life": {"$ref": "#/$defs/entity", "description": "Numeric sensor in %."}
           }
         },

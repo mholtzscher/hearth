@@ -245,7 +245,15 @@ func authoringTree(node portableTreeNode) map[string]any {
 			}
 			flattenSource(entry)
 		}
-	case "OutsideNow", "Rain", "Wind", "AirPurifier":
+	case "AirPurifier":
+		flattenRoles(args)
+		args["entity_id"] = args["power"]
+		delete(args, "power")
+		if mode, ok := args["mode"]; ok {
+			args["fan_mode"] = mode
+			delete(args, "mode")
+		}
+	case "OutsideNow", "Rain", "Wind":
 		flattenRoles(args)
 		if totals, ok := args["totals"].(map[string]any); ok {
 			flattenRoles(totals)

@@ -30,8 +30,8 @@ const composeViewDescription = "Present a live dashboard draft without saving or
 	"Use mode edit only with the current user-selected draft, to change its title, forecast periods, or a chart window. " +
 	"Other draft edits belong in the dashboard editor. Pass native objects and arrays, not JSON strings. " +
 	"Follow the keys for each card type. Omit unused optional fields; never send null. " +
-	"AirPurifier begins with {\"type\":\"AirPurifier\",\"layout\":\"card\",\"power\":\"<power Entity ID>\",\"pm25\":\"<PM2.5 Entity ID>\"}. " +
-	"Do not put entity_id on AirPurifier. Bind the fan mode to mode, not fan_level (numbered speeds only). " +
+	"For AirPurifier, entity_id is its main power Entity. Use fan_mode for named modes and fan_level for numbered speeds. " +
+	"Use those exact keys, not power or mode. " +
 	"Grid requires columns. OutsideNow uses wind_direction; Wind uses direction. " +
 	"A view has at most 32 nodes, 8 levels, and 16 distinct Entities and Devices."
 
