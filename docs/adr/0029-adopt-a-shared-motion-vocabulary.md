@@ -4,7 +4,7 @@ status: accepted
 
 # Adopt a shared motion vocabulary for the dashboard
 
-The dashboard's conversation and view cards gain motion only through the patterns and timing tokens in DESIGN.md's Motion section: four durations, one transition curve, and twelve named patterns. Without this, each component would choose its own timing, and motion would drift as the dashboard grows. We chose the patterns after comparing them side by side in a disposable prototype that replicated Hearth's components, before writing any production motion.
+The dashboard's conversation and view cards gain motion only through the patterns and timing tokens in DESIGN.md's Motion section: four durations, one transition curve, and a set of named patterns. Without this, each component would choose its own timing, and motion would drift as the dashboard grows. We chose the patterns after comparing them side by side in a disposable prototype that replicated Hearth's components, before writing any production motion.
 
 **Considered options:**
 

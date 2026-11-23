@@ -356,6 +356,10 @@ The sidebar narrows to a 104px rail, with recent conversations in a drawer, at
 721–980px. It also narrows at 981–1279px while a canvas is open, so the view
 keeps room for its cards.
 
+The canvas slides in 16px from the right at layout duration, beside the
+conversation only; drawers slide 12px from their edge at state duration (Slide,
+see Motion).
+
 At 720px and below:
 
 - A 52px top bar holds a menu button, the page name, and New conversation. The
@@ -417,19 +421,19 @@ hierarchy against black.
 
 ### Motion
 
-Motion explains a change: it acknowledges a press, shows where something went,
+Motion explains a change: it acknowledges an input, shows where something went,
 reports an outcome, or marks newer data. Every motion uses one of the patterns
-below with the shared timing tokens. A new motion picks the closest pattern
-instead of choosing its own timing.
+below with the shared timing tokens. Component sections name the pattern each
+part uses; a new motion picks the closest pattern instead of its own timing.
 
 #### Timing
 
 | Token | Duration | Use |
 |---|---|---|
-| `duration-feedback` | 140ms | Acknowledging a press: an icon swap, status words, a pressed tile |
-| `duration-state` | 180ms | A routine state change: a tile surface turning off, a message arriving, a drawer |
-| `duration-layout` | 240ms | Change within one surface: the canvas entering, a list growing, a digit rolling |
-| `duration-travel` | 360ms | Change across surfaces: shared-element travel, a placeholder becoming its card, a surface spreading |
+| `duration-feedback` | 140ms | Acknowledging an input |
+| `duration-state` | 180ms | A routine change in place |
+| `duration-layout` | 240ms | A change of size or position within one surface |
+| `duration-travel` | 360ms | An element moving between surfaces or becoming another element |
 
 Two fixed timings sit outside the scale: the afterglow fades over 10 seconds,
 and the pending pulse breathes on a 1.6-second cycle.
@@ -440,39 +444,26 @@ and the pending pulse breathes on a 1.6-second cycle.
 - Motion uses opacity, transform, clip-path, color, and blur of at most 3px. The
   only height that animates is a disclosure opening, through grid rows or
   `::details-content`.
+- Motion follows an input or a newer observation. Patterns that move an element
+  between surfaces run at tablet and desktop widths only.
 
 #### Patterns
 
-| Pattern | Motion | Duration | Reduced motion | Used by |
-|---|---|---|---|---|
-| Arrive | Fades in while rising 8px for a sent message, or 4px for a reply block | state | Fade | Sent messages; the Hearth label, then its reply text 140ms later |
-| Resolve | Fades in from a 3px blur | layout | Fade | Each streamed chunk of reply text |
-| Grow | Opens from zero height while fading in; closes the same way | layout | Fade | Tool activity |
-| Morph | A View Transition turns each placeholder into its card; the card's content arrives within 120ms | travel | The finished view fades in | A pending view becoming the view |
-| Travel | A View Transition moves the view's cards together between the conversation and the canvas; closing reverses it | travel | None | Open in canvas and its close |
-| Pending | Breathes between full and 40% opacity on the pending pulse | 1.6s cycle | None | The Hearth icon while a reply runs; a pending status dot |
-| Confirm | The old icon shrinks to 50% and fades; the new icon grows from 50% and a 2px blur | feedback | Fade | Copy |
-| Roll | One changed digit rolls inside a fixed line, upward for a rise and downward for a fall | layout | None | Metric readings |
-| Ignite | The afterglow spreads from the center to full width, then fades over 10 seconds | layout | See Afterglow | The afterglow |
-| Spread | The On surface spreads from the press point; Off fades | travel (On), state (Off) | Fade | ToggleTile |
-| Give | A pressed tile shrinks to 98.5% | feedback | None | Whole-card presses |
-| Refuse | The control shakes 3px sideways, one and a half times | layout | None | A rejected Command's control |
-
-- **Arrive:** the Hearth label arrives before its reply text, so a reply reads
-  top to bottom. Opening a conversation shows its history without motion.
-- **Resolve:** each chunk becomes plain text once its motion ends, so a long
-  reply does not keep one element per chunk.
-- **Pending:** "Working…" follows the Hearth label after 600ms, so a reply that
-  finishes sooner never shows it. Breathing stops when the outcome arrives.
-- **Morph and Travel:** both run only after a press or a committed view, never
-  on load. Travel applies at tablet and desktop widths; phones switch screens
-  without motion.
-- **Roll:** a change of more than one digit, or of the value's length, replaces
-  the value at once, so a misleading value never appears mid-roll. The afterglow
-  still lights.
-- **Spread:** the surface spreads when the observation arrives, from where the
-  press landed; a keyboard press spreads from the center. Before the observation
-  arrives, only Give and the reserved status line respond.
+| Pattern | Motion | Duration | Reduced motion |
+|---|---|---|---|
+| Arrive | An element entering a sequence fades in while rising 8px; a block inside an arriving group rises 4px | state | Fade |
+| Resolve | Text that arrives in pieces fades in from a 3px blur, piece by piece | layout | Fade |
+| Grow | A disclosure opens from zero height while fading in; closing reverses it | layout | Fade |
+| Slide | A panel fades in while moving 12–16px from the edge it opens from | layout or state | None |
+| Morph | A placeholder becomes the element it held a place for: its box moves and resizes to the element's, whose content reaches full opacity within 120ms | travel | The element fades in |
+| Travel | An element moves between surfaces as one snapshot; the reverse action reverses it | travel | None |
+| Pending | While an outcome is awaited, a dot or icon breathes between full and 40% opacity, or a dashed icon turns once every 8 seconds | 1.6s cycle | None |
+| Confirm | An icon swap: the old icon shrinks to 50% and fades, and the new icon grows from 50% and a 2px blur, or a check draws its stroke | feedback | Fade |
+| Roll | A single changed digit rolls inside a fixed line, up for a rise and down for a fall; a change to more than one digit, or to the value's length, replaces the value at once | layout | None |
+| Ignite | A line spreads from its center to full width | layout | None |
+| Spread | A selected surface spreads from the press point, or from the center for a keyboard press; deselection fades | travel, state to deselect | Fade |
+| Give | A whole-card press target shrinks to 98.5% while pressed | feedback | None |
+| Refuse | A control shakes 3px sideways, one and a half times | layout | None |
 
 #### Reduced motion
 
@@ -711,6 +702,22 @@ focus border, and a violet caret.
   in the chip.
 - Sent messages keep a plain, non-interactive record of the view they carried.
 
+Each part of a conversation moves with a pattern from Motion. Opening a
+conversation shows its history without motion.
+
+- A sent message arrives (Arrive). A reply's Hearth label arrives first and its
+  blocks follow 140ms later, rising 4px.
+- Streamed reply text resolves as it arrives (Resolve).
+- While a reply runs, the Hearth icon breathes (Pending). "Working…" follows the
+  label after 600ms, so a reply that finishes sooner never shows it.
+- Tool activity opens and closes with Grow. A pending tool's dashed icon turns
+  (Pending), and a finished tool's check draws in (Confirm).
+- A pending view's placeholders become its cards (Morph).
+- Open in canvas moves the view's cards together into the canvas, and the inline
+  header becomes the compact Showing in canvas preview (Travel). Closing
+  reverses it. Phones switch screens without motion.
+- Copy changes to Copied with Confirm.
+
 ### View cards
 
 **The One Frame Rule.** Every data card in a view uses one frame. Future card
@@ -800,9 +807,9 @@ dashed mean line at 60% opacity without its band.
 #### Afterglow
 
 When newer data changes what a card shows while the card is on screen, a 2px
-orange line spreads from the center of the card's top edge to its full width in
-240ms, then fades out over 10 seconds with an exponential ease-out (Ignite, see
-Motion). Each later change restarts it. Under reduced motion, the line lights at
+orange line spreads from the center of the card's top edge to its full width
+(Ignite, see Motion), then fades out over 10 seconds with an exponential
+ease-out. Each later change restarts it. Under reduced motion, the line lights at
 full width, stays lit for those 10 seconds without fading, then disappears.
 
 - A Metric compares the formatted value and unit of successive observations.
@@ -868,8 +875,7 @@ a power switch at the end of the reading row and a brightness slider below it.
 State cards show boolean and text fields in words at the reading scale. Long
 words wrap rather than shrinking the reading.
 
-When a Metric's newer observation changes one digit, that digit rolls (Roll, see
-Motion); any larger change replaces the value at once.
+A Metric's changed reading rolls (Roll, see Motion).
 
 A Metric trend is 44px tall, with a neutral mean line, a faint min–max band, and
 preserved gaps. Its range sentence is the text equivalent, and the drawing is
@@ -889,8 +895,9 @@ draws a hollow swatch.
 
 ToggleTile is one whole-card power press with no separate toggle. An observed On
 reading selects an 11% violet mix on the card surface and a 38% violet border
-mix. The surface spreads from the press point when the observed On arrives
-(Spread, see Motion); a press alone changes only the status line. Source stays
+mix. A press gives (Give) and states the request on the status line; the
+surface spreads from the press point only when the observed On arrives (Spread,
+see Motion). Source stays
 an independent control above the press target, and a read-only power Entity has
 no press target. Each tile reserves one 21px status line at
 every width.
