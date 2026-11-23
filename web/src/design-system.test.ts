@@ -88,11 +88,7 @@ const ARBITRARY_MOTION: Record<string, string[]> = {
     "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]",
   ],
   "src/components/switch.tsx": ["duration-[160ms]", "duration-[160ms]"],
-  "src/features/conversation/messages.tsx": [
-    "[animation-delay:.2s]",
-    "duration-150",
-    "duration-150",
-  ],
+  "src/features/conversation/messages.tsx": ["[animation-delay:.2s]"],
   "src/features/views/cards/cover/cover-diagram.tsx": ["duration-[900ms]"],
   "src/features/views/cards/tile-frame.tsx": ["duration-[180ms]"],
   "src/features/views/cards/wind/wind.tsx": ["duration-[600ms]"],

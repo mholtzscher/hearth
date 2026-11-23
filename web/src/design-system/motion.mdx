@@ -34,7 +34,7 @@ Text that arrives in pieces fades in from a 3px blur, piece by piece, at `durati
 
 ### Grow
 
-A disclosure opens from zero height while fading in, at `duration-layout`; closing reverses it. Reduced motion: fade.
+A disclosure opens from zero height while fading in, at `duration-layout`; closing reverses it at `duration-state`. Reduced motion: fade.
 
 <Canvas of={Motion.Grow} sourceState="none" />
 
@@ -88,3 +88,5 @@ Each component and layout story that shows a pattern in place, by component or l
 - **Conversation** (Quiet Load): [Motion · Opened conversation](?path=/story/application-workspace--motion-opened-conversation). An opened conversation's history appears without motion.
 - **Conversation** (Pending): [Motion · Working](?path=/story/application-workspace--motion-working). The Hearth icon breathes while a reply runs; "Looking through your home…" waits 600ms.
 - **Conversation** (Confirm): [Motion · Copy](?path=/story/application-workspace--motion-copy). Copy changes to Copied.
+- **Tool activity** (Grow, Pending): [Motion · Tool activity](?path=/story/application-workspace--motion-tool-activity). A pending tool's dashed icon turns while the reply runs, and the activity grows open.
+- **Tool activity** (Confirm): [Motion · Tool completes](?path=/story/application-workspace--motion-tool-complete). A tool that finishes during an arriving reply draws its check.

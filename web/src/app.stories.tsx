@@ -1641,3 +1641,42 @@ export const MotionCopy: Story = {
     ).toHaveTextContent("Copied");
   },
 };
+
+/** A pending tool's dashed icon turns while the reply runs, and the activity grows open. */
+export const MotionToolActivity: Story = {
+  name: "Motion · Tool activity",
+  tags: ["motion"],
+  parameters: { applicationScenario: { turn: "pending" } },
+  play: async (context) => {
+    await askTemperature(context);
+    const summary = await context.canvas.findByText(
+      "Used 1 tool · 1 pending or unknown"
+    );
+    const group = summary.closest("details");
+    await expect(animationNames(group?.querySelector("summary svg"))).toContain(
+      "motion-turn"
+    );
+    await context.userEvent.click(summary);
+    await expect(group).toHaveAttribute("open");
+    await waitFor(() =>
+      expect(
+        context.canvas.getByText("get_entity · outcome unknown or pending")
+      ).toBeVisible()
+    );
+  },
+};
+
+/** A tool that finishes during an arriving reply draws its check. */
+export const MotionToolComplete: Story = {
+  name: "Motion · Tool completes",
+  tags: ["motion"],
+  play: async (context) => {
+    await askTemperature(context);
+    const summary = await context.canvas.findByText("Used 1 tool", {
+      exact: true,
+    });
+    await expect(
+      animationNames(summary.closest("summary")?.querySelector("svg"))
+    ).toContain("motion-draw");
+  },
+};
