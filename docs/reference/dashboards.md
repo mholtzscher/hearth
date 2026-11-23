@@ -394,11 +394,34 @@ field on presentation and save. The card has no layout prop.
 - The target area keeps the same height in every mode, so changing the mode or
   a target never moves the card.
 
+### MediaPlayer
+
+MediaPlayer binds the root of one `hearth.mediaplayer/v1` Entity. Use `label`
+to override the speaker's name and `layout:"tile"` for a compact control.
+
+- The default `layout:"card"` shows playback, track and credits, artwork, elapsed
+  and total time, and supported controls. It fetches artwork from the same
+  Core it reads State from, not from the speaker's server. Missing or failed
+  artwork uses a speaker plate. Missing timing and credits don't resize the card.
+- The playhead advances once per second from the reported anchor while playing
+  and freezes while paused. The local tick doesn't light the afterglow. A
+  newer Observation that changes playback, title, artist, volume, or mute can.
+- Play, Pause, and Stop follow the speaker's supported playback states. Previous
+  and Next require both skip Operations. Seeking also requires a known playhead
+  and duration. Volume and seek send the latest requested value. Skip and seek
+  are dispatched: the Operation was accepted, and the card reads the result
+  from the next Observation, not the Command response.
+- One reserved line shows pending and rejected Commands. A grouped speaker is
+  marked **Grouped**; the adapter refuses controls until it is ungrouped.
+- The tile shows playback, track and artist, and a volume or grouping summary.
+  Press anywhere on it to play or pause (or stop if Pause isn't supported).
+  The Source button remains separate.
+
 Grid accepts 1–4 columns as a ceiling. Two kinds of grid use a 160px minimum
 and can retain two columns on phones: grids made only of ToggleTiles,
-tile-layout AirPurifiers, and tile-layout Covers, and grids made only of Metric
-and State cards. Other grids keep the 248px minimum and single-column phone
-layout.
+tile-layout AirPurifiers, Covers, and MediaPlayers, and grids made only of
+Metric and State cards. Other grids keep the 248px minimum and single-column
+phone layout.
 Metering ToggleTiles span the full row on phones, with tighter spacing and the
 measurement opposite the power State.
 Each metering card uses its content height rather than stretching to a neighbor

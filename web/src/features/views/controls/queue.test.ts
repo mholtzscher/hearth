@@ -303,6 +303,32 @@ describe(CommandQueue, () => {
     });
   });
 
+  it.each([
+    ["next_track", {}],
+    ["seek", { position_seconds: 45 }],
+  ] as const)(
+    "clears dispatched %s without waiting for the observation",
+    async (operation, parameters) => {
+      const { queue, commands, execute, refreshState } = fixture();
+      const target = { entityId: "ent_speaker", operation };
+      queue.subscribe(target, vi.fn());
+      queue.request(
+        target,
+        parameters,
+        operation === "seek" ? "replace" : "queue"
+      );
+      expect(execute).toHaveBeenCalledWith(target.entityId, {
+        operation,
+        parameters,
+      });
+      expect(queue.snapshot(target)).toMatchObject({ phase: "pending" });
+      commands[0].resolve({ command_id: "cmd", status: "dispatched" });
+      await settle();
+      expect(refreshState).toHaveBeenCalledOnce();
+      expect(queue.snapshot(target)).toStrictEqual({ phase: "idle" });
+    }
+  );
+
   // React StrictMode disposes the provider's queue on mount and keeps using the
   // same instance, so disposal must not end the queue.
   it("ignores outcomes from before disposal and stays usable afterward", async () => {

@@ -73,6 +73,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		"AirPurifier":   airPurifierBindings,
 		"Cover":         coverBindings,
 		"Thermostat":    thermostatBindings,
+		"MediaPlayer":   mediaPlayerBindings,
 	}
 	var all []binding
 	ids := map[string]bool{}

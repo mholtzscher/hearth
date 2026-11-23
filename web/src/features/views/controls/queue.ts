@@ -5,14 +5,20 @@ import type { CommandResult } from "../../../api/types";
 /** One controllable Operation on one Entity. */
 export interface ControlTarget {
   entityId: string;
-  /** "set" and "stop" for shared controls; the rest are thermostat Operations. */
+  /** "set" and "stop" for shared controls; the rest are thermostat and media player Operations. */
   operation:
     | "set"
     | "stop"
     | "set_mode"
     | "set_target"
     | "set_range"
-    | "set_fan_mode";
+    | "set_fan_mode"
+    | "set_playback"
+    | "set_volume"
+    | "set_muted"
+    | "next_track"
+    | "previous_track"
+    | "seek";
 }
 /**
  * queue: a newer value waits for the Command in flight, then only the latest is sent.
@@ -210,13 +216,14 @@ export class CommandQueue {
       this.release(target, entry);
       return;
     }
-    if (result?.status === "dispatched" && target.operation === "stop") {
-      CommandQueue.update(entry, {
-        phase: "dispatched",
-        requested: value,
-        at: Date.now(),
-      });
+    if (result?.status === "dispatched") {
+      const state: ControlState =
+        target.operation === "stop"
+          ? { phase: "dispatched", requested: value, at: Date.now() }
+          : idle;
+      CommandQueue.update(entry, state);
       void this.deps.refreshState();
+      this.release(target, entry);
       return;
     }
     const confirming: ControlState = { phase: "confirming", requested: value };

@@ -3,6 +3,7 @@ import type {
   ViewDefinition,
   ViewElement,
 } from "../src/features/views/catalog";
+import { playingTrack } from "./media-player-fixtures";
 
 /** Synthetic household data, not captured device compatibility evidence. */
 export const fixtureNow = "2026-11-09T10:00:30Z";
@@ -259,6 +260,26 @@ export const createEntities = (): Entity[] => {
         operations: { set_mode: {}, set_range: {}, set_fan_mode: {} },
       },
     },
+    {
+      ...entity(601, "mediaplayer", "Living room", playingTrack, {
+        quantities: {
+          "/volume_percent": quantity("%", "%", 0),
+          "/duration_seconds": quantity("s", "s", 0),
+          "/position_seconds": quantity("s", "s", 0),
+        },
+      }),
+      support: {
+        state: {},
+        operations: {
+          set_playback: { states: ["idle", "playing", "paused"] },
+          set_volume: {},
+          set_muted: {},
+          next_track: {},
+          previous_track: {},
+          seek: {},
+        },
+      },
+    },
   ];
 };
 
@@ -362,6 +383,14 @@ export const catalogExamples = {
     props: {
       label: "Hallway thermostat",
       source: source(501, "hearth.thermostat/v1"),
+    },
+  },
+  MediaPlayer: {
+    type: "MediaPlayer",
+    props: {
+      layout: "card",
+      label: "Living room",
+      source: source(601, "hearth.mediaplayer/v1"),
     },
   },
   StateTimeline: {

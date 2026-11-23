@@ -1561,6 +1561,44 @@
                   "props"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "MediaPlayer"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "tile"
+                        ],
+                        "description": "card: artwork, track, progress, transport, and volume. tile: a whole-card play/pause press for grids of quick switches. Omitted means card."
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "source": {
+                        "$ref": "#/$defs/MediaPlayerSource"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
               }
             ]
           }
@@ -1814,6 +1852,32 @@
         "entity_type": {
           "type": "string",
           "const": "hearth.thermostat/v1"
+        },
+        "field": {
+          "type": "string",
+          "const": ""
+        }
+      },
+      "required": [
+        "kind",
+        "entity_id",
+        "entity_type"
+      ],
+      "additionalProperties": false
+    },
+    "MediaPlayerSource": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "entity-state"
+        },
+        "entity_id": {
+          "$ref": "#/$defs/EntityID"
+        },
+        "entity_type": {
+          "type": "string",
+          "const": "hearth.mediaplayer/v1"
         },
         "field": {
           "type": "string",

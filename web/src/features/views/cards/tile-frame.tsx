@@ -8,7 +8,7 @@ export type TileFrameProps = Omit<DataCardProps, "compactTimeLabel"> & {
   metered?: boolean;
 };
 
-/** The whole-card press layout shared by power, cover, and purifier tiles. */
+/** The shared whole-card press layout. */
 export const TileFrame = ({
   on,
   interactive,

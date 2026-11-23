@@ -395,9 +395,9 @@ columns when cards would be narrower than its minimum, including beside a
 conversation.
 
 - Most grids use a 248px minimum and collapse to one column on phones.
-- Grids made only of ToggleTiles, tile-layout AirPurifiers, and tile-layout
-  Covers, or made only of Metric and State cards, use a 160px minimum, including
-  on phones.
+- Grids made only of ToggleTiles and tile-layout AirPurifiers, Covers, and
+  MediaPlayers, or made only of Metric and State cards, use a 160px minimum,
+  including on phones.
 - Metering ToggleTiles span the full row on phones, so the history range and
   additional reading stay readable instead of wrapping into tall, narrow tiles.
 - Below a 200px content width, ToggleTile, Metric, and State use the narrow
@@ -894,6 +894,24 @@ target in this mode.** in 14px `muted-foreground`.
   light the afterglow.
 - Mode is a touch segmented control for up to four modes and a touch select for
   more; Fan is a touch select. One shared reserved line follows.
+
+#### Media player
+
+The Transport Deck leads with a 64px artwork sleeve or neutral speaker plate.
+Playback appears in words with a three-bar mark; the bars take violet only
+while playing and not muted. The title and credits each truncate to one line.
+Grouped speakers carry a Grouped label beside playback.
+
+- Elapsed and total time keep their place above the transport buttons, even
+  when unavailable. The playhead ticks locally while Playing without lighting
+  the afterglow. A native range allows seeking when supported.
+- Transport uses 44px controls. Play or Pause sits between the icon buttons.
+  When all four controls are present at the narrow width, the main button
+  shows just its icon. Stop can appear separately alongside Pause. Volume and
+  Mute share a row, followed by a reserved Command status line.
+- The Compact Tile uses the shared whole-card press and takes the On surface
+  while Playing. Track and artist, volume or grouping, and Command feedback
+  stay on fixed-height lines. Source is independently actionable.
 
 #### State timeline and Week pattern
 
