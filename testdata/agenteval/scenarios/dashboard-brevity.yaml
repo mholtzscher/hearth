@@ -1,0 +1,37 @@
+id: dashboard-brevity
+title: A simple chart needs at most one sentence of reply
+tags: [dashboard, create, style]
+
+turns:
+  - text: Chart the Kitchen sensor temperature over the last 24 hours.
+
+checks:
+  - kind: view
+    view:
+      cards:
+        - type: TimeSeries
+          bindings:
+            series/0/source: {device: kitchen-sensor, key: temperature}
+          props:
+            series/0/source/window: 24h
+  - kind: reply_max_sentences
+    max: 1
+
+judge:
+  criteria:
+    - The reply does not repeat readings, values, or card contents that the chart already shows.
+
+max_requests: 10
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:kitchen-sensor}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:present_view"}'
+  - call: present_view
+    arguments: |-
+      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Kitchen temperature",
+        "spec": {"root": "chart", "elements": {
+          "chart": {"type": "TimeSeries", "props": {"title": "Kitchen temperature", "series": [{"source": {"kind": "entity-series",
+            "entity_id": "{{entity:kitchen-sensor/temperature}}", "entity_type": "hearth.temperature/v1", "window": "24h"}}]}}}}}}
+  - reply: ""

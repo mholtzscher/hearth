@@ -1,0 +1,49 @@
+id: dashboard-create-mixed
+title: Reading list above two side-by-side toggle tiles
+tags: [dashboard, create]
+
+turns:
+  - text: >-
+      Make a dashboard with the Office sensor's temperature and humidity in one
+      reading list, and below it toggle tiles for the Kitchen metered plug and
+      the Office metered plug side by side.
+
+checks:
+  - kind: view
+    view:
+      layout: "Stack[ReadingList,Grid[ToggleTile,ToggleTile]]"
+      cards:
+        - type: ReadingList
+          bindings:
+            rows/0/source: {device: office-sensor, key: temperature}
+            rows/1/source: {device: office-sensor, key: humidity}
+        - type: ToggleTile
+          bindings:
+            source: {device: kitchen-metered-plug, key: power}
+        - type: ToggleTile
+          bindings:
+            source: {device: office-metered-plug, key: power}
+
+max_requests: 12
+
+reference:
+  - call: list_devices
+    arguments: '{}'
+  - call: list_entities
+    arguments: '{"device_id": "{{device:office-sensor}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:present_view"}'
+  - call: present_view
+    arguments: |-
+      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Office",
+        "spec": {"root": "stack", "elements": {
+          "stack": {"type": "Stack", "props": {"gap": "medium"}, "children": ["readings", "switches"]},
+          "readings": {"type": "ReadingList", "props": {"title": "Office", "rows": [
+            {"source": {"kind": "entity-state", "entity_id": "{{entity:office-sensor/temperature}}", "entity_type": "hearth.temperature/v1"}},
+            {"source": {"kind": "entity-state", "entity_id": "{{entity:office-sensor/humidity}}", "entity_type": "hearth.relativehumidity/v1"}}]}},
+          "switches": {"type": "Grid", "props": {"columns": 2}, "children": ["kitchen", "office"]},
+          "kitchen": {"type": "ToggleTile", "props": {"label": "Kitchen metered plug", "source": {"kind": "entity-state",
+            "entity_id": "{{entity:kitchen-metered-plug/power}}", "entity_type": "hearth.power/v1"}}},
+          "office": {"type": "ToggleTile", "props": {"label": "Office metered plug", "source": {"kind": "entity-state",
+            "entity_id": "{{entity:office-metered-plug/power}}", "entity_type": "hearth.power/v1"}}}}}}}
+  - reply: ""

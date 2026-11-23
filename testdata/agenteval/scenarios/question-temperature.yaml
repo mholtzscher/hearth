@@ -1,0 +1,27 @@
+id: question-temperature
+title: Answer a temperature question in text
+tags: [question]
+
+setup:
+  pin:
+    - entity: {device: simulated-light, key: temperature}
+      value: 25000
+
+turns:
+  - text: What is the temperature of the Simulated light right now? Just tell me, no dashboard.
+
+checks:
+  - kind: reply_matches
+    pattern: '(?:^|[^\d.])25(?:\.0+)?\s*°?\s*C'
+  - kind: no_view
+
+judge:
+  criteria:
+    - The reply gives the temperature of the Simulated light, not another device.
+
+max_requests: 8
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:simulated-light}}"}'
+  - reply: The Simulated light reads 25 °C.

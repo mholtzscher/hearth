@@ -1,0 +1,50 @@
+id: dashboard-edit-scoped
+title: Change only the title and chart window of a selected draft
+tags: [dashboard, edit]
+
+setup:
+  dashboards:
+    - name: light-overview
+      definition: |-
+        {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Light overview",
+          "spec": {"root": "root", "elements": {
+            "root": {"type": "Stack", "props": {"gap": "medium"}, "children": ["metric", "chart", "toggle"]},
+            "metric": {"type": "Metric", "props": {"label": "Temperature", "source": {"kind": "entity-state",
+              "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1"}}},
+            "chart": {"type": "TimeSeries", "props": {"title": "Temperature history", "series": [{"source": {"kind": "entity-series",
+              "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1", "window": "6h"}}]}},
+            "toggle": {"type": "ToggleTile", "props": {"label": "Light power", "source": {"kind": "entity-state",
+              "entity_id": "{{entity:simulated-light/power}}", "entity_type": "hearth.power/v1"}}}}}}
+
+turns:
+  - text: >-
+      Rename the selected draft to Light climate and change its temperature
+      chart to the last 7 days. Leave everything else as it is.
+    select_dashboard: light-overview
+
+checks:
+  - kind: view_unchanged_except
+    dashboard: light-overview
+    changes:
+      - /title
+      - /spec/elements/chart/props/series/0/source/window
+  - kind: reply_max_sentences
+    max: 1
+
+max_requests: 10
+
+reference:
+  - call: tool_search
+    arguments: '{"query": "select:present_view"}'
+  - call: present_view
+    arguments: |-
+      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Light climate",
+        "spec": {"root": "root", "elements": {
+          "root": {"type": "Stack", "props": {"gap": "medium"}, "children": ["metric", "chart", "toggle"]},
+          "metric": {"type": "Metric", "props": {"label": "Temperature", "source": {"kind": "entity-state",
+            "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1"}}},
+          "chart": {"type": "TimeSeries", "props": {"title": "Temperature history", "series": [{"source": {"kind": "entity-series",
+            "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1", "window": "7d"}}]}},
+          "toggle": {"type": "ToggleTile", "props": {"label": "Light power", "source": {"kind": "entity-state",
+            "entity_id": "{{entity:simulated-light/power}}", "entity_type": "hearth.power/v1"}}}}}}}
+  - reply: ""
