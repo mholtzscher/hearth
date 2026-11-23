@@ -16,6 +16,7 @@ import { Button } from "../../components/button";
 import { Card } from "../../components/card";
 import { Notice, StatusNotice } from "../../components/notice";
 import { pageHeadingClass } from "../../components/page-header";
+import { TravelingView } from "../../lib/canvas-travel";
 import { cn } from "../../lib/utils";
 import type { ViewDefinition } from "../views/catalog";
 import { readDefinition } from "../views/catalog/compatibility";
@@ -43,22 +44,48 @@ const surfaceClass = ({
   conversation,
   active,
   expanded,
+  slide,
 }: {
   page: boolean;
   conversation: boolean;
   active: boolean;
   expanded: boolean;
+  slide?: boolean;
 }): string =>
   cn(
     "bg-background selection:bg-violet/40 selection:text-foreground max-tablet:h-full min-h-0 min-w-0 [scrollbar-width:thin] [scrollbar-color:var(--gray-5)_transparent] overflow-auto",
     page && "flex-1",
-    conversation && "animate-canvas-in max-tablet:animate-none",
+    conversation &&
+      slide !== false &&
+      "animate-canvas-in max-tablet:animate-none",
     conversation && !active && "max-tablet:hidden",
     expanded && "fixed inset-0 z-50"
   );
 
 const innerClass = (wide: boolean, saveVisible: boolean): string =>
   cn(canvasInner, wide && "max-w-[1440px]", saveVisible && phoneSaveInset);
+
+const ViewCanvasContent = ({
+  draft,
+  active,
+  conversation,
+}: {
+  draft: Draft;
+  active: boolean;
+  conversation: boolean;
+}) => (
+  <TravelingView
+    artifactId={conversation ? draft.origin_artifact_id : undefined}
+  >
+    <div>
+      <ViewRenderer
+        definition={draft.definition}
+        active={active}
+        headingLevel={3}
+      />
+    </div>
+  </TravelingView>
+);
 
 const CanvasSection = ({
   expanded,
@@ -443,6 +470,7 @@ export const Canvas = ({
   active = true,
   placement = "nested",
   automationEditing = false,
+  slide,
   onClose,
   ref,
 }: {
@@ -450,6 +478,8 @@ export const Canvas = ({
   active?: boolean;
   placement?: "page" | "conversation" | "nested";
   automationEditing?: boolean;
+  /** A shared view traveling in from the conversation does not also slide. */
+  slide?: boolean;
   onClose?: () => void;
   ref?: Ref<HTMLElement>;
 }) => {
@@ -500,7 +530,7 @@ export const Canvas = ({
   const unsaved = !!draft && (!draft.base || draft.dirty);
   const saveVisible = unsaved || !workspace.editorValid;
   const wide = expanded || page;
-  const surface = surfaceClass({ page, conversation, active, expanded });
+  const surface = surfaceClass({ page, conversation, active, expanded, slide });
   const handleReload = () => {
     workspace.reload();
   };
@@ -592,10 +622,10 @@ export const Canvas = ({
               editDefinition={workspace.edit}
               validateEditor={workspace.setEditorValid}
             />
-            <ViewRenderer
-              definition={draft.definition}
+            <ViewCanvasContent
+              draft={draft}
               active={active || expanded}
-              headingLevel={3}
+              conversation={conversation}
             />
           </>
         ) : (

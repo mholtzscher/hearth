@@ -14,6 +14,7 @@ import {
   dashboardPath,
   sentReply,
 } from "../.storybook/application-fixtures";
+import { automationId } from "../.storybook/automation-fixtures";
 import { entityId, fixtureNow } from "../.storybook/fixtures";
 import { expectNoHorizontalOverflow } from "../.storybook/play";
 import { getDashboard } from "./api/dashboards";
@@ -1488,6 +1489,95 @@ export const AutomationReferencePreview: Story = {
   },
 };
 
+const openSavedAutomationEditor = async ({
+  canvas,
+  userEvent,
+}: InteractionContext) => {
+  await userEvent.click(
+    await canvas.findByRole("link", { name: "Development" })
+  );
+  await userEvent.click(
+    await canvas.findByRole("link", { name: /^Automations$/u })
+  );
+  await userEvent.click(
+    await canvas.findByRole("link", { name: "Open Hallway light at dusk" })
+  );
+  await userEvent.click(
+    await canvas.findByRole("button", { name: "Edit Automation" })
+  );
+  return within(
+    await canvas.findByRole("region", { name: "Automation canvas" })
+  );
+};
+
+export const CloseUnchangedAutomationFromDetail: Story = {
+  parameters: {
+    appPath: conversationPath,
+    applicationScenario: { messages: "automation-reference" },
+  },
+  beforeEach: ({ msw }) => {
+    msw.use(
+      http.get(`/v1/automations/${automationId}/history`, () =>
+        HttpResponse.json({ items: [], next_cursor: null })
+      )
+    );
+  },
+  play: async (context) => {
+    const editor = await openSavedAutomationEditor(context);
+    await context.userEvent.click(
+      editor.getByRole("button", { name: "Close Automation" })
+    );
+    await expect(
+      await context.canvas.findByRole("button", { name: "Edit Automation" })
+    ).toBeVisible();
+    await expect(
+      context.canvas.queryByRole("region", { name: "Automation canvas" })
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const DiscardAutomationFromDetail: Story = {
+  parameters: {
+    appPath: conversationPath,
+    applicationScenario: { messages: "automation-reference" },
+  },
+  beforeEach: ({ msw }) => {
+    msw.use(
+      http.get(`/v1/automations/${automationId}/history`, () =>
+        HttpResponse.json({ items: [], next_cursor: null })
+      )
+    );
+  },
+  play: async (context) => {
+    const editor = await openSavedAutomationEditor(context);
+    const name = editor.getByRole("textbox", { name: "Name" });
+    await context.userEvent.clear(name);
+    await context.userEvent.type(name, "Changed hallway");
+    await context.userEvent.click(
+      editor.getByRole("button", { name: "Close Automation" })
+    );
+    const body = within(context.canvasElement.ownerDocument.body);
+    const dialog = within(
+      await body.findByRole("dialog", { name: "Keep your changes?" })
+    );
+    await context.userEvent.click(
+      dialog.getByRole("button", { name: "Discard" })
+    );
+    await expect(
+      await context.canvas.findByRole("button", { name: "Edit Automation" })
+    ).toBeVisible();
+    await expect(
+      body.queryByRole("dialog", { name: "Keep your changes?" })
+    ).not.toBeInTheDocument();
+    await context.userEvent.click(
+      context.canvas.getByRole("button", { name: "Edit Automation" })
+    );
+    await expect(
+      await context.canvas.findByRole("textbox", { name: "Name" })
+    ).toHaveValue("Hallway light at dusk");
+  },
+};
+
 export const AutomationMissingPreview: Story = {
   parameters: {
     appPath: conversationPath,
@@ -1731,4 +1821,46 @@ export const MotionReusedViewCall: Story = {
     await expect(firstPending).not.toBeInTheDocument();
     await expect(secondPending).not.toBeInTheDocument();
   },
+};
+
+/** Opening a view moves its cards together; closing returns them to the reply. */
+export const MotionCanvasTravel: Story = {
+  name: "Motion · Canvas travel",
+  tags: ["motion"],
+  parameters: { appPath: conversationPath },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText(conversationReply);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Open in canvas" })
+    );
+    const view = await canvas.findByRole("region", { name: "View canvas" });
+    await expect(
+      await within(view).findByRole("switch", { name: "Hallway lamp power" })
+    ).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(
+      within(view).getByRole("button", { name: "Close view" })
+    );
+    await waitFor(() => expect(view).not.toBeInTheDocument());
+    await expect(
+      await canvas.findByRole("button", { name: "Open in canvas" })
+    ).toBeVisible();
+  },
+};
+
+export const MotionTabletDrawer: Story = {
+  ...TabletRecentDrawer,
+  name: "Motion · Tablet Recent drawer",
+  tags: ["motion"],
+};
+
+export const MotionPhoneDrawer: Story = {
+  ...PhoneNavigation,
+  name: "Motion · Phone navigation drawer",
+  tags: ["motion"],
+};
+
+export const MotionPhoneCanvas: Story = {
+  ...PhoneCanvas,
+  name: "Motion · Phone canvas without travel",
+  tags: ["motion"],
 };

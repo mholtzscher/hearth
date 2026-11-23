@@ -289,6 +289,46 @@
   }
 }
 
+@utility slide-drawer-out {
+  transition:
+    opacity var(--transition-duration-feedback) var(--ease-out-expo),
+    translate var(--transition-duration-feedback) var(--ease-out-expo),
+    visibility 0s linear var(--transition-duration-feedback);
+}
+
+@utility slide-drawer-in {
+  transition:
+    opacity var(--transition-duration-state) var(--ease-out-expo),
+    translate var(--transition-duration-state) var(--ease-out-expo),
+    visibility 0s;
+}
+
+html:active-view-transition-type(hearth-travel)::view-transition-old(root),
+::view-transition-old(*.hearth-travel) {
+  opacity: 0;
+  animation: none;
+}
+html:active-view-transition-type(hearth-travel)::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-new(*.hearth-travel) {
+  animation: none;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: top left;
+  background: var(--background);
+}
+::view-transition-group(*.hearth-travel) {
+  animation-duration: var(--transition-duration-layout);
+  animation-timing-function: var(--ease-out-expo);
+}
+html:active-view-transition-type(
+    hearth-travel-open
+  )::view-transition-group(*.hearth-travel) {
+  animation-duration: var(--transition-duration-travel);
+}
+
 /* Morph pairs only the header and matched card boxes, not the whole viewport. */
 html:active-view-transition-type(hearth-morph)::view-transition-old(root) {
   opacity: 0;

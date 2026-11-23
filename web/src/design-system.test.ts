@@ -81,12 +81,6 @@ const NUMERIC_SPACING: Record<string, string[]> = {
  * move onto the tokens as their components adopt the motion patterns.
  */
 const ARBITRARY_MOTION: Record<string, string[]> = {
-  "src/app.tsx": [
-    "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_.18s]",
-    "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]",
-    "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_.18s]",
-    "[transition:opacity_.18s_ease-out,transform_.18s_cubic-bezier(.16,1,.3,1),visibility_0s_linear_0s]",
-  ],
   "src/components/switch.tsx": ["duration-[160ms]", "duration-[160ms]"],
   "src/features/views/cards/cover/cover-diagram.tsx": ["duration-[900ms]"],
   "src/features/views/cards/tile-frame.tsx": ["duration-[180ms]"],

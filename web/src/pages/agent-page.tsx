@@ -37,6 +37,7 @@ import { useTurnMessageIds } from "../features/conversation/turn-ids";
 import { Canvas } from "../features/dashboards/canvas";
 import { useWorkspace } from "../features/dashboards/workspace";
 import { usePhoneBarSlot } from "../features/workspace/phone-bar-slot";
+import { canTravel, runTravel } from "../lib/canvas-travel";
 import { cn } from "../lib/utils";
 
 const STARTERS: readonly ThreadSuggestion[] = [
@@ -633,6 +634,17 @@ const AgentPage = () => {
     runtime.thread.composer.setText(failedPrompt);
   }, [failedPrompt, runtime, session]);
   const draft = workspace.canvasDraft;
+  const [traveled, setTraveled] = useState<string | null>(null);
+  const shareSelection = (artifactId: string) => (action: () => void) => {
+    if (!canTravel()) {
+      action();
+      return;
+    }
+    runTravel(() => {
+      setTraveled(artifactId);
+      action();
+    }, true);
+  };
   const showCanvas = () => {
     setMobileCanvas(true);
     requestAnimationFrame(() => canvas.current?.focus());
@@ -641,9 +653,17 @@ const AgentPage = () => {
     if (draft?.origin_artifact_id === item.artifact.artifact_id) {
       showCanvas();
     } else {
-      workspace.selectArtifact(item, showCanvas);
+      workspace.selectArtifact(
+        item,
+        showCanvas,
+        item.artifact.kind === "hearth.view"
+          ? shareSelection(item.artifact.artifact_id)
+          : undefined
+      );
     }
   };
+  const closeCanvas = () =>
+    closeDraft(workspace.draft?.origin_artifact_id ? runTravel : undefined);
   // Closing or discarding the view removes the canvas; keep keyboard focus in the conversation.
   const hadDraft = useRef(!!draft);
   useEffect(() => {
@@ -756,7 +776,7 @@ const AgentPage = () => {
                   saving={workspace.saving}
                   editorValid={workspace.editorValid}
                   onShow={showCanvas}
-                  onCloseDraft={closeDraft}
+                  onCloseDraft={closeCanvas}
                 />
               </ThreadPrimitive.ViewportProvider>
             </section>
@@ -767,7 +787,8 @@ const AgentPage = () => {
             ref={canvas}
             placement="conversation"
             active={!narrow || mobileCanvas}
-            onClose={() => closeDraft()}
+            slide={!traveled || traveled !== draft.origin_artifact_id}
+            onClose={closeCanvas}
           />
         )}
       </div>
