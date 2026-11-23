@@ -377,11 +377,12 @@ state instead of maintaining a separate state class.
 ### Take design values from theme tokens
 
 For new and changed styles under `web/src`, use the `@theme` names in
-[`index.css`](web/src/index.css) for color, type size, radius, and easing. Use
-role names such as `foreground`, `muted-foreground`, `border`, or `card` where
-they fit. Layout geometry, including widths, gaps, and grid tracks, may use
-arbitrary values. When [`DESIGN.md`](DESIGN.md) names a value that `@theme`
-lacks, add it to both. **Source:** stated.
+[`index.css`](web/src/index.css) for color, type size, radius, easing, and
+transition duration (`duration-feedback`, `duration-state`, `duration-layout`,
+`duration-travel`). Use role names such as `foreground`, `muted-foreground`,
+`border`, or `card` where they fit. Layout geometry, including widths, gaps, and
+grid tracks, may use arbitrary values. When [`DESIGN.md`](DESIGN.md) names a
+value that `@theme` lacks, add it to both. **Source:** stated.
 
 ### Use the shared control from `components`
 
@@ -397,8 +398,11 @@ Dialog portal remounts the editor and loses invalid, unsaved input. Existing raw
 controls are migration candidates. **Source:** stated.
 
 Shared controls inherit the global `:focus-visible` outline and reduced-motion
-rule from [`index.css`](web/src/index.css) instead of restating them. Hearth is
-dark-only, so write colors unconditionally, with no light-mode variants.
+rule from [`index.css`](web/src/index.css) instead of restating them. An element
+that keeps a fade under reduced motion carries `data-reduced-motion="fade"` and
+declares that fade with `motion-reduce:` utilities, as DESIGN.md's Motion
+section describes. Hearth is dark-only, so write colors unconditionally, with no
+light-mode variants.
 **Source:** stated.
 
 ### Draw a card with `Card`
