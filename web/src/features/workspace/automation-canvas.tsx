@@ -226,7 +226,7 @@ const CanvasWindowActions = ({
         variant="ghost"
         size="icon-touch"
         aria-label="Close Automation"
-        onClick={onClose}
+        onClick={() => onClose()}
       >
         <XIcon aria-hidden="true" />
       </Button>
