@@ -161,17 +161,22 @@ const convertMessage = (
               argsText: call.arguments,
               ...(call.result === undefined ? {} : { result: call.result }),
             })),
-            ...item.artifacts.map(({ artifact, base }) => ({
+            ...item.artifacts.map((presentation) => ({
               type: "data-hearth-view" as const,
-              id: artifact.artifact_id,
-              data: { artifact, base },
+              id: presentation.presentationKey
+                ? `presentation:${presentation.presentationKey}`
+                : presentation.artifact.artifact_id,
+              data: presentation,
             })),
             // Hold each presentation's place until Core has checked and committed it.
             ...(running
               ? (item.pendingArtifacts ?? []).map(({ id, kind }) => ({
-                  type: "data-hearth-view-pending" as const,
-                  id: `pending:${id}`,
-                  data: { kind },
+                  type: "data-hearth-view" as const,
+                  id:
+                    kind === "view"
+                      ? `presentation:${id}`
+                      : `pending-automation:${id}`,
+                  data: { pending: kind },
                 }))
               : []),
             ...text,

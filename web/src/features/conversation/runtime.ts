@@ -1,18 +1,29 @@
 import type { AgentMessage, Artifact, TurnEvent } from "../../api/agent";
 
 export type Base = { dashboard_id: string; revision: number } | null;
-export interface Activity {
-  key: string;
+interface ToolCall {
   id: string;
   name: string;
+  presentationKey?: string;
+}
+
+export interface Activity extends ToolCall {
+  key: string;
   arguments: string;
   result?: string;
 }
 export interface PresentedArtifact {
   artifact: Artifact;
   base: Base;
+  /** Same occurrence key in the pending, committed, and stored reply. */
+  presentationKey?: string;
 }
 /** Pending presentations retain their kind until the committed artifact arrives. */
+interface PendingArtifact {
+  id: string;
+  kind: "view" | "automation";
+}
+
 export interface ConversationItem {
   id: string;
   role: "user" | "assistant";
@@ -20,8 +31,16 @@ export interface ConversationItem {
   activities: Activity[];
   artifacts: PresentedArtifact[];
   context?: unknown;
-  pendingArtifacts?: { id: string; kind: "view" | "automation" }[];
+  pendingArtifacts?: PendingArtifact[];
 }
+
+const viewIdentity = (
+  { id, name }: Pick<ToolCall, "id" | "name">,
+  occurrence: number
+) =>
+  name === "present_view"
+    ? { presentationKey: `view:${id}:${occurrence}` }
+    : {};
 
 /** Project committed rows without assuming call IDs are unique outside a batch. */
 const historyBase = (row: AgentMessage): Base => {
@@ -40,11 +59,13 @@ export const projectHistory = (rows: AgentMessage[]): ConversationItem[] => {
   let base: Base = null;
   let batch: ConversationItem | undefined;
   const seen = new Set<string>();
+  const occurrences = new Map<string, number>();
   for (const row of rows) {
     if (row.role === "user") {
       const context = row.automation_context ?? row.view_context;
       base = historyBase(row);
       batch = undefined;
+      occurrences.clear();
       output.push({
         id: `row-${row.message_id}`,
         role: "user",
@@ -59,10 +80,15 @@ export const projectHistory = (rows: AgentMessage[]): ConversationItem[] => {
         id: `row-${row.message_id}`,
         role: "assistant",
         text: row.content,
-        activities: calls.map((call) => ({
-          key: `row-${row.message_id}:${call.id}`,
-          ...call,
-        })),
+        activities: calls.map((call) => {
+          const occurrence = occurrences.get(call.id) ?? 0;
+          occurrences.set(call.id, occurrence + 1);
+          return {
+            key: `row-${row.message_id}:${call.id}`,
+            ...call,
+            ...viewIdentity(call, occurrence),
+          };
+        }),
         artifacts: [],
       };
       if (!calls.length && row.tool_calls?.length) {
@@ -102,7 +128,13 @@ export const projectHistory = (rows: AgentMessage[]): ConversationItem[] => {
       for (const artifact of row.artifacts ?? []) {
         if (!seen.has(artifact.artifact_id)) {
           seen.add(artifact.artifact_id);
-          batch.artifacts.push({ artifact, base });
+          batch.artifacts.push({
+            artifact,
+            base,
+            ...(activity?.presentationKey && {
+              presentationKey: activity.presentationKey,
+            }),
+          });
         }
       }
     }
@@ -137,7 +169,7 @@ export interface LiveTurn {
   reply: string;
   activities: Activity[];
   artifacts: PresentedArtifact[];
-  preparing: { id: string; name: string }[];
+  preparing: ToolCall[];
   failed: string | null;
   terminal: boolean;
 }
@@ -154,21 +186,54 @@ export const emptyTurn = (): LiveTurn => ({
 export const pendingArtifactCalls = (
   turn: LiveTurn
 ): NonNullable<ConversationItem["pendingArtifacts"]> => {
+  if (turn.terminal) {
+    return [];
+  }
+  const presented = new Set(turn.artifacts.map((item) => item.presentationKey));
   const calls = [
     ...turn.preparing,
-    ...turn.activities.filter((call) => call.result === undefined),
+    ...turn.activities.filter(
+      (call) =>
+        call.result === undefined ||
+        // A successful tool result precedes the committed view event. Keep the
+        // placeholder across that gap, including when the result was truncated.
+        (call.name === "present_view" &&
+          /"kind"\s*:\s*"hearth\.view"/u.test(call.result))
+    ),
   ];
-  const pending = new Map<string, "view" | "automation">();
+  const pending = new Map<string, PendingArtifact>();
   for (const call of calls) {
-    if (call.name === "present_view") {
-      pending.set(call.id, "view");
+    if (call.presentationKey && !presented.has(call.presentationKey)) {
+      pending.set(call.presentationKey, {
+        id: call.presentationKey,
+        kind: "view",
+      });
     }
     if (call.name === "present_automation") {
-      pending.set(call.id, "automation");
+      pending.set(`automation:${call.id}`, { id: call.id, kind: "automation" });
     }
   }
-  return [...pending].map(([id, kind]) => ({ id, kind }));
+  return [...pending.values()];
 };
+
+const streamedPresentation = (
+  turn: LiveTurn,
+  event: TurnEvent,
+  artifact: Artifact,
+  base: Base
+): PresentedArtifact => {
+  // Core emits each committed view before the next model batch can reuse its ID.
+  const presentationKey =
+    event.type === "view.presented"
+      ? turn.activities.findLast((call) => call.id === event.call_id)
+          ?.presentationKey
+      : undefined;
+  return { artifact, base, ...(presentationKey && { presentationKey }) };
+};
+
+const activityCount = (turn: LiveTurn, id: string) =>
+  turn.activities.filter((call) => call.id === id).length;
+
 export const reduceTurn = (
   turn: LiveTurn,
   event: TurnEvent,
@@ -181,24 +246,32 @@ export const reduceTurn = (
     event.name &&
     !turn.preparing.some((call) => call.id === event.call_id)
   ) {
+    const { call_id: id, name } = event;
     return {
       ...turn,
-      preparing: [...turn.preparing, { id: event.call_id, name: event.name }],
+      preparing: [
+        ...turn.preparing,
+        {
+          id,
+          name,
+          ...viewIdentity({ id, name }, activityCount(turn, id)),
+        },
+      ],
     };
   }
   if (event.type === "tool.started" && event.call_id && event.name) {
-    const occurrence = turn.activities.filter(
-      (call) => call.id === event.call_id
-    ).length;
+    const { call_id: id, name } = event;
+    const occurrence = activityCount(turn, id);
     return {
       ...turn,
       activities: [
         ...turn.activities,
         {
-          key: `${scope}:${event.call_id}:${occurrence}`,
-          id: event.call_id,
-          name: event.name,
+          key: `${scope}:${id}:${occurrence}`,
+          id,
+          name,
           arguments: event.arguments ?? "",
+          ...viewIdentity({ id, name }, occurrence),
         },
       ],
     };
@@ -225,7 +298,10 @@ export const reduceTurn = (
   ) {
     return {
       ...turn,
-      artifacts: [...turn.artifacts, { artifact: event.artifact, base }],
+      artifacts: [
+        ...turn.artifacts,
+        streamedPresentation(turn, event, event.artifact, base),
+      ],
     };
   }
   if (event.type === "turn.failed") {

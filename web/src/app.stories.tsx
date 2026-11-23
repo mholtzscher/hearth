@@ -1680,3 +1680,55 @@ export const MotionToolComplete: Story = {
     ).toContain("motion-draw");
   },
 };
+
+/** The pending placeholders hand off to the committed view in the same reply. */
+export const MotionViewReady: Story = {
+  name: "Motion · View ready",
+  tags: ["motion"],
+  parameters: { applicationScenario: { turn: "view-ready" } },
+  play: async (context) => {
+    await askTemperature(context);
+    const { canvas } = context;
+    await canvas.findByRole("heading", { name: "Preparing a view" });
+    const ready = await canvas.findByRole("heading", {
+      name: "Morning overview",
+    });
+    await waitFor(() => expect(ready).toBeVisible());
+    await expect(
+      canvas.queryByRole("heading", { name: "Preparing a view" })
+    ).not.toBeInTheDocument();
+    await expect(
+      await canvas.findByRole("switch", { name: "Hallway lamp power" })
+    ).toHaveAttribute("aria-checked", "true");
+  },
+};
+
+/** Two batches in one reply can use the same provider call ID. */
+export const MotionReusedViewCall: Story = {
+  name: "Motion · Two views with a reused call ID",
+  tags: ["motion"],
+  parameters: { applicationScenario: { turn: "reused-view-call" } },
+  play: async (context) => {
+    await askTemperature(context);
+    const { canvas } = context;
+    const firstPending = await canvas.findByRole("heading", {
+      name: "Preparing a view",
+    });
+    const morning = await canvas.findByRole("heading", {
+      name: "Morning overview",
+    });
+    const secondPending = await canvas.findByRole("heading", {
+      name: "Preparing a view",
+    });
+    await expect(secondPending).not.toBe(firstPending);
+    await expect(
+      await canvas.findByRole("heading", {
+        name: "Evening overview",
+      })
+    ).toBeVisible();
+    await expect(await canvas.findByText(conversationReply)).toBeVisible();
+    await expect(morning).toBeVisible();
+    await expect(firstPending).not.toBeInTheDocument();
+    await expect(secondPending).not.toBeInTheDocument();
+  },
+};

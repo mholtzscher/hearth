@@ -1,4 +1,4 @@
-import { Component, useContext } from "react";
+import { Component, createContext, useContext, ViewTransition } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { Button } from "../../../components/button";
@@ -97,6 +97,29 @@ const isCardElement = (node: ViewElement): node is CardElement =>
   node.type !== "Grid" &&
   node.type !== "Heading" &&
   node.type !== "Note";
+
+/** The names of up to two card boxes that correspond to visible placeholders. */
+export const PlaceholderMotion = createContext<string | undefined>(undefined);
+export const PLACEHOLDER_CARD_COUNT = 2;
+
+const placeholderCardNames = (graph: Graph, prefix: string) => {
+  const names = new Map<string, string>();
+  const visit = (id: string) => {
+    const node = graph.elements[id];
+    if (!node || names.size >= PLACEHOLDER_CARD_COUNT) {
+      return;
+    }
+    if (isCardElement(node)) {
+      names.set(id, `${prefix}-card-${names.size}`);
+    } else {
+      for (const child of graph.children[id]) {
+        visit(child);
+      }
+    }
+  };
+  visit(graph.root);
+  return names;
+};
 
 const cardTitle = (node: CardElement): string => {
   if (
@@ -304,10 +327,12 @@ const ViewNode = ({
   graph,
   id,
   followsHeading = false,
+  motionNames,
 }: {
   graph: Graph;
   id: string;
   followsHeading?: boolean;
+  motionNames?: ReadonlyMap<string, string>;
 }) => {
   const node = graph.elements[id];
   const Heading = `h${useContext(HeadingLevel)}` as "h3";
@@ -324,6 +349,7 @@ const ViewNode = ({
       key={child}
       graph={graph}
       id={child}
+      motionNames={motionNames}
       followsHeading={
         node.type === "Stack" &&
         index > 0 &&
@@ -332,7 +358,15 @@ const ViewNode = ({
     />
   ));
   if (isCardElement(node)) {
-    return renderCard(node);
+    const card = renderCard(node);
+    const name = motionNames?.get(id);
+    return name ? (
+      <ViewTransition name={name} default="none" share="hearth-morph-card">
+        {card}
+      </ViewTransition>
+    ) : (
+      card
+    );
   }
   switch (node.type) {
     case "Stack": {
@@ -415,6 +449,7 @@ export const ViewRenderer = ({
   active?: boolean;
   headingLevel: 3 | 4;
 }) => {
+  const motionPrefix = useContext(PlaceholderMotion);
   const view = readDefinition(definition);
   if (view.status === "unavailable") {
     return (
@@ -455,7 +490,13 @@ export const ViewRenderer = ({
           <DownloadDefinition raw={definition} />
         </div>
       )}
-      <ViewNode graph={graph} id={graph.root} />
+      <ViewNode
+        graph={graph}
+        id={graph.root}
+        motionNames={
+          motionPrefix ? placeholderCardNames(graph, motionPrefix) : undefined
+        }
+      />
     </HeadingLevel.Provider>
   );
 };

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentMessage, Artifact } from "../../api/agent";
-import { emptyTurn, groupReplies, projectHistory, reduceTurn } from "./runtime";
+import {
+  emptyTurn,
+  groupReplies,
+  pendingArtifactCalls,
+  projectHistory,
+  reduceTurn,
+} from "./runtime";
 
 const row = (
   message_id: number,
@@ -140,7 +146,11 @@ describe("conversation projections", () => {
       "second",
     ]);
     expect(items[1].artifacts).toStrictEqual([
-      { artifact, base: { dashboard_id: "dash-1", revision: 2 } },
+      {
+        artifact,
+        base: { dashboard_id: "dash-1", revision: 2 },
+        presentationKey: "view:other:0",
+      },
     ]);
     expect(items[3].activities[0].result).toBe("new turn");
   });
@@ -214,6 +224,56 @@ describe("conversation projections", () => {
       "request:same:0",
       "request:same:1",
     ]);
+  });
+
+  it("pairs each reused view call with its own placeholder in live and stored replies", () => {
+    const nextView = { ...artifact, artifact_id: "view-2" };
+    const tool = { call_id: "same", name: "present_view" };
+    const result = '{"kind":"hearth.view"}';
+    let live = emptyTurn();
+    const pendingIds: string[] = [];
+    for (const view of [artifact, nextView]) {
+      live = reduceTurn(live, { type: "tool.preparing", ...tool }, "run", null);
+      const pending = pendingArtifactCalls(live);
+      expect(pending).toHaveLength(1);
+      pendingIds.push(pending[0].id);
+      live = reduceTurn(live, { type: "tool.started", ...tool }, "run", null);
+      expect(pendingArtifactCalls(live)).toStrictEqual(pending);
+      live = reduceTurn(
+        live,
+        { type: "tool.finished", ...tool, result },
+        "run",
+        null
+      );
+      expect(pendingArtifactCalls(live)).toStrictEqual(pending);
+      live = reduceTurn(
+        live,
+        { type: "view.presented", ...tool, artifact: view },
+        "run",
+        null
+      );
+      expect(pendingArtifactCalls(live)).toStrictEqual([]);
+    }
+    expect(new Set(pendingIds).size).toBe(2);
+    const replies = groupReplies(
+      projectHistory(
+        [artifact, nextView].flatMap((view, index) => [
+          row(index * 2 + 1, "assistant", {
+            calls: [{ id: tool.call_id, name: tool.name, arguments: "{}" }],
+          }),
+          row(index * 2 + 2, "tool", {
+            tool_call_id: tool.call_id,
+            content: result,
+            artifacts: [view],
+          }),
+        ])
+      )
+    );
+    expect(live.artifacts).toMatchObject([
+      { artifact, presentationKey: pendingIds[0] },
+      { artifact: nextView, presentationKey: pendingIds[1] },
+    ]);
+    expect(replies[0].artifacts).toStrictEqual(live.artifacts);
   });
 
   it("pairs legacy name-only batches locally without treating synthetic IDs as global", () => {
