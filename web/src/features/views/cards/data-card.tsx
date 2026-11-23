@@ -1,5 +1,5 @@
 import { createContext, useContext, useId } from "react";
-import type { ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 
 import { Card } from "../../../components/card";
 import { cn } from "../../../lib/utils";
@@ -84,6 +84,9 @@ export interface DataCardProps {
   sourceExtra?: ReactNode;
   className?: string;
   "data-on"?: boolean;
+  /** The whole-card press target supplies its press origin to the frame. */
+  onClickCapture?: MouseEventHandler<HTMLElement>;
+  "data-reduced-motion"?: "fade";
   /** Classes merged onto a named part; the caller's class wins conflicts. */
   classNames?: Partial<Record<CardSlot, string>>;
   children: ReactNode;
@@ -187,6 +190,8 @@ export const DataCard = ({
   classNames,
   children,
   "data-on": on,
+  "data-reduced-motion": reducedMotion,
+  onClickCapture,
 }: DataCardProps) => {
   const level = useContext(HeadingLevel) + 1;
   const Title = `h${level}` as "h4";
@@ -199,7 +204,12 @@ export const DataCard = ({
       asChild
       className={cn("relative flex flex-col gap-3 overflow-hidden", className)}
     >
-      <article data-on={on || undefined} aria-labelledby={titleId}>
+      <article
+        data-on={on || undefined}
+        data-reduced-motion={reducedMotion}
+        aria-labelledby={titleId}
+        onClickCapture={onClickCapture}
+      >
         {/* A new key restarts the fade for each arrival. */}
         {glow !== undefined && (
           <span

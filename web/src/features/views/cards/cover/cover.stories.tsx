@@ -63,6 +63,27 @@ const writableCover = () => {
   };
 };
 
+export const MotionCoverTile: Story = {
+  name: "Motion · Tile opens",
+  tags: ["motion"],
+  args: { layout: "tile", confirm_open: false },
+  beforeEach: ({ msw }) => {
+    msw.use(...createCoreHandlers([writableCover()], { commandDelayMs: 400 }));
+  },
+  play: async ({ canvas, userEvent }) => {
+    const tile = canvas.getByRole("article", { name: "Garage door" });
+    const control = await canvas.findByRole("button", {
+      name: /Garage door, Closed/u,
+    });
+    await watchHeight(tile, async () => {
+      await userEvent.click(control);
+      await expect(tile).not.toHaveAttribute("data-on");
+      await expect(await canvas.findByText("100 % open")).toBeVisible();
+      await expect(tile).toHaveAttribute("data-on", "true");
+    });
+  },
+};
+
 export const ConfirmOpening: Story = {
   args: { layout: "tile" },
   decorators: [

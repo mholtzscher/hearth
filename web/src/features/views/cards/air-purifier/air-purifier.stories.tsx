@@ -2,8 +2,11 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { http, HttpResponse } from "msw";
 import { expect } from "storybook/test";
 
-import { entityId } from "../../../../../.storybook/fixtures";
-import { entityScenario } from "../../../../../.storybook/msw-handlers";
+import { entityId, fixtureEntity } from "../../../../../.storybook/fixtures";
+import {
+  createCoreHandlers,
+  entityScenario,
+} from "../../../../../.storybook/msw-handlers";
 import { watchHeight } from "../../../../../.storybook/play";
 import { BoundAirPurifier } from "./air-purifier";
 
@@ -104,6 +107,37 @@ export const Tile: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("Good")).toBeVisible();
     await expect(canvas.queryByText("Filter life")).not.toBeInTheDocument();
+  },
+};
+
+export const MotionPurifierTile: Story = {
+  ...Tile,
+  name: "Motion · Tile powers on",
+  tags: ["motion"],
+  beforeEach: ({ msw }) => {
+    const power = fixtureEntity(301);
+    if (!power.state) {
+      throw new Error("Expected purifier power State");
+    }
+    msw.use(
+      ...createCoreHandlers(
+        [{ ...power, state: { ...power.state, value: false } }],
+        { commandDelayMs: 400 }
+      )
+    );
+  },
+  play: async ({ canvas, userEvent }) => {
+    const tile = canvas.getByRole("article", { name: "Living room purifier" });
+    const control = await canvas.findByRole("switch", { name: /power/iu });
+    await expect(await canvas.findByText("Good")).toBeVisible();
+    await watchHeight(tile, async () => {
+      await userEvent.click(control);
+      await expect(control).toHaveAttribute("aria-checked", "false");
+      await expect(
+        await canvas.findByText("On", { exact: true })
+      ).toBeVisible();
+      await expect(tile).toHaveAttribute("data-on", "true");
+    });
   },
 };
 export const Disabled: Story = {

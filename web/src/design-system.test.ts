@@ -83,7 +83,6 @@ const NUMERIC_SPACING: Record<string, string[]> = {
 const ARBITRARY_MOTION: Record<string, string[]> = {
   "src/components/switch.tsx": ["duration-[160ms]", "duration-[160ms]"],
   "src/features/views/cards/cover/cover-diagram.tsx": ["duration-[900ms]"],
-  "src/features/views/cards/tile-frame.tsx": ["duration-[180ms]"],
   "src/features/views/cards/wind/wind.tsx": ["duration-[600ms]"],
 };
 

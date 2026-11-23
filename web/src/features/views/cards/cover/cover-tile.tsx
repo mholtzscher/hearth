@@ -90,6 +90,8 @@ export const CoverTile = ({ props }: { props: CoverProps }) => {
       classNames={{ body: "gap-0.5" }}
       on={open}
       interactive={interactive}
+      working={busy}
+      stateObservedAt={data?.observed_at}
       status={status.entries}
       observedAt={data?.observed_at}
       arrival={

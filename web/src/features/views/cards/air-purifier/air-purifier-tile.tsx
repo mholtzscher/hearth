@@ -186,6 +186,8 @@ export const AirPurifierTile = ({
       title={title}
       on={on && power.status.value === "live"}
       interactive={canSet}
+      working={working}
+      stateObservedAt={entities.power?.state?.observed_at}
       status={status}
       observedAt={oldestObservation(displayed)}
       observedLabel="Oldest reading"
