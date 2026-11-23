@@ -9,6 +9,7 @@ import type {
 import { DataCard } from "../data-card";
 import { Reading, ReadingUnit } from "../reading";
 import { cardStatus } from "../status";
+import { MetricNumber } from "./metric-roll";
 import { RangeTrack } from "./range-track";
 import { Trend, trendMethod } from "./trend";
 
@@ -67,7 +68,11 @@ export const Metric = ({
     >
       {/* An unavailable or disabled Entity keeps its last value at the reading scale, dimmed, so the status leads. */}
       <Reading value={status.value} className="[overflow-wrap:anywhere]">
-        {data ? data.value.toFixed(data.format.fraction_digits) : "—"}
+        <MetricNumber
+          reading={data}
+          eligible={status.glows}
+          source={resource.metadata?.id}
+        />
         {data?.format.unit_label && (
           <ReadingUnit>{data.format.unit_label}</ReadingUnit>
         )}

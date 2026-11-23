@@ -472,7 +472,7 @@ export const Afterglow: Story = {
       "(prefers-reduced-motion: reduce)"
     ).matches;
     await expect(getComputedStyle(glow() as HTMLElement).animationName).toBe(
-      reduced ? "none" : "view-arrival"
+      reduced ? "none" : "motion-ignite, view-arrival"
     );
     await expect(
       canvasElement.querySelector('[data-token="afterglow"]')

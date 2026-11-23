@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { motionMilliseconds, prefersReducedMotion } from "../../../lib/motion";
+
 /** How long a card's top edge glows after its displayed reading changes. */
 export const ARRIVAL_GLOW_MS = 10_000;
 
@@ -108,7 +110,11 @@ export const useArrivals = (
     if (glowing === undefined) {
       return;
     }
-    const timer = setTimeout(() => setGlowing(undefined), ARRIVAL_GLOW_MS);
+    const ignition = prefersReducedMotion() ? 0 : motionMilliseconds("layout");
+    const timer = setTimeout(
+      () => setGlowing(undefined),
+      ARRIVAL_GLOW_MS + ignition
+    );
     return () => clearTimeout(timer);
   }, [glowing]);
   return eligible.length ? glowing : undefined;

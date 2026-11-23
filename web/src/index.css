@@ -123,7 +123,10 @@
   /* A bare transition-* utility acknowledges at feedback speed on the one curve. */
   --default-transition-duration: var(--transition-duration-feedback);
   --default-transition-timing-function: var(--ease-out-expo);
-  --animate-arrival: view-arrival 10s var(--ease-out-expo) forwards;
+  --animate-arrival:
+    motion-ignite var(--transition-duration-layout) var(--ease-out-expo) both,
+    view-arrival 10s var(--ease-out-expo) var(--transition-duration-layout)
+      forwards;
   --animate-pending: view-pending 1.6s var(--ease-pulse) infinite;
   --animate-canvas-in: canvas-in var(--transition-duration-layout)
     var(--ease-out-expo);
@@ -139,6 +142,8 @@
   --animate-refuse: motion-refuse var(--transition-duration-layout)
     var(--ease-out-expo);
   --animate-turn: motion-turn 8s linear infinite;
+  --animate-roll: motion-roll var(--transition-duration-layout)
+    var(--ease-out-expo);
   --animate-draw: motion-draw var(--transition-duration-feedback)
     var(--ease-out-expo) both;
   /* Words that accompany Pending wait 600ms, so a quick outcome never shows them. */
@@ -386,6 +391,11 @@ html:active-view-transition-type(hearth-morph)::view-transition-new(root) {
 @keyframes motion-ignite {
   from {
     scale: 0 1;
+  }
+}
+@keyframes motion-roll {
+  from {
+    translate: 0 var(--roll-distance);
   }
 }
 /* One and a half shakes of 3px. */
