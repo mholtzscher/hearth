@@ -56,7 +56,7 @@ const LibraryCard = ({
   return (
     <Card
       asChild
-      className="hover:border-gray-5 has-[a:focus-visible]:outline-ring relative transition-colors duration-150 has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-3 has-[a:focus-visible]:outline-solid"
+      className="hover:border-gray-5 has-[a:focus-visible]:outline-ring relative transition-colors has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-3 has-[a:focus-visible]:outline-solid"
     >
       <article aria-labelledby={`dashboard-${item.id}`}>
         <LayoutDashboardIcon

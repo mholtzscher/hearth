@@ -439,7 +439,8 @@ Two fixed timings sit outside the scale: the afterglow fades over 10 seconds,
 and the pending pulse breathes on a 1.6-second cycle.
 
 - Every transition uses `ease-out-expo`. Only the pending pulse uses
-  `ease-pulse`. Nothing bounces or overshoots.
+  `ease-pulse`, and a turning Pending icon turns at a constant rate. Nothing
+  bounces or overshoots.
 - An exit takes the next shorter duration than its entrance.
 - Motion uses opacity, transform, clip-path, color, and blur of at most 3px. The
   only height that animates is a disclosure opening, through grid rows or

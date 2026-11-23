@@ -1,6 +1,6 @@
 /** Shared text-field treatment. Inputs, textareas, and native selects own their native behavior. */
 export const fieldStyles =
-  "w-full min-w-0 rounded-md border border-input bg-card px-2 text-label font-normal text-foreground transition-colors duration-150 ease-out-expo placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive";
+  "w-full min-w-0 rounded-md border border-input bg-card px-2 text-label font-normal text-foreground transition-colors placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive";
 
 export const fieldSizeStyles = {
   default: "h-8 py-1",

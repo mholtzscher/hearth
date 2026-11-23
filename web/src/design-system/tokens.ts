@@ -107,3 +107,19 @@ export const BREAKPOINTS = [
   { variable: "breakpoint-tablet", name: "tablet", use: "Rail sidebar" },
   { variable: "breakpoint-desktop", name: "desktop", use: "Full sidebar" },
 ] as const;
+
+/** The motion timing scale (DESIGN.md, Motion > Timing). */
+export const MOTION_DURATIONS = [
+  { token: "feedback", use: "Acknowledging an input" },
+  { token: "state", use: "A routine change in place" },
+  { token: "layout", use: "A change of size or position within one surface" },
+  {
+    token: "travel",
+    use: "An element moving between surfaces or becoming another element",
+  },
+] as const;
+
+export const MOTION_CURVES = [
+  { token: "out-expo", use: "Every transition" },
+  { token: "pulse", use: "The pending pulse only" },
+] as const;
