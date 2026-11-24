@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.28.0](https://github.com/mholtzscher/hearth/compare/v0.27.0...v0.28.0) (2026-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **agent:** External MCP no longer offers present_view. compose_view is available only to the built-in Agent. Existing Dashboard HTTP operations and saved definitions are unchanged.
+
+### Features
+
+* **adapters:** observe and control Music Assistant speakers ([#414](https://github.com/mholtzscher/hearth/issues/414)) ([09a3f1c](https://github.com/mholtzscher/hearth/commit/09a3f1cef60ab0b85c9b8778f0f1d4b172011416))
+* **adapters:** report Music Assistant media and add skip and seek ([#417](https://github.com/mholtzscher/hearth/issues/417)) ([4fd9101](https://github.com/mholtzscher/hearth/commit/4fd91015049a5b17c139abe83e90130982d35e65))
+* **agent:** compose dashboards without exposing the renderer graph ([#431](https://github.com/mholtzscher/hearth/issues/431)) ([092459a](https://github.com/mholtzscher/hearth/commit/092459af7d3f5df0484f6f3b29dbafa962026fdb))
+* **agenteval:** compare Agent revisions on scripted scenarios ([#432](https://github.com/mholtzscher/hearth/issues/432)) ([1f893e9](https://github.com/mholtzscher/hearth/commit/1f893e997e19d25c82c6d9ce2395ed742d77212b))
+* **devices:** serve media player artwork from Core ([#418](https://github.com/mholtzscher/hearth/issues/418)) ([ba4568f](https://github.com/mholtzscher/hearth/commit/ba4568f49974a73cacf502ddc504087b762b3727))
+* **web:** add media player dashboard card and tile ([#419](https://github.com/mholtzscher/hearth/issues/419)) ([5acce8c](https://github.com/mholtzscher/hearth/commit/5acce8c74978e5c2b880683a6b63b7719366094a))
+* **web:** add shared motion primitives and the Motion design page ([#422](https://github.com/mholtzscher/hearth/issues/422)) ([bd3a52c](https://github.com/mholtzscher/hearth/commit/bd3a52c4ad0b067324dd2176184603f432afb09e))
+* **web:** animate the conversation's arrivals, working state, and Copy ([#424](https://github.com/mholtzscher/hearth/issues/424)) ([2e8756d](https://github.com/mholtzscher/hearth/commit/2e8756d184cd29c0c234a0784cfe820105663852))
+* **web:** give tiles press feedback and spread on observed selection ([#429](https://github.com/mholtzscher/hearth/issues/429)) ([995efa6](https://github.com/mholtzscher/hearth/commit/995efa624d7d929719b941e9a4bde6083228d073))
+* **web:** grow tool activity and show tool progress with motion ([#425](https://github.com/mholtzscher/hearth/issues/425)) ([979b445](https://github.com/mholtzscher/hearth/commit/979b4456937b667692fe4c9166c24423f0ea4e6b))
+* **web:** ignite afterglow and roll single-digit observations ([#428](https://github.com/mholtzscher/hearth/issues/428)) ([e41737c](https://github.com/mholtzscher/hearth/commit/e41737c93c7c2fc9baa6df14d4f2ff555545bddc))
+* **web:** morph pending presentations into their committed views ([#426](https://github.com/mholtzscher/hearth/issues/426)) ([094513d](https://github.com/mholtzscher/hearth/commit/094513d22cea05877ca0e928423e1132ba34bcca))
+* **web:** show pending and rejected command motion ([#430](https://github.com/mholtzscher/hearth/issues/430)) ([4432e3e](https://github.com/mholtzscher/hearth/commit/4432e3e71ce8136027bbaf0f1467207a9acd861e))
+* **web:** slide the segmented control selection between segments ([#438](https://github.com/mholtzscher/hearth/issues/438)) ([319eeb9](https://github.com/mholtzscher/hearth/commit/319eeb9c1347ea1b42299689a9e0d421cfc50eca))
+* **web:** travel between conversation and canvas and tokenize drawer slides ([#427](https://github.com/mholtzscher/hearth/issues/427)) ([fbcab97](https://github.com/mholtzscher/hearth/commit/fbcab9735e0c487189b3f339c3a0bac56b32b781))
+
+
+### Bug Fixes
+
+* **web:** wait for the purifier tile to load before watching its height ([#437](https://github.com/mholtzscher/hearth/issues/437)) ([a31f785](https://github.com/mholtzscher/hearth/commit/a31f785054f89d617e6b2808abdc04cd83d5fb22))
+
 ## [0.27.0](https://github.com/mholtzscher/hearth/compare/v0.26.0...v0.27.0) (2026-11-20)
 
 
