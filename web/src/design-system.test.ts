@@ -52,7 +52,7 @@ const ARBITRARY_TEXT_SIZES: Record<string, string[]> = {
  * an 18px track, and the canvas header actions wrap tighter on phones.
  */
 const ARBITRARY_LEADING_AND_TRACKING: Record<string, string[]> = {
-  "src/features/dashboards/canvas.tsx": [
+  "src/features/dashboards/canvas-header.tsx": [
     "leading-[1.25]",
     "leading-[1.25]",
     "leading-[1.25]",
