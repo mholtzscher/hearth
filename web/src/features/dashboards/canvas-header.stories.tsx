@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { createRef } from "react";
+import { useRef } from "react";
+import type { ComponentProps } from "react";
 import { expect, fn } from "storybook/test";
 
 import { dashboardDefinition } from "../../../.storybook/fixtures";
@@ -7,6 +8,12 @@ import { expectNoHorizontalOverflow } from "../../../.storybook/play";
 import { readDefinition } from "../views/catalog/compatibility";
 import { CanvasHeader } from "./canvas-header";
 import type { Draft } from "./draft";
+
+/** CanvasHeader attaches `expandButton` to a mounted element; give each render its own ref so that element never sits in story args. */
+const HeaderWithOwnRef = (props: ComponentProps<typeof CanvasHeader>) => {
+  const expandButton = useRef<HTMLButtonElement>(null);
+  return <CanvasHeader {...props} expandButton={expandButton} />;
+};
 
 const generated: Draft = {
   definition: dashboardDefinition,
@@ -32,7 +39,7 @@ const meta = {
     draft: saved,
     editor: false,
     expanded: false,
-    expandButton: createRef<HTMLButtonElement>(),
+    expandButton: { current: null },
     saving: false,
     blocked: false,
     unsaved: false,
@@ -50,6 +57,7 @@ const meta = {
     view: { control: false },
     expandButton: { control: false },
   },
+  render: (args) => <HeaderWithOwnRef {...args} />,
   parameters: {
     docs: {
       description: {

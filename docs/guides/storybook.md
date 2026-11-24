@@ -144,6 +144,13 @@ story, start from the ready card and wrap the interaction and its assertions in
 feedback where relevant. Keep the single `CssCheck` story as the production
 CSS loading check.
 
+Keep mounted elements out of args. Storybook serializes args between stories,
+so a ref prop that a component attaches to an element (such as `expandButton` or
+`prompt`) gets a plain `{ current: null }` in args and a small wrapper in the
+story file that passes its own `useRef`. A shared `createRef` in args holds a
+DOM node after the first render, floods test output with cycle warnings, and can
+overflow the stack.
+
 Query controls by their accessible role and name, and fields by their label.
 Use `data-slot` when a test must identify a structural part that has no distinct
 accessible role, such as a card body or reading value. Slots are component

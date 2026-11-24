@@ -1,10 +1,20 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useRef } from "react";
+import type { ComponentProps } from "react";
 import { expect, fn, within } from "storybook/test";
 
 import { FixtureConversationRuntime } from "../../../.storybook/conversation";
 import { createFixtureConversation } from "../../../.storybook/fixture-conversation";
 import type { FixtureConversation } from "../../../.storybook/fixture-conversation";
 import { ConversationComposer } from "./composer";
+
+/** ConversationComposer attaches `prompt` to a mounted element; give each render its own ref so that element never sits in story args. */
+const ComposerWithOwnRef = (
+  props: ComponentProps<typeof ConversationComposer>
+) => {
+  const prompt = useRef<HTMLTextAreaElement>(null);
+  return <ConversationComposer {...props} prompt={prompt} />;
+};
 
 const prompt = "What is the living room temperature?";
 
@@ -13,7 +23,6 @@ const meta = {
   component: ConversationComposer,
   tags: ["ai-generated"],
   args: {
-    // The composer attaches this ref to its textarea; no story reads it.
     prompt: { current: null },
     busy: false,
     loading: false,
@@ -26,6 +35,7 @@ const meta = {
     onCloseDraft: fn(),
   },
   argTypes: { prompt: { control: false } },
+  render: (args) => <ComposerWithOwnRef {...args} />,
   decorators: [
     (Story, { args, loaded }) => (
       <FixtureConversationRuntime
