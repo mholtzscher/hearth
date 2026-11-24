@@ -25,10 +25,12 @@ All commands run from the repository root.
   run output.
 - Both revisions must contain `internal/cmd/agenteval` with the same worker
   protocol. Revisions from before `agenteval` existed cannot be compared.
-- Budget time. Requests are paced 15 seconds apart by default. A full comparison
-  of 15 scenarios × 10 trials × 2 arms is about 300 turns and 900–1,800 model
-  requests: roughly 4–7 hours. The command prints its own estimate before it
-  starts. Hosted runs are manual, and CI never runs them.
+- Budget time. A full comparison of 15 scenarios × 10 trials × 2 arms is about
+  300 turns and 900–1,800 model requests: 1–2 hours with `opencode-go/glm-5.3`,
+  which sent 1,300 unpaced requests without a rate limit. Requests are not
+  paced by default; set `--min-gap` for a provider that rate-limits. The
+  command prints its own estimate before it starts. Hosted runs are manual,
+  and CI never runs them.
 
 ## Run a comparison
 
@@ -68,7 +70,7 @@ at transcripts. `mise run agent-eval -- --help` lists every option.
 | --- | --- | --- |
 | `--max-requests` | 3000 | Model requests for the whole run. When the next trial could exceed it, the remaining trials are skipped and the verdict is `inconclusive`. |
 | `--trial-max-requests` | 15 | Requests per trial. A scenario's `max_requests` overrides it. A trial that hits its cap fails. |
-| `--min-gap` | 15s | Minimum time between model requests. |
+| `--min-gap` | 0s | Minimum time between model requests. |
 | `--rate-limit-pause` | 2m | Pause after an HTTP 429. |
 
 Results stream to `trials.jsonl` as each trial finishes. After an interruption,

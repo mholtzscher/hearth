@@ -27,7 +27,7 @@ const (
 	defaultTrials           = 10
 	defaultRunMaxRequests   = 3000
 	defaultTrialMaxRequests = 15
-	defaultMinGap           = 15 * time.Second
+	defaultMinGap           = 0
 	defaultRateLimitPause   = 2 * time.Minute
 	refUsage                = "git ref, or worktree"
 	outFlag                 = "out"

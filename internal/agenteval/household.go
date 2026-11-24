@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -53,12 +54,18 @@ type Household struct {
 	Inventory  Inventory
 
 	client *http.Client
-	cancel context.CancelFunc
 	broker *natsserver.Server
-	wait   sync.WaitGroup
-	errMu  sync.Mutex
-	errs   []error
-	logs   *os.File
+	// processes are in start order.
+	processes []process
+	errMu     sync.Mutex
+	errs      []error
+	logs      *os.File
+}
+
+// process is Core or the simulator, running on its own goroutine.
+type process struct {
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // Inventory maps simulator names to the canonical IDs Core assigned.
@@ -100,10 +107,9 @@ func StartHousehold(ctx context.Context, options HouseholdOptions) (*Household, 
 		_ = logs.Close()
 		return nil, errors.New("broker did not become ready")
 	}
-	runCtx, cancel := context.WithCancel(ctx)
 	household := &Household{
 		client: &http.Client{},
-		cancel: cancel, broker: broker, logs: logs,
+		broker: broker, logs: logs,
 		Inventory: Inventory{
 			Entities: map[string]string{}, Devices: map[string]string{},
 			Dashboards: map[string]Saved{}, Automations: map[string]Saved{},
@@ -121,8 +127,8 @@ func StartHousehold(ctx context.Context, options HouseholdOptions) (*Household, 
 		SQLitePath: filepath.Join(options.Dir, "hearthd.db"), Agent: agentConfig,
 	})
 	household.CoreURL = "http://" + listener.Addr().String()
-	household.run("core", func() error {
-		return hearthd.RunOnListener(runCtx, coreConfig, logger.With(slog.String("process", "core")), listener)
+	household.run(ctx, "core", func(ctx context.Context) error {
+		return hearthd.RunOnListener(ctx, coreConfig, logger.With(slog.String("process", "core")), listener)
 	})
 	if err = household.waitOK(ctx, household.CoreURL+"/readyz"); err != nil {
 		return nil, errors.Join(fmt.Errorf("core readiness: %w", err), household.Stop())
@@ -134,8 +140,8 @@ func StartHousehold(ctx context.Context, options HouseholdOptions) (*Household, 
 	simulatorConfig.NATSURL = broker.ClientURL()
 	simulatorConfig.ControlAddr = controlAddr
 	household.ControlURL = "http://" + controlAddr
-	household.run("simulator", func() error {
-		return simulator.Run(runCtx, simulatorConfig, logger.With(slog.String("process", "simulator")))
+	household.run(ctx, "simulator", func(ctx context.Context) error {
+		return simulator.Run(ctx, simulatorConfig, logger.With(slog.String("process", "simulator")))
 	})
 	if err = household.waitOK(ctx, household.ControlURL+"/v1/sim/entities"); err != nil {
 		return nil, errors.Join(fmt.Errorf("simulator readiness: %w", err), household.Stop())
@@ -146,29 +152,44 @@ func StartHousehold(ctx context.Context, options HouseholdOptions) (*Household, 
 	return household, nil
 }
 
-func (household *Household) run(name string, fn func() error) {
-	household.wait.Go(func() {
-		if err := fn(); err != nil && !errors.Is(err, context.Canceled) {
+func (household *Household) run(ctx context.Context, name string, fn func(context.Context) error) {
+	ctx, cancel := context.WithCancel(ctx)
+	running := process{cancel: cancel, done: make(chan struct{})}
+	household.processes = append(household.processes, running)
+	go func() {
+		defer close(running.done)
+		if err := fn(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			household.errMu.Lock()
 			household.errs = append(household.errs, fmt.Errorf("%s: %w", name, err))
 			household.errMu.Unlock()
 		}
-	})
+	}()
 }
 
-// Stop shuts everything down and reports process failures observed while running.
+// Stop shuts everything down and reports process failures observed while
+// running. Each step below avoids a 5-second shutdown timeout:
+//   - Idle client connections close first. An HTTP server's graceful
+//     shutdown waits that long for a connection that never sent a request.
+//   - Processes stop in reverse start order, so the simulator releases its
+//     Adapter sessions while Core can still answer.
 func (household *Household) Stop() error {
-	household.cancel()
-	done := make(chan struct{})
-	go func() { household.wait.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(stopTimeout):
-		// Core or the simulator may still use the broker and log file, so leave
-		// them open; the worker process exits soon after.
-		household.errMu.Lock()
-		defer household.errMu.Unlock()
-		return errors.Join(errors.Join(household.errs...), errors.New("household did not stop in time"))
+	household.client.CloseIdleConnections()
+	timeout := time.NewTimer(stopTimeout)
+	defer timeout.Stop()
+	for _, running := range slices.Backward(household.processes) {
+		running.cancel()
+		select {
+		case <-running.done:
+		case <-timeout.C:
+			for _, remaining := range household.processes {
+				remaining.cancel()
+			}
+			// Core or the simulator may still use the broker and log file, so
+			// leave them open; the worker process exits soon after.
+			household.errMu.Lock()
+			defer household.errMu.Unlock()
+			return errors.Join(errors.Join(household.errs...), errors.New("household did not stop in time"))
+		}
 	}
 	household.broker.Shutdown()
 	household.broker.WaitForShutdown()
