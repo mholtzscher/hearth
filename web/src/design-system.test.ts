@@ -39,7 +39,11 @@ const RADIX_IMPORTS: string[] = [];
  * The rail hides the wordmark text at 0px.
  */
 const ARBITRARY_TEXT_SIZES: Record<string, string[]> = {
-  "src/app.tsx": ["text-[24px]", "text-[0px]", "text-[20px]"],
+  "src/features/workspace/sidebar.tsx": [
+    "text-[24px]",
+    "text-[0px]",
+    "text-[20px]",
+  ],
 };
 
 /**
@@ -48,7 +52,6 @@ const ARBITRARY_TEXT_SIZES: Record<string, string[]> = {
  * an 18px track, and the canvas header actions wrap tighter on phones.
  */
 const ARBITRARY_LEADING_AND_TRACKING: Record<string, string[]> = {
-  "src/app.tsx": ["tracking-[-.03em]"],
   "src/features/dashboards/canvas.tsx": [
     "leading-[1.25]",
     "leading-[1.25]",
@@ -60,6 +63,7 @@ const ARBITRARY_LEADING_AND_TRACKING: Record<string, string[]> = {
     "leading-[1.25]",
     "leading-[1.25]",
   ],
+  "src/features/workspace/sidebar.tsx": ["tracking-[-.03em]"],
 };
 
 /**
