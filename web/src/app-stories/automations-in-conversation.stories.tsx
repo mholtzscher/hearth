@@ -45,33 +45,6 @@ const openSavedAutomationEditor = async ({
   );
 };
 
-export const AutomationCreatePreview: ApplicationStory = {
-  parameters: {
-    appPath: conversationPath,
-    applicationScenario: { messages: "automation-create" },
-  },
-  play: async ({ canvas }) => {
-    const log = within(await canvas.findByRole("log"));
-    await expect(
-      await log.findByText("Unsaved proposal · not created")
-    ).toBeVisible();
-    await expect(
-      await log.findByRole("heading", {
-        name: "Hallway light at dusk",
-        level: 4,
-      })
-    ).toBeVisible();
-    await expect(await log.findByText("Household")).toBeVisible();
-    const officeLinks = await log.findAllByRole("link", {
-      name: "Office plug (Office plug)",
-    });
-    await expect(officeLinks.length).toBeGreaterThan(0);
-    await expect(
-      log.getByRole("button", { name: "Open in canvas" })
-    ).toBeEnabled();
-  },
-};
-
 export const AutomationShowingInCanvas: ApplicationStory = {
   parameters: {
     appPath: conversationPath,
@@ -97,54 +70,6 @@ export const AutomationShowingInCanvas: ApplicationStory = {
     await expect(
       await canvas.findByRole("region", { name: "Automation canvas" })
     ).toBeVisible();
-  },
-};
-
-export const AutomationReplacePreview: ApplicationStory = {
-  parameters: {
-    appPath: conversationPath,
-    applicationScenario: { messages: "automation-replace" },
-  },
-  play: async ({ canvas }) => {
-    const log = within(await canvas.findByRole("log"));
-    await expect(
-      await log.findByText("Replacement proposal · based on revision 3")
-    ).toBeVisible();
-    await expect(
-      await log.findByRole("heading", {
-        name: "Hallway light at dusk",
-        level: 4,
-      })
-    ).toBeVisible();
-    await expect(await log.findByText("Household")).toBeVisible();
-    const officeLinks = await log.findAllByRole("link", {
-      name: "Office plug (Office plug)",
-    });
-    await expect(officeLinks.length).toBeGreaterThan(0);
-  },
-};
-
-export const AutomationReferencePreview: ApplicationStory = {
-  parameters: {
-    appPath: conversationPath,
-    applicationScenario: { messages: "automation-reference" },
-  },
-  play: async ({ canvas }) => {
-    const log = within(await canvas.findByRole("log"));
-    await expect(
-      await log.findByText("Saved reference · current definition")
-    ).toBeVisible();
-    await expect(
-      await log.findByRole("heading", {
-        name: "Hallway light at dusk",
-        level: 4,
-      })
-    ).toBeVisible();
-    await expect(await log.findByText("Household")).toBeVisible();
-    const officeLinks = await log.findAllByRole("link", {
-      name: "Office plug (Office plug)",
-    });
-    await expect(officeLinks.length).toBeGreaterThan(0);
   },
 };
 

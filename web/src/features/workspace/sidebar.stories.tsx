@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { createRef } from "react";
+import { useRef } from "react";
+import type { ComponentProps } from "react";
 import { expect, fn, waitFor, within } from "storybook/test";
 
 import {
@@ -11,6 +12,12 @@ import { cn } from "../../lib/utils";
 import { ConversationsProvider } from "../conversation/conversations-provider";
 import { HouseholdSidebar } from "./sidebar";
 
+/** HouseholdSidebar attaches `historyButton` to a mounted element; give each render its own ref so that element never sits in story args. */
+const SidebarWithOwnRef = (props: ComponentProps<typeof HouseholdSidebar>) => {
+  const historyButton = useRef<HTMLButtonElement>(null);
+  return <HouseholdSidebar {...props} historyButton={historyButton} />;
+};
+
 const meta = {
   title: "Components/HouseholdSidebar",
   component: HouseholdSidebar,
@@ -19,7 +26,7 @@ const meta = {
     nav: "full",
     drawerOpen: false,
     home: true,
-    historyButton: createRef<HTMLButtonElement>(),
+    historyButton: { current: null },
     onCloseDrawer: fn(),
     onNavigate: fn(),
     onNewConversation: fn(),
@@ -27,6 +34,7 @@ const meta = {
     setServer: fn(),
   },
   argTypes: { historyButton: { control: false } },
+  render: (args) => <SidebarWithOwnRef {...args} />,
   decorators: [
     // The shell places the sidebar in its first grid column at the viewport's left edge.
     (Story, { args }) => (

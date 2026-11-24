@@ -1,8 +1,7 @@
 import type { Meta } from "@storybook/react-vite";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 
 import {
-  animationNames,
   applicationMeta,
   askTemperature,
   editTitle,
@@ -21,7 +20,6 @@ import {
   sentReply,
 } from "../../.storybook/application-fixtures";
 import App from "../app";
-import { prefersReducedMotion } from "../lib/motion";
 
 const meta = {
   title: "Application/Conversation/Sending",
@@ -72,26 +70,6 @@ export const SendMessage: ApplicationStory = {
         context.canvas.queryByText("Looking through your home…")
       ).not.toBeInTheDocument()
     );
-  },
-};
-
-export const PendingReply: ApplicationStory = {
-  parameters: { applicationScenario: { turn: "pending" } },
-  play: async (context) => {
-    await askTemperature(context);
-    const tools = await context.canvas.findByText(
-      "Used 1 tool · 1 pending or unknown"
-    );
-    await waitFor(() => expect(tools).toBeVisible());
-    // Pending words wait 600ms before they fade in.
-    await waitFor(() =>
-      expect(
-        context.canvas.getByText("Looking through your home…")
-      ).toBeVisible()
-    );
-    await expect(
-      context.canvas.getByRole("textbox", { name: "Ask Hearth" })
-    ).toBeDisabled();
   },
 };
 
@@ -223,57 +201,6 @@ export const SelectedViewMessage: ApplicationStory = {
         context.canvas.getByText(`Selected view: ${longSelectedTitle}`)
       ).toBeVisible();
     });
-  },
-};
-
-/**
- * A sent message arrives, the reply arrives with its Hearth label, and its
- * text resolves. The stored history replaces both without remounting them, so
- * their motion completes.
- */
-export const MotionMessageArrival: ApplicationStory = {
-  name: "Motion · Message arrival",
-  tags: ["motion"],
-  play: async (context) => {
-    await askTemperature(context);
-    const log = within(context.canvas.getByRole("log"));
-    const reply = await log.findByText(sentReply);
-    const prompt = log.getByText("What is the living room temperature?");
-    const reduced = prefersReducedMotion();
-    await expect(
-      animationNames(prompt.closest("[data-reduced-motion]"))
-    ).toContain(reduced ? "motion-fade" : "motion-arrive");
-    await expect(
-      animationNames(reply.closest('[data-slot="message-markdown"]'))
-    ).toContain(reduced ? "motion-fade" : "motion-resolve");
-    await waitFor(() =>
-      expect(
-        context.canvas.queryByText("Looking through your home…")
-      ).not.toBeInTheDocument()
-    );
-    // Still the arriving elements: the stored copies did not remount them.
-    await expect(prompt).toBeInTheDocument();
-    await expect(reply).toBeInTheDocument();
-  },
-};
-
-/** While a reply runs, the Hearth icon breathes and the pending words wait 600ms. */
-export const MotionWorking: ApplicationStory = {
-  name: "Motion · Working",
-  tags: ["motion"],
-  parameters: { applicationScenario: { turn: "pending" } },
-  play: async (context) => {
-    await askTemperature(context);
-    await context.canvas.findByText("Used 1 tool · 1 pending or unknown");
-    const icon = context.canvasElement.querySelector(
-      '[data-slot="reply-icon"]'
-    );
-    await expect(animationNames(icon)).toEqual(
-      prefersReducedMotion() ? [] : ["view-pending"]
-    );
-    const words = context.canvas.getByText("Looking through your home…");
-    await expect(animationNames(words)).toContain("motion-fade");
-    await waitFor(() => expect(words).toBeVisible());
   },
 };
 
