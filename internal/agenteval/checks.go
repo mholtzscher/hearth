@@ -174,6 +174,17 @@ func evaluators() map[CheckKind]func(Check, facts, Inventory) string {
 				"an Automation draft was presented",
 			)
 		},
+		CheckAnyOf: func(check Check, f facts, inventory Inventory) string {
+			reasons := make([]string, 0, len(check.AnyOf))
+			for _, nested := range check.AnyOf {
+				reason := evaluate(nested, f, inventory)
+				if reason == "" {
+					return ""
+				}
+				reasons = append(reasons, reason)
+			}
+			return "no alternative passed: " + strings.Join(reasons, "; ")
+		},
 		CheckAutomationReference: func(check Check, f facts, inventory Inventory) string {
 			reference := lastAutomation(f.automations, "reference")
 			if reference == nil {
@@ -541,7 +552,8 @@ func unchangedExcept(saved Saved, artifact map[string]any, allowed []string) str
 		return "selected dashboard is unreadable"
 	}
 	var diffs []string
-	diffPaths("", normalizeJSON(stored.Definition), normalizeJSON(artifact["definition"]), &diffs)
+	diffPaths("", withoutEmptyStrings(normalizeJSON(stored.Definition)),
+		withoutEmptyStrings(normalizeJSON(artifact["definition"])), &diffs)
 	var outside []string
 	for _, path := range diffs {
 		if !slices.ContainsFunc(allowed, func(prefix string) bool {
@@ -564,6 +576,29 @@ func unchangedExcept(saved Saved, artifact map[string]any, allowed []string) str
 		}
 	}
 	return ""
+}
+
+// withoutEmptyStrings drops object members whose value is "". Views treat
+// them as absent: a binding's "field" of "" and an omitted field both select
+// the State root (docs/reference/dashboards.md).
+func withoutEmptyStrings(value any) any {
+	switch node := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(node))
+		for key, item := range node {
+			if item != "" {
+				out[key] = withoutEmptyStrings(item)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, len(node))
+		for index, item := range node {
+			out[index] = withoutEmptyStrings(item)
+		}
+		return out
+	}
+	return value
 }
 
 func diffPaths(path string, a, b any, out *[]string) {

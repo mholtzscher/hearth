@@ -211,6 +211,23 @@ func TestChecksPassAndFail(t *testing.T) {
 			"no trigger",
 		},
 		{
+			"unchanged except treats an empty field as absent",
+			Check{Kind: CheckViewUnchangedExcept, Dashboard: "draft", Changes: []string{"/title"}},
+			trialSpec{artifacts: []string{strings.Replace(edited, `"ent_temp"}`, `"ent_temp","field":""}`, 1)}},
+			trialSpec{artifacts: []string{strings.Replace(edited, `"ent_temp"}`, `"ent_temp","field":"x"}`, 1)}},
+			"/spec/elements/m/props/source/field",
+		},
+		{
+			"any of passes on either alternative",
+			Check{Kind: CheckAnyOf, AnyOf: []Check{
+				{Kind: CheckReplyMatches, Pattern: "(?i)garage"},
+				{Kind: CheckToolCalled, Tool: "present_view"},
+			}},
+			trialSpec{tools: []string{"present_view"}},
+			trialSpec{reply: "OK."},
+			"no alternative passed: reply does not match; present_view was not called",
+		},
+		{
 			"no automation draft",
 			Check{Kind: CheckNoAutomationDraft},
 			trialSpec{},

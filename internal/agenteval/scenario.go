@@ -106,6 +106,9 @@ const (
 	CheckAutomationDraft     CheckKind = "automation_draft"
 	CheckNoAutomationDraft   CheckKind = "no_automation_draft"
 	CheckAutomationReference CheckKind = "automation_reference"
+	// CheckAnyOf passes when at least one nested check passes, for requests
+	// with more than one good answer, such as a reply or a view.
+	CheckAnyOf CheckKind = "any_of"
 )
 
 // Check is a tagged union on Kind.
@@ -121,6 +124,7 @@ type Check struct {
 	Tool       string          `yaml:"tool"`
 	Automation *AutomationWant `yaml:"automation"`
 	Name       string          `yaml:"name"`
+	AnyOf      []Check         `yaml:"any_of"`
 
 	// Default marks a check added by the loader rather than the scenario.
 	Default bool `yaml:"-"`
@@ -136,6 +140,13 @@ func (check Check) Label() string {
 	}
 	if check.Tool != "" {
 		return fmt.Sprintf("%s %s", check.Kind, check.Tool)
+	}
+	if check.Kind == CheckAnyOf {
+		labels := make([]string, len(check.AnyOf))
+		for index, nested := range check.AnyOf {
+			labels[index] = nested.Label()
+		}
+		return fmt.Sprintf("%s(%s)", check.Kind, strings.Join(labels, " | "))
 	}
 	return string(check.Kind)
 }
@@ -432,6 +443,7 @@ func checkValidators() map[CheckKind]func(Check, map[string]bool) error {
 			}
 			return validateCommandWants("automation.commands", check.Automation.Commands)
 		},
+		CheckAnyOf: validateAnyOf,
 		CheckAutomationReference: func(check Check, _ map[string]bool) error {
 			if check.Name == "" {
 				return errors.New("name: seeded Automation name required")
@@ -439,6 +451,24 @@ func checkValidators() map[CheckKind]func(Check, map[string]bool) error {
 			return nil
 		},
 	}
+}
+
+// minAlternatives is the fewest checks an any_of needs to offer a choice.
+const minAlternatives = 2
+
+func validateAnyOf(check Check, dashboards map[string]bool) error {
+	if len(check.AnyOf) < minAlternatives {
+		return errors.New("any_of: at least two checks required")
+	}
+	for index, nested := range check.AnyOf {
+		if nested.Safety {
+			return fmt.Errorf("any_of[%d]: mark the any_of check as safety, not a nested one", index)
+		}
+		if err := nested.validate(dashboards); err != nil {
+			return fmt.Errorf("any_of[%d] (%s): %w", index, nested.Kind, err)
+		}
+	}
+	return nil
 }
 
 func validateCommandWants(field string, wants []CommandWant) error {

@@ -221,6 +221,12 @@ func TestScenarioLoadRejectsInvalidFiles(t *testing.T) {
 		func(s *Scenario) { s.Turns = append(s.Turns, Turn{Text: "y"}) }, // two turns, one reply step
 		func(s *Scenario) { s.Turns[0].SelectDashboard = "missing" },
 		func(s *Scenario) { s.Reference = []ScriptStep{{Call: "x", Arguments: "{not json"}} },
+		func(s *Scenario) { s.Checks = []Check{{Kind: CheckAnyOf, AnyOf: []Check{{Kind: CheckNoView}}}} },
+		func(s *Scenario) {
+			s.Checks = []Check{
+				{Kind: CheckAnyOf, AnyOf: []Check{{Kind: CheckNoView}, {Kind: CheckReplyMatches, Pattern: "("}}},
+			}
+		},
 	}
 	for index, mutate := range broken {
 		scenario := base

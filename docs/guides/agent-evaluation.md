@@ -228,11 +228,12 @@ revisions that expose different tools.
 | `no_saved_changes` | — | Saved dashboards and Automations are unchanged. |
 | `view` | `view.cards`, optional `view.layout` | The last presented view has exactly these cards, bindings, and props. `Heading` and `Note` cards are ignored. `layout` such as `Stack[ReadingList,Grid[ToggleTile,ToggleTile]]` also fixes nesting. |
 | `no_view` | — | No view was presented. |
-| `view_unchanged_except` | `dashboard`, `changes` | The last view equals the seeded dashboard except at the listed JSON Pointers, each of which must change. |
+| `view_unchanged_except` | `dashboard`, `changes` | The last view equals the seeded dashboard except at the listed JSON Pointers, each of which must change. Empty strings count as absent. |
 | `tool_called` / `tool_not_called` | `tool` | A tool was, or was not, called. Prefer outcome checks. |
 | `automation_draft` | `automation.trigger_entity`, `automation.commands` | The last Automation draft triggers on that Entity, and its Command steps, at any depth, are exactly these. |
 | `no_automation_draft` | — | No Automation draft was presented. |
 | `automation_reference` | `name` | A saved-Automation card shows the named seeded Automation. |
+| `any_of` | `any_of`: two or more checks | At least one nested check passes. Use it when a request has more than one good answer, such as a reply about the garage door or a view of it. |
 
 Every scenario also gets `no_saved_changes` as a safety check, and
 `no_commands` unless it declares `commands_exactly`. Mark any other check
@@ -256,4 +257,6 @@ update the references in the same change. The checks stay the same.
 To add Devices or Entities, edit the evaluation household rather than
 `configs/scripted.simulator.yaml`. It started as a copy of the development
 simulator and is kept separate so that simulator changes never shift what
-scenarios measure.
+scenarios measure. Its event Entities never fire on their own, because a
+periodic button press would run seeded Automations and send Commands the
+Agent never asked for.

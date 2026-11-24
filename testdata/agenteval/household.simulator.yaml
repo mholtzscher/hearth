@@ -244,8 +244,8 @@ adapters:
           - key: events
             name: Events
             type: hearth.enumevent/v1
+            # No periodic presses: see TestHouseholdEventsAreQuiet.
             support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
-            outputs: {interval: 30s, values: [single_press, double_press]}
       # Forecast periods start in 2099 so they stay upcoming; visual checks
       # generate a temporary config with periods near the current hour.
       - binding_key: simulated-forecast
