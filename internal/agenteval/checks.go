@@ -69,8 +69,19 @@ type facts struct {
 	automations []map[string]any
 	newCommands []map[string]any
 	toolCalls   []string
+	toolResults []toolResult
 	before      Snapshot
 	after       Snapshot
+}
+
+// toolResult is one tool message from the conversation history.
+type toolResult struct {
+	tool string
+	// view reports that the result presented a view.
+	view bool
+	// rejection is the failure code and first diagnostic code of a call the
+	// tool rejected, or empty.
+	rejection string
 }
 
 func extractFacts(record TrialRecord) (facts, error) {
@@ -97,27 +108,115 @@ func extractFacts(record TrialRecord) (facts, error) {
 			}
 		}
 	}
-	seen := map[string]bool{}
-	for _, raw := range record.Before.Commands {
-		var command map[string]any
-		if err := json.Unmarshal(raw, &command); err != nil {
-			return result, err
-		}
-		seen[fmt.Sprint(command["id"])] = true
+	newCommands, err := commandsSince(record.Before, record.After)
+	if err != nil {
+		return result, err
 	}
-	for _, raw := range record.After.Commands {
-		var command map[string]any
-		if err := json.Unmarshal(raw, &command); err != nil {
-			return result, err
-		}
-		if !seen[fmt.Sprint(command["id"])] {
-			result.newCommands = append(result.newCommands, command)
-		}
-	}
+	result.newCommands = newCommands
 	for _, request := range record.Requests {
 		result.toolCalls = append(result.toolCalls, request.ToolCalls...)
 	}
+	toolResults, err := historyToolResults(record.History)
+	if err != nil {
+		return result, fmt.Errorf("history: %w", err)
+	}
+	result.toolResults = toolResults
 	return result, nil
+}
+
+// commandsSince returns the Commands in after that before lacks.
+func commandsSince(before, after Snapshot) ([]map[string]any, error) {
+	seen := map[string]bool{}
+	for _, raw := range before.Commands {
+		var command map[string]any
+		if err := json.Unmarshal(raw, &command); err != nil {
+			return nil, err
+		}
+		seen[fmt.Sprint(command["id"])] = true
+	}
+	var added []map[string]any
+	for _, raw := range after.Commands {
+		var command map[string]any
+		if err := json.Unmarshal(raw, &command); err != nil {
+			return nil, err
+		}
+		if !seen[fmt.Sprint(command["id"])] {
+			added = append(added, command)
+		}
+	}
+	return added, nil
+}
+
+// historyToolResults reads the tool messages of a recorded conversation
+// history. A tool rejects a call by returning an object with a failure_code.
+func historyToolResults(raw json.RawMessage) ([]toolResult, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var history struct {
+		Messages []struct {
+			Role      string `json:"role"`
+			ToolName  string `json:"tool_name"`
+			Content   string `json:"content"`
+			Artifacts []struct {
+				Kind string `json:"kind"`
+			} `json:"artifacts"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &history); err != nil {
+		return nil, err
+	}
+	var results []toolResult
+	for _, message := range history.Messages {
+		if message.Role != "tool" {
+			continue
+		}
+		result := toolResult{tool: message.ToolName}
+		for _, artifact := range message.Artifacts {
+			result.view = result.view || artifact.Kind == "hearth.view"
+		}
+		var rejection struct {
+			Code        string `json:"failure_code"`
+			Diagnostics []struct {
+				Code string `json:"code"`
+			} `json:"diagnostics"`
+		}
+		// Content that is not a JSON object is an ordinary result.
+		if json.Unmarshal([]byte(message.Content), &rejection) == nil && rejection.Code != "" {
+			result.rejection = rejection.Code
+			if len(rejection.Diagnostics) > 0 && rejection.Diagnostics[0].Code != "" {
+				result.rejection += "/" + rejection.Diagnostics[0].Code
+			}
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+// noViewPresented is the failure reason of view checks when no view was presented.
+const noViewPresented = "no view was presented"
+
+// viewRejections fails a trial with no presented view, or whose view-presenting
+// tool rejected any call. Only that tool counts: other tools' results, such as
+// Automation run evidence, can carry a failure_code without a rejection.
+func viewRejections(results []toolResult) string {
+	viewTools := map[string]bool{}
+	for _, result := range results {
+		if result.view {
+			viewTools[result.tool] = true
+		}
+	}
+	if len(viewTools) == 0 {
+		return noViewPresented
+	}
+	var rejected []string
+	for _, result := range results {
+		if viewTools[result.tool] && result.rejection != "" {
+			rejected = append(rejected, result.rejection)
+		}
+	}
+	return failIf(len(rejected) > 0,
+		fmt.Sprintf("%d rejected view attempt(s): %s", len(rejected), strings.Join(rejected, ", ")))
 }
 
 // evaluators implement each check kind. Each returns "" on success, otherwise a short reason.
@@ -148,16 +247,19 @@ func evaluators() map[CheckKind]func(Check, facts, Inventory) string {
 		},
 		CheckView: func(check Check, f facts, inventory Inventory) string {
 			if len(f.views) == 0 {
-				return "no view was presented"
+				return noViewPresented
 			}
 			return matchView(*check.View, f.views[len(f.views)-1], inventory)
 		},
 		CheckNoView: func(_ Check, f facts, _ Inventory) string {
 			return failIf(len(f.views) > 0, fmt.Sprintf("%d view(s) presented", len(f.views)))
 		},
+		CheckViewWithoutRejections: func(_ Check, f facts, _ Inventory) string {
+			return viewRejections(f.toolResults)
+		},
 		CheckViewUnchangedExcept: func(check Check, f facts, inventory Inventory) string {
 			if len(f.views) == 0 {
-				return "no view was presented"
+				return noViewPresented
 			}
 			return unchangedExcept(inventory.Dashboards[check.Dashboard], f.views[len(f.views)-1], check.Changes)
 		},

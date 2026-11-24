@@ -109,6 +109,10 @@ const (
 	// CheckAnyOf passes when at least one nested check passes, for requests
 	// with more than one good answer, such as a reply or a view.
 	CheckAnyOf CheckKind = "any_of"
+	// CheckViewWithoutRejections passes when a view was presented and the
+	// tool that presented it rejected none of its calls, so a slow,
+	// retried presentation fails even when the final view is right.
+	CheckViewWithoutRejections CheckKind = "view_without_rejections"
 )
 
 // Check is a tagged union on Kind.
@@ -450,6 +454,7 @@ func checkValidators() map[CheckKind]func(Check, map[string]bool) error {
 			}
 			return nil
 		},
+		CheckViewWithoutRejections: noFields,
 	}
 }
 
