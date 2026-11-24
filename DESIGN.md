@@ -463,6 +463,7 @@ and the pending pulse breathes on a 1.6-second cycle.
 | Roll | A single changed digit rolls inside a fixed line, up for a rise and down for a fall; a change to more than one digit, or to the value's length, replaces the value at once | layout | None |
 | Ignite | A line spreads from its center to full width | layout | None |
 | Spread | A selected surface spreads from the press point, or from the center for a keyboard press; deselection fades | travel, state to deselect | Fade |
+| Shift | One surface slides from the selected option to the newly selected sibling; a first selection fades in where it lands, and clearing the selection fades it out | layout, state to appear, feedback to clear | Fade |
 | Give | A whole-card press target shrinks to 98.5% while pressed | feedback | None |
 | Refuse | A control shakes 3px sideways, one and a half times | layout | None |
 
@@ -594,6 +595,11 @@ Segments have 4px corners and a 32px minimum height by default, or 44px with
 `size="touch"`; long labels wrap and increase the height. A selected segment
 uses `violet-soft`, `violet-text`, and a 1px inset violet line. Disabled
 segments use 50% opacity.
+
+One surface marks the selected segment. Choosing another segment slides it
+there while the labels change color in place (Shift, see Motion). A control
+with no selected segment fades the surface in without sliding, and clearing the
+value fades it out where it was.
 
 ### Dialogs and popovers
 
