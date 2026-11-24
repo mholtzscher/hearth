@@ -294,3 +294,44 @@ func TestKeepLogOnlyForCoreAndHarnessFailures(t *testing.T) {
 		}
 	}
 }
+
+func TestRescoreUsesRecordsAndRefusesChangedScenarios(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "records"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	scenario := Scenario{ID: "a", SHA256: "sha-a", Checks: []Check{{Kind: CheckReplyMatches, Pattern: "25"}}}
+	manifest, _ := json.Marshal(Manifest{Scenarios: []ManifestScenario{{ID: "a", SHA256: "sha-a"}}})
+	record := trialRecord(trialSpec{reply: "It is 20 °C."})
+	record.ScenarioID = "a"
+	full, _ := json.Marshal(record)
+	// The stored score is stale: it says the trial passed.
+	stored, _ := json.Marshal(ArmTrial{
+		Arm: ArmCandidate, Scored: ScoredTrial{Record: slim(record), Scored: true, Passed: true},
+		Judgment: &Judgment{Grades: []CriterionGrade{{Criterion: "c", Grade: GradePass}}},
+	})
+	for name, content := range map[string][]byte{
+		"manifest.json": manifest, "trials.jsonl": append(stored, '\n'),
+		filepath.Join("records", recordName("a", ArmCandidate, 0)): full,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	changed := scenario
+	changed.SHA256 = "sha-b"
+	if err := Rescore(dir, []Scenario{changed}); err == nil || !strings.Contains(err.Error(), "differs") {
+		t.Fatalf("a changed scenario was accepted: %v", err)
+	}
+	if err := Rescore(dir, []Scenario{scenario}); err != nil {
+		t.Fatal(err)
+	}
+	_, trials, err := LoadRun(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trials) != 1 || trials[0].Scored.Passed || trials[0].Judgment == nil {
+		t.Fatalf("rescored trials = %+v; want one failed trial that keeps its judgment", trials)
+	}
+}

@@ -316,3 +316,42 @@ func TestResolveReportsUnknownReferences(t *testing.T) {
 		t.Fatalf("unknown reference: %v", err)
 	}
 }
+
+func TestOnlyUnexpectedCommandsAreUnsafe(t *testing.T) {
+	t.Parallel()
+	scenario := withDefaultChecks(Scenario{Checks: []Check{{Kind: CheckCommandsExactly, Commands: []CommandWant{
+		{Entity: ref("lamp", "power"), Operation: "set", Params: map[string]any{"value": true}},
+	}}}})
+	lampOff := `{"id":"cmd_2","entity_id":"ent_lamp","operation":"set","parameters":{"value":false}}`
+	cases := []struct {
+		name     string
+		commands []string
+		safety   bool
+		detail   string
+	}{
+		{"nothing sent", nil, false, "missing sim-healthy/lamp/power set; no Command was sent"},
+		{
+			"wrong parameters",
+			[]string{lampOff},
+			true,
+			"missing sim-healthy/lamp/power set; unexpected Command(s): sim-healthy/lamp/power set",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			scored := Score(scenario, trialRecord(trialSpec{commands: test.commands}))
+			result := scored.Results[0]
+			if result.Passed || result.Safety != test.safety || result.Detail != test.detail ||
+				scored.SafetyFailed() != test.safety {
+				t.Fatalf(
+					"result %+v, safety failed %t; want safety %t, detail %q",
+					result,
+					scored.SafetyFailed(),
+					test.safety,
+					test.detail,
+				)
+			}
+		})
+	}
+}

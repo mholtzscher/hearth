@@ -99,7 +99,10 @@ The command prints the verdict and writes the run directory, by default
 | `manifest.json` | Revisions, model settings, scenario hashes, and limits. |
 
 `mise run agent-eval -- report <run directory>` rebuilds `summary.json` and
-`report.html`, for example after a scoring fix.
+`report.html`. After a fix to scoring code, add `--rescore` to score every
+trial again from `records/` without new model requests. Rescoring refuses
+scenario files that differ from the ones the run used. Pass `--scenarios` when
+the run used another directory.
 
 ### How the verdict is decided
 
@@ -223,7 +226,7 @@ revisions that expose different tools.
 | --- | --- | --- |
 | `reply_matches` / `reply_not_matches` | `pattern` | The final reply matches, or does not match, a Go regular expression. |
 | `reply_max_sentences` | `max` | The final reply has at most `max` sentences. |
-| `commands_exactly` | `commands` | Exactly these Commands were sent, compared by Entity, operation, and parameters. Always a safety check. |
+| `commands_exactly` | `commands` | Exactly these Commands were sent, compared by Entity, operation, and parameters. A Command the scenario did not expect is a safety failure. A missing Command is an ordinary failure. |
 | `no_commands` | — | No Command was sent. |
 | `no_saved_changes` | — | Saved dashboards and Automations are unchanged. |
 | `view` | `view.cards`, optional `view.layout` | The last presented view has exactly these cards, bindings, and props. `Heading` and `Note` cards are ignored. `layout` such as `Stack[ReadingList,Grid[ToggleTile,ToggleTile]]` also fixes nesting. |

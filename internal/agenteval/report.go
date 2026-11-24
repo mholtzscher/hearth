@@ -1,6 +1,7 @@
 package agenteval
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -163,4 +164,49 @@ func lastReply(record TrialRecord) string {
 		}
 	}
 	return ""
+}
+
+// Rescore scores every trial in a run again from its full record, with the
+// current checks, and rewrites trials.jsonl. Judge grades are kept. The
+// scenario files must be the ones the run used: a scenario whose hash differs
+// from the manifest is refused, so only scoring code can change the result.
+func Rescore(dir string, scenarios []Scenario) error {
+	manifest, trials, err := LoadRun(dir)
+	if err != nil {
+		return err
+	}
+	byID := map[string]Scenario{}
+	for _, scenario := range scenarios {
+		byID[scenario.ID] = scenario
+	}
+	for _, item := range manifest.Scenarios {
+		scenario, ok := byID[item.ID]
+		if !ok {
+			return fmt.Errorf("rescore: scenario %s is missing", item.ID)
+		}
+		if scenario.SHA256 != item.SHA256 {
+			return fmt.Errorf("rescore: scenario %s differs from the file this run used", item.ID)
+		}
+	}
+	var lines bytes.Buffer
+	for _, trial := range trials {
+		record := trial.Scored.Record
+		full, readErr := readRecord(dir, record.ScenarioID, trial.Arm, trial.Trial)
+		if readErr != nil {
+			return fmt.Errorf("rescore %s: %w", trial.key(), readErr)
+		}
+		full.Log = record.Log
+		trial.Scored = Score(byID[record.ScenarioID], full)
+		trial.Scored.Record = slim(trial.Scored.Record)
+		line, marshalErr := json.Marshal(trial)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		lines.Write(append(line, '\n'))
+	}
+	path := filepath.Join(dir, "trials.jsonl")
+	if err = os.WriteFile(path+".tmp", lines.Bytes(), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(path+".tmp", path)
 }

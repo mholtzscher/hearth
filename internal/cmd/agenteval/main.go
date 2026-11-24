@@ -32,6 +32,7 @@ const (
 	refUsage                = "git ref, or worktree"
 	outFlag                 = "out"
 	minGapFlag              = "min-gap"
+	scenariosFlag           = "scenarios"
 )
 
 func main() {
@@ -66,11 +67,32 @@ func newCommand(stdout, stderr io.Writer) *cli.Command {
 			{
 				Name: "report", Usage: "rebuild summary.json and report.html from a run directory",
 				ArgsUsage: "DIR",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "rescore",
+						Usage: "score every trial again from records/ with the current checks",
+					},
+					&cli.StringFlag{
+						Name:  "scenarios",
+						Value: defaultScenarios,
+						Usage: "scenario files the run used, for --rescore",
+					},
+				},
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					if cmd.Args().Len() != 1 {
 						return errors.New("report needs one run directory")
 					}
-					return writeReport(cmd.Args().First(), stdout)
+					dir := cmd.Args().First()
+					if cmd.Bool("rescore") {
+						scenarios, err := agenteval.LoadScenarios(cmd.String(scenariosFlag))
+						if err != nil {
+							return err
+						}
+						if err = agenteval.Rescore(dir, scenarios); err != nil {
+							return err
+						}
+					}
+					return writeReport(dir, stdout)
 				},
 			},
 		},
@@ -119,7 +141,7 @@ func workerCommand() *cli.Command {
 
 func runFlags(compare bool) []cli.Flag {
 	flags := []cli.Flag{
-		&cli.StringFlag{Name: "scenarios", Value: defaultScenarios},
+		&cli.StringFlag{Name: scenariosFlag, Value: defaultScenarios},
 		&cli.StringFlag{Name: "household", Value: defaultHousehold},
 		&cli.StringSliceFlag{Name: "tags", Usage: "run only scenarios with these tags or IDs"},
 		&cli.IntFlag{Name: "trials", Value: defaultTrials},
@@ -222,7 +244,7 @@ func runOptions(cmd *cli.Command, compare bool, stderr io.Writer) (agenteval.Run
 		}
 	}
 	return agenteval.RunOptions{
-		Judge: judge, Repo: repo, Arms: arms, ScenarioDir: cmd.String("scenarios"), SimulatorConfig: household,
+		Judge: judge, Repo: repo, Arms: arms, ScenarioDir: cmd.String(scenariosFlag), SimulatorConfig: household,
 		Tags: cmd.StringSlice("tags"), Trials: cmd.Int("trials"),
 		TrialMaxRequests: cmd.Int("trial-max-requests"), RunMaxRequests: cmd.Int("max-requests"),
 		MinGap: cmd.Duration(minGapFlag), RateLimitPause: cmd.Duration("rate-limit-pause"),
@@ -260,7 +282,7 @@ func calibrateCommand(stdout io.Writer) *cli.Command {
 			&cli.StringFlag{Name: "judge-model", Required: true, Usage: "provider/model to calibrate"},
 			&cli.StringFlag{Name: "judge-base-url", Usage: "provider endpoint override for the judge"},
 			&cli.StringFlag{Name: "labels", Value: defaultLabels},
-			&cli.StringFlag{Name: "scenarios", Value: defaultScenarios},
+			&cli.StringFlag{Name: scenariosFlag, Value: defaultScenarios},
 			&cli.StringFlag{Name: outFlag, Usage: "also write the calibration as JSON"},
 			&cli.DurationFlag{Name: minGapFlag, Value: defaultMinGap, Usage: "minimum time between judge requests"},
 		},
@@ -273,7 +295,7 @@ func calibrateCommand(stdout io.Writer) *cli.Command {
 			if err != nil {
 				return err
 			}
-			scenarios, err := agenteval.LoadScenarios(cmd.String("scenarios"))
+			scenarios, err := agenteval.LoadScenarios(cmd.String(scenariosFlag))
 			if err != nil {
 				return err
 			}
