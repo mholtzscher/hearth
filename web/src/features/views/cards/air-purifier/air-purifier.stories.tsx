@@ -168,6 +168,7 @@ export const MotionRejectedTile: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
     const control = await canvas.findByRole("switch", { name: /power/iu });
     const tile = canvas.getByRole("article");
+    await canvas.findByText("Good");
     await watchHeight(tile, async () => {
       await userEvent.click(control);
       await expect(await canvas.findByText("Turning off…")).toBeVisible();
