@@ -28,7 +28,6 @@ const (
 	defaultRunMaxRequests   = 3000
 	defaultTrialMaxRequests = 15
 	defaultMinGap           = 0
-	defaultJudgeMinGap      = 15 * time.Second
 	defaultRateLimitPause   = 2 * time.Minute
 	refUsage                = "git ref, or worktree"
 	outFlag                 = "out"
@@ -285,11 +284,7 @@ func calibrateCommand(stdout io.Writer) *cli.Command {
 			&cli.StringFlag{Name: "labels", Value: defaultLabels},
 			&cli.StringFlag{Name: scenariosFlag, Value: defaultScenarios},
 			&cli.StringFlag{Name: outFlag, Usage: "also write the calibration as JSON"},
-			&cli.DurationFlag{
-				Name:  minGapFlag,
-				Value: defaultJudgeMinGap,
-				Usage: "minimum time between judge requests",
-			},
+			&cli.DurationFlag{Name: minGapFlag, Value: defaultMinGap, Usage: "minimum time between judge requests"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			settings, err := parseModel(cmd.String("judge-model"), "", cmd.String("judge-base-url"))
