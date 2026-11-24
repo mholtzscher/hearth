@@ -128,8 +128,9 @@ and object-literal args so the manifest can extract complete snippets. Set an
 explicit `title` for the catalog category, independent of the source folder:
 `Components/<Component>` for shared UI and compositions,
 `Components/Cards/<Component>` for cards, `Components/Controls/<Component>` for
-feature controls, and `Components/Editors/<Component>` for editors. Keep the
-story colocated with its source owner. Prefer
+feature controls, `Components/Editors/<Component>` for editors, `Pages/<Page>`
+for routed screens, and `Application/<Journey>` for application scenarios. Keep
+the story colocated with its source owner. Prefer
 direct component stories for discoverable props, with
 renderer/composition stories for catalog layouts. Add a play function when it
 proves async data arrival, a meaningful interaction, or a portal contract. A
@@ -169,6 +170,13 @@ Choose a direct component story for props, `Pages` for isolated screen reads,
 or `Application` for navigation and provider lifecycles. Stories and tests stay
 with their source owner; shared components do not import features.
 
+Write an `Application` story only when its assertions span what the assembled
+application connects: routes, the workspace provider, the conversation runtime,
+the unsaved-changes guard, or shell layout across widths. If one component with
+the preview's router and the fixture handlers reproduces every assertion, write
+a component or page story instead. A component that reads a provider, such as
+`ConversationHistory`, wraps it in a story decorator.
+
 Read the exported story before relying on its coverage. Editor fixtures hold
 local drafts: changing Controls resets them, while canvas edits do not update
 Controls. A mounted editor or visible control is not proof that its interaction
@@ -176,11 +184,18 @@ is tested. Page-read fixtures do not mock Rename or enablement PATCH requests;
 those actions fail as unhandled requests. Direct control stories can update
 synthetic observed State, but do not establish physical effects.
 
-For application scenarios, use [the exported stories](../../web/src/app.stories.tsx)
-and [application fixtures](../../web/.storybook/application-fixtures.ts).
-Set `parameters: { application: true }` to let the application supply its shell,
-providers, and isolated router instead of the shared wrapper. `appPath` selects
-the initial route; `applicationScenario` selects the fixture. Reset mutable
+Application scenarios live in [`src/app-stories/`](../../web/src/app-stories),
+one file per journey. Each file builds its meta from the members of
+`applicationMeta` in [the application harness](../../web/.storybook/application.tsx)
+and names them individually. Keep `title`, `component`, `tags`, and `render`
+literal in the file: Storybook's indexer and the manifest's snippet extractor
+read them statically and reject a spread of the shared object. Shared play
+helpers, such as `askTemperature` and `editTitle`, live in the same harness.
+Fixture data lives in [application fixtures](../../web/.storybook/application-fixtures.ts).
+`applicationMeta` sets `parameters: { application: true }` to let the
+application supply its shell, providers, and isolated router instead of the
+shared wrapper. `appPath` selects the initial route; `applicationScenario`
+selects the fixture. Reset mutable
 history and revisions between stories, and cancel open streams on unmount.
 Keep application stories fullscreen without inline Autodocs so live applications
 do not share mocked endpoints. Sending, saving, and Automation editing affect
@@ -230,8 +245,13 @@ mise run --skip-deps storybook-build
 ```
 
 Existing frontend tests run in the `unit` Vitest project with jsdom. Story tests
-run in the separate `storybook` project with Playwright Chromium, including play
-functions and axe checks. Accessibility violations fail by default. Fix in-scope
+run in Playwright Chromium, including play functions and axe checks, in two
+projects. `storybook` runs component and page story files in parallel browser
+workers. `storybook-application` runs the files in `src/app-stories/` one at a
+time, because each runs the whole application with streamed replies and
+animated layout. Under that load, `.storybook/preview.tsx` raises the `findBy*`
+and `waitFor` limit to 3 seconds; a fixture that streams on a timer still needs
+to finish well inside it. Accessibility violations fail by default. Fix in-scope
 defects; discuss unrelated accessibility debt rather than disabling rules or
 changing the global failure policy.
 

@@ -5,6 +5,7 @@ import { mswLoader } from "msw-storybook-addon/csf3";
 import { setupWorker } from "msw/browser";
 import type { ComponentProps } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { configure } from "storybook/test";
 import { create } from "storybook/theming";
 import type { ThemeVars } from "storybook/theming";
 
@@ -42,6 +43,11 @@ const hearthDocsTheme = (): ThemeVars => {
 const HearthDocsContainer = (props: ComponentProps<typeof DocsContainer>) => (
   <DocsContainer {...props} theme={hearthDocsTheme()} />
 );
+
+// Story files run in parallel browser workers. Under that load, a full
+// application can take longer than Testing Library's 1s default to settle
+// after a streamed reply.
+configure({ asyncUtilTimeout: 3000 });
 
 // Core requests that no handler answered during the current story.
 const unhandledCoreRequests: string[] = [];
