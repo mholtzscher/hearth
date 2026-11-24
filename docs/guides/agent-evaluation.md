@@ -266,3 +266,8 @@ simulator and is kept separate so that simulator changes never shift what
 scenarios measure. Its event Entities never fire on their own, because a
 periodic button press would run seeded Automations and send Commands the
 Agent never asked for.
+
+Keep Device names and splits close to a deployed household. They change which
+Devices the Agent reads, how much each model request carries, and how often
+it retries. The weather Devices copy a deployed Ecowitt station (Weather
+Station Gateway and Outdoor Weather Array) and Pirate Weather location (Home).

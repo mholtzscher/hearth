@@ -1,42 +1,63 @@
 id: dashboard-weather
 title: Weather cards bound to the station's matching sensors
-tags: [dashboard, create, weather]
+tags: [dashboard, create, weather, retries]
 
 turns:
   - text: >-
-      Build a weather dashboard from the Weather station showing current
+      Build a weather dashboard from my weather station showing current
       outdoor conditions, wind, and pressure.
 
+# The station is a gateway with the pressure sensors and an outdoor array.
+# Home's current conditions come from a forecast service, not the station.
 checks:
-  - kind: view
-    view:
-      cards:
-        - type: OutsideNow
-          bindings:
-            temperature: {device: weather-station, key: temperature}
-        - type: Wind
-          bindings:
-            speed: {device: weather-station, key: wind}
-        - type: Pressure
-          bindings:
-            source: {device: weather-station, key: pressure}
+  - kind: any_of
+    any_of:
+      - kind: view
+        view:
+          cards:
+            - type: OutsideNow
+              bindings:
+                temperature: {device: outdoor-weather-array, key: temperature}
+            - type: Wind
+              bindings:
+                speed: {device: outdoor-weather-array, key: wind}
+            - type: Pressure
+              bindings:
+                source: {device: weather-station-gateway, key: relative-pressure}
+      - kind: view
+        view:
+          cards:
+            - type: OutsideNow
+              bindings:
+                temperature: {device: outdoor-weather-array, key: temperature}
+            - type: Wind
+              bindings:
+                speed: {device: outdoor-weather-array, key: wind}
+            - type: Pressure
+              bindings:
+                source: {device: weather-station-gateway, key: absolute-pressure}
+  - kind: view_without_rejections
 
 judge:
   criteria:
-    - Optional weather slots, if bound, use the Weather station's own sensors with the matching meaning.
+    - Optional weather slots, if bound, use the weather station's own sensors with the matching meaning.
 
 max_requests: 12
 
 reference:
+  - call: list_devices
+    arguments: '{}'
   - call: list_entities
-    arguments: '{"device_id": "{{device:weather-station}}"}'
+    arguments: '{"device_id": "{{device:outdoor-weather-array}}"}'
+  - call: list_entities
+    arguments: '{"device_id": "{{device:weather-station-gateway}}"}'
   - call: tool_search
     arguments: '{"query": "select:compose_view"}'
   - call: compose_view
     arguments: |-
       {"mode": "create", "title": "Weather", "layout": {"type": "Stack", "gap": "medium", "children": [
-        {"type": "OutsideNow", "temperature": "{{entity:weather-station/temperature}}", "humidity": "{{entity:weather-station/humidity}}", "wind": "{{entity:weather-station/wind}}", "wind_direction": "{{entity:weather-station/wind-direction}}"},
+        {"type": "OutsideNow", "temperature": "{{entity:outdoor-weather-array/temperature}}", "humidity": "{{entity:outdoor-weather-array/humidity}}", "wind": "{{entity:outdoor-weather-array/wind}}", "wind_direction": "{{entity:outdoor-weather-array/wind-direction}}"},
         {"type": "Grid", "columns": 2, "children": [
-          {"type": "Wind", "speed": "{{entity:weather-station/wind}}", "gust": "{{entity:weather-station/gust}}", "direction": "{{entity:weather-station/wind-direction}}"},
-          {"type": "Pressure", "entity_id": "{{entity:weather-station/pressure}}"}]}]}}
+          {"type": "Wind", "speed": "{{entity:outdoor-weather-array/wind}}", "gust": "{{entity:outdoor-weather-array/gust}}", "direction": "{{entity:outdoor-weather-array/wind-direction}}"},
+          {"type": "Pressure", "entity_id": "{{entity:weather-station-gateway/relative-pressure}}"}]}]}}
   - reply: ""
