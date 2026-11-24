@@ -2,9 +2,9 @@ id: dashboard-edit-unsupported
 title: Send card removal to the dashboard editor
 tags: [dashboard, edit, policy]
 
-# Encodes the policy from PR #431: Agent edits to a selected draft are limited
-# to its title, forecast periods, and chart window. Revisions without that
-# policy may legitimately remove the card and fail this scenario.
+# Agent edits to a selected draft are limited to its title, forecast periods,
+# and chart window; other changes belong in the dashboard editor. Revisions
+# from before compose_view let the Agent remove cards and fail this scenario.
 
 setup:
   dashboards:

@@ -38,14 +38,10 @@ reference:
   - call: list_entities
     arguments: '{"device_id": "{{device:simulated-light}}"}'
   - call: tool_search
-    arguments: '{"query": "select:present_view"}'
-  - call: present_view
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
     arguments: |-
-      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Simulated light",
-        "spec": {"root": "grid", "elements": {
-          "grid": {"type": "Grid", "props": {"columns": 2}, "children": ["metric", "chart"]},
-          "metric": {"type": "Metric", "props": {"label": "Temperature", "source": {"kind": "entity-state",
-            "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1"}}},
-          "chart": {"type": "TimeSeries", "props": {"title": "Temperature", "series": [{"source": {"kind": "entity-series",
-            "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1", "window": "24h"}}]}}}}}}
+      {"mode": "create", "title": "Simulated light", "layout": {"type": "Grid", "columns": 2, "children": [
+        {"type": "Metric", "label": "Temperature", "source": {"entity_id": "{{entity:simulated-light/temperature}}"}},
+        {"type": "TimeSeries", "title": "Temperature", "window": "24h", "series": [{"entity_id": "{{entity:simulated-light/temperature}}"}]}]}}
   - reply: ""

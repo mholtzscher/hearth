@@ -27,11 +27,9 @@ reference:
   - call: list_entities
     arguments: '{"device_id": "{{device:kitchen-sensor}}"}'
   - call: tool_search
-    arguments: '{"query": "select:present_view"}'
-  - call: present_view
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
     arguments: |-
-      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Kitchen temperature",
-        "spec": {"root": "chart", "elements": {
-          "chart": {"type": "TimeSeries", "props": {"title": "Kitchen temperature", "series": [{"source": {"kind": "entity-series",
-            "entity_id": "{{entity:kitchen-sensor/temperature}}", "entity_type": "hearth.temperature/v1", "window": "24h"}}]}}}}}}
+      {"mode": "create", "title": "Kitchen temperature", "layout": {"type": "TimeSeries", "title": "Kitchen temperature", "window": "24h",
+        "series": [{"entity_id": "{{entity:kitchen-sensor/temperature}}"}]}}
   - reply: ""
