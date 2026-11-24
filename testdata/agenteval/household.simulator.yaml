@@ -697,6 +697,63 @@ adapters:
             support: {state: {minimum: 0, maximum: 120000, unit: lx}, operations: {}}
             initial: 0
             outputs: {interval: 15s, values: [0, 100, 10000, 100000, 10000]}
+          # The rest mirror an Ecowitt station's console and outdoor array, so
+          # binding everything for a weather view exceeds a view's 16 Entities.
+          - key: max-gust
+            name: Maximum daily gust
+            type: hearth.speed/v1
+            support: {state: {}, operations: {}}
+            initial: 6.5
+          - key: solar-radiation
+            name: Solar radiation
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000, unit: "W/m²", quantity_kind: solar_irradiance}, operations: {}}
+            initial: 180
+          - key: uv-index
+            name: UV index
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: index, quantity_kind: uv_index}, operations: {}}
+            initial: 2
+          - key: rain-rate
+            name: Rain rate
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000, unit: mm/h, quantity_kind: precipitation_rate}, operations: {}}
+            initial: 0
+          - key: event-rain
+            name: Event rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 0
+          - key: daily-rain
+            name: Daily rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 0
+          - key: weekly-rain
+            name: Weekly rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 1.8
+          - key: monthly-rain
+            name: Monthly rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 37.6
+          - key: yearly-rain
+            name: Yearly rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 1044.9
+          - key: indoor-temperature
+            name: Indoor temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 19500
+          - key: indoor-humidity
+            name: Indoor humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 34
 
       # Capability subsets keep simple lights distinct from the all-types fixture.
       # No power/brightness ticker: a set Command stays visible until the next set.

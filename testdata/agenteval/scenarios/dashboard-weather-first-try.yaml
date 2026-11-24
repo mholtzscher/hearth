@@ -1,0 +1,43 @@
+id: dashboard-weather-first-try
+title: A vague weather request presents its view without rejected attempts
+tags: [dashboard, create, weather, retries]
+
+# Each rejected view attempt makes the user wait for the model to write the
+# whole layout again. The station has more sensors than a view may bind, so
+# binding everything is itself a rejection.
+turns:
+  - text: show me the weather
+
+checks:
+  - kind: view_without_rejections
+
+judge:
+  criteria:
+    - The view shows current outdoor conditions, not only indoor readings or a forecast.
+
+max_requests: 12
+
+reference:
+  - call: list_devices
+    arguments: '{}'
+  - call: list_entities
+    arguments: '{"device_id": "{{device:weather-station}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
+    arguments: |-
+      {"mode": "create", "title": "Weather", "layout": {"type": "Stack", "gap": "medium", "children": [
+        {"type": "OutsideNow", "temperature": "{{entity:weather-station/temperature}}", "humidity": "{{entity:weather-station/humidity}}",
+          "wind": "{{entity:weather-station/wind}}", "wind_direction": "{{entity:weather-station/wind-direction}}",
+          "rain_rate": "{{entity:weather-station/rain-rate}}", "rain_today": "{{entity:weather-station/daily-rain}}"},
+        {"type": "Grid", "columns": 2, "children": [
+          {"type": "Wind", "speed": "{{entity:weather-station/wind}}", "gust": "{{entity:weather-station/gust}}",
+            "direction": "{{entity:weather-station/wind-direction}}", "max_gust": "{{entity:weather-station/max-gust}}"},
+          {"type": "Pressure", "entity_id": "{{entity:weather-station/pressure}}"}]},
+        {"type": "Rain", "rate": "{{entity:weather-station/rain-rate}}", "storm": "{{entity:weather-station/event-rain}}",
+          "totals": {"day": "{{entity:weather-station/daily-rain}}", "week": "{{entity:weather-station/weekly-rain}}",
+            "month": "{{entity:weather-station/monthly-rain}}", "year": "{{entity:weather-station/yearly-rain}}"}},
+        {"type": "ReadingList", "title": "Indoor", "rows": [
+          {"source": {"entity_id": "{{entity:weather-station/indoor-temperature}}"}},
+          {"source": {"entity_id": "{{entity:weather-station/indoor-humidity}}"}}]}]}}
+  - reply: ""
