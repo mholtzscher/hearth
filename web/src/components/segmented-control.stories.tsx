@@ -20,6 +20,30 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** The shared surface that marks the selected segment; it has no role or name. */
+const selectionOf = (button: HTMLElement) => {
+  const surface = button
+    .closest('[data-slot="segmented-control"]')
+    ?.querySelector<HTMLElement>('[data-slot="segment-selection"]');
+  if (!surface) {
+    throw new Error("The segmented control has no selection surface.");
+  }
+  return surface;
+};
+
+/** Waits for the selection surface to rest exactly on the button. */
+const expectSelectionOn = (button: HTMLElement) => {
+  const surface = selectionOf(button);
+  return waitFor(() => {
+    const segment = button.getBoundingClientRect();
+    const selection = surface.getBoundingClientRect();
+    expect(Math.abs(selection.left - segment.left)).toBeLessThan(0.5);
+    expect(Math.abs(selection.right - segment.right)).toBeLessThan(0.5);
+    expect(Math.abs(selection.top - segment.top)).toBeLessThan(0.5);
+    expect(Math.abs(selection.bottom - segment.bottom)).toBeLessThan(0.5);
+  });
+};
+
 const expectSelected = async (button: HTMLElement) => {
   const reference = button.ownerDocument.createElement("span");
   reference.style.backgroundColor =
@@ -27,12 +51,15 @@ const expectSelected = async (button: HTMLElement) => {
   button.ownerDocument.body.append(reference);
   const expectedBackground = getComputedStyle(reference).backgroundColor;
   reference.remove();
-  const style = getComputedStyle(button);
-  await expect(style.backgroundColor).toBe(expectedBackground);
-  await expect(style.color).toBe("rgb(196, 168, 255)");
-  await expect(style.boxShadow).toContain(
+  const surface = getComputedStyle(selectionOf(button));
+  await expect(surface.backgroundColor).toBe(expectedBackground);
+  await expect(surface.boxShadow).toContain(
     "rgb(167, 123, 255) 0px 0px 0px 1px inset"
   );
+  await waitFor(() =>
+    expect(getComputedStyle(button).color).toBe("rgb(196, 168, 255)")
+  );
+  await expectSelectionOn(button);
 };
 
 const ControlledControl = (args: ComponentProps<typeof SegmentedControl>) => {
@@ -220,10 +247,56 @@ export const Disabled: Story = {
     await expect(selected).toHaveAttribute("aria-pressed", "true");
     await expectSelected(selected);
     await expect(getComputedStyle(selected).opacity).toBe("0.5");
+    await expect(getComputedStyle(selectionOf(selected)).opacity).toBe("0.5");
     await expect(
       getComputedStyle(canvas.getByRole("button", { name: "Sleep" })).opacity
     ).toBe("0.5");
     await userEvent.click(buttons[1]);
     await expect(args.onValueChange).not.toHaveBeenCalled();
+  },
+};
+
+const MODES = [
+  { value: "off", label: "Off" },
+  { value: "heat", label: "Heat" },
+  { value: "cool", label: "Cool" },
+  { value: "auto", label: "Auto" },
+];
+
+/** The selection slides between segments and fades in where nothing was selected. */
+export const MotionSelectionShift: Story = {
+  name: "Motion · Selection shifts",
+  tags: ["motion"],
+  args: { label: "Thermostat mode", value: "", options: MODES, size: "touch" },
+  render: (args) => (
+    <div className="w-[340px]">
+      <ControlledControl {...args} />
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const off = canvas.getByRole("button", { name: "Off" });
+    const surface = selectionOf(off);
+    await expect(getComputedStyle(surface).opacity).toBe("0");
+    await Promise.all(
+      MODES.map(({ label }) =>
+        expect(canvas.getByRole("button", { name: label })).toHaveAttribute(
+          "aria-pressed",
+          "false"
+        )
+      )
+    );
+
+    await userEvent.click(canvas.getByRole("button", { name: "Heat" }));
+    await expect(getComputedStyle(surface).transitionProperty).toBe("opacity");
+    await expectSelected(canvas.getByRole("button", { name: "Heat" }));
+
+    await userEvent.click(canvas.getByRole("button", { name: "Auto" }));
+    const moving = getComputedStyle(surface);
+    await expect(moving.transitionProperty).toBe("translate, opacity");
+    await expect(moving.transitionDuration).toBe("0.24s");
+    await expectSelected(canvas.getByRole("button", { name: "Auto" }));
+    await expect(
+      getComputedStyle(canvas.getByRole("button", { name: "Heat" })).color
+    ).not.toBe("rgb(196, 168, 255)");
   },
 };

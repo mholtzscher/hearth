@@ -1,5 +1,6 @@
 import { Canvas, Meta } from "@storybook/addon-docs/blocks";
 
+import * as SegmentedControl from "../components/segmented-control.stories";
 import * as Metric from "../features/views/cards/metric/metric.stories";
 import * as ToggleTile from "../features/views/cards/toggle-tile/toggle-tile.stories";
 import * as Motion from "./motion.stories";
@@ -88,6 +89,12 @@ When an observed State turns the tile on, its tint spreads from the press point 
 
 <Canvas of={ToggleTile.MotionObservedSpread} sourceState="none" />
 
+### Shift
+
+One surface slides from the selected option to the newly selected sibling at `duration-layout`. A first selection fades in where it lands at `duration-state`, and clearing the selection fades it out at `duration-feedback`. Reduced motion: fade.
+
+<Canvas of={SegmentedControl.MotionSelectionShift} sourceState="none" />
+
 ### Give
 
 A whole-card press target shrinks to 98.5% while pressed, at `duration-feedback`. Reduced motion: none.
@@ -121,6 +128,7 @@ Each component and layout story that shows a pattern in place, by component or l
 - **Workspace drawers** (Slide): [Motion · Tablet Recent drawer](?path=/story/application-navigation--motion-tablet-drawer); [Motion · Phone navigation drawer](?path=/story/application-navigation--motion-phone-drawer).
 - **DataCard** (Ignite): [Motion · Afterglow](?path=/story/components-cards-datacard--motion-afterglow). The glow spreads only when the observation changes.
 - **Metric** (Roll): [Motion · Single-digit roll](?path=/story/components-cards-metric--motion-roll); [Motion · Multi-digit change](?path=/story/components-cards-metric--motion-atomic-value).
+- **SegmentedControl** (Shift): [Motion · Selection shifts](?path=/story/components-segmentedcontrol--motion-selection-shift). The selection fades in on the first choice, then slides to each later one.
 - **Tile layouts** (Give, Spread): ToggleTile [Motion · Press and observe](?path=/story/components-cards-toggletile--motion-observed-spread) and [Motion · Keyboard press](?path=/story/components-cards-toggletile--motion-keyboard-spread); Cover [Motion · Tile opens](?path=/story/components-cards-cover--motion-cover-tile); AirPurifier [Motion · Tile powers on](?path=/story/components-cards-airpurifier--motion-purifier-tile).
 - **Command status** (Pending, Fade): [Motion · Pending dot](?path=/story/components-controls-controlstatus--motion-pending) and [Motion · Rejection status](?path=/story/components-controls-controlstatus--rejected).
 - **Device light layout** (Fade): [Motion · Light failure status](?path=/story/components-cards-device--narrow-lamp-failure).
