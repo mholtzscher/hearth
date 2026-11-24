@@ -43,6 +43,7 @@ type reportTrial struct {
 	Reply    string          `json:"reply"`
 	History  json.RawMessage `json:"history,omitempty"`
 	Record   string          `json:"record"`
+	Log      string          `json:"log,omitempty"`
 	Judgment *Judgment       `json:"judgment,omitempty"`
 }
 
@@ -119,6 +120,7 @@ func reportItem(dir string, trial ArmTrial) (reportTrial, error) {
 		Error: record.Error, Scored: trial.Scored.Scored, Passed: trial.Scored.Passed, Results: trial.Scored.Results,
 		Record:   filepath.Join("records", recordName(record.ScenarioID, trial.Arm, trial.Trial)),
 		Judgment: trial.Judgment,
+		Log:      record.Log,
 	}
 	full, err := readRecord(dir, record.ScenarioID, trial.Arm, trial.Trial)
 	switch {

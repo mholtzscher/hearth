@@ -95,7 +95,7 @@ The command prints the verdict and writes the run directory, by default
 | `report.html` | Self-contained report that opens offline. |
 | `summary.json` | Verdict, per-scenario statistics, and cost. |
 | `trials.jsonl` | One scored trial per line. |
-| `records/` | Each trial's full record, including every model request's messages and offered tools. |
+| `records/` | Each trial's full record, including every model request's messages and offered tools. Trials that end `agent_error` or `harness_error` also keep their Core and simulator log. |
 | `manifest.json` | Revisions, model settings, scenario hashes, and limits. |
 
 `mise run agent-eval -- report <run directory>` rebuilds `summary.json` and
@@ -127,7 +127,7 @@ check results, request-by-request token use, final reply, and conversation.
 | Outcome | Scored | Meaning |
 | --- | --- | --- |
 | `completed` | Yes | Every turn finished, and the checks decide pass or fail. |
-| `agent_error` | Yes, as a failure | Core returned an error for a turn. |
+| `agent_error` | Yes, as a failure | Core returned an error for a turn, for example when the Agent used all 10 model calls a turn allows. |
 | `over_budget` | Yes, as a failure | The Agent hit the trial's request cap. |
 | `provider_error` | No | The model provider failed. Investigate if it recurs. |
 | `harness_error` | No | `agenteval` could not trust the trial, for example because a turn recorded no model request or a response reported no token usage. Investigate before trusting the run. |

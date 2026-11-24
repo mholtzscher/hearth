@@ -71,6 +71,9 @@ type TrialRecord struct {
 	After       Snapshot          `json:"after"`
 	StartedAt   time.Time         `json:"started_at"`
 	Seconds     float64           `json:"seconds"`
+	// Log is the run-relative path of the kept Core and simulator log, set by
+	// the driver for trials that ended agent_error or harness_error.
+	Log string `json:"log,omitempty"`
 }
 
 // RecordedTurn is one user message and Core's response.

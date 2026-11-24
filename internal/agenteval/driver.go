@@ -621,7 +621,30 @@ func runWorker(
 	if err = json.Unmarshal(raw, &record); err != nil {
 		return TrialRecord{}, fmt.Errorf("worker record: %w", err)
 	}
+	if record.Log, err = keepLog(record.Outcome, dir, options.Out, scenario.ID, arm.Name, trial); err != nil {
+		return TrialRecord{}, err
+	}
 	return record, nil
+}
+
+// keepLog copies the trial's Core and simulator log into records/ when Core
+// or the harness failed, so the failure can be diagnosed after the trial
+// directory is removed. Provider errors are skipped: Core may log the
+// provider's error text, which run output never includes.
+func keepLog(outcome TrialOutcome, dir, out, scenario, arm string, trial int) (string, error) {
+	if outcome != TrialAgentError && outcome != TrialHarnessError {
+		return "", nil
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "household.log"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	name := filepath.Join("records", strings.TrimSuffix(recordName(scenario, arm, trial), ".json")+".log")
+	// Scenario IDs are validated kebab-case and arm names are fixed.
+	return name, os.WriteFile(filepath.Join(out, name), raw, 0o600) //nolint:gosec // See above.
 }
 
 func scenarioPath(dir, id string) (string, error) {

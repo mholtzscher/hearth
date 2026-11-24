@@ -241,6 +241,7 @@ footer{color:var(--muted);font-size:.8rem;border-top:1px solid var(--line);margi
       panel.append(d);
     }
     panel.append(el("p", "kv", t.record));
+    if (t.log) panel.append(el("p", "kv", `Core and simulator log: ${t.log}`));
   }
 })();
 </script>

@@ -266,3 +266,31 @@ func TestReadTrialsKeepsLatestAttemptAndTruncatesPartialLine(t *testing.T) {
 		t.Fatal("the partial line was not truncated")
 	}
 }
+
+func TestKeepLogOnlyForCoreAndHarnessFailures(t *testing.T) {
+	t.Parallel()
+	trialDir, out := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(out, "records"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(trialDir, "household.log"), []byte("core failed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for outcome, kept := range map[TrialOutcome]bool{
+		TrialAgentError: true, TrialHarnessError: true,
+		TrialProviderError: false, TrialCompleted: false, TrialOverBudget: false,
+	} {
+		name, err := keepLog(outcome, trialDir, out, "s", string(outcome), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if kept != (name != "") {
+			t.Fatalf("%s: kept log %q", outcome, name)
+		}
+		if kept {
+			if raw, _ := os.ReadFile(filepath.Join(out, name)); string(raw) != "core failed\n" {
+				t.Fatalf("%s: log content %q", outcome, raw)
+			}
+		}
+	}
+}
