@@ -22,7 +22,11 @@ import type { ReadView } from "../views/catalog/compatibility";
 import { ViewEditor } from "../views/editor/view-editor";
 import { ViewRenderer } from "../views/renderer/view-renderer";
 import { AutomationCanvasBody } from "../workspace/automation-canvas";
-import { canvasInner, phoneSaveInset } from "../workspace/canvas-styles";
+import {
+  canvasInner,
+  canvasSubtitle,
+  phoneSaveInset,
+} from "../workspace/canvas-styles";
 import { CanvasHeader } from "./canvas-header";
 import type { Draft } from "./draft";
 import { useModalFocus } from "./use-modal-focus";
@@ -367,6 +371,10 @@ export const Canvas = ({
               onClose={onClose ? handleClose : undefined}
             />
             <CanvasInvalidNotice editorValid={workspace.editorValid} />
+            <p className={canvasSubtitle}>
+              Hearth can change the title, forecast periods, and chart window.
+              Use Edit for other changes.
+            </p>
             <CanvasEditor
               editor={editor}
               view={view}

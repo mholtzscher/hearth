@@ -18,6 +18,7 @@ import {
 import {
   catalogExamples,
   dashboardDefinition,
+  deviceId,
   entityId,
   fixtureNow,
 } from "./fixtures";
@@ -66,7 +67,12 @@ const secondView = {
   artifact_id: "view_story_followup",
   definition: { ...compactArtifact.definition, title: "Evening overview" },
 };
-type FixtureView = typeof compactArtifact;
+const revisedArtifact = {
+  ...artifact,
+  artifact_id: "view_story_revised",
+  definition: { ...dashboardDefinition, title: "Morning at home" },
+};
+type FixtureView = typeof artifact;
 
 const fixtureToolResult = (
   started: { call_id: string; name: string; arguments: string },
@@ -104,16 +110,19 @@ const fixtureTurnOutcome = (
   messages: AgentMessage[],
   prompt: { text: string; view_context?: AgentMessage["view_context"] },
   started: Parameters<typeof fixtureToolResult>[0] & { type: "tool.started" },
-  viewReady: boolean,
-  reusedViewCall: boolean
+  view: FixtureView | undefined,
+  reusedViewCall: boolean,
+  editing: boolean
 ) => {
   const next = messages.length + 1;
-  const reply = viewReady ? conversationReply : sentReply;
-  const first = fixtureToolResult(
-    started,
-    next + 1,
-    viewReady ? compactArtifact : undefined
-  );
+  let reply = sentReply;
+  if (view) {
+    reply = conversationReply;
+  }
+  if (editing) {
+    reply = "Updated the title.";
+  }
+  const first = fixtureToolResult(started, next + 1, view);
   const second = reusedViewCall
     ? fixtureToolResult(started, next + 3, secondView)
     : undefined;
@@ -191,8 +200,59 @@ const loadedMessages: AgentMessage[] = [
     calls: [
       {
         id: "read-home",
-        name: "present_view",
-        arguments: JSON.stringify({ title: dashboardDefinition.title }),
+        name: "compose_view",
+        arguments: JSON.stringify({
+          mode: "create",
+          title: dashboardDefinition.title,
+          layout: {
+            type: "Stack",
+            gap: "large",
+            children: [
+              { type: "Heading", text: "House at a glance" },
+              {
+                type: "Note",
+                text: "Synthetic readings. Controls affect only this story's household.",
+              },
+              {
+                type: "Grid",
+                columns: 3,
+                children: [
+                  {
+                    type: "OutsideNow",
+                    label: "Outside",
+                    temperature: entityId(101),
+                    humidity: entityId(102),
+                    wind: entityId(103),
+                    wind_direction: entityId(104),
+                    rain_rate: entityId(105),
+                    rain_today: entityId(106),
+                  },
+                  {
+                    type: "Metric",
+                    label: "Outdoor humidity",
+                    source: { entity_id: entityId(102) },
+                    trend: "24h",
+                    range: true,
+                  },
+                  {
+                    type: "Device",
+                    label: "Hallway lamp",
+                    device_id: deviceId(2),
+                  },
+                ],
+              },
+              {
+                type: "TimeSeries",
+                title: "Temperatures",
+                window: "24h",
+                series: [
+                  { label: "Outdoor", entity_id: entityId(101) },
+                  { label: "Bedroom", entity_id: entityId(114) },
+                ],
+              },
+            ],
+          },
+        }),
       },
     ],
   },
@@ -201,7 +261,7 @@ const loadedMessages: AgentMessage[] = [
     role: "tool",
     content: "View prepared from synthetic household readings.",
     tool_call_id: "read-home",
-    tool_name: "present_view",
+    tool_name: "compose_view",
     artifacts: [artifact],
     created_at: fixtureNow,
   },
@@ -222,6 +282,7 @@ export interface ApplicationScenario {
     | "view-ready"
     | "reused-view-call"
     | "tool-complete"
+    | "view-edit"
     | "fail-once"
     | "queue-collision";
   /** The queued collision stays pending until this story-local barrier releases a failed turn. */
@@ -232,6 +293,7 @@ export interface ApplicationScenario {
   conversations?: "searchable" | "empty" | "error";
   messages?:
     | "compact-view"
+    | "legacy-view"
     | "long"
     | "rich"
     | "automation-create"
@@ -266,6 +328,13 @@ export const conversationHistory = (
         )
       : loadedMessages;
   let history = structuredClone(initialMessages);
+  if (messages === "legacy-view" && history[1].calls?.[0] && history[2]) {
+    history[1].calls[0].name = "present_view";
+    history[1].calls[0].arguments = JSON.stringify({
+      definition: dashboardDefinition,
+    });
+    history[2].tool_name = "present_view";
+  }
   if (messages === "long") {
     history = Array.from({ length: 30 }, (_, index) => ({
       message_id: index + 1,
@@ -360,6 +429,72 @@ export const conversationHistory = (
   return history;
 };
 
+const startedTool = (turn: ApplicationScenario["turn"]) => {
+  let name = "get_entity";
+  let args = "{}";
+  if (
+    turn === "pending-view" ||
+    turn === "view-ready" ||
+    turn === "reused-view-call" ||
+    turn === "view-edit"
+  ) {
+    name = "compose_view";
+    args = JSON.stringify({
+      mode: "create",
+      title: compactArtifact.definition.title,
+      layout: {
+        type: "Stack",
+        gap: "small",
+        children: [
+          { type: "Heading", text: "House at a glance" },
+          {
+            type: "Grid",
+            columns: 2,
+            children: [
+              {
+                type: "Metric",
+                label: "Outdoor humidity",
+                source: { entity_id: entityId(102) },
+                trend: "24h",
+                range: true,
+              },
+              {
+                type: "Device",
+                label: "Hallway lamp",
+                device_id: deviceId(2),
+              },
+            ],
+          },
+        ],
+      },
+    });
+  }
+  if (turn === "queue-collision") {
+    args = JSON.stringify({ entity_id: entityId(4) });
+  }
+  if (turn === "view-edit") {
+    args = JSON.stringify({
+      mode: "edit",
+      changes: [{ op: "set_title", title: "Morning at home" }],
+    });
+  }
+  return {
+    type: "tool.started",
+    call_id: "read-temperature",
+    name,
+    arguments: args,
+  } as const satisfies TurnEvent;
+};
+
+const selectedFixtureView = (turn: ApplicationScenario["turn"]) => {
+  if (turn === "view-edit") {
+    return revisedArtifact;
+  }
+  if (turn === "view-ready" || turn === "reused-view-call") {
+    return compactArtifact;
+  }
+};
+
 /**
  * One synthetic turn: the events the stream sends first and, unless the turn
  * stays pending, the stored history and the events that complete it.
@@ -373,15 +508,7 @@ export const fixtureTurn = (
     turn === "pending" || turn === "pending-view" || turn === "queue-collision";
   const reusedViewCall = turn === "reused-view-call";
   const viewReady = turn === "view-ready" || reusedViewCall;
-  const toolStarted = {
-    type: "tool.started",
-    call_id: "read-temperature",
-    name: turn === "pending-view" || viewReady ? "present_view" : "get_entity",
-    arguments:
-      turn === "queue-collision"
-        ? JSON.stringify({ entity_id: entityId(4) })
-        : "{}",
-  } as const satisfies TurnEvent;
+  const toolStarted = startedTool(turn);
   const events: TurnEvent[] = [
     ...(turn === "queue-collision" ? [{ type: "turn.started" } as const] : []),
     toolStarted,
@@ -392,8 +519,9 @@ export const fixtureTurn = (
         history,
         prompt,
         toolStarted,
-        viewReady,
-        reusedViewCall
+        selectedFixtureView(turn),
+        reusedViewCall,
+        turn === "view-edit"
       );
   return { toolStarted, events, outcome, viewReady, reusedViewCall };
 };
@@ -529,6 +657,12 @@ export const createApplicationHandlers = (
             view_context: viewContextSchema.optional(),
           })
           .parse(await request.json());
+        if (scenario.turn === "view-edit" && !view_context?.definition) {
+          return HttpResponse.json(
+            { detail: "Expected the selected synthetic view" },
+            { status: 400 }
+          );
+        }
         if (scenario.turn === "fail-once") {
           attempts += 1;
           if (attempts === 1) {

@@ -103,7 +103,6 @@ func TestAgentBridgeDiscoversInspectsExecutesOnceAndReadsReceiptIdentity(t *test
 		&stubDevices{},
 		&stubFunctions{},
 		nil,
-		nil,
 		testDevicesPresenter(),
 	)
 	bridged, err := agent.MCPTools(ctx, server)

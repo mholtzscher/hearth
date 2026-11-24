@@ -16,7 +16,6 @@ import (
 	automationsmcp "github.com/mholtzscher/hearth/internal/modules/automations/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	dashboardshttp "github.com/mholtzscher/hearth/internal/modules/dashboards/httpapi"
-	dashboardsmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	deviceshttp "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
 	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
@@ -49,9 +48,8 @@ type OperationAdmissionChecker interface {
 }
 
 // newMCPServer builds the Core MCP catalog. Application assembly builds it
-// before the agent, so the agent bridges exactly the catalog the /mcp endpoint
-// serves and a catalog problem fails startup instead of serving a tool-less
-// agent. A nil logger routes MCP diagnostics to [slog.Default].
+// before the agent, which bridges these tools alongside its own native tools.
+// A nil logger routes MCP diagnostics to [slog.Default].
 func newMCPServer(
 	devices devicesmcp.Devices,
 	automations automationsmcp.Automations,
@@ -59,7 +57,6 @@ func newMCPServer(
 	adapters adaptersmcp.Adapters,
 	functions adaptersmcp.Functions,
 	logger *slog.Logger,
-	views dashboardsmcp.Presenter,
 	presenter *devices.Presenter,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
@@ -69,9 +66,6 @@ func newMCPServer(
 	automationsmcp.Register(mcpServer, automations)
 	notificationsmcp.Register(mcpServer, notifications)
 	adaptersmcp.Register(mcpServer, adapters, functions)
-	if views != nil {
-		dashboardsmcp.Register(mcpServer, views)
-	}
 	return mcpServer
 }
 

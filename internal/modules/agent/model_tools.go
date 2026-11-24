@@ -9,7 +9,7 @@ import (
 
 const functionToolType = "function"
 
-// Both provider protocols receive the complete MCP schema without normalizing
+// Both provider protocols receive the complete tool schema without normalizing
 // optional properties or changing the contract's validation vocabulary.
 func toolParameters(info *schema.ToolInfo) (map[string]any, error) {
 	parameters, err := info.ParamsOneOf.ToJSONSchema()

@@ -10,7 +10,7 @@ import (
 )
 
 // agentToolSearch keeps common inventory reads visible and makes the remaining
-// bridged MCP tools discoverable through Eino's client-side search.
+// tools discoverable through Eino's client-side search.
 func agentToolSearch(
 	ctx context.Context,
 	tools []tool.BaseTool,
@@ -22,6 +22,8 @@ func agentToolSearch(
 			return nil, nil, fmt.Errorf("agent tool search info: %w", err)
 		}
 		switch info.Name {
+		case legacyViewToolName:
+			continue
 		case "list_devices", "get_device", "list_entities", "get_entity":
 			static = append(static, candidate)
 		default:

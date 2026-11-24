@@ -33,7 +33,7 @@ func TestModeledMCPFailureCannotProjectArtifact(t *testing.T) {
 	}
 	server := mcpapi.New(mcpapi.Config{Name: "modeled-error", Version: "1"})
 	server.Raw().
-		AddTool(&mcp.Tool{Name: "present_view", InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		AddTool(&mcp.Tool{Name: composeViewToolName, InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}}}, nil
 		})
 	steps := 0
@@ -43,7 +43,7 @@ func TestModeledMCPFailureCannotProjectArtifact(t *testing.T) {
 			if steps == 1 {
 				return schema.AssistantMessage(
 					"",
-					[]schema.ToolCall{nativeTestCall("failed-id", "present_view", `{}`)},
+					[]schema.ToolCall{nativeTestCall("failed-id", composeViewToolName, `{}`)},
 				), nil
 			}
 			if messages[len(messages)-1].Content != string(raw) {

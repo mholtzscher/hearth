@@ -20,7 +20,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
-	dashboardmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
@@ -47,7 +46,6 @@ type goChatRequestFixture struct {
 func TestGoContinuationSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	mcpServer := newBridgeTestServer()
-	dashboardmcp.Register(mcpServer, dashboards.NewService(nil, nil, nil))
 	requests := make(chan goChatRequestFixture, 3)
 	sessions := make(chan string, 3)
 	var count atomic.Int32
@@ -79,7 +77,7 @@ func TestGoContinuationSurvivesRestart(t *testing.T) {
 		BaseURL:         peer.URL + "/v1",
 		Model:           DefaultGoModel,
 		ReasoningEffort: "max",
-	}}
+	}, ViewAuthoring: dashboards.NewService(nil, nil, nil)}
 	service, err := NewService(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +139,8 @@ func assertGoRequest(t *testing.T, request goChatRequestFixture) {
 			t.Error("MCP schema strictness changed")
 		}
 	}
-	if !found["skill"] || !found["tool_search"] || found["echo_text"] || found["present_view"] {
+	if !found["skill"] || !found["tool_search"] || found["echo_text"] || found[composeViewToolName] ||
+		found[legacyViewToolName] {
 		t.Fatalf("unexpected visible tools: %v", found)
 	}
 }

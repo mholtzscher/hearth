@@ -39,7 +39,8 @@ func storedMessageFromRow(row dbsqlc.ListMessagesRow) (StoredMessage, error) {
 		stored.ViewContext = retainedViewContext([]byte(row.MessageJson))
 		stored.AutomationContext = rawAutomationContext([]byte(row.MessageJson))
 	}
-	if message.Role == schema.Tool && message.ToolName == "present_view" &&
+	if message.Role == schema.Tool &&
+		(message.ToolName == composeViewToolName || message.ToolName == legacyViewToolName) &&
 		message.Extra[modeledToolFailureKey] != true {
 		if artifact, err := dashboards.ReadArtifact([]byte(message.Content)); err == nil {
 			stored.Artifacts = []Artifact{viewArtifact(artifact)}

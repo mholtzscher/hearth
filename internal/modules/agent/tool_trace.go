@@ -19,8 +19,8 @@ const failedToolOutcome = "error: agent tool call failed; effect outcome unknown
 
 const modeledToolFailureKey = "hearth_mcp_modeled_failure"
 
-// The MCP bridge records modeled failures without changing their model-visible
-// output. The status is scoped to this invocation and never exposed publicly.
+// Tools record modeled failures without changing their model-visible output.
+// The status is scoped to this invocation and never exposed publicly.
 type toolResultStatusKey struct{}
 type toolResultStatus struct{ modeledFailure bool }
 
@@ -121,7 +121,7 @@ func (trace *turnTrace) WrapInvokableToolCall(
 				Result: truncateEventResult(result),
 			},
 		)
-		if err == nil && !status.modeledFailure && call.Name == "present_view" {
+		if err == nil && !status.modeledFailure && call.Name == composeViewToolName {
 			if artifact, parseErr := dashboards.ParseArtifact([]byte(output)); parseErr == nil {
 				projected := viewArtifact(artifact)
 				trace.mu.Lock()

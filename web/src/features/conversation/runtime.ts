@@ -34,13 +34,13 @@ export interface ConversationItem {
   pendingArtifacts?: PendingArtifact[];
 }
 
+const isViewTool = (name: string) =>
+  name === "compose_view" || name === "present_view";
+
 const viewIdentity = (
   { id, name }: Pick<ToolCall, "id" | "name">,
   occurrence: number
-) =>
-  name === "present_view"
-    ? { presentationKey: `view:${id}:${occurrence}` }
-    : {};
+) => (isViewTool(name) ? { presentationKey: `view:${id}:${occurrence}` } : {});
 
 /** Project committed rows without assuming call IDs are unique outside a batch. */
 const historyBase = (row: AgentMessage): Base => {
@@ -197,7 +197,7 @@ export const pendingArtifactCalls = (
         call.result === undefined ||
         // A successful tool result precedes the committed view event. Keep the
         // placeholder across that gap, including when the result was truncated.
-        (call.name === "present_view" &&
+        (isViewTool(call.name) &&
           /"kind"\s*:\s*"hearth\.view"/u.test(call.result))
     ),
   ];

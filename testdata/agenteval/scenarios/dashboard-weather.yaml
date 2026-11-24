@@ -31,22 +31,12 @@ reference:
   - call: list_entities
     arguments: '{"device_id": "{{device:weather-station}}"}'
   - call: tool_search
-    arguments: '{"query": "select:present_view"}'
-  - call: present_view
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
     arguments: |-
-      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Weather",
-        "spec": {"root": "stack", "elements": {
-          "stack": {"type": "Stack", "props": {"gap": "medium"}, "children": ["outside", "row"]},
-          "outside": {"type": "OutsideNow", "props": {
-            "temperature": {"kind": "entity-state", "entity_id": "{{entity:weather-station/temperature}}", "entity_type": "hearth.temperature/v1"},
-            "humidity": {"kind": "entity-state", "entity_id": "{{entity:weather-station/humidity}}", "entity_type": "hearth.relativehumidity/v1"},
-            "wind": {"kind": "entity-state", "entity_id": "{{entity:weather-station/wind}}", "entity_type": "hearth.speed/v1"},
-            "wind_direction": {"kind": "entity-state", "entity_id": "{{entity:weather-station/wind-direction}}", "entity_type": "hearth.numericsensor/v1"}}},
-          "row": {"type": "Grid", "props": {"columns": 2}, "children": ["wind", "pressure"]},
-          "wind": {"type": "Wind", "props": {
-            "speed": {"kind": "entity-state", "entity_id": "{{entity:weather-station/wind}}", "entity_type": "hearth.speed/v1"},
-            "gust": {"kind": "entity-state", "entity_id": "{{entity:weather-station/gust}}", "entity_type": "hearth.speed/v1"},
-            "direction": {"kind": "entity-state", "entity_id": "{{entity:weather-station/wind-direction}}", "entity_type": "hearth.numericsensor/v1"}}},
-          "pressure": {"type": "Pressure", "props": {"source": {"kind": "entity-state",
-            "entity_id": "{{entity:weather-station/pressure}}", "entity_type": "hearth.pressure/v1", "field": ""}}}}}}}
+      {"mode": "create", "title": "Weather", "layout": {"type": "Stack", "gap": "medium", "children": [
+        {"type": "OutsideNow", "temperature": "{{entity:weather-station/temperature}}", "humidity": "{{entity:weather-station/humidity}}", "wind": "{{entity:weather-station/wind}}", "wind_direction": "{{entity:weather-station/wind-direction}}"},
+        {"type": "Grid", "columns": 2, "children": [
+          {"type": "Wind", "speed": "{{entity:weather-station/wind}}", "gust": "{{entity:weather-station/gust}}", "direction": "{{entity:weather-station/wind-direction}}"},
+          {"type": "Pressure", "entity_id": "{{entity:weather-station/pressure}}"}]}]}}
   - reply: ""

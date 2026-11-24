@@ -34,10 +34,10 @@ The primary browser workflow is conversation, generated live view, customization
 
 ## Capabilities and Constraints
 
-- Home provides the conversation workspace and live canvas. Generated views and manual edits remain drafts until explicitly saved.
+- Home provides the conversation workspace and live canvas. Generated views and manual edits remain drafts until explicitly saved. Hearth can change a selected draft's title, forecast periods, and chart window; other changes use the browser editor.
 - Saved dashboards retain resource references, not captured readings. Rendering, refreshing, or saving a dashboard must not execute device Commands; only a household member's gesture on a control sends one.
 - View cards show readings, trends, ranges, and charts, and some cards offer controls. Controls derive from Entity support. An Entity type without a card control is a current limitation, not a product non-goal. The [card catalog](../reference/dashboards.md) lists which cards control which Entity types.
-- Core exposes HTTP and MCP interfaces for inspection and supported actions. The household agent uses the same MCP catalog rather than a separate control mechanism.
+- Core exposes HTTP and MCP interfaces for inspection and supported actions. The household Agent uses the shared MCP catalog for those actions and a native tool for dashboard authoring.
 - Automations support Triggers, Conditions, and ordered Steps, with retained execution history. Commands distinguish admission, dispatch, and observed satisfaction; acceptance alone does not establish a physical outcome.
 - The current HTTP API has no authentication. Deployment remains limited to loopback or a trusted private network; public exposure is unsupported.
 - Canonical terminology comes from the [glossary](../../GLOSSARY.md). In particular, State, Entity availability, Adapter health, and Command outcome are distinct facts.

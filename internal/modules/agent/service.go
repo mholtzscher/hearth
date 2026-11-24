@@ -66,6 +66,9 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"Remote lockout is not a physical door bolt; do not infer a lock's meaning from its name alone. " +
 	"For ratgdo, Lock remotes is remote lockout, and firmware may report lockout changes optimistically: " +
 	"satisfied means firmware reported the requested State, not independently verified remote enforcement. " +
+	"Discover compose_view to present a dashboard. Use create with a nested layout and discovered sources; Hearth constructs the view. " +
+	"With a draft selected in the current user message, use edit only for title, forecast period counts, or a TimeSeries window. " +
+	"Use the exact card key in the selected draft. For other changes, direct the user to the dashboard editor; do not replace the draft. " +
 	"Use bound cards " +
 	"for readings, not fabricated readings in text. Metric shows numeric fields, with optional trend " +
 	"and range (only when the field declares bounds). TimeSeries shows numeric history. State shows " +
@@ -81,7 +84,7 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"All ToggleTile numeric sources must belong to the power Entity's Device; do not guess a source by name or list order. " +
 	"ToggleList groups 1–12 distinct hearth.power/v1 Entities with Device-name row labels; all_off:true offers native Turn all off. " +
 	"Use a Grid of ToggleTiles for quick switches, with up to 4 columns. Ordinary toggle tiles have no sparkline. " +
-	"For a Device of kind air-purifier, use AirPurifier. Bind power and a PM2.5 numeric sensor in µg/m³; bind mode, " +
+	"For a Device of kind air-purifier, use AirPurifier. Bind its power Entity as entity_id and its PM2.5 sensor in µg/m³ as pm25; bind fan_mode, " +
 	"fan_level, display, child_lock, and filter_life when the Device has a matching Entity. Identify Display and Child " +
 	"lock by their Entity names; never guess. Omit a role you cannot identify. Use layout card on its own or in a " +
 	"dashboard, and layout tile in a Grid of quick switches. Every bound Entity must belong to the power Entity's Device. " +
@@ -102,7 +105,8 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"Pressure binds a hearth.pressure/v1 Entity and states its three-hour tendency. Slots taking hearth.numericsensor/v1 require " +
 	"its discovered unit: mm/h for a rain rate, mm for rain totals, deg for wind direction. Every rain counter is in mm, so " +
 	"also match each storm, day, week, month, or year slot to the sensor named for that period, such as Daily Rain for day; " +
-	"leave an optional slot out rather than guess. " +
+	"ask which source to use if a requested binding is ambiguous, including relative versus absolute pressure. " +
+	"Leave an optional slot out rather than guess, but never drop a requested card or source to make a call succeed. " +
 	"Forecast binds one hourly or daily forecast Entity; hourly periods is 6–48 (default 24) and daily 3–8 (default 8). It shows modeled forecasts, not station readings. " +
 	"Controls derive from live Entity support and send Commands only on an explicit browser gesture. " +
 	"Presenting, rendering, refreshing, editing, or saving a view never executes Commands. Presenting a view creates a draft; " +
@@ -215,6 +219,7 @@ func validateMessageText(text string) error {
 type Config struct {
 	DB            *sql.DB
 	Tools         []tool.BaseTool
+	ViewAuthoring ViewAuthoring
 	Model         ModelConfig
 	ChatModel     model.ToolCallingChatModel
 	MaxIterations int
@@ -237,6 +242,7 @@ type Service struct {
 	chatModel     model.ToolCallingChatModel
 	provider      Provider
 	tools         []tool.BaseTool
+	viewAuthoring *composeViewContract
 	skills        embeddedSkills
 	maxIterations int
 	retention     time.Duration
@@ -272,7 +278,7 @@ func NewService(_ context.Context, config Config) (*Service, error) {
 	switch {
 	case config.DB == nil:
 		return nil, errors.New("agent database is required")
-	case len(config.Tools) == 0:
+	case len(config.Tools) == 0 && config.ViewAuthoring == nil:
 		return nil, errors.New("agent tools are required")
 	case config.MaxIterations < 0:
 		return nil, errors.New("agent max_iterations must not be negative")
@@ -284,6 +290,14 @@ func NewService(_ context.Context, config Config) (*Service, error) {
 	skills, skillErr := newEmbeddedSkills()
 	if skillErr != nil {
 		return nil, fmt.Errorf("agent skills: %w", skillErr)
+	}
+	var authoring *composeViewContract
+	if config.ViewAuthoring != nil {
+		var err error
+		authoring, err = newComposeViewContract(config.ViewAuthoring)
+		if err != nil {
+			return nil, fmt.Errorf("agent compose_view contract: %w", err)
+		}
 	}
 	chatModel := config.ChatModel
 	if chatModel == nil {
@@ -303,6 +317,7 @@ func NewService(_ context.Context, config Config) (*Service, error) {
 		chatModel:     chatModel,
 		provider:      config.Model.Provider.Effective(),
 		tools:         config.Tools,
+		viewAuthoring: authoring,
 		skills:        skills,
 		maxIterations: maxIterations,
 		retention:     config.Retention,
@@ -604,7 +619,7 @@ func (service *Service) SendMessageWithEvents(
 		return fail(turnStageHistory, err)
 	}
 	trace := &turnTrace{service: service, conversationID: conversationID, emit: emit}
-	agentRunner, err := service.newAgentRunner(turnCtx, trace)
+	agentRunner, err := service.newAgentRunner(turnCtx, trace, messageInput.ViewContext)
 	if err != nil {
 		return fail(turnStageRunner, err)
 	}

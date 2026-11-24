@@ -32,18 +32,13 @@ reference:
   - call: list_entities
     arguments: '{"device_id": "{{device:office-sensor}}"}'
   - call: tool_search
-    arguments: '{"query": "select:present_view"}'
-  - call: present_view
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
     arguments: |-
-      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Office",
-        "spec": {"root": "stack", "elements": {
-          "stack": {"type": "Stack", "props": {"gap": "medium"}, "children": ["readings", "switches"]},
-          "readings": {"type": "ReadingList", "props": {"title": "Office", "rows": [
-            {"source": {"kind": "entity-state", "entity_id": "{{entity:office-sensor/temperature}}", "entity_type": "hearth.temperature/v1"}},
-            {"source": {"kind": "entity-state", "entity_id": "{{entity:office-sensor/humidity}}", "entity_type": "hearth.relativehumidity/v1"}}]}},
-          "switches": {"type": "Grid", "props": {"columns": 2}, "children": ["kitchen", "office"]},
-          "kitchen": {"type": "ToggleTile", "props": {"label": "Kitchen metered plug", "source": {"kind": "entity-state",
-            "entity_id": "{{entity:kitchen-metered-plug/power}}", "entity_type": "hearth.power/v1"}}},
-          "office": {"type": "ToggleTile", "props": {"label": "Office metered plug", "source": {"kind": "entity-state",
-            "entity_id": "{{entity:office-metered-plug/power}}", "entity_type": "hearth.power/v1"}}}}}}}
+      {"mode": "create", "title": "Office", "layout": {"type": "Stack", "gap": "medium", "children": [
+        {"type": "ReadingList", "title": "Office", "rows": [
+          {"source": {"entity_id": "{{entity:office-sensor/temperature}}"}}, {"source": {"entity_id": "{{entity:office-sensor/humidity}}"}}]},
+        {"type": "Grid", "columns": 2, "children": [
+          {"type": "ToggleTile", "label": "Kitchen metered plug", "entity_id": "{{entity:kitchen-metered-plug/power}}"},
+          {"type": "ToggleTile", "label": "Office metered plug", "entity_id": "{{entity:office-metered-plug/power}}"}]}]}}
   - reply: ""

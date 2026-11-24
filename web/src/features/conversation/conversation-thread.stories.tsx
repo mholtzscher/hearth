@@ -126,7 +126,7 @@ export const LoadedConversation: Story = {
   play: async ({ args, canvas, userEvent }) => {
     await expect(await canvas.findByText(conversationReply)).toBeVisible();
     await userEvent.click(canvas.getByText("Used 1 tool", { exact: true }));
-    await expect(canvas.getByText("present_view · complete")).toBeVisible();
+    await expect(canvas.getByText("compose_view · complete")).toBeVisible();
     const open = canvas.getByRole("button", { name: "Open in canvas" });
     await expect(open).toBeVisible();
     await expect(
@@ -137,6 +137,18 @@ export const LoadedConversation: Story = {
     ).toHaveAttribute("aria-checked", "true");
     await userEvent.click(open);
     await expect(args.display.select).toHaveBeenCalledOnce();
+  },
+};
+
+export const LegacyViewConversation: Story = {
+  parameters: { conversation: { history: conversationHistory("legacy-view") } },
+  play: async ({ canvas, userEvent }) => {
+    await expect(await canvas.findByText(conversationReply)).toBeVisible();
+    await userEvent.click(canvas.getByText("Used 1 tool", { exact: true }));
+    await expect(canvas.getByText("present_view · complete")).toBeVisible();
+    await expect(
+      canvas.getByRole("button", { name: "Open in canvas" })
+    ).toBeVisible();
   },
 };
 

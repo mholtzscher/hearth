@@ -54,7 +54,7 @@ func (err *runStageError) Error() string {
 func (err *runStageError) Unwrap() error { return err.err }
 
 // startAgentService builds the required household agent from the already-built
-// MCP catalog: its tools are that catalog, dialed over an in-memory transport.
+// MCP catalog, dialed over an in-memory transport, and native view authoring.
 // It registers nothing; newHTTPHandler owns every route. A missing secret, a
 // catalog problem, or an unusable model configuration fails startup loudly
 // instead of serving a tool-less or credential-less agent.
@@ -62,6 +62,7 @@ func startAgentService(
 	ctx context.Context,
 	config Config,
 	mcpServer *mcpapi.Server,
+	viewAuthoring agent.ViewAuthoring,
 	database *sql.DB,
 	logger *slog.Logger,
 ) (*agent.Service, error) {
@@ -74,8 +75,9 @@ func startAgentService(
 		return nil, err
 	}
 	return agent.NewService(ctx, agent.Config{
-		DB:    database,
-		Tools: agentTools,
+		DB:            database,
+		Tools:         agentTools,
+		ViewAuthoring: viewAuthoring,
 		Model: agent.ModelConfig{
 			Provider:        config.Agent.Provider.Effective(),
 			APIKey:          apiKey,
@@ -356,8 +358,8 @@ func runWithOptions(
 	dependencyContext, cancelDependencies := context.WithCancel(context.WithoutCancel(ctx))
 	shutdown.cancelDependencies = cancelDependencies
 	// Build the MCP catalog first, then the required agent from it, then HTTP:
-	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
-	// contributes a retention task to the shared worker started below.
+	// the agent bridges the shared catalog and takes private view authoring
+	// directly from Dashboards.
 	dashboardService := dashboards.NewService(dashboardssqlite.NewRepository(database), service, service)
 	mcpServer := newMCPServer(
 		service,
@@ -366,11 +368,10 @@ func runWithOptions(
 		adapterService,
 		functionService,
 		coreLogger,
-		dashboardService,
 		newDevicesPresenter(householdSettings),
 	)
 	agentService, agentErr := startAgentService(
-		dependencyContext, config, mcpServer, database, agentLogger,
+		dependencyContext, config, mcpServer, dashboardService, database, agentLogger,
 	)
 	if agentErr != nil {
 		return mapStartupCancellation(ctx, failStage("start_agent", agentErr))

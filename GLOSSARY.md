@@ -5,9 +5,8 @@ Assistant while remaining compatible with specialist protocol services.
 
 ## Language
 
-**View artifact**: An immutable, validated interface definition returned by
-`present_view` and retained in a committed agent tool result. It is not a saved
-dashboard.
+**View artifact**: An immutable, validated interface definition retained in a
+committed agent tool result. It is not a saved dashboard.
 
 **Dashboard draft**: The browser's working view definition. Manual edits and
 generated revisions remain drafts until explicitly saved.

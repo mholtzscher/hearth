@@ -46,14 +46,13 @@ household Commands.
 
 ## Drafts and saves
 
-`present_view` returns an immutable `hearth.view` artifact. Its successful agent
-tool-result commit retains it in conversation history. Presentation alone never
-saves a dashboard, including when an external MCP client calls the tool.
-A rejected definition returns `invalid_definition` with a message naming the
-violated rule, such as the reference budget or one chart's shared type, field,
-and window, so the author can correct it. Schema violations share one fixed
-reason because schema diagnostics can quote submitted values; the dashboards
-HTTP API keeps its fixed `invalid dashboard input` detail.
+The Agent's native `compose_view` tool returns an immutable `hearth.view`
+artifact. Its successful tool-result commit retains it in conversation history.
+History also retains artifacts from legacy `present_view` calls. Neither tool is
+available through external MCP. Presentation never saves a dashboard. Invalid
+compositions or edits return `invalid_definition`; invalid argument shapes return
+`invalid_arguments` with safe diagnostics. The dashboards HTTP API keeps its
+fixed `invalid dashboard input` detail.
 
 Manual edits and agent revisions change a browser draft. **Save dashboard**
 creates an independent record; **Save changes** replaces the selected saved base
@@ -65,6 +64,11 @@ The selected draft accompanies customization as user context. The browser owns
 the base dashboard ID/revision; model output cannot redirect a save. Unsaved
 manual edits are session state. Original generated artifacts remain recoverable
 while their conversation is retained.
+
+With a selected draft, Hearth can change its title, a Forecast card's period
+count, or a TimeSeries chart's window. Other changes use **Edit**. To create a
+separate view, send a turn without the selected draft. A rejected edit leaves
+the draft unchanged.
 
 ## Live readings and history
 

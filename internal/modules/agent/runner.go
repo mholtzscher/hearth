@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/middlewares/patchtoolcalls"
@@ -35,7 +36,7 @@ func consumeRunner(iterator *adk.AsyncIterator[*adk.AgentEvent]) error {
 
 // newAgentRunner gives ADK the loop, instruction composition, native call IDs,
 // and input repair. Hearth's hooks own durable evidence and public turn events.
-func (service *Service) newAgentRunner(ctx context.Context, trace *turnTrace) (*adk.Runner, error) {
+func (service *Service) newAgentRunner(ctx context.Context, trace *turnTrace, draft *ViewContext) (*adk.Runner, error) {
 	skills, err := skill.NewMiddleware(ctx, &skill.Config{
 		Backend: service.skills,
 		CustomSystemPrompt: func(_ context.Context, toolName string) string {
@@ -58,7 +59,11 @@ func (service *Service) newAgentRunner(ctx context.Context, trace *turnTrace) (*
 	if err != nil {
 		return nil, err
 	}
-	staticTools, search, err := agentToolSearch(ctx, service.tools)
+	tools := service.tools
+	if service.viewAuthoring != nil {
+		tools = append(slices.Clone(tools), composeViewTool{composeViewContract: service.viewAuthoring, draft: draft})
+	}
+	staticTools, search, err := agentToolSearch(ctx, tools)
 	if err != nil {
 		return nil, err
 	}

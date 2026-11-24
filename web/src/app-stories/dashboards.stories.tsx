@@ -34,8 +34,43 @@ export const SavedDashboard: ApplicationStory = {
       await view.findByRole("heading", { name: "Morning overview" })
     ).toBeVisible();
     await expect(
+      view.getByText(/Hearth can change the title, forecast periods/u)
+    ).toBeVisible();
+    await expect(
       view.getByRole("button", { name: "Save changes" })
     ).toBeDisabled();
+    await expect(await view.findByRole("switch")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+  },
+};
+
+export const SelectedViewRevision: ApplicationStory = {
+  parameters: {
+    appPath: dashboardPath,
+    applicationScenario: { turn: "view-edit" },
+  },
+  play: async (context) => {
+    const { canvas, userEvent } = context;
+    await canvas.findByRole("heading", { name: "Morning overview" });
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Ask Hearth to change" })
+    );
+    await expect(
+      canvas.getByRole("group", { name: "Selected view" })
+    ).toBeVisible();
+    const prompt = canvas.getByRole("textbox", { name: "Ask Hearth" });
+    await userEvent.click(prompt);
+    await userEvent.paste("Rename this view to Morning at home.");
+    await userEvent.click(canvas.getByRole("button", { name: "Send message" }));
+    const view = within(canvas.getByRole("region", { name: "View canvas" }));
+    await expect(
+      await view.findByRole("heading", { name: "Morning at home" })
+    ).toBeVisible();
+    await expect(
+      view.getByRole("button", { name: "Save changes" })
+    ).toBeEnabled();
     await expect(await view.findByRole("switch")).toHaveAttribute(
       "aria-checked",
       "true"

@@ -35,16 +35,9 @@ max_requests: 10
 
 reference:
   - call: tool_search
-    arguments: '{"query": "select:present_view"}'
-  - call: present_view
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
     arguments: |-
-      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Light climate",
-        "spec": {"root": "root", "elements": {
-          "root": {"type": "Stack", "props": {"gap": "medium"}, "children": ["metric", "chart", "toggle"]},
-          "metric": {"type": "Metric", "props": {"label": "Temperature", "source": {"kind": "entity-state",
-            "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1"}}},
-          "chart": {"type": "TimeSeries", "props": {"title": "Temperature history", "series": [{"source": {"kind": "entity-series",
-            "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1", "window": "7d"}}]}},
-          "toggle": {"type": "ToggleTile", "props": {"label": "Light power", "source": {"kind": "entity-state",
-            "entity_id": "{{entity:simulated-light/power}}", "entity_type": "hearth.power/v1"}}}}}}}
+      {"mode": "edit", "changes": [{"op": "set_title", "title": "Light climate"},
+        {"op": "set_chart_window", "card_id": "chart", "window": "7d"}]}
   - reply: ""

@@ -22,7 +22,7 @@ import (
 
 func TestDashboardArtifactSurvivesRealSSEAndHistory(t *testing.T) {
 	t.Parallel()
-	args := `{"definition":` + string(dashboardDefinitionFixture(t, "SSE", true)) + `}`
+	args := composeArgumentsFixture(t, "SSE", true)
 	modelCalls := 0
 	script := &scriptedTurnModel{
 		generate: func(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
@@ -30,14 +30,14 @@ func TestDashboardArtifactSurvivesRealSSEAndHistory(t *testing.T) {
 			if modelCalls == 1 {
 				return schema.AssistantMessage(
 					"",
-					[]schema.ToolCall{nativeTestCall("sse-id", "present_view", args)},
+					[]schema.ToolCall{nativeTestCall("sse-id", composeViewToolName, args)},
 				), nil
 			}
 			return schema.AssistantMessage("Done.", nil), nil
 		},
 	}
 	service := newTurnService(t, script)
-	service.tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil)))
+	configureViewAuthoring(t, service, dashboards.NewService(nil, nil, nil))
 	conversation := mustCreateConversation(t, service)
 	router := echo.New()
 	RegisterHTTPStream(router, service, nil)
@@ -66,7 +66,7 @@ func TestDashboardArtifactSurvivesRealSSEAndHistory(t *testing.T) {
 
 func TestCommittedViewDoesNotReloadUnboundedHistory(t *testing.T) {
 	t.Parallel()
-	args := `{"definition":` + string(dashboardDefinitionFixture(t, "View", false)) + `}`
+	args := composeArgumentsFixture(t, "View", false)
 	steps := 0
 	script := &scriptedTurnModel{
 		generate: func(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
@@ -74,14 +74,14 @@ func TestCommittedViewDoesNotReloadUnboundedHistory(t *testing.T) {
 			if steps == 1 {
 				return schema.AssistantMessage(
 					"",
-					[]schema.ToolCall{nativeTestCall("view-id", "present_view", args)},
+					[]schema.ToolCall{nativeTestCall("view-id", composeViewToolName, args)},
 				), nil
 			}
 			return schema.AssistantMessage("Done.", nil), nil
 		},
 	}
 	service := newTurnService(t, script)
-	service.tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil)))
+	configureViewAuthoring(t, service, dashboards.NewService(nil, nil, nil))
 	conversation := mustCreateConversation(t, service)
 	if _, err := service.database.Exec(
 		`INSERT INTO agent_messages (conversation_id, role, message_json, created_at) VALUES (?, 'user', '[]', 'invalid')`,
@@ -244,7 +244,7 @@ func TestCommittedLargeViewProjection(t *testing.T) {
 			if calls == 1 {
 				return schema.AssistantMessage(
 					"",
-					[]schema.ToolCall{nativeTestCall("native-id", "present_view", `{}`)},
+					[]schema.ToolCall{nativeTestCall("native-id", composeViewToolName, `{}`)},
 				), nil
 			}
 			return schema.AssistantMessage("Done.", nil), nil
@@ -253,7 +253,7 @@ func TestCommittedLargeViewProjection(t *testing.T) {
 	service := newTurnService(t, script)
 	service.tools = []tool.BaseTool{
 		callbackTool{
-			name:   "present_view",
+			name:   composeViewToolName,
 			invoke: func(context.Context, string) (string, error) { return string(output), nil },
 		},
 	}
@@ -292,8 +292,8 @@ func TestCommittedLargeViewProjection(t *testing.T) {
 //nolint:gocognit // Exercises the complete parallel failure and retained evidence path.
 func TestParallelViewCommitFailureKeepsSibling(t *testing.T) {
 	t.Parallel()
-	goodArgs := `{"definition":` + string(dashboardDefinitionFixture(t, "good", true)) + `}`
-	badArgs := `{"definition":` + string(dashboardDefinitionFixture(t, "bad", false)) + `}`
+	goodArgs := composeArgumentsFixture(t, "good", true)
+	badArgs := composeArgumentsFixture(t, "bad", false)
 	modelCalls := 0
 	script := &scriptedTurnModel{
 		generate: func(_ context.Context, messages []*schema.Message, _ ...model.Option) (*schema.Message, error) {
@@ -308,8 +308,8 @@ func TestParallelViewCommitFailureKeepsSibling(t *testing.T) {
 			return schema.AssistantMessage(
 				"",
 				[]schema.ToolCall{
-					nativeTestCall("good", "present_view", goodArgs),
-					nativeTestCall("bad", "present_view", badArgs),
+					nativeTestCall("good", composeViewToolName, goodArgs),
+					nativeTestCall("bad", composeViewToolName, badArgs),
 				},
 			), nil
 		},
@@ -318,19 +318,20 @@ func TestParallelViewCommitFailureKeepsSibling(t *testing.T) {
 	goodDone := make(chan struct{})
 	presenter := dashboards.NewService(nil, nil, nil)
 	var presented atomic.Int32
-	service.tools = mustBridgeTools(t, dashboardMCPServer(coordinatedPresenter{
-		present: func(ctx context.Context, definition dashboards.Definition) (dashboards.Artifact, error) {
+	configureViewAuthoring(t, service, coordinatedAuthoring{
+		ViewAuthoring: presenter,
+		compose: func(ctx context.Context, input dashboards.ComposeViewInput) (dashboards.Artifact, error) {
 			presented.Add(1)
-			if definition.Title == "bad" {
+			if input.Title == "bad" {
 				select {
 				case <-goodDone:
 				case <-ctx.Done():
 					return dashboards.Artifact{}, ctx.Err()
 				}
 			}
-			return presenter.PresentView(ctx, definition)
+			return presenter.ComposeView(ctx, input)
 		},
-	}))
+	})
 	conversation := mustCreateConversation(t, service)
 	if _, triggerErr := service.database.Exec(
 		`CREATE TRIGGER fail_view BEFORE INSERT ON agent_messages WHEN NEW.role = 'tool' AND json_extract(NEW.message_json, '$.tool_call_id') = 'bad' BEGIN SELECT RAISE(ABORT, 'failed'); END`,
@@ -473,8 +474,8 @@ func assertParallelFailedHistory(t *testing.T, service *Service, conversationID 
 //nolint:cyclop,gocognit,gocyclo // Checks the complete synchronized commit and event ordering scenario.
 func TestParallelDashboardCommitDoesNotWaitForBlockedCallback(t *testing.T) {
 	t.Parallel()
-	firstArgs := `{"definition":` + string(dashboardDefinitionFixture(t, "first", false)) + `}`
-	secondArgs := `{"definition":` + string(dashboardDefinitionFixture(t, "second", true)) + `}`
+	firstArgs := composeArgumentsFixture(t, "first", false)
+	secondArgs := composeArgumentsFixture(t, "second", true)
 	modelCalls := 0
 	script := &scriptedTurnModel{
 		generate: func(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
@@ -483,8 +484,8 @@ func TestParallelDashboardCommitDoesNotWaitForBlockedCallback(t *testing.T) {
 				return schema.AssistantMessage(
 					"",
 					[]schema.ToolCall{
-						nativeTestCall("first-id", "present_view", firstArgs),
-						nativeTestCall("second-id", "present_view", secondArgs),
+						nativeTestCall("first-id", composeViewToolName, firstArgs),
+						nativeTestCall("second-id", composeViewToolName, secondArgs),
 					},
 				), nil
 			}
@@ -494,30 +495,26 @@ func TestParallelDashboardCommitDoesNotWaitForBlockedCallback(t *testing.T) {
 	service := newTurnService(t, script)
 	secondEntered, firstFinished, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	presenter := dashboards.NewService(nil, nil, nil)
-	service.tools = mustBridgeTools(
-		t,
-		dashboardMCPServer(
-			coordinatedPresenter{
-				present: func(ctx context.Context, definition dashboards.Definition) (dashboards.Artifact, error) {
-					if definition.Title == "first" {
-						select {
-						case <-secondEntered:
-						case <-ctx.Done():
-							return dashboards.Artifact{}, ctx.Err()
-						}
-					} else {
-						close(secondEntered)
-						select {
-						case <-firstFinished:
-						case <-ctx.Done():
-							return dashboards.Artifact{}, ctx.Err()
-						}
-					}
-					return presenter.PresentView(ctx, definition)
-				},
-			},
-		),
-	)
+	configureViewAuthoring(t, service, coordinatedAuthoring{
+		ViewAuthoring: presenter,
+		compose: func(ctx context.Context, input dashboards.ComposeViewInput) (dashboards.Artifact, error) {
+			if input.Title == "first" {
+				select {
+				case <-secondEntered:
+				case <-ctx.Done():
+					return dashboards.Artifact{}, ctx.Err()
+				}
+			} else {
+				close(secondEntered)
+				select {
+				case <-firstFinished:
+				case <-ctx.Done():
+					return dashboards.Artifact{}, ctx.Err()
+				}
+			}
+			return presenter.ComposeView(ctx, input)
+		},
+	})
 	conversation := mustCreateConversation(t, service)
 	ctx, cancel := context.WithCancel(t.Context())
 	var once sync.Once

@@ -20,7 +20,6 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
-	dashboardmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
@@ -68,10 +67,9 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 	defer server.Close()
 	store := newConversationStore(t, MinimumConversationRetention)
 	mcpServer := newBridgeTestServer()
-	dashboardmcp.Register(mcpServer, dashboards.NewService(nil, nil, nil))
 	config := Config{DB: store.database, Tools: mustBridgeTools(t, mcpServer), Model: ModelConfig{
 		APIKey: "test-key", BaseURL: server.URL + "/v1", Model: "reasoning-fixture", ReasoningEffort: "medium",
-	}}
+	}, ViewAuthoring: dashboards.NewService(nil, nil, nil)}
 	service, err := NewService(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
@@ -125,17 +123,12 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 }
 
 // TestResponsesDashboardPresentation uses a synthetic Responses peer, the real
-// dashboard MCP registration and Eino bridge, and the actual SQLite history.
+// native compose tool and the actual SQLite history.
 //
 //nolint:cyclop,gocognit,gocyclo // Checks one complete protocol, persistence, and restart journey.
 func TestResponsesDashboardPresentation(t *testing.T) {
 	t.Parallel()
-	mcpServer := dashboardMCPServer(dashboards.NewService(nil, nil, nil))
-	definition := dashboardDefinitionFixture(t, "Large draft", true)
-	arguments, err := json.Marshal(map[string]json.RawMessage{"definition": definition})
-	if err != nil {
-		t.Fatal(err)
-	}
+	arguments := `{"mode":"edit","changes":[{"op":"set_title","title":"Large draft"}]}`
 	calls, err := json.Marshal([]any{
 		map[string]any{
 			"id":                "rs_view",
@@ -147,8 +140,8 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 			"id":        "fc_view",
 			"type":      "function_call",
 			"call_id":   "native_view",
-			"name":      "present_view",
-			"arguments": string(arguments),
+			"name":      composeViewToolName,
+			"arguments": arguments,
 			"status":    "completed",
 		},
 	})
@@ -179,16 +172,16 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dashboard-restart.db")
 	database := dbtest.OpenMigrated(t, path)
 	config := Config{
-		DB:    database,
-		Tools: mustBridgeTools(t, mcpServer),
-		Model: ModelConfig{APIKey: "test-key", BaseURL: peer.URL + "/v1", Model: "fixture"},
+		DB:            database,
+		ViewAuthoring: dashboards.NewService(nil, nil, nil),
+		Model:         ModelConfig{APIKey: "test-key", BaseURL: peer.URL + "/v1", Model: "fixture"},
 	}
 	service, err := NewService(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	conversation := mustCreateConversation(t, service)
-	contextDefinition, err := dashboards.ParseDefinition(dashboardDefinitionFixture(t, "Selected draft", false))
+	contextDefinition, err := dashboards.ParseDefinition(dashboardDefinitionFixture(t, "Selected draft", true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +192,7 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 		t.Context(),
 		conversation.ID,
 		MessageInput{
-			Text: "Generate",
+			Text: "Rename the selected draft to Large draft",
 			ViewContext: &ViewContext{
 				Definition:        contextDefinition,
 				SourceDashboardID: &sourceID,
@@ -226,7 +219,7 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 	}
 	// The view is announced while the model writes it, before it runs.
 	if len(events) != 6 || events[1].Type != EventToolPreparing || events[1].CallID != "native_view" ||
-		events[1].Name != "present_view" || events[1].Arguments != "" ||
+		events[1].Name != composeViewToolName || events[1].Arguments != "" ||
 		events[2].Type != EventToolStarted || events[2].CallID != "native_view" ||
 		events[3].Type != EventToolFinished ||
 		events[3].CallID != "native_view" ||
@@ -244,7 +237,6 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 		t.Fatal(err)
 	}
 	config.DB = dbtest.OpenMigrated(t, path)
-	config.Tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil)))
 	restarted, err := NewService(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
@@ -257,7 +249,7 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 		!strings.Contains(string(history[0].ViewContext), `"source_revision":3`) ||
 		len(history[1].Calls) != 1 ||
 		history[1].Calls[0].ID != "native_view" ||
-		history[1].Calls[0].Arguments != string(arguments) ||
+		history[1].Calls[0].Arguments != arguments ||
 		history[2].ToolCallID != "native_view" ||
 		len(history[2].Artifacts) != 1 ||
 		history[2].Artifacts[0].ArtifactID != turn.Artifacts[0].ArtifactID ||
@@ -292,7 +284,7 @@ func assertDashboardResponsesRequest(
 	t.Helper()
 	found := false
 	for _, info := range request.Tools {
-		if info["name"] == "present_view" {
+		if info["name"] == composeViewToolName || info["name"] == legacyViewToolName {
 			found = true
 		}
 	}
@@ -379,7 +371,8 @@ func assertResponsesRequest(t *testing.T, r *http.Request, request responsesRequ
 			t.Errorf("tool changed MCP schema mode: %v", info)
 		}
 	}
-	if !found["skill"] || !found["tool_search"] || found["echo_text"] || found["present_view"] {
+	if !found["skill"] || !found["tool_search"] || found["echo_text"] || found[composeViewToolName] ||
+		found[legacyViewToolName] {
 		t.Errorf("unexpected visible tools: %v", found)
 	}
 }

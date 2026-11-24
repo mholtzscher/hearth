@@ -1,6 +1,6 @@
 //go:build integration
 
-package agent //nolint:testpackage // Shared real dashboard MCP fixtures.
+package agent //nolint:testpackage // Shared native dashboard tool fixtures.
 
 import (
 	"context"
@@ -8,11 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
-	dashboardmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
-	platformmcp "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func dashboardDefinitionFixture(t *testing.T, title string, large bool) json.RawMessage {
@@ -45,50 +41,46 @@ func dashboardDefinitionFixture(t *testing.T, title string, large bool) json.Raw
 	return raw
 }
 
-func dashboardMCPServer(presenter dashboardmcp.Presenter) *platformmcp.Server {
-	server := platformmcp.New(platformmcp.Config{Name: "dashboard-agent-test", Version: "1"})
-	dashboardmcp.Register(server, presenter)
-	return server
-}
-
-func dashboardAdvertisedSchema(t *testing.T, server *platformmcp.Server) map[string]any {
+func composeArgumentsFixture(t *testing.T, title string, large bool) string {
 	t.Helper()
-	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := server.Raw().Connect(t.Context(), serverTransport, nil)
+	count, text := 1, "Hello"
+	if large {
+		count, text = 10, strings.Repeat("x", 490)
+	}
+	children := make([]map[string]string, count)
+	for i := range children {
+		children[i] = map[string]string{"type": "Note", "text": text}
+	}
+	raw, err := json.Marshal(map[string]any{
+		"mode": "create", "title": title,
+		"layout": map[string]any{"type": "Stack", "gap": "small", "children": children},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = serverSession.Close() }()
-	client, err := mcp.NewClient(&mcp.Implementation{Name: "schema-test", Version: "1"}, nil).
-		Connect(t.Context(), clientTransport, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = client.Close() }()
-	listed, err := client.ListTools(t.Context(), nil)
-	if err != nil || len(listed.Tools) != 1 {
-		t.Fatalf("list tools: %+v, %v", listed, err)
-	}
-	raw, err := json.Marshal(listed.Tools[0].InputSchema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded map[string]any
-	if err = json.Unmarshal(raw, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	return decoded
+	return string(raw)
 }
 
-type coordinatedPresenter struct {
-	present func(context.Context, dashboards.Definition) (dashboards.Artifact, error)
+func configureViewAuthoring(t *testing.T, service *Service, authoring ViewAuthoring) {
+	t.Helper()
+	contract, err := newComposeViewContract(authoring)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.viewAuthoring = contract
 }
 
-func (p coordinatedPresenter) PresentView(
+type coordinatedAuthoring struct {
+	ViewAuthoring
+
+	compose func(context.Context, dashboards.ComposeViewInput) (dashboards.Artifact, error)
+}
+
+func (p coordinatedAuthoring) ComposeView(
 	ctx context.Context,
-	definition dashboards.Definition,
+	input dashboards.ComposeViewInput,
 ) (dashboards.Artifact, error) {
-	return p.present(ctx, definition)
+	return p.compose(ctx, input)
 }
 
 func publicHistoryJSON(t *testing.T, service *Service, conversationID string) json.RawMessage {

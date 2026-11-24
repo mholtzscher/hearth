@@ -14,9 +14,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/household"
@@ -46,7 +46,6 @@ func mcpCatalogToolNames() []string {
 		"list_entity_availability_history",
 		"list_entity_state_history",
 		"query_entity_state_history",
-		"present_view",
 		"present_automation",
 		"list_entity_events",
 		"create_automation",
@@ -177,7 +176,6 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 			stub,
 			&stubFunctions{},
 			injectedLogger,
-			nil,
 			testDevicesPresenter(),
 		),
 		nil,
@@ -234,7 +232,6 @@ func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 			&stubDevices{},
 			&stubFunctions{},
 			nil,
-			dashboards.NewService(nil, &stubDevices{}, nil),
 			testDevicesPresenter(),
 		),
 		nil, household.Settings{},
@@ -251,6 +248,17 @@ func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 	registered := make(map[string]*mcp.Tool, len(listed.Tools))
 	for _, tool := range listed.Tools {
 		registered[tool.Name] = tool
+	}
+	for _, name := range []string{"present_view", "compose_view"} {
+		if registered[name] != nil {
+			t.Errorf("external MCP advertised Agent view tool %s", name)
+		}
+		_, callErr := session.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
+		protocolError, ok := errors.AsType[*jsonrpc.Error](callErr)
+		if !ok || protocolError.Code != jsonrpc.CodeInvalidParams ||
+			!strings.Contains(protocolError.Message, "unknown tool") {
+			t.Errorf("external MCP call to %s: %v, want unknown tool", name, callErr)
+		}
 	}
 	for _, name := range mcpCatalogToolNames() {
 		tool, ok := registered[name]
@@ -388,7 +396,6 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 			stub,
 			&stubFunctions{},
 			nil,
-			nil,
 			testDevicesPresenter(),
 		),
 		nil,
@@ -446,7 +453,6 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 			stub,
 			&stubFunctions{},
 			nil,
-			nil,
 			testDevicesPresenter(),
 		),
 		nil,
@@ -497,7 +503,6 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 			&stubNotifications{},
 			&stubDevices{},
 			&stubFunctions{},
-			nil,
 			nil,
 			testDevicesPresenter(),
 		),
@@ -554,7 +559,6 @@ func TestMCPCatalogServersKeepTheirOwnServices(t *testing.T) {
 				&stubNotifications{},
 				stub,
 				&stubFunctions{},
-				nil,
 				nil,
 				testDevicesPresenter(),
 			),
