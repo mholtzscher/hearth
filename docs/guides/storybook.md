@@ -171,11 +171,27 @@ or `Application` for navigation and provider lifecycles. Stories and tests stay
 with their source owner; shared components do not import features.
 
 Write an `Application` story only when its assertions span what the assembled
-application connects: routes, the workspace provider, the conversation runtime,
-the unsaved-changes guard, or shell layout across widths. If one component with
+application connects: routes, the workspace provider, a conversation session
+sending, queueing, or refreshing history over HTTP, the unsaved-changes guard,
+or shell layout across widths. If one component with
 the preview's router and the fixture handlers reproduces every assertion, write
 a component or page story instead. A component that reads a provider, such as
 `ConversationHistory`, wraps it in a story decorator.
+
+For a conversation thread state, write a `Components/ConversationThread`
+story over the fixture conversation in
+[`.storybook/fixture-conversation.ts`](../../web/.storybook/fixture-conversation.ts).
+It holds the session snapshot that `ConversationThread` renders and
+changes it synchronously: `send` shows a prompt and starts a live turn, `apply`
+reduces `TurnEvent`s with the production `reduceTurn`, and `commit` stores
+history the way the post-turn read does. Seed it with `parameters.conversation`,
+using `conversationHistory` for stored rows. In a play function, send through
+the composer, then apply the events from `fixtureTurn` in
+[application fixtures](../../web/.storybook/application-fixtures.ts), which the
+synthetic stream also sends. Core spaces a view's events out; wait for each
+placeholder to appear before applying the next batch. The fixture proves what
+the thread renders for a session state, not how `ConversationSession` reaches
+that state; sending and queueing stay `Application` stories.
 
 Read the exported story before relying on its coverage. Editor fixtures hold
 local drafts: changing Controls resets them, while canvas edits do not update

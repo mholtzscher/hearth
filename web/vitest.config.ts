@@ -60,7 +60,10 @@ export default defineConfig({
     projects: [
       {
         extends: "./vite.config.ts",
-        test: { name: "unit", include: ["src/**/*.test.{ts,tsx}"] },
+        test: {
+          name: "unit",
+          include: ["src/**/*.test.{ts,tsx}", ".storybook/**/*.test.ts"],
+        },
       },
       {
         extends: false,

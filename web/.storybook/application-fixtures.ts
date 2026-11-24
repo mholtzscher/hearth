@@ -241,53 +241,45 @@ export interface ApplicationScenario {
     | "automation-loading";
 }
 
-/** Each factory owns its history, stream attempts, and saved revision; stories never share writes. */
-export const createApplicationHandlers = (
-  scenario: ApplicationScenario = {}
-) => {
+const automationModeFor = (
+  messages: ApplicationScenario["messages"]
+): "create" | "replace" | "reference" | null => {
+  if (messages === "automation-create") {
+    return "create";
+  }
+  if (messages === "automation-replace") {
+    return "replace";
+  }
+  return messages?.startsWith("automation-") ? "reference" : null;
+};
+
+/** The stored history of the story conversation, by message scenario. Each call returns a fresh copy. */
+export const conversationHistory = (
+  messages?: ApplicationScenario["messages"]
+): AgentMessage[] => {
   const initialMessages =
-    scenario.messages === "compact-view"
+    messages === "compact-view"
       ? loadedMessages.map((message) =>
           message.role === "tool"
             ? { ...message, artifacts: [compactArtifact] }
             : message
         )
       : loadedMessages;
-  const histories = new Map<string, AgentMessage[]>([
-    [conversationId, structuredClone(initialMessages)],
-  ]);
-  if (scenario.conversations === "empty") {
-    histories.clear();
+  let history = structuredClone(initialMessages);
+  if (messages === "long") {
+    history = Array.from({ length: 30 }, (_, index) => ({
+      message_id: index + 1,
+      role: index % 2 ? "assistant" : "user",
+      content:
+        index % 2
+          ? `Room ${Math.ceil(index / 2)} is comfortable. The temperature is 21.5 °C and the lamp is on.`
+          : `Check room ${index / 2 + 1}.`,
+      created_at: fixtureNow,
+    }));
   }
-  if (scenario.conversations === "searchable") {
-    for (let index = 1; index <= 12; index += 1) {
-      histories.set(`conversation_story_${index}`, [
-        {
-          message_id: 1,
-          role: "user",
-          content: `Check room ${index}.`,
-          created_at: fixtureNow,
-        },
-      ]);
-    }
-  }
-  if (scenario.messages === "long") {
-    histories.set(
-      conversationId,
-      Array.from({ length: 30 }, (_, index) => ({
-        message_id: index + 1,
-        role: index % 2 ? "assistant" : "user",
-        content:
-          index % 2
-            ? `Room ${Math.ceil(index / 2)} is comfortable. The temperature is 21.5 °C and the lamp is on.`
-            : `Check room ${index / 2 + 1}.`,
-        created_at: fixtureNow,
-      }))
-    );
-  }
-  if (scenario.messages === "rich") {
+  if (messages === "rich") {
     // Synthetic compatibility fixture: a future artifact is retained beside a Markdown reply.
-    histories.set(conversationId, [
+    history = [
       {
         message_id: 1,
         role: "user",
@@ -323,19 +315,12 @@ export const createApplicationHandlers = (
           '**Room readings**\n\n- Kitchen: 21 °C\n- Bedroom: 20 °C\n\n| Room | Temperature |\n| --- | --- |\n| Kitchen | 21 °C |\n\n```json\n{"temperature":21}\n```',
         created_at: fixtureNow,
       },
-    ]);
+    ];
   }
-  let automationMode: "create" | "replace" | "reference" | null = null;
-  if (scenario.messages === "automation-create") {
-    automationMode = "create";
-  } else if (scenario.messages === "automation-replace") {
-    automationMode = "replace";
-  } else if (scenario.messages?.startsWith("automation-")) {
-    automationMode = "reference";
-  }
+  const automationMode = automationModeFor(messages);
   if (automationMode) {
     // Synthetic tool result using the same definition and saved record as the Automation stories.
-    histories.set(conversationId, [
+    history = [
       {
         message_id: 1,
         role: "user",
@@ -370,8 +355,72 @@ export const createApplicationHandlers = (
         content: "Here is the hallway Automation.",
         created_at: fixtureNow,
       },
-    ]);
+    ];
   }
+  return history;
+};
+
+/**
+ * One synthetic turn: the events the stream sends first and, unless the turn
+ * stays pending, the stored history and the events that complete it.
+ */
+export const fixtureTurn = (
+  turn: ApplicationScenario["turn"],
+  history: AgentMessage[],
+  prompt: Parameters<typeof fixtureTurnOutcome>[1]
+) => {
+  const pending =
+    turn === "pending" || turn === "pending-view" || turn === "queue-collision";
+  const reusedViewCall = turn === "reused-view-call";
+  const viewReady = turn === "view-ready" || reusedViewCall;
+  const toolStarted = {
+    type: "tool.started",
+    call_id: "read-temperature",
+    name: turn === "pending-view" || viewReady ? "present_view" : "get_entity",
+    arguments:
+      turn === "queue-collision"
+        ? JSON.stringify({ entity_id: entityId(4) })
+        : "{}",
+  } as const satisfies TurnEvent;
+  const events: TurnEvent[] = [
+    ...(turn === "queue-collision" ? [{ type: "turn.started" } as const] : []),
+    toolStarted,
+  ];
+  const outcome = pending
+    ? undefined
+    : fixtureTurnOutcome(
+        history,
+        prompt,
+        toolStarted,
+        viewReady,
+        reusedViewCall
+      );
+  return { toolStarted, events, outcome, viewReady, reusedViewCall };
+};
+
+/** Each factory owns its history, stream attempts, and saved revision; stories never share writes. */
+export const createApplicationHandlers = (
+  scenario: ApplicationScenario = {}
+) => {
+  const histories = new Map<string, AgentMessage[]>([
+    [conversationId, conversationHistory(scenario.messages)],
+  ]);
+  if (scenario.conversations === "empty") {
+    histories.clear();
+  }
+  if (scenario.conversations === "searchable") {
+    for (let index = 1; index <= 12; index += 1) {
+      histories.set(`conversation_story_${index}`, [
+        {
+          message_id: 1,
+          role: "user",
+          content: `Check room ${index}.`,
+          created_at: fixtureNow,
+        },
+      ]);
+    }
+  }
+  const automationMode = automationModeFor(scenario.messages);
   const initial: Dashboard = {
     id: dashboardId,
     revision: 1,
@@ -489,24 +538,11 @@ export const createApplicationHandlers = (
             );
           }
         }
-        const pending =
-          scenario.turn === "pending" ||
-          scenario.turn === "pending-view" ||
-          scenario.turn === "queue-collision";
-        const reusedViewCall = scenario.turn === "reused-view-call";
-        const viewReady = scenario.turn === "view-ready" || reusedViewCall;
-        const toolStarted = {
-          type: "tool.started",
-          call_id: "read-temperature",
-          name:
-            scenario.turn === "pending-view" || viewReady
-              ? "present_view"
-              : "get_entity",
-          arguments:
-            scenario.turn === "queue-collision"
-              ? JSON.stringify({ entity_id: entityId(4) })
-              : "{}",
-        } as const satisfies TurnEvent;
+        const { toolStarted, events, outcome, viewReady, reusedViewCall } =
+          fixtureTurn(scenario.turn, histories.get(String(params.id)) ?? [], {
+            text,
+            view_context,
+          });
         if (
           scenario.turn === "queue-collision" &&
           params.id === queuedConversationId
@@ -534,21 +570,6 @@ export const createApplicationHandlers = (
           ]);
           canonicalStarted.resolve(undefined);
         }
-        const events: TurnEvent[] = [
-          ...(scenario.turn === "queue-collision"
-            ? [{ type: "turn.started" }]
-            : []),
-          toolStarted,
-        ];
-        const outcome = pending
-          ? undefined
-          : fixtureTurnOutcome(
-              histories.get(String(params.id)) ?? [],
-              { text, view_context },
-              toolStarted,
-              viewReady,
-              reusedViewCall
-            );
         if (outcome) {
           histories.set(String(params.id), outcome.history);
         }
