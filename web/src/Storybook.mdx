@@ -14,9 +14,9 @@ Browse shared UI directly under `Components`, cards under `Components/Cards`, fe
 
 The sidebar includes every current dashboard catalog element. Stack, Grid, Heading, and Note are renderer stories because they are graph nodes rather than standalone React components. The card stories document their bound components. The renderer's Morning Dashboard and Phone Dashboard show the same definition at desktop and phone widths. Device stories exercise the actual light color popover and phone dialog.
 
-Shared control and frame stories document the pieces used inside those cards. Metric, ToggleTile, AirPurifier, and TimeSeries have direct editor stories with local drafts. The `Pages` group adds the debug Entity list, Device list with inline detail, and Entity detail with retained history. Each page has loaded, empty or unobserved, and failed-read scenarios using the synthetic household.
+Shared control and frame stories document the pieces used inside those cards. Metric, ToggleTile, AirPurifier, and TimeSeries have direct editor stories with local drafts. The `Pages` group adds the debug Entity list, Device list with inline detail, Entity detail with retained history, Command history, and the dashboard library. Each page has loaded, empty or unobserved, and failed-read scenarios using the synthetic household.
 
-The `Application/Workspace` group shows the production shell, conversation, and dashboard canvas together, including tablet/phone navigation, synthetic replies, retry, editing, save conflicts, and unsaved-navigation dialogs. These stories own isolated routers and use synthetic HTTP/SSE responses, not a live model.
+The `Application` group runs the production shell, conversation, and dashboard canvas together, one journey per entry: Navigation, Conversation (Reading, Sending, Tools and views), Canvas, Dashboards, Automations (In conversation, Pages), and Development. These stories cover what only the assembled application does: routing, tablet/phone navigation, streamed replies and retry, editing, save conflicts, and unsaved-navigation dialogs. They own isolated routers and use synthetic HTTP/SSE responses, not a live model.
 
 Use Controls to explore props, the test widget to run interactions and accessibility checks, and the viewport toolbar to inspect responsive behavior. Stories marked `ai-generated` still need human review.
 
@@ -26,7 +26,7 @@ Run `mise run storybook-start` in the checkout. It writes this checkout's MCP en
 
 This is an application, not a published component library. Storybook's generated snippets currently use `from 'hearth-dashboard'`; that package has no public component exports. Import from the source module used by the colocated story instead, such as `@/features/views/cards/metric/metric` or `@/components/button`. Fixture helpers in snippets are Storybook-only; use real Entity IDs in application code.
 
-The App composition snippets have an additional limitation: they show the shared render function but omit each story's `appPath`, `applicationScenario`, and play function. They are not standalone examples. Read the selected export and shared setup in `src/app.stories.tsx` and `.storybook/application-fixtures.ts` to reproduce that scenario. Ordinary component snippets do not need this application harness.
+The App composition snippets have an additional limitation: they show the shared render function but omit each story's `appPath`, `applicationScenario`, and play function. They are not standalone examples. Read the selected export in `src/app-stories/` and the shared setup in `.storybook/application.tsx` and `.storybook/application-fixtures.ts` to reproduce that scenario. Ordinary component snippets do not need this application harness.
 
 ## Keep evidence distinct
 

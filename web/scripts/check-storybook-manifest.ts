@@ -41,6 +41,8 @@ const components = Object.entries(manifest.components);
 // These routed pages take no props, so docgen emits no prop metadata. Keep the
 // exception explicit: every reusable component must still publish its API.
 const parameterlessPages = new Set([
+  "pages-commandspage",
+  "pages-dashboardlibrary",
   "pages-entitiespage",
   "pages-devicespage",
   "pages-entitydetailpage",

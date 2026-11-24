@@ -147,7 +147,7 @@ const automationHeader = {
   schema_version: 1,
   artifact_id: "aart_01920000-0000-7000-8000-000000000001",
 } as const;
-const automationArtifacts = {
+export const automationArtifacts = {
   create: {
     ...automationHeader,
     mode: "create",

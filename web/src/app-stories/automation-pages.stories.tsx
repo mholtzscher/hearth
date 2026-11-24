@@ -1,8 +1,8 @@
-import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { ComponentProps } from "react";
-import { createMemoryRouter } from "react-router-dom";
+import type { Meta } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 
+import { applicationMeta } from "../../.storybook/application";
+import type { ApplicationStory } from "../../.storybook/application";
 import { createApplicationHandlers } from "../../.storybook/application-fixtures";
 import {
   automationHandlers,
@@ -10,20 +10,16 @@ import {
   childAutomationId,
 } from "../../.storybook/automation-fixtures";
 import { expectNoHorizontalOverflow } from "../../.storybook/play";
-import App, { appRoutes } from "../app";
+import App from "../app";
 
 const meta = {
-  title: "Application/Automations",
+  title: "Application/Automations/Pages",
   component: App,
   tags: ["ai-generated", "!autodocs"],
-  parameters: { application: true, layout: "fullscreen" },
-  loaders: [
-    () => ({
-      router: createMemoryRouter(appRoutes, {
-        initialEntries: ["/automations"],
-      }),
-    }),
-  ],
+  decorators: applicationMeta.decorators,
+  parameters: { ...applicationMeta.parameters, appPath: "/automations" },
+  argTypes: applicationMeta.argTypes,
+  loaders: applicationMeta.loaders,
   beforeEach: ({ msw, loaded }) => {
     msw.use(...createApplicationHandlers(), ...automationHandlers());
     return () => loaded.router.dispose();
@@ -31,9 +27,8 @@ const meta = {
   render: (_args, { loaded }) => <App router={loaded.router} />,
 } satisfies Meta<typeof App>;
 export default meta;
-type Story = StoryObj<Partial<ComponentProps<typeof App>>>;
 
-export const Library: Story = {
+export const Library: ApplicationStory = {
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("link", { name: "Open Hallway light at dusk" })
@@ -45,7 +40,7 @@ export const Library: Story = {
   },
 };
 
-export const NewDraft: Story = {
+export const NewDraft: ApplicationStory = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByRole("link", { name: "Open Hallway light at dusk" });
     await userEvent.click(
@@ -98,7 +93,7 @@ export const NewDraft: Story = {
   },
 };
 
-export const Phone: Story = {
+export const Phone: ApplicationStory = {
   globals: { viewport: { value: "phone", isRotated: false } },
   play: async ({ canvas, canvasElement }) => {
     await expect(
