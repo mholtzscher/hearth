@@ -32,6 +32,7 @@ import (
 	contractrelativehumidityv1 "github.com/mholtzscher/hearth/entitytypes/relativehumidityv1"
 	contractspeedv1 "github.com/mholtzscher/hearth/entitytypes/speedv1"
 	contracttemperaturev1 "github.com/mholtzscher/hearth/entitytypes/temperaturev1"
+	contractthermostatv1 "github.com/mholtzscher/hearth/entitytypes/thermostatv1"
 )
 
 // TypeCodecs carries the schema-backed codecs for one built-in Entity type,
@@ -177,6 +178,9 @@ func buildRegistry() (map[string]*TypeCodecs, error) {
 		{contracttemperaturev1.TypeID, false,
 			contracttemperaturev1.StateSchemaID, contracttemperaturev1.SupportSchemaID,
 			contracttemperaturev1.SchemaFiles(), contracttemperaturev1.FS.ReadFile},
+		{contractthermostatv1.TypeID, false,
+			contractthermostatv1.StateSchemaID, contractthermostatv1.SupportSchemaID,
+			contractthermostatv1.SchemaFiles(), contractthermostatv1.FS.ReadFile},
 	}
 	byID := make(map[string]*TypeCodecs, len(sources))
 	for _, source := range sources {

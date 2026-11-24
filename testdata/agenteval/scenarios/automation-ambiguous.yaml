@@ -1,0 +1,26 @@
+id: automation-ambiguous
+title: Ask which lamp before drafting an Automation
+tags: [automation, ambiguity]
+
+turns:
+  - text: When the Simulated button is pressed once, turn on the lamp.
+
+checks:
+  - kind: no_automation_draft
+  - kind: reply_matches
+    pattern: '(?is)living room lamp.*bedroom lamp|bedroom lamp.*living room lamp'
+  - kind: reply_matches
+    pattern: '\?'
+
+judge:
+  criteria:
+    - The reply asks which lamp to use and names both candidates, without proposing an Automation yet.
+
+max_requests: 12
+
+reference:
+  - call: skill
+    arguments: '{"skill": "hearth-automations"}'
+  - call: list_devices
+    arguments: '{}'
+  - reply: Which lamp should the button turn on, the Living room lamp or the Bedroom lamp?

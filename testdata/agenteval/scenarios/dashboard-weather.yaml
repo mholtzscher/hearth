@@ -1,0 +1,52 @@
+id: dashboard-weather
+title: Weather cards bound to the station's matching sensors
+tags: [dashboard, create, weather]
+
+turns:
+  - text: >-
+      Build a weather dashboard from the Weather station showing current
+      outdoor conditions, wind, and pressure.
+
+checks:
+  - kind: view
+    view:
+      cards:
+        - type: OutsideNow
+          bindings:
+            temperature: {device: weather-station, key: temperature}
+        - type: Wind
+          bindings:
+            speed: {device: weather-station, key: wind}
+        - type: Pressure
+          bindings:
+            source: {device: weather-station, key: pressure}
+
+judge:
+  criteria:
+    - Optional weather slots, if bound, use the Weather station's own sensors with the matching meaning.
+
+max_requests: 12
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:weather-station}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:present_view"}'
+  - call: present_view
+    arguments: |-
+      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Weather",
+        "spec": {"root": "stack", "elements": {
+          "stack": {"type": "Stack", "props": {"gap": "medium"}, "children": ["outside", "row"]},
+          "outside": {"type": "OutsideNow", "props": {
+            "temperature": {"kind": "entity-state", "entity_id": "{{entity:weather-station/temperature}}", "entity_type": "hearth.temperature/v1"},
+            "humidity": {"kind": "entity-state", "entity_id": "{{entity:weather-station/humidity}}", "entity_type": "hearth.relativehumidity/v1"},
+            "wind": {"kind": "entity-state", "entity_id": "{{entity:weather-station/wind}}", "entity_type": "hearth.speed/v1"},
+            "wind_direction": {"kind": "entity-state", "entity_id": "{{entity:weather-station/wind-direction}}", "entity_type": "hearth.numericsensor/v1"}}},
+          "row": {"type": "Grid", "props": {"columns": 2}, "children": ["wind", "pressure"]},
+          "wind": {"type": "Wind", "props": {
+            "speed": {"kind": "entity-state", "entity_id": "{{entity:weather-station/wind}}", "entity_type": "hearth.speed/v1"},
+            "gust": {"kind": "entity-state", "entity_id": "{{entity:weather-station/gust}}", "entity_type": "hearth.speed/v1"},
+            "direction": {"kind": "entity-state", "entity_id": "{{entity:weather-station/wind-direction}}", "entity_type": "hearth.numericsensor/v1"}}},
+          "pressure": {"type": "Pressure", "props": {"source": {"kind": "entity-state",
+            "entity_id": "{{entity:weather-station/pressure}}", "entity_type": "hearth.pressure/v1", "field": ""}}}}}}}
+  - reply: ""

@@ -1,0 +1,24 @@
+id: question-unavailable
+title: Say a stale reading is unavailable instead of reporting it
+tags: [question, availability]
+
+turns:
+  - text: What's the temperature reading from the Simulated unavailable light?
+
+checks:
+  - kind: reply_matches
+    pattern: '(?i)unavailable|unknown|stale|not available|no (current |recent )?reading'
+  - kind: reply_not_matches
+    pattern: '(?:^|[^\d.])35(?:\.0+)?\s*°?\s*C'
+  - kind: no_view
+
+judge:
+  criteria:
+    - The reply says the reading is unavailable or unknown and does not present a stale number as current.
+
+max_requests: 8
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:sim-unavailable/simulated-unavailable-light}}"}'
+  - reply: The Simulated unavailable light's temperature is unavailable; its last reading is stale.

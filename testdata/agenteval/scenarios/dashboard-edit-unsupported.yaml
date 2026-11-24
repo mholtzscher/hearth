@@ -1,0 +1,35 @@
+id: dashboard-edit-unsupported
+title: Send card removal to the dashboard editor
+tags: [dashboard, edit, policy]
+
+# Encodes the policy from PR #431: Agent edits to a selected draft are limited
+# to its title, forecast periods, and chart window. Revisions without that
+# policy may legitimately remove the card and fail this scenario.
+
+setup:
+  dashboards:
+    - name: light-overview
+      definition: |-
+        {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Light overview",
+          "spec": {"root": "root", "elements": {
+            "root": {"type": "Stack", "props": {"gap": "medium"}, "children": ["metric", "chart", "toggle"]},
+            "metric": {"type": "Metric", "props": {"label": "Temperature", "source": {"kind": "entity-state",
+              "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1"}}},
+            "chart": {"type": "TimeSeries", "props": {"title": "Temperature history", "series": [{"source": {"kind": "entity-series",
+              "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1", "window": "6h"}}]}},
+            "toggle": {"type": "ToggleTile", "props": {"label": "Light power", "source": {"kind": "entity-state",
+              "entity_id": "{{entity:simulated-light/power}}", "entity_type": "hearth.power/v1"}}}}}}
+
+turns:
+  - text: Remove the light power toggle from the selected draft and keep everything else.
+    select_dashboard: light-overview
+
+checks:
+  - kind: no_view
+  - kind: reply_matches
+    pattern: '(?i)editor'
+
+max_requests: 8
+
+reference:
+  - reply: I can't remove cards from a selected draft here. Use the dashboard editor to remove the toggle.

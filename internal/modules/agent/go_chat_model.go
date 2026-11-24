@@ -21,6 +21,13 @@ const goChatMessageKey = "hearth_go_chat_message"
 // current conversation's routing header in mutable client configuration.
 type modelConversationKey struct{}
 
+// WithModelConversation names the conversation a model request belongs to.
+// Service sets it for each turn; callers that use NewChatModel outside a
+// turn, such as the evaluation judge, must set it themselves.
+func WithModelConversation(ctx context.Context, conversationID string) context.Context {
+	return context.WithValue(ctx, modelConversationKey{}, conversationID)
+}
+
 // goChatModel owns Go's DeepSeek Chat Completions boundary. ADK receives text
 // and native tool calls; private reasoning is retained only for continuation.
 type goChatModel struct {

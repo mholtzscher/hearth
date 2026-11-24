@@ -169,9 +169,6 @@ func (session *fakeSession) ReportEntityAvailability(
 	return nil
 }
 
-// current caller addresses ent_power.
-//
-//nolint:unparam // Call sites keep the Entity ID explicit even though every
 func (session *fakeSession) dispatch(
 	ctx context.Context,
 	runtime *scripted.Runtime,
@@ -248,7 +245,7 @@ func powerDevice() scripted.DeviceSpec {
 
 func TestDeviceSpecCanonicalKinds(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []string{"light", "relay", "sensor", "air-purifier", "lock", "cover", "", "Lock", "switch"} {
+	for _, kind := range []string{"light", "relay", "sensor", "air-purifier", "lock", "cover", "thermostat", "", "Lock", "switch"} {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			device := powerDevice()
@@ -256,7 +253,7 @@ func TestDeviceSpecCanonicalKinds(t *testing.T) {
 			err := device.Validate()
 			valid := kind == "light" || kind == "relay" || kind == "sensor" || kind == "air-purifier" ||
 				kind == "lock" ||
-				kind == "cover"
+				kind == "cover" || kind == "thermostat"
 			if (err == nil) != valid {
 				t.Fatalf("Validate kind %q = %v; valid = %t", kind, err, valid)
 			}

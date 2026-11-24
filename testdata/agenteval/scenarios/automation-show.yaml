@@ -1,0 +1,30 @@
+id: automation-show
+title: Show a saved Automation as a card
+tags: [automation]
+
+setup:
+  automations:
+    - name: bedtime
+      definition: |-
+        {"name": "Bedtime", "enabled": true,
+          "triggers": [{"id": "press", "kind": "entity_event", "entity_id": "{{entity:simulated-button/events}}", "event_name": "double_press"}],
+          "steps": [{"id": "lamp_off", "kind": "command", "entity_id": "{{entity:bedroom-lamp/power}}", "operation": "set", "parameters": {"value": false}}]}
+
+turns:
+  - text: Show me my Bedtime automation.
+
+checks:
+  - kind: automation_reference
+    name: bedtime
+  - kind: no_automation_draft
+
+max_requests: 10
+
+reference:
+  - call: tool_search
+    arguments: '{"query": "select:list_automations,present_automation"}'
+  - call: list_automations
+    arguments: '{}'
+  - call: present_automation
+    arguments: '{"mode": "reference", "automation_id": "{{automation:bedtime}}"}'
+  - reply: ""

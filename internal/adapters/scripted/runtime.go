@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	contractthermostatv1 "github.com/mholtzscher/hearth/entitytypes/thermostatv1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -533,6 +534,9 @@ func (runtime *Runtime) CommandHandler() adapter.CommandHandler {
 		if err != nil {
 			return err
 		}
+		if validationErr := validateEntityCommand(entity, command); validationErr != nil {
+			return responder.Reject(validationErr.Error())
+		}
 		behavior := entity.commands[command.OperationName]
 		if behaviorName(behavior) == CommandBehaviorReject {
 			return responder.Reject(rejectReason(behavior))
@@ -554,7 +558,7 @@ func (runtime *Runtime) CommandHandler() adapter.CommandHandler {
 			_, acceptErr := responder.Accept()
 			return acceptErr
 		default:
-			current := runtime.commandPublishState(entity, behavior, command.Parameters)
+			current := runtime.commandPublishState(entity, behavior, command.OperationName, command.Parameters)
 			evidence, acceptErr := responder.Accept()
 			if acceptErr != nil {
 				return acceptErr
@@ -593,12 +597,17 @@ func applyParameters(behavior CommandBehavior) bool {
 func (runtime *Runtime) commandPublishState(
 	entity *scriptedEntity,
 	behavior CommandBehavior,
+	operation string,
 	parameters json.RawMessage,
 ) json.RawMessage {
 	runtime.mutex.Lock()
 	defer runtime.mutex.Unlock()
 	if applyParameters(behavior) {
-		applyCommandParametersLocked(entity, parameters)
+		if entity.codecs.TypeID == contractthermostatv1.TypeID {
+			applyThermostatParametersLocked(entity, operation, parameters)
+		} else {
+			applyCommandParametersLocked(entity, parameters)
+		}
 	}
 	return entity.current
 }

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/openai/openai-go/v3/responses"
 )
 
@@ -44,6 +45,16 @@ type ModelConfig struct {
 	// ServiceTier selects OpenAI's processing tier, such as fast. Empty omits
 	// it, so the OpenAI project's default tier applies.
 	ServiceTier string
+}
+
+// NewChatModel builds the configured provider's chat model. Service uses it
+// when Config.ChatModel is nil; the evaluation worker wraps it to record
+// each request without changing what the provider receives.
+func NewChatModel(config ModelConfig) model.ToolCallingChatModel {
+	if config.Provider.Effective() == ProviderOpenCodeGo {
+		return newGoChatModel(config)
+	}
+	return newResponsesModel(config)
 }
 
 // ValidateSettings checks non-secret settings without reading credentials.

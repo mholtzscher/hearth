@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Hearth · Agent evaluation</title>
+<style>
+:root{--base:#0c0c0c;--raised:#151515;--line:#2c2c2c;--text:#f4f4f4;--copy:#d1d1d1;--muted:#a6a6a6;--accent:#ff8a3d;--ok:#5ad19a;--warn:#e2b931;--bad:#ff5c7a;--info:#7fb4ff;--mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--base);color:var(--text);font:15px/1.55 system-ui,sans-serif}
+.wrap{width:min(1180px,100%);margin-inline:auto;padding:0 clamp(16px,4vw,40px)}
+header{border-top:3px solid var(--accent);border-bottom:1px solid var(--line);padding:16px 0}
+h1{font-size:clamp(1.6rem,4vw,2.4rem);letter-spacing:-.04em;margin:28px 0 6px;font-weight:600}
+h2{font-size:1.2rem;margin:30px 0 10px;font-weight:600}
+h3{font-size:1rem;margin:16px 0 6px}
+p{margin:0}
+.muted{color:var(--muted)}.mono{font-family:var(--mono)}
+.verdict{display:inline-block;font:600 .85rem var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border-radius:4px;border:1px solid}
+.v-pass{color:var(--ok)}.v-fail{color:var(--bad)}.v-inconclusive{color:var(--warn)}.v-none{color:var(--muted)}
+.reasons{margin:10px 0 0;padding-left:1.2rem;color:var(--copy)}
+.setup{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px;margin-top:18px}
+.card{background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.card b{font-weight:600}
+.kv{font:.8rem/1.6 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.big{font-size:1.6rem;font-weight:600;letter-spacing:-.03em}
+table{width:100%;border-collapse:collapse}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;font-size:.88rem}
+th{font:500 .72rem var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+tr.row>td:first-child{min-width:15rem}
+tr.row .kv{white-space:nowrap}
+tbody tr.row{cursor:pointer}
+tbody tr.row:hover{background:#181818}
+tbody tr.row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.rate{font-family:var(--mono);white-space:nowrap}
+.bar{position:relative;height:6px;background:#222;border-radius:3px;margin-top:5px;width:110px}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--info);border-radius:3px}
+.bar s{position:absolute;top:-2px;height:10px;border-left:1px solid var(--muted);border-right:1px solid var(--muted)}
+.chip{font:600 .7rem var(--mono);padding:2px 7px;border-radius:4px;border:1px solid;white-space:nowrap}
+.s-ok,.s-improved{color:var(--ok)}.s-regression,.s-safety{color:var(--bad)}.s-too_few,.s-noise_drop{color:var(--warn)}
+.detail td{background:#101010;padding:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:4px;max-width:520px}
+.cell{height:30px;border-radius:4px;border:1px solid var(--line);background:#1a1a1a;color:var(--text);font:.72rem var(--mono);cursor:pointer}
+.cell.pass{background:#173326;border-color:#2f6b4f}.cell.fail{background:#3a1820;border-color:#8a3346}.cell.safety{background:#5a1020;border-color:var(--bad)}.cell.inc{background:#33290f;border-color:#7a6420}
+.cell[aria-pressed="true"]{outline:2px solid var(--accent)}
+.armrow{display:flex;align-items:center;gap:10px;margin:6px 0}
+.armrow span{width:84px;font:.75rem var(--mono);color:var(--muted)}
+.trial{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.checks{list-style:none;padding:0;margin:6px 0;display:grid;gap:4px}
+.checks li{font-size:.85rem}
+.checks b{font:600 .72rem var(--mono);margin-right:6px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.msg{border-left:3px solid var(--line);padding:6px 10px;margin:6px 0;background:var(--raised);border-radius:4px}
+.msg.user{border-color:var(--info)}.msg.assistant{border-color:#c4a8ff}.msg.tool{border-color:#86e1f2}
+.role{font:600 .7rem var(--mono);text-transform:uppercase;color:var(--muted)}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 0;font:.78rem/1.55 var(--mono);color:var(--copy);max-height:18rem;overflow:auto}
+details summary{cursor:pointer;color:var(--copy);font-size:.82rem}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+footer{color:var(--muted);font-size:.8rem;border-top:1px solid var(--line);margin-top:40px;padding:18px 0 30px}
+</style>
+</head>
+<body>
+<header><div class="wrap mono muted">Hearth · Agent evaluation</div></header>
+<main class="wrap" id="app"></main>
+<footer><div class="wrap">Pass rates show 95% Wilson intervals. Cost is the sum over every model request in a trial; cached tokens are part of input tokens. Model time excludes pacing. Full model inputs for each request are in the run directory's records/.</div></footer>
+<script id="data" type="application/json">@@DATA@@</script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById("data").textContent);
+  const app = document.getElementById("app");
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const num = n => Math.round(n).toLocaleString();
+  const arms = D.manifest.arms.map(a => a.name);
+  const pct = x => `${Math.round(100 * x)}%`;
+
+  const verdict = D.summary.verdict || "none";
+  const head = el("section");
+  head.append(el("h1", null, arms.length > 1 ? "Comparison" : "Run"));
+  const badge = el("span", `verdict v-${verdict}`, arms.length > 1 ? verdict : "no verdict: one arm");
+  head.append(badge);
+  if (D.summary.reasons && D.summary.reasons.length) {
+    const ul = el("ul", "reasons");
+    D.summary.reasons.forEach(r => ul.append(el("li", null, r)));
+    head.append(ul);
+  }
+  const setup = el("div", "setup");
+  for (const arm of D.manifest.arms) {
+    const card = el("div", "card");
+    const t = D.summary.totals[arm.name] || {};
+    card.append(el("b", null, arm.name));
+    card.append(el("p", "kv", `${arm.ref} · ${arm.revision.slice(0, 12)}${arm.revision.includes("+") ? " (uncommitted changes)" : ""}`));
+    card.append(el("p", "kv", `${arm.model.provider}/${arm.model.model}${arm.model.reasoning_effort ? " · " + arm.model.reasoning_effort : ""}`));
+    card.append(el("p", "big", t.scored ? `${t.passed}/${t.scored} passed` : "no scored trials"));
+    card.append(el("p", "kv", `median per trial: ${num(t.requests?.median || 0)} requests · ${num(t.input_tokens?.median || 0)} input (${num(t.cached_tokens?.median || 0)} cached) · ${num(t.output_tokens?.median || 0)} output tokens`));
+    if (t.incomplete) card.append(el("p", "kv", `${t.incomplete} incomplete trial(s)`));
+    setup.append(card);
+  }
+  const rule = el("div", "card");
+  rule.append(el("b", null, "Rule"));
+  rule.append(el("p", "kv", `${D.manifest.trials} trials per scenario · fail on any candidate safety failure, or a drop of ${D.summary.rule.regression_drop}+ matched passes · inconclusive under ${D.summary.rule.min_pairs} completed pairs`));
+  rule.append(el("p", "kv", `request gap ${D.manifest.min_gap_seconds}s · run cap ${D.manifest.run_max_requests} · trial cap ${D.manifest.trial_max_requests}`));
+  if (D.summary.trials_not_run) rule.append(el("p", "kv", `${D.summary.trials_not_run} trial(s) not run`));
+  if (D.manifest.judge) rule.append(el("p", "kv", `judge ${D.manifest.judge.provider}/${D.manifest.judge.model} · report-only, never changes the verdict`));
+  setup.append(rule);
+  head.append(setup);
+  app.append(head);
+
+  app.append(el("h2", null, "Scenarios"));
+  const scroll = el("div", "scroll");
+  const table = el("table");
+  const thead = el("thead"), hr = el("tr");
+  ["Scenario", ...arms.map(a => a + " pass"), ...(arms.length > 1 ? ["Status"] : []), ...arms.map(a => a + " input tokens"), ...arms.map(a => a + " requests")].forEach(h => hr.append(el("th", null, h)));
+  thead.append(hr);
+  const tbody = el("tbody");
+  table.append(thead, tbody);
+  scroll.append(table);
+  app.append(scroll);
+
+  const byScenario = id => D.trials.filter(t => t.scenario === id);
+  const scenarioInfo = Object.fromEntries(D.scenarios.map(s => [s.id, s]));
+
+  for (const s of D.summary.scenarios) {
+    const tr = el("tr", "row");
+    tr.tabIndex = 0;
+    const name = el("td");
+    name.append(el("div", null, s.title || s.id), el("div", "kv", s.id));
+    tr.append(name);
+    for (const arm of arms) {
+      const a = s.arms[arm] || {};
+      const td = el("td", "rate");
+      td.append(el("div", null, a.scored ? `${a.passed}/${a.scored} · ${pct(a.pass_rate)}` : "–"));
+      if (a.scored) {
+        const bar = el("div", "bar");
+        const fill = el("i"); fill.style.width = pct(a.pass_rate);
+        const whisker = el("s"); whisker.style.left = pct(a.low); whisker.style.width = pct(a.high - a.low);
+        bar.append(fill, whisker); td.append(bar);
+      }
+      if (a.safety_failures) td.append(el("div", "bad", `${a.safety_failures} safety`));
+      if (a.incomplete) td.append(el("div", "kv", `${a.incomplete} incomplete`));
+      tr.append(td);
+    }
+    if (arms.length > 1) {
+      const td = el("td");
+      td.append(el("span", `chip s-${s.status}`, s.status.replace("_", " ")));
+      td.append(el("div", "kv", `${s.candidate_matched_passes} vs ${s.baseline_matched_passes} of ${s.matched_pairs} pairs`));
+      tr.append(td);
+    }
+    for (const arm of arms) tr.append(el("td", "rate", num(s.arms[arm]?.input_tokens?.median || 0)));
+    for (const arm of arms) tr.append(el("td", "rate", (s.arms[arm]?.requests?.median ?? 0).toString()));
+    const detail = el("tr", "detail"); detail.hidden = true;
+    const cell = el("td"); cell.colSpan = hr.children.length; detail.append(cell);
+    const toggle = () => { detail.hidden = !detail.hidden; if (!detail.hidden && !cell.firstChild) renderDetail(cell, s); };
+    tr.addEventListener("click", toggle);
+    tr.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    tbody.append(tr, detail);
+  }
+
+  function renderDetail(cell, s) {
+    const info = scenarioInfo[s.id] || {};
+    (info.turns || []).forEach((t, i) => cell.append(el("p", null, `Turn ${i + 1}: “${t}”`)));
+    for (const arm of arms) {
+      const failures = Object.entries(s.arms[arm]?.check_failures || {});
+      if (failures.length) cell.append(el("p", "kv", `${arm} check failures: ` + failures.map(([k, v]) => `${k} ×${v}`).join(" · ")));
+    }
+    for (const arm of arms) {
+      const a = s.arms[arm] || {};
+      if (!a.judge?.length && !a.judge_errors) continue;
+      const box = el("div", "kv");
+      box.append(el("div", null, `${arm} judge (report-only)${a.judge_errors ? ` · ${a.judge_errors} failed request(s)` : ""}`));
+      for (const c of a.judge || []) box.append(el("div", null, `${c.pass} pass · ${c.fail} fail · ${c.unsure} unsure — ${c.criterion}`));
+      cell.append(box);
+    }
+    const panel = el("div", "trial");
+    const trials = byScenario(s.id);
+    for (const arm of arms) {
+      const row = el("div", "armrow");
+      row.append(el("span", null, arm));
+      const grid = el("div", "grid");
+      trials.filter(t => t.arm === arm).sort((a, b) => a.trial - b.trial).forEach(t => {
+        const kind = !t.scored ? "inc" : t.passed ? "pass" : t.results.some(r => r.safety && !r.passed) ? "safety" : "fail";
+        const b = el("button", `cell ${kind}`, String(t.trial + 1));
+        b.type = "button";
+        b.setAttribute("aria-label", `${arm} trial ${t.trial + 1}: ${kind === "inc" ? "incomplete" : kind}`);
+        b.addEventListener("click", e => { e.stopPropagation(); cell.querySelectorAll(".cell").forEach(c => c.setAttribute("aria-pressed", "false")); b.setAttribute("aria-pressed", "true"); renderTrial(panel, t); });
+        grid.append(b);
+      });
+      row.append(grid);
+      cell.append(row);
+    }
+    cell.append(panel);
+  }
+
+  function renderTrial(panel, t) {
+    panel.replaceChildren();
+    panel.append(el("h3", null, `${t.arm} · trial ${t.trial + 1} · ${t.outcome}`));
+    if (t.error) panel.append(el("p", "bad", t.error));
+    const checks = el("ul", "checks");
+    for (const r of t.results || []) {
+      const li = el("li");
+      li.append(el("b", r.passed ? "ok" : "bad", r.passed ? "PASS" : "FAIL"), `${r.label}${r.safety ? " (safety)" : ""}${r.default ? " (default)" : ""}`);
+      if (r.detail) li.append(el("div", "kv", r.detail));
+      checks.append(li);
+    }
+    panel.append(checks);
+    if (t.judgment) {
+      panel.append(el("h3", null, "Judge (report-only)"));
+      if (t.judgment.error) panel.append(el("p", "bad", t.judgment.error));
+      const grades = el("ul", "checks");
+      for (const g of t.judgment.grades || []) {
+        const li = el("li");
+        li.append(el("b", g.grade === "pass" ? "ok" : g.grade === "fail" ? "bad" : "kv", g.grade.toUpperCase()), g.criterion);
+        if (g.reason) li.append(el("div", "kv", g.reason));
+        grades.append(li);
+      }
+      panel.append(grades);
+    }
+    if (t.requests?.length) {
+      const s = el("div", "scroll"), tb = el("table"), h = el("tr");
+      ["#", "Turn", "Tools offered", "Model called", "Input", "Cached", "Output", "Model s"].forEach(x => h.append(el("th", null, x)));
+      tb.append(h);
+      t.requests.forEach((q, i) => {
+        const r = el("tr");
+        [i + 1, q.turn + 1, q.tools, (q.tool_calls || []).join(", ") || (q.error ? "error: " + q.error : "text"), num(q.input_tokens), num(q.cached_tokens), num(q.output_tokens), q.seconds.toFixed(1)].forEach(v => r.append(el("td", "rate", String(v))));
+        tb.append(r);
+      });
+      s.append(tb); panel.append(s);
+    }
+    panel.append(el("h3", null, "Final reply"));
+    panel.append(el("pre", null, t.reply || "(empty)"));
+    const history = t.history?.messages || [];
+    if (history.length) {
+      const d = el("details"); d.append(el("summary", null, `Conversation (${history.length} messages)`));
+      for (const m of history) {
+        const box = el("div", `msg ${m.role}`);
+        box.append(el("div", "role", m.role + (m.tool_name ? " · " + m.tool_name : "")));
+        if (m.content) box.append(el("pre", null, m.content));
+        for (const c of m.calls || []) box.append(el("pre", null, `${c.name}(${c.arguments})`));
+        d.append(box);
+      }
+      panel.append(d);
+    }
+    panel.append(el("p", "kv", t.record));
+    if (t.log) panel.append(el("p", "kv", `Core and simulator log: ${t.log}`));
+  }
+})();
+</script>
+</body>
+</html>

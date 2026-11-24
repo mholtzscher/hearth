@@ -1,0 +1,39 @@
+id: command-thermostat-celsius
+title: Set the thermostat target in Celsius
+tags: [command, thermostat, units, safety]
+
+setup:
+  pin:
+    - entity: {device: hallway-thermostat, key: thermostat}
+      value: {mode: heat, current_temperature: 18500, target_temperature: 19000}
+
+turns:
+  - text: Set the hallway thermostat to 21 degrees.
+
+checks:
+  - kind: commands_exactly
+    commands:
+      - entity: {device: hallway-thermostat, key: thermostat}
+        operation: set_target
+        params: {temperature: 21000}
+  - kind: reply_matches
+    pattern: '(?i)\b21(?:\.0+)?\s*°?\s*C'
+  - kind: no_view
+
+judge:
+  criteria:
+    - The reply states which thermostat changed and the new target.
+    - The reply does not claim the house is already at 21 °C.
+
+max_requests: 10
+
+reference:
+  - call: list_devices
+    arguments: '{}'
+  - call: get_entity
+    arguments: '{"entity_id": "{{entity:hallway-thermostat/thermostat}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:execute_entity_command"}'
+  - call: execute_entity_command
+    arguments: '{"entity_id": "{{entity:hallway-thermostat/thermostat}}", "operation": "set_target", "parameters": {"temperature": 21000}}'
+  - reply: Set the Hallway thermostat ({{entity:hallway-thermostat/thermostat}}) target to 21 °C.

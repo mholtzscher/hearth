@@ -1,0 +1,51 @@
+id: dashboard-create-temperature
+title: Metric and 24-hour chart for one temperature sensor
+tags: [dashboard, create]
+
+setup:
+  pin:
+    - entity: {device: simulated-light, key: temperature}
+      value: 25000
+
+turns:
+  - text: >-
+      Build a dashboard for the Simulated light: its current temperature
+      next to a chart of the last 24 hours.
+
+checks:
+  - kind: view
+    view:
+      layout: "Grid[Metric,TimeSeries]"
+      cards:
+        - type: Metric
+          bindings:
+            source: {device: simulated-light, key: temperature}
+        - type: TimeSeries
+          bindings:
+            series/0/source: {device: simulated-light, key: temperature}
+          props:
+            series/0/source/window: 24h
+  - kind: reply_max_sentences
+    max: 1
+
+judge:
+  criteria:
+    - The reply does not repeat the temperature or list the cards the view already shows.
+
+max_requests: 10
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:simulated-light}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:present_view"}'
+  - call: present_view
+    arguments: |-
+      {"definition": {"schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Simulated light",
+        "spec": {"root": "grid", "elements": {
+          "grid": {"type": "Grid", "props": {"columns": 2}, "children": ["metric", "chart"]},
+          "metric": {"type": "Metric", "props": {"label": "Temperature", "source": {"kind": "entity-state",
+            "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1"}}},
+          "chart": {"type": "TimeSeries", "props": {"title": "Temperature", "series": [{"source": {"kind": "entity-series",
+            "entity_id": "{{entity:simulated-light/temperature}}", "entity_type": "hearth.temperature/v1", "window": "24h"}}]}}}}}}
+  - reply: ""
