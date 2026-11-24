@@ -52,8 +52,11 @@ operation files, rather than a separate handwritten inventory:
 - [Notifications](../../internal/modules/notifications/mcpapi/register.go)
 
 The native `compose_view` tool accepts up to 32 KiB of arguments. Invalid shape
-returns `invalid_arguments` with safe diagnostics; an invalid composition or edit
-returns `invalid_definition`. `draft_required` means an edit needs a selected
+returns `invalid_arguments` with one diagnostic per problem, up to eight, sorted
+by argument path. An unknown property or card type also lists the keys or types
+the schema allows at that path. Diagnostics never repeat submitted keys or
+values. An invalid composition or edit returns `invalid_definition` for its
+first failing source. `draft_required` means an edit needs a selected
 draft, while `draft_selected` means a separate view needs a turn without one.
 These native Agent observations are not external MCP results.
 

@@ -229,7 +229,14 @@ func authoringTree(node portableTreeNode) map[string]any {
 	case "Device":
 		args["device_id"] = args["device"].(map[string]any)["device_id"]
 		delete(args, "device")
-	case "ToggleTile", "Pressure", "Forecast", "Cover", "Thermostat", "MediaPlayer":
+	case "Metric", "State", "WeekPattern":
+		flattenField(args)
+	case "ReadingList", "StateTimeline":
+		flattenRows(args)
+	case "ToggleTile":
+		flattenSource(args)
+		flattenMeter(args)
+	case "Pressure", "Forecast", "Cover", "Thermostat", "MediaPlayer":
 		flattenSource(args)
 	case "ToggleList":
 		for _, row := range args["rows"].([]any) {
@@ -258,8 +265,54 @@ func authoringTree(node portableTreeNode) map[string]any {
 		if totals, ok := args["totals"].(map[string]any); ok {
 			flattenRoles(totals)
 		}
+		renameWeatherRoles(node.Type, args)
 	}
 	return args
+}
+
+// renameWeatherRoles maps portable weather slots to their authoring keys: the
+// main Entity is entity_id, and wind slots carry their wind_ prefix.
+func renameWeatherRoles(cardType string, args map[string]any) {
+	renames := map[string]map[string]string{
+		"OutsideNow": {"temperature": "entity_id", "wind": "wind_speed"},
+		"Rain":       {"rate": "entity_id"},
+		"Wind":       {"speed": "entity_id", "direction": "wind_direction"},
+	}[cardType]
+	for from, to := range renames {
+		if value, ok := args[from]; ok {
+			args[to] = value
+			delete(args, from)
+		}
+	}
+}
+
+func flattenRows(args map[string]any) {
+	for _, row := range args["rows"].([]any) {
+		flattenField(row.(map[string]any))
+	}
+}
+
+// flattenMeter flattens a ToggleTile metric and its optional detail reading.
+func flattenMeter(args map[string]any) {
+	metric, ok := args["metric"].(map[string]any)
+	if !ok {
+		return
+	}
+	flattenField(metric)
+	if detail, hasDetail := metric["detail"].(map[string]any); hasDetail {
+		flattenField(detail)
+	}
+}
+
+// flattenField lifts a portable source's Entity and optional field beside the
+// node's other authoring keys.
+func flattenField(node map[string]any) {
+	source := node["source"].(map[string]any)
+	node["entity_id"] = source["entity_id"]
+	if field, ok := source["field"]; ok {
+		node["field"] = field
+	}
+	delete(node, "source")
 }
 
 func flattenSource(node map[string]any) {

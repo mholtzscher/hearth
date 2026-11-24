@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,6 +19,17 @@ import (
 func TestComposeViewSafeArgumentDiagnostics(t *testing.T) {
 	t.Parallel()
 	const sentinel = "private-value-do-not-echo"
+	// Unknown keys and tags list what the schema allows, never the input.
+	allowed := map[string][]string{
+		"schema closed": {"text", "type"},
+		"bad variant": {
+			"Stack", "Grid", "Heading", "Note", "Metric", "TimeSeries", "State", "ReadingList", "Device",
+			"StateTimeline", "WeekPattern", "ToggleTile", "ToggleList", "OutsideNow", "Rain", "Wind", "Pressure",
+			"Forecast", "AirPurifier", "Cover", "Thermostat", "MediaPlayer",
+		},
+		"no raw graph":     {"changes", "layout", "mode", "title"},
+		"unsupported edit": {"set_title", "set_forecast_periods", "set_chart_window"},
+	}
 	for _, tc := range []struct {
 		name, args, code, path string
 	}{
@@ -41,9 +54,72 @@ func TestComposeViewSafeArgumentDiagnostics(t *testing.T) {
 			output, failure := invokedComposeFailure(t, native, tc.args)
 			require.Equal(t, composeViewFailure{
 				Code: "invalid_arguments", Message: "Invalid compose_view arguments.",
-				Diagnostics: []composeDiagnostic{{Code: tc.code, Path: tc.path}},
+				Diagnostics: []composeDiagnostic{{Code: tc.code, Path: tc.path, Allowed: allowed[tc.name]}},
 			}, failure, "tool output: %s", output)
 			require.NotContains(t, output, sentinel)
+		})
+	}
+}
+
+// One rejection lists every argument problem, sorted by path and capped, so a
+// call with several mistakes needs one retry, not one per mistake.
+func TestComposeViewReportsEveryArgumentProblem(t *testing.T) {
+	t.Parallel()
+	const sentinel = "private-value-do-not-echo"
+	note := func(extra string) string { return `{"type":"Note","text":"text"` + extra + `}` }
+	layout := func(children ...string) string {
+		return `{"mode":"create","title":"View","layout":{"type":"Stack","children":[` +
+			strings.Join(children, ",") + `]}}`
+	}
+	native := testComposeTool(t, nil)
+
+	output, failure := invokedComposeFailure(t, native, layout(
+		note(`,"`+sentinel+`":1`), `{"type":"Heading"}`, note(""),
+	))
+	require.Equal(t, []composeDiagnostic{
+		{Code: "unknown_property", Path: "/layout/children/0", Allowed: []string{"text", "type"}},
+		{Code: "missing_property", Path: "/layout/children/1/text"},
+	}, failure.Diagnostics, "tool output: %s", output)
+	require.NotContains(t, output, sentinel)
+
+	children := make([]string, 10)
+	for i := range children {
+		children[i] = note(`,"` + sentinel + strconv.Itoa(i) + `":1`)
+	}
+	output, failure = invokedComposeFailure(t, native, layout(children...))
+	require.Len(t, failure.Diagnostics, maxComposeDiagnostics, "tool output: %s", output)
+	paths := make([]string, len(failure.Diagnostics))
+	for i, diagnostic := range failure.Diagnostics {
+		paths[i] = diagnostic.Path
+	}
+	require.IsNonDecreasing(t, paths)
+	require.NotContains(t, output, sentinel)
+}
+
+// A key from before the unified schema is rejected like any unknown key, and
+// the rejection names the key that replaced it.
+func TestComposeViewRejectsOldSpellings(t *testing.T) {
+	t.Parallel()
+	const id = "ent_01900000-0000-7000-8000-000000000001"
+	for _, tc := range []struct{ name, card, replacement string }{
+		{"OutsideNow temperature", `{"type":"OutsideNow","temperature":"` + id + `"}`, "entity_id"},
+		{"OutsideNow wind", `{"type":"OutsideNow","entity_id":"` + id + `","wind":"` + id + `"}`, "wind_speed"},
+		{"Wind speed", `{"type":"Wind","speed":"` + id + `"}`, "entity_id"},
+		{"Wind direction", `{"type":"Wind","entity_id":"` + id + `","direction":"` + id + `"}`, "wind_direction"},
+		{"Rain rate", `{"type":"Rain","rate":"` + id + `"}`, "entity_id"},
+		{"Metric source", `{"type":"Metric","source":{"entity_id":"` + id + `"}}`, "entity_id"},
+		{"ReadingList row source", `{"type":"ReadingList","title":"Rows","rows":[{"source":{"entity_id":"` + id + `"}}]}`, "entity_id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			native := testComposeTool(t, nil)
+			output, failure := invokedComposeFailure(t, native, `{"mode":"create","title":"View","layout":`+tc.card+`}`)
+			require.Equal(t, "invalid_arguments", failure.Code, "tool output: %s", output)
+			unknown := slices.IndexFunc(failure.Diagnostics, func(d composeDiagnostic) bool {
+				return d.Code == "unknown_property"
+			})
+			require.GreaterOrEqual(t, unknown, 0, "tool output: %s", output)
+			require.Contains(t, failure.Diagnostics[unknown].Allowed, tc.replacement)
 		})
 	}
 }
@@ -103,7 +179,7 @@ func TestComposeViewSourceAndBudgetRejections(t *testing.T) {
 	for i := range 17 {
 		id := devices.EntityID(fmt.Sprintf("ent_01900000-0000-7000-8000-%012d", 400+i))
 		inventory[id] = devices.Entity{ID: id, TypeID: devices.EntityTypeTemperatureV1}
-		resources = append(resources, fmt.Sprintf(`{"type":"Metric","source":{"entity_id":%q}}`, id))
+		resources = append(resources, fmt.Sprintf(`{"type":"Metric","entity_id":%q}`, id))
 	}
 	overReferences := `{"type":"Grid","columns":2,"children":[` + group(
 		strings.Join(resources[:16], ","),
@@ -118,17 +194,17 @@ func TestComposeViewSourceAndBudgetRejections(t *testing.T) {
 	for _, tc := range []struct {
 		name, layout, code, reason, path string
 	}{
-		{"unknown source", `{"type":"Metric","source":{"entity_id":"` + missing + `"}}`, "invalid_definition", "an entity_id names no Entity", "/layout/source/entity_id"},
+		{"unknown source", `{"type":"Metric","entity_id":"` + missing + `"}`, "invalid_definition", "an entity_id names no Entity", "/layout/entity_id"},
 		{"wrong source type", `{"type":"Pressure","entity_id":"` + first + `"}`, "invalid_definition", "the selected Entity type is not compatible with this card or role", "/layout/entity_id"},
-		{"wrong source field", `{"type":"Metric","source":{"entity_id":"` + first + `","field":"/value"}}`, "invalid_definition", "choose a State field", "/layout/source/field"},
+		{"wrong source field", `{"type":"Metric","entity_id":"` + first + `","field":"/value"}`, "invalid_definition", "choose a State field", "/layout/field"},
 		{"mixed chart units", `{"type":"TimeSeries","title":"Chart","window":"24h","series":[{"entity_id":"` + first + `"},{"entity_id":"` + second + `"}]}`, "invalid_definition", "share one unit", ""},
 		{"repeated chart source", `{"type":"TimeSeries","title":"Chart","window":"24h","series":[{"entity_id":"` + first + `"},{"entity_id":"` + first + `"}]}`, "invalid_definition", "distinct Entities of one type", "/layout/series/1/entity_id"},
 		{"unknown series field", `{"type":"TimeSeries","title":"Chart","window":"24h","field":"/value","series":[{"entity_id":"` + first + `"}]}`, "invalid_definition", "field shared by the chart", "/layout/field"},
 		{"invalid period count", `{"type":"Forecast","entity_id":"` + daily + `","periods":12}`, "invalid_definition", "daily forecasts show 3 to 8", "/layout/periods"},
-		{"weather unit", `{"type":"Rain","rate":"` + first + `"}`, "invalid_definition", "rain rates need a numeric sensor in mm/h", ""},
+		{"weather unit", `{"type":"Rain","entity_id":"` + first + `"}`, "invalid_definition", "rain rates need a numeric sensor in mm/h", ""},
 		{"portable size", portableSize, "invalid_definition", "at most 16 KiB", ""},
 		{"layout depth", tooDeep, "invalid_arguments", "Invalid compose_view arguments", "/layout" + strings.Repeat("/children/0", 8)},
-		{"source limit", overReferences, "invalid_definition", "at most 16 distinct Entities and Devices", "/layout/children/1/source/entity_id"},
+		{"source limit", overReferences, "invalid_definition", "at most 16 distinct Entities and Devices", "/layout/children/1/entity_id"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

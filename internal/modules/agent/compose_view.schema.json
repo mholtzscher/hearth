@@ -20,10 +20,6 @@
     "window": {"enum": ["1h", "6h", "24h", "7d"]},
     "periods": {"type": "integer", "minimum": 3, "maximum": 48, "description": "Hourly: 6–48 (default 24). Daily: 3–8 (default 8)."},
     "field": {"type": "string", "maxLength": 64, "pattern": "^(?:/[a-z][a-z0-9_]*)*$", "description": "State JSON Pointer, e.g. /position. Omit or use \"\" for a scalar root; not /value unless it is an actual member of the State."},
-    "source": {
-      "type": "object", "required": ["entity_id"], "additionalProperties": false,
-      "properties": {"entity_id": {"$ref": "#/$defs/entity"}, "field": {"$ref": "#/$defs/field"}}
-    },
     "entity_label": {
       "type": "object", "required": ["entity_id"], "additionalProperties": false,
       "properties": {"entity_id": {"$ref": "#/$defs/entity"}, "label": {"$ref": "#/$defs/label"}}
@@ -36,18 +32,21 @@
     "rows": {
       "type": "array", "minItems": 1, "maxItems": 12,
       "items": {
-        "type": "object", "required": ["source"], "additionalProperties": false,
-        "properties": {"source": {"$ref": "#/$defs/source"}, "label": {"$ref": "#/$defs/label"}, "words": {"$ref": "#/$defs/words"}}
+        "type": "object", "required": ["entity_id"], "additionalProperties": false,
+        "properties": {
+          "entity_id": {"$ref": "#/$defs/entity"}, "field": {"$ref": "#/$defs/field"},
+          "label": {"$ref": "#/$defs/label"}, "words": {"$ref": "#/$defs/words"}
+        }
       }
     },
     "meter": {
       "description": "Live numeric reading with history and an optional second live reading, all from the power Entity's Device.",
-      "type": "object", "required": ["source", "window"], "additionalProperties": false,
+      "type": "object", "required": ["entity_id", "window"], "additionalProperties": false,
       "properties": {
-        "source": {"$ref": "#/$defs/source"}, "window": {"$ref": "#/$defs/window"},
+        "entity_id": {"$ref": "#/$defs/entity"}, "field": {"$ref": "#/$defs/field"}, "window": {"$ref": "#/$defs/window"},
         "detail": {
-          "type": "object", "required": ["source"], "additionalProperties": false,
-          "properties": {"source": {"$ref": "#/$defs/source"}, "label": {"$ref": "#/$defs/label"}}
+          "type": "object", "required": ["entity_id"], "additionalProperties": false,
+          "properties": {"entity_id": {"$ref": "#/$defs/entity"}, "field": {"$ref": "#/$defs/field"}, "label": {"$ref": "#/$defs/label"}}
         }
       }
     },
@@ -73,9 +72,10 @@
           "properties": {"type": {"const": "Note"}, "text": {"type": "string", "minLength": 1, "maxLength": 500}}
         },
         {
-          "type": "object", "required": ["type", "source"], "additionalProperties": false,
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
           "properties": {
-            "type": {"const": "Metric"}, "source": {"$ref": "#/$defs/source", "description": "Numeric State field."},
+            "type": {"const": "Metric"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Entity with a numeric State field."},
+            "field": {"$ref": "#/$defs/field"},
             "label": {"$ref": "#/$defs/label"}, "trend": {"$ref": "#/$defs/window"}, "range": {"const": true, "description": "Only for a numeric field with declared bounds."}
           }
         },
@@ -88,9 +88,10 @@
           }
         },
         {
-          "type": "object", "required": ["type", "source"], "additionalProperties": false,
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
           "properties": {
-            "type": {"const": "State"}, "source": {"$ref": "#/$defs/source", "description": "Boolean or text State field."},
+            "type": {"const": "State"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Entity with a Boolean or text State field."},
+            "field": {"$ref": "#/$defs/field"},
             "label": {"$ref": "#/$defs/label"}, "words": {"$ref": "#/$defs/words"}
           }
         },
@@ -111,9 +112,10 @@
           }
         },
         {
-          "type": "object", "required": ["type", "source"], "additionalProperties": false,
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
           "properties": {
-            "type": {"const": "WeekPattern"}, "source": {"$ref": "#/$defs/source", "description": "Boolean State field only."},
+            "type": {"const": "WeekPattern"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Entity with a Boolean State field."},
+            "field": {"$ref": "#/$defs/field"},
             "label": {"$ref": "#/$defs/label"}, "words": {"$ref": "#/$defs/words"}
           }
         },
@@ -133,20 +135,21 @@
           }
         },
         {
-          "type": "object", "required": ["type", "temperature"], "additionalProperties": false,
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
           "properties": {
-            "type": {"const": "OutsideNow"}, "label": {"$ref": "#/$defs/label"}, "temperature": {"$ref": "#/$defs/entity"},
-            "humidity": {"$ref": "#/$defs/entity"}, "wind": {"$ref": "#/$defs/entity", "description": "Sustained wind speed."},
+            "type": {"const": "OutsideNow"}, "label": {"$ref": "#/$defs/label"},
+            "entity_id": {"$ref": "#/$defs/entity", "description": "Outdoor temperature (hearth.temperature/v1)."},
+            "humidity": {"$ref": "#/$defs/entity"}, "wind_speed": {"$ref": "#/$defs/entity", "description": "Sustained wind speed."},
             "wind_direction": {"$ref": "#/$defs/entity", "description": "Direction in deg."},
             "rain_rate": {"$ref": "#/$defs/entity", "description": "Rain rate in mm/h."},
             "rain_today": {"$ref": "#/$defs/entity", "description": "Daily rain counter in mm."}
           }
         },
         {
-          "type": "object", "required": ["type", "rate"], "additionalProperties": false,
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
           "properties": {
             "type": {"const": "Rain"}, "label": {"$ref": "#/$defs/label"},
-            "rate": {"$ref": "#/$defs/entity", "description": "Rain rate in mm/h."},
+            "entity_id": {"$ref": "#/$defs/entity", "description": "Rain rate in mm/h."},
             "storm": {"$ref": "#/$defs/entity", "description": "Storm rain counter in mm."},
             "totals": {
               "description": "Bind the station's own counters in mm; do not integrate the rate.",
@@ -157,10 +160,10 @@
           }
         },
         {
-          "type": "object", "required": ["type", "speed"], "additionalProperties": false,
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
           "properties": {
-            "type": {"const": "Wind"}, "label": {"$ref": "#/$defs/label"}, "speed": {"$ref": "#/$defs/entity", "description": "Sustained wind speed."},
-            "gust": {"$ref": "#/$defs/entity"}, "direction": {"$ref": "#/$defs/entity", "description": "Direction in deg."},
+            "type": {"const": "Wind"}, "label": {"$ref": "#/$defs/label"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Sustained wind speed."},
+            "gust": {"$ref": "#/$defs/entity"}, "wind_direction": {"$ref": "#/$defs/entity", "description": "Direction in deg."},
             "max_gust": {"$ref": "#/$defs/entity", "description": "Maximum gust today."}, "trend": {"$ref": "#/$defs/window"}
           }
         },

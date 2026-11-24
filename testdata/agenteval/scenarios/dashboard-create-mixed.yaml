@@ -37,7 +37,7 @@ reference:
     arguments: |-
       {"mode": "create", "title": "Office", "layout": {"type": "Stack", "gap": "medium", "children": [
         {"type": "ReadingList", "title": "Office", "rows": [
-          {"source": {"entity_id": "{{entity:office-sensor/temperature}}"}}, {"source": {"entity_id": "{{entity:office-sensor/humidity}}"}}]},
+          {"entity_id": "{{entity:office-sensor/temperature}}"}, {"entity_id": "{{entity:office-sensor/humidity}}"}]},
         {"type": "Grid", "columns": 2, "children": [
           {"type": "ToggleTile", "label": "Kitchen metered plug", "entity_id": "{{entity:kitchen-metered-plug/power}}"},
           {"type": "ToggleTile", "label": "Office metered plug", "entity_id": "{{entity:office-metered-plug/power}}"}]}]}}

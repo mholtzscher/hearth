@@ -2,11 +2,14 @@ package agent
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -32,7 +35,7 @@ const composeViewDescription = "Present a live dashboard draft without saving or
 	"Follow the keys for each card type. Omit unused optional fields; never send null. " +
 	"For AirPurifier, entity_id is its main power Entity. Use fan_mode for named modes and fan_level for numbered speeds. " +
 	"Use those exact keys, not power or mode. " +
-	"Grid requires columns. OutsideNow uses wind_direction; Wind uses direction. " +
+	"Grid requires columns. Every card names its main Entity entity_id; an Entity is always a bare ID string. " +
 	"A view has at most 32 nodes, 8 levels, and 16 distinct Entities and Devices."
 
 //go:embed compose_view.schema.json
@@ -90,11 +93,11 @@ func (t composeViewTool) InvokableRun(ctx context.Context, arguments string, _ .
 		return "", toolCallError{err: err}
 	}
 	if len(arguments) > maxComposeArguments {
-		return rejectComposeArguments(ctx, "argument_limit", "")
+		return rejectComposeArguments(ctx, composeDiagnostic{Code: "argument_limit"})
 	}
 	value, err := jsonschema.UnmarshalJSON(strings.NewReader(arguments))
 	if err != nil {
-		return rejectComposeArguments(ctx, "invalid_json", "")
+		return rejectComposeArguments(ctx, composeDiagnostic{Code: "invalid_json"})
 	}
 	object, _ := value.(map[string]any)
 	if object != nil {
@@ -102,7 +105,7 @@ func (t composeViewTool) InvokableRun(ctx context.Context, arguments string, _ .
 		// children: incompatible union branches also inspect the input.
 		var nodes int
 		if path, tooLarge := composeLayoutLimit(object["layout"], "/layout", 1, &nodes); tooLarge {
-			return rejectComposeArguments(ctx, "layout_limit", path)
+			return rejectComposeArguments(ctx, composeDiagnostic{Code: "layout_limit", Path: path})
 		}
 	}
 	if invalid := t.input.Validate(value); invalid != nil {
@@ -110,8 +113,7 @@ func (t composeViewTool) InvokableRun(ctx context.Context, arguments string, _ .
 		if !ok {
 			return "", toolCallError{err: invalid}
 		}
-		diagnostic := diagnoseComposeArguments(t.input, value, validation)
-		return rejectComposeArguments(ctx, diagnostic.Code, diagnostic.Path)
+		return rejectComposeArguments(ctx, diagnoseComposeArguments(t.input, value, validation)...)
 	}
 	// Decode exactly the instance the validator saw, not an object whose
 	// repeated keys can merge into Go structs during unmarshaling.
@@ -154,7 +156,7 @@ func (t composeViewTool) create(ctx context.Context, arguments []byte) (string, 
 	}
 	var input dashboards.ComposeViewInput
 	if err := json.Unmarshal(arguments, &input); err != nil {
-		return rejectComposeArguments(ctx, "invalid_layout", "/layout")
+		return rejectComposeArguments(ctx, composeDiagnostic{Code: "invalid_layout", Path: "/layout"})
 	}
 	artifact, err := t.authoring.ComposeView(ctx, input)
 	return composeResult(ctx, artifact, err)
@@ -170,7 +172,7 @@ func (t composeViewTool) edit(ctx context.Context, arguments []byte) (string, er
 		Changes []dashboards.ViewChange `json:"changes"`
 	}
 	if err := json.Unmarshal(arguments, &input); err != nil {
-		return rejectComposeArguments(ctx, "invalid_changes", "/changes")
+		return rejectComposeArguments(ctx, composeDiagnostic{Code: "invalid_changes", Path: "/changes"})
 	}
 	artifact, err := t.authoring.EditView(ctx, t.draft.Definition, input.Changes)
 	return composeResult(ctx, artifact, err)
@@ -203,7 +205,13 @@ func composeResult(ctx context.Context, artifact dashboards.Artifact, err error)
 type composeDiagnostic struct {
 	Code string `json:"code"`
 	Path string `json:"path"`
+	// Allowed lists schema-declared property names or variant tags at Path
+	// for unknown_property and invalid_variant. It never contains input.
+	Allowed []string `json:"allowed,omitempty"`
 }
+
+// maxComposeDiagnostics bounds one rejection's diagnostics.
+const maxComposeDiagnostics = 8
 
 type composeViewFailure struct {
 	Code        string              `json:"failure_code"`
@@ -211,10 +219,9 @@ type composeViewFailure struct {
 	Diagnostics []composeDiagnostic `json:"diagnostics,omitempty"`
 }
 
-func rejectComposeArguments(ctx context.Context, code, path string) (string, error) {
+func rejectComposeArguments(ctx context.Context, diagnostics ...composeDiagnostic) (string, error) {
 	return composeFailure(ctx, composeViewFailure{
-		Code: "invalid_arguments", Message: "Invalid compose_view arguments.",
-		Diagnostics: []composeDiagnostic{{Code: code, Path: path}},
+		Code: "invalid_arguments", Message: "Invalid compose_view arguments.", Diagnostics: diagnostics,
 	})
 }
 
@@ -250,40 +257,102 @@ func composeLayoutLimit(value any, path string, depth int, count *int) (string, 
 	return "", false
 }
 
-// diagnoseComposeArguments selects the variant named by a declared
-// discriminator. Unknown keys and instance values never form diagnostics.
-func diagnoseComposeArguments(root *jsonschema.Schema, value any, issue *jsonschema.ValidationError) composeDiagnostic {
-	for {
-		path, location, instance := composeSchemaLocation(root, value, issue.InstanceLocation)
-		switch problem := issue.ErrorKind.(type) {
-		case *kind.OneOf:
-			if _, object := instance.(map[string]any); !object {
-				return composeDiagnostic{Code: "type_mismatch", Path: path}
-			}
-			index, discriminator := composeVariant(location, instance)
-			if index < 0 || index >= len(issue.Causes) {
-				return composeDiagnostic{Code: "invalid_variant", Path: path + discriminator}
-			}
-			issue = issue.Causes[index]
-			continue
-		case *kind.Required:
-			if index, _ := composeVariant(location, instance); index >= 0 {
-				location = location.OneOf[index]
-			}
-			if location != nil && len(problem.Missing) > 0 && location.Properties[problem.Missing[0]] != nil {
-				path += "/" + problem.Missing[0]
-			}
-			return composeDiagnostic{Code: "missing_property", Path: path}
-		case *kind.AdditionalProperties:
-			return composeDiagnostic{Code: "unknown_property", Path: path}
-		case *kind.Type:
-			return composeDiagnostic{Code: "type_mismatch", Path: path}
-		}
-		if len(issue.Causes) == 0 {
-			return composeDiagnostic{Code: "constraint_violation", Path: path}
-		}
-		issue = issue.Causes[0]
+// diagnoseComposeArguments returns up to maxComposeDiagnostics leaf problems,
+// sorted by path then code, with duplicates removed. A declared discriminator
+// (type or op) selects one variant's causes; other branches contribute all
+// their causes. Unknown keys and instance values never form diagnostics; an
+// unknown key or tag instead lists what the schema allows at that path.
+func diagnoseComposeArguments(
+	root *jsonschema.Schema, value any, issue *jsonschema.ValidationError,
+) []composeDiagnostic {
+	var found []composeDiagnostic
+	collectComposeDiagnostics(root, value, issue, &found)
+	if len(found) == 0 {
+		return []composeDiagnostic{{Code: "constraint_violation"}}
 	}
+	slices.SortStableFunc(found, func(a, b composeDiagnostic) int {
+		return cmp.Or(strings.Compare(a.Path, b.Path), strings.Compare(a.Code, b.Code))
+	})
+	found = slices.CompactFunc(found, func(a, b composeDiagnostic) bool {
+		return a.Path == b.Path && a.Code == b.Code
+	})
+	return found[:min(len(found), maxComposeDiagnostics)]
+}
+
+func collectComposeDiagnostics(
+	root *jsonschema.Schema, value any, issue *jsonschema.ValidationError, found *[]composeDiagnostic,
+) {
+	path, location, instance := composeSchemaLocation(root, value, issue.InstanceLocation)
+	add := func(diagnostic composeDiagnostic) { *found = append(*found, diagnostic) }
+	switch problem := issue.ErrorKind.(type) {
+	case *kind.OneOf:
+		if _, object := instance.(map[string]any); !object {
+			add(composeDiagnostic{Code: "type_mismatch", Path: path})
+			return
+		}
+		index, discriminator := composeVariant(location, instance)
+		if index < 0 || index >= len(issue.Causes) {
+			add(composeDiagnostic{
+				Code:    "invalid_variant",
+				Path:    path + discriminator,
+				Allowed: composeVariantTags(location, discriminator),
+			})
+			return
+		}
+		collectComposeDiagnostics(root, value, issue.Causes[index], found)
+		return
+	case *kind.Required:
+		location = composeSelectedVariant(location, instance)
+		for _, missing := range problem.Missing {
+			missingPath := path
+			if location != nil && location.Properties[missing] != nil {
+				missingPath += "/" + missing
+			}
+			add(composeDiagnostic{Code: "missing_property", Path: missingPath})
+		}
+		return
+	case *kind.AdditionalProperties:
+		location = composeSelectedVariant(location, instance)
+		var allowed []string
+		if location != nil {
+			allowed = slices.Sorted(maps.Keys(location.Properties))
+		}
+		add(composeDiagnostic{Code: "unknown_property", Path: path, Allowed: allowed})
+		return
+	case *kind.Type:
+		add(composeDiagnostic{Code: "type_mismatch", Path: path})
+		return
+	}
+	if len(issue.Causes) == 0 {
+		add(composeDiagnostic{Code: "constraint_violation", Path: path})
+		return
+	}
+	for _, cause := range issue.Causes {
+		collectComposeDiagnostics(root, value, cause, found)
+	}
+}
+
+// composeSelectedVariant narrows a union to the variant its discriminator names.
+func composeSelectedVariant(location *jsonschema.Schema, instance any) *jsonschema.Schema {
+	if index, _ := composeVariant(location, instance); index >= 0 {
+		return location.OneOf[index]
+	}
+	return location
+}
+
+// composeVariantTags lists a union's declared discriminator values.
+func composeVariantTags(location *jsonschema.Schema, discriminator string) []string {
+	key := strings.TrimPrefix(discriminator, "/")
+	if location == nil || key == "" {
+		return nil
+	}
+	tags := make([]string, 0, len(location.OneOf))
+	for _, variant := range location.OneOf {
+		if tag := variant.Properties[key]; tag != nil && tag.Const != nil {
+			tags = append(tags, fmt.Sprint(*tag.Const))
+		}
+	}
+	return tags
 }
 
 func composeSchemaLocation(root *jsonschema.Schema, value any, tokens []string) (string, *jsonschema.Schema, any) {

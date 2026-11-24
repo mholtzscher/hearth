@@ -70,7 +70,8 @@ func labeledProps(label string) cardProps {
 	return p
 }
 
-type composeSource struct {
+// entityField names one Entity and an optional State field beside it.
+type entityField struct {
 	EntityID devices.EntityID `json:"entity_id"`
 	Field    string           `json:"field"`
 }
@@ -91,7 +92,7 @@ type cardCompiler struct {
 	err  error
 }
 
-func (c *cardCompiler) scalar(source composeSource, path string) composedSource {
+func (c *cardCompiler) scalar(source entityField, path string) composedSource {
 	state := c.root(source.EntityID, path+"/entity_id")
 	if c.err == nil {
 		if _, found := devices.BuiltinStateField(state.EntityType, source.Field); !found {
@@ -119,8 +120,16 @@ func (c *cardCompiler) root(id devices.EntityID, path string, types ...devices.E
 }
 
 func (c *cardCompiler) optionalRoot(p cardProps, key string, id devices.EntityID, entityType devices.EntityTypeID) {
+	c.optionalRootAt(p, key, "/"+key, id, entityType)
+}
+
+// optionalRootAt binds an optional slot whose authoring key differs from its
+// portable key, reporting problems at the authoring path.
+func (c *cardCompiler) optionalRootAt(
+	p cardProps, key, path string, id devices.EntityID, entityType devices.EntityTypeID,
+) {
 	if id != "" {
-		p[key] = c.root(id, "/"+key, entityType)
+		p[key] = c.root(id, path, entityType)
 	}
 }
 
@@ -131,15 +140,16 @@ type textProps struct {
 func (p *textProps) compile(_ *cardCompiler) cardProps { return cardProps{"text": p.Text} }
 
 type metricProps struct {
-	Source composeSource `json:"source"`
-	Label  string        `json:"label"`
-	Trend  string        `json:"trend"`
-	Range  bool          `json:"range"`
+	entityField
+
+	Label string `json:"label"`
+	Trend string `json:"trend"`
+	Range bool   `json:"range"`
 }
 
 func (p *metricProps) compile(c *cardCompiler) cardProps {
 	props := labeledProps(p.Label)
-	props["source"] = c.scalar(p.Source, "/source")
+	props["source"] = c.scalar(p.entityField, "")
 	props.optionalText("trend", p.Trend)
 	if p.Range {
 		props["range"] = true
@@ -198,14 +208,15 @@ type booleanWords struct {
 }
 
 type readingRow struct {
-	Source composeSource `json:"source"`
-	Label  string        `json:"label"`
-	Words  *booleanWords `json:"words"`
+	entityField
+
+	Label string        `json:"label"`
+	Words *booleanWords `json:"words"`
 }
 
 func (p *readingRow) compile(c *cardCompiler) cardProps {
 	props := labeledProps(p.Label)
-	props["source"] = c.scalar(p.Source, "/source")
+	props["source"] = c.scalar(p.entityField, "")
 	if p.Words != nil {
 		props["words"] = p.Words
 	}
@@ -261,11 +272,13 @@ func (p *deviceProps) compile(c *cardCompiler) cardProps {
 }
 
 type meterProps struct {
-	Source composeSource `json:"source"`
-	Window string        `json:"window"`
+	entityField
+
+	Window string `json:"window"`
 	Detail *struct {
-		Source composeSource `json:"source"`
-		Label  string        `json:"label"`
+		entityField
+
+		Label string `json:"label"`
 	} `json:"detail"`
 }
 
@@ -278,10 +291,10 @@ type toggleTileProps struct {
 func (p *toggleTileProps) compile(c *cardCompiler) cardProps {
 	props := p.compileRoot(c, devices.EntityTypePowerV1)
 	if meter := p.Metric; meter != nil {
-		metric := cardProps{"source": c.scalar(meter.Source, "/metric/source"), "window": meter.Window}
+		metric := cardProps{"source": c.scalar(meter.entityField, "/metric"), "window": meter.Window}
 		if meter.Detail != nil {
 			detail := labeledProps(meter.Detail.Label)
-			detail["source"] = c.scalar(meter.Detail.Source, "/metric/detail/source")
+			detail["source"] = c.scalar(meter.Detail.entityField, "/metric/detail")
 			metric["detail"] = detail
 		}
 		props["metric"] = metric
@@ -311,9 +324,9 @@ func (p *toggleListProps) compile(c *cardCompiler) cardProps {
 
 type outsideNowProps struct {
 	Label         string           `json:"label"`
-	Temperature   devices.EntityID `json:"temperature"`
+	Temperature   devices.EntityID `json:"entity_id"`
 	Humidity      devices.EntityID `json:"humidity"`
-	Wind          devices.EntityID `json:"wind"`
+	WindSpeed     devices.EntityID `json:"wind_speed"`
 	WindDirection devices.EntityID `json:"wind_direction"`
 	RainRate      devices.EntityID `json:"rain_rate"`
 	RainToday     devices.EntityID `json:"rain_today"`
@@ -321,9 +334,9 @@ type outsideNowProps struct {
 
 func (p *outsideNowProps) compile(c *cardCompiler) cardProps {
 	props := labeledProps(p.Label)
-	props["temperature"] = c.root(p.Temperature, "/temperature", devices.EntityTypeTemperatureV1)
+	props["temperature"] = c.root(p.Temperature, "/entity_id", devices.EntityTypeTemperatureV1)
 	c.optionalRoot(props, "humidity", p.Humidity, devices.EntityTypeRelativehumidityV1)
-	c.optionalRoot(props, "wind", p.Wind, devices.EntityTypeSpeedV1)
+	c.optionalRootAt(props, "wind", "/wind_speed", p.WindSpeed, devices.EntityTypeSpeedV1)
 	c.optionalRoot(props, "wind_direction", p.WindDirection, devices.EntityTypeNumericsensorV1)
 	c.optionalRoot(props, "rain_rate", p.RainRate, devices.EntityTypeNumericsensorV1)
 	c.optionalRoot(props, "rain_today", p.RainToday, devices.EntityTypeNumericsensorV1)
@@ -332,7 +345,7 @@ func (p *outsideNowProps) compile(c *cardCompiler) cardProps {
 
 type rainProps struct {
 	Label  string           `json:"label"`
-	Rate   devices.EntityID `json:"rate"`
+	Rate   devices.EntityID `json:"entity_id"`
 	Storm  devices.EntityID `json:"storm"`
 	Totals *struct {
 		Day   devices.EntityID `json:"day"`
@@ -345,7 +358,7 @@ type rainProps struct {
 
 func (p *rainProps) compile(c *cardCompiler) cardProps {
 	props := labeledProps(p.Label)
-	props["rate"] = c.root(p.Rate, "/rate", devices.EntityTypeNumericsensorV1)
+	props["rate"] = c.root(p.Rate, "/entity_id", devices.EntityTypeNumericsensorV1)
 	c.optionalRoot(props, "storm", p.Storm, devices.EntityTypeNumericsensorV1)
 	if totals := p.Totals; totals != nil && c.err == nil {
 		totalProps := cardProps{}
@@ -363,18 +376,18 @@ func (p *rainProps) compile(c *cardCompiler) cardProps {
 
 type windProps struct {
 	Label     string           `json:"label"`
-	Speed     devices.EntityID `json:"speed"`
+	Speed     devices.EntityID `json:"entity_id"`
 	Gust      devices.EntityID `json:"gust"`
-	Direction devices.EntityID `json:"direction"`
+	Direction devices.EntityID `json:"wind_direction"`
 	MaxGust   devices.EntityID `json:"max_gust"`
 	Trend     string           `json:"trend"`
 }
 
 func (p *windProps) compile(c *cardCompiler) cardProps {
 	props := labeledProps(p.Label)
-	props["speed"] = c.root(p.Speed, "/speed", devices.EntityTypeSpeedV1)
+	props["speed"] = c.root(p.Speed, "/entity_id", devices.EntityTypeSpeedV1)
 	c.optionalRoot(props, "gust", p.Gust, devices.EntityTypeSpeedV1)
-	c.optionalRoot(props, "direction", p.Direction, devices.EntityTypeNumericsensorV1)
+	c.optionalRootAt(props, "direction", "/wind_direction", p.Direction, devices.EntityTypeNumericsensorV1)
 	c.optionalRoot(props, "max_gust", p.MaxGust, devices.EntityTypeSpeedV1)
 	props.optionalText("trend", p.Trend)
 	return props

@@ -9,7 +9,7 @@ func TestToggleCardGuidanceKeepsIntentAndBindingsExplicit(t *testing.T) {
 	t.Parallel()
 	for _, instruction := range []string{
 		"ToggleTile", "ToggleList", "hearth.power/v1", "power Entity's Device",
-		"one explicit numeric source", "Ordinary toggle tiles have no sparkline",
+		"one explicit numeric entity_id", "Ordinary toggle tiles have no sparkline",
 		"only on an explicit browser gesture", "saving a view never executes Commands",
 	} {
 		if !strings.Contains(defaultSystemPrompt, instruction) {
