@@ -26,9 +26,9 @@ const RAW_CONTROLS: Record<string, number> = {
  * sent message, and unsupported view content are not cards (DESIGN.md).
  */
 const HAND_ROLLED_CARDS: Record<string, number> = {
+  "src/features/conversation/composer.tsx": 1,
   "src/features/conversation/messages.tsx": 1,
   "src/features/views/renderer/view-renderer.tsx": 1,
-  "src/pages/agent-page.tsx": 1,
 };
 
 /** Files outside the low-level wrappers that import radix-ui. */
