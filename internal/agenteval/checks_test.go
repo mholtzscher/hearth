@@ -29,6 +29,7 @@ type trialSpec struct {
 	commands  []string // JSON Command records created during the trial
 	tools     []string
 	savedNew  bool
+	history   []string // JSON tool messages in the conversation history
 }
 
 func trialRecord(spec trialSpec) TrialRecord {
@@ -46,7 +47,20 @@ func trialRecord(spec trialSpec) TrialRecord {
 	if spec.savedNew {
 		record.After.Dashboards = append(record.After.Dashboards, json.RawMessage(`{"id":"dash_2"}`))
 	}
+	if spec.history != nil {
+		record.History, _ = json.Marshal(map[string]any{"messages": rawList(spec.history)})
+	}
 	return record
+}
+
+// toolMessage is one tool result in a recorded conversation history.
+func toolMessage(tool, content string, presentsView bool) string {
+	message := map[string]any{"role": "tool", "tool_name": tool, "content": content}
+	if presentsView {
+		message["artifacts"] = []map[string]string{{"kind": "hearth.view"}}
+	}
+	raw, _ := json.Marshal(message)
+	return string(raw)
 }
 
 func rawList(items []string) []json.RawMessage {
@@ -86,6 +100,12 @@ func TestChecksPassAndFail(t *testing.T) {
 	}
 	edited := `{"kind":"hearth.view","definition":{"title":"New","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"entity_id":"ent_temp"}}}}}}}`
 	rebound := `{"kind":"hearth.view","definition":{"title":"New","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"entity_id":"ent_lamp"}}}}}}}`
+	presented := toolMessage("compose_view", view, true)
+	rejectedArguments := toolMessage("compose_view",
+		`{"failure_code":"invalid_arguments","diagnostics":[{"code":"type_mismatch","path":"/layout"}]}`, false)
+	rejectedDefinition := toolMessage("compose_view", `{"failure_code":"invalid_definition"}`, false)
+	// Evidence from another tool can carry a failure_code without a rejection.
+	failedRun := toolMessage("get_automation_history_entry", `{"failure_code":"command_rejected"}`, false)
 	cases := []struct {
 		name  string
 		check Check
@@ -164,6 +184,27 @@ func TestChecksPassAndFail(t *testing.T) {
 			"layout",
 		},
 		{"no view", Check{Kind: CheckNoView}, trialSpec{}, trialSpec{artifacts: []string{view}}, "presented"},
+		{
+			"view without rejections",
+			Check{Kind: CheckViewWithoutRejections},
+			trialSpec{history: []string{presented}},
+			trialSpec{history: []string{rejectedArguments, rejectedDefinition, presented}},
+			"2 rejected view attempt(s): invalid_arguments/type_mismatch, invalid_definition",
+		},
+		{
+			"view without rejections requires a view",
+			Check{Kind: CheckViewWithoutRejections},
+			trialSpec{history: []string{presented}},
+			trialSpec{history: []string{rejectedArguments}},
+			"no view was presented",
+		},
+		{
+			"view without rejections counts only the view tool",
+			Check{Kind: CheckViewWithoutRejections},
+			trialSpec{history: []string{failedRun, presented}},
+			trialSpec{history: []string{failedRun, rejectedArguments, presented}},
+			"1 rejected view attempt(s): invalid_arguments/type_mismatch",
+		},
 		{
 			"unchanged except",
 			Check{Kind: CheckViewUnchangedExcept, Dashboard: "draft", Changes: []string{"/title"}},

@@ -246,12 +246,69 @@ adapters:
             type: hearth.enumevent/v1
             # No periodic presses: see TestHouseholdEventsAreQuiet.
             support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
-      # Forecast periods start in 2099 so they stay upcoming; visual checks
-      # generate a temporary config with periods near the current hour.
-      - binding_key: simulated-forecast
-        name: Simulated forecast
+      # Home mirrors a Pirate Weather location, named as the deployed
+      # household names it. Forecast periods start in 2099 so they stay
+      # upcoming; visual checks generate a temporary config with periods near
+      # the current hour.
+      - binding_key: home
+        name: Home
         kind: sensor
         entities:
+          - key: temperature
+            name: Temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 900
+          - key: feels-like
+            name: Feels-like Temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: -2300
+          - key: humidity
+            name: Relative Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 64
+          - key: pressure
+            name: Sea-level Pressure
+            type: hearth.pressure/v1
+            support: {state: {}, operations: {}}
+            initial: 1032.8
+          - key: wind
+            name: Wind Speed
+            type: hearth.speed/v1
+            support: {state: {}, operations: {}}
+            initial: 3.7
+          - key: gust
+            name: Wind Gust
+            type: hearth.speed/v1
+            support: {state: {}, operations: {}}
+            initial: 4.4
+          - key: wind-direction
+            name: Wind Direction
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 360, unit: "deg", quantity_kind: wind_direction}, operations: {}}
+            initial: 98
+          - key: precipitation-rate
+            name: Precipitation Rate (Liquid Equivalent)
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000, unit: "mm/h", quantity_kind: precipitation_rate}, operations: {}}
+            initial: 0
+          - key: precipitation-probability
+            name: Precipitation Probability
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%", quantity_kind: precipitation_probability}, operations: {}}
+            initial: 0
+          - key: cloud-cover
+            name: Cloud Cover
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%", quantity_kind: cloud_cover}, operations: {}}
+            initial: 100
+          - key: uv-index
+            name: UV Index
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "index", quantity_kind: uv_index}, operations: {}}
+            initial: 2.4
           - key: hourly-forecast
             name: Hourly forecast
             type: hearth.hourlyforecast/v1
@@ -651,52 +708,120 @@ adapters:
             support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
             initial: 100
 
-      - binding_key: weather-station
-        name: Weather station
+      # The weather Devices mirror a deployed household's Ecowitt station and
+      # Pirate Weather location, with their names and split: names change
+      # which Devices the Agent reads and how much each model request carries.
+      - binding_key: weather-station-gateway
+        name: Weather Station Gateway
+        kind: sensor
+        entities:
+          - key: indoor-temperature
+            name: Indoor Temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 19500
+          - key: indoor-humidity
+            name: Indoor Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 34
+          - key: relative-pressure
+            name: Relative Pressure
+            type: hearth.pressure/v1
+            support: {state: {}, operations: {}}
+            initial: 1013.25
+            outputs: {interval: 11s, values: [1013.25, 1010.5, 1005, 1010.5]}
+          - key: absolute-pressure
+            name: Absolute Pressure
+            type: hearth.pressure/v1
+            support: {state: {}, operations: {}}
+            initial: 990.5
+            outputs: {interval: 11s, values: [990.5, 987.8, 982.4, 987.8]}
+
+      - binding_key: outdoor-weather-array
+        name: Outdoor Weather Array
         kind: sensor
         entities:
           - key: temperature
-            name: Weather station temperature
+            name: Outdoor Temperature
             type: hearth.temperature/v1
             support: {state: {}, operations: {}}
             initial: -1000
             outputs: {interval: 5s, values: [-1000, 0, 1000, 2500, 0]}
           - key: humidity
-            name: Humidity
+            name: Outdoor Humidity
             type: hearth.relativehumidity/v1
             support: {state: {}, operations: {}}
             initial: 80
             outputs: {interval: 7s, values: [80, 85, 90, 85]}
-          - key: pressure
-            name: Atmospheric pressure
-            type: hearth.pressure/v1
-            support: {state: {}, operations: {}}
-            initial: 1013.25
-            outputs: {interval: 11s, values: [1013.25, 1010.5, 1005, 1010.5]}
+          - key: wind-direction
+            name: Wind Direction
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 360, unit: deg, quantity_kind: wind_direction}, operations: {}}
+            initial: 0
+            outputs: {interval: 5s, values: [0, 45, 90, 180, 270, 359]}
           - key: wind
-            name: Wind speed
+            name: Wind Speed
             type: hearth.speed/v1
             support: {state: {}, operations: {}}
             initial: 0
             outputs: {interval: 5s, values: [0, 1.5, 3.58, 8.5, 1.5]}
           - key: gust
-            name: Wind gust
+            name: Wind Gust
             type: hearth.speed/v1
             support: {state: {}, operations: {}}
             initial: 0
             outputs: {interval: 5s, values: [0, 4, 10, 15, 4]}
-          - key: wind-direction
-            name: Wind direction
+          - key: max-gust
+            name: Maximum Daily Gust
+            type: hearth.speed/v1
+            support: {state: {}, operations: {}}
+            initial: 6.5
+          - key: solar-radiation
+            name: Solar Radiation
             type: hearth.numericsensor/v1
-            support: {state: {minimum: 0, maximum: 360, unit: deg, quantity_kind: wind_direction}, operations: {}}
-            initial: 0
-            outputs: {interval: 5s, values: [0, 45, 90, 180, 270, 359]}
-          - key: illuminance
-            name: Illuminance
+            support: {state: {minimum: 0, maximum: 10000, unit: "W/m²", quantity_kind: solar_irradiance}, operations: {}}
+            initial: 180
+          - key: uv-index
+            name: UV Index
             type: hearth.numericsensor/v1
-            support: {state: {minimum: 0, maximum: 120000, unit: lx}, operations: {}}
+            support: {state: {minimum: 0, maximum: 100, unit: index, quantity_kind: uv_index}, operations: {}}
+            initial: 2
+          - key: rain-rate
+            name: Rain Rate
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000, unit: mm/h, quantity_kind: precipitation_rate}, operations: {}}
             initial: 0
-            outputs: {interval: 15s, values: [0, 100, 10000, 100000, 10000]}
+          - key: event-rain
+            name: Event Rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 0
+          - key: hourly-rain
+            name: Hourly Rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 0
+          - key: daily-rain
+            name: Daily Rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 0
+          - key: weekly-rain
+            name: Weekly Rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 1.8
+          - key: monthly-rain
+            name: Monthly Rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 37.6
+          - key: yearly-rain
+            name: Yearly Rain
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000000, unit: mm, quantity_kind: precipitation_depth}, operations: {}}
+            initial: 1044.9
 
       # Capability subsets keep simple lights distinct from the all-types fixture.
       # No power/brightness ticker: a set Command stays visible until the next set.

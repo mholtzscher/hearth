@@ -25,8 +25,8 @@ All commands run from the repository root.
   run output.
 - Both revisions must contain `internal/cmd/agenteval` with the same worker
   protocol. Revisions from before `agenteval` existed cannot be compared.
-- Budget time. A full comparison of 15 scenarios × 10 trials × 2 arms is about
-  300 turns and 900–1,800 model requests: 1–2 hours with `opencode-go/glm-5.3`,
+- Budget time. A full comparison of 16 scenarios × 10 trials × 2 arms is about
+  320 turns and 960–1,920 model requests: 1–2 hours with `opencode-go/glm-5.3`,
   which sent 1,300 unpaced requests without a rate limit. Requests are not
   paced by default; set `--min-gap` for a provider that rate-limits. The
   command prints its own estimate before it starts. Hosted runs are manual,
@@ -234,6 +234,7 @@ revisions that expose different tools.
 | `view` | `view.cards`, optional `view.layout` | The last presented view has exactly these cards, bindings, and props. `Heading` and `Note` cards are ignored. `layout` such as `Stack[ReadingList,Grid[ToggleTile,ToggleTile]]` also fixes nesting. |
 | `no_view` | — | No view was presented. |
 | `view_unchanged_except` | `dashboard`, `changes` | The last view equals the seeded dashboard except at the listed JSON Pointers, each of which must change. Empty strings count as absent. |
+| `view_without_rejections` | — | A view was presented, and the tool that presented it rejected none of its calls. Each rejection makes the user wait while the model writes the layout again. |
 | `tool_called` / `tool_not_called` | `tool` | A tool was, or was not, called. Prefer outcome checks. |
 | `automation_draft` | `automation.trigger_entity`, `automation.commands` | The last Automation draft triggers on that Entity, and its Command steps, at any depth, are exactly these. |
 | `no_automation_draft` | — | No Automation draft was presented. |
@@ -265,3 +266,8 @@ simulator and is kept separate so that simulator changes never shift what
 scenarios measure. Its event Entities never fire on their own, because a
 periodic button press would run seeded Automations and send Commands the
 Agent never asked for.
+
+Keep Device names and splits close to a deployed household. They change which
+Devices the Agent reads, how much each model request carries, and how often
+it retries. The weather Devices copy a deployed Ecowitt station (Weather
+Station Gateway and Outdoor Weather Array) and Pirate Weather location (Home).
