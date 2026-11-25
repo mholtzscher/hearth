@@ -64,10 +64,12 @@ func TestDevicesToolCatalog(t *testing.T) {
 		"list_entities",
 		"get_entity",
 		"update_entity",
+		"rename_entity",
 		"execute_entity_command",
 		"list_entity_commands",
 		"list_devices",
 		"get_device",
+		"rename_device",
 		"get_command",
 		"list_commands",
 		"list_entity_availability_history",
@@ -115,15 +117,19 @@ func TestMCPEntityToolsTranslateToServiceCalls(t *testing.T) {
 			requestedEntityID = entityID
 			return apiEntityWithState(nil), nil
 		},
-		setEntityEnabled: func(
+		patchEntity: func(
 			_ context.Context,
 			entityID devices.EntityID,
-			next bool,
+			patch devices.EntityPatch,
 		) (devices.EntityWithState, error) {
+			if patch.Enabled == nil || patch.NameEdit != nil {
+				t.Errorf("update_entity patch = %+v", patch)
+				return devices.EntityWithState{}, errors.New("unexpected patch")
+			}
 			requestedEntityID = entityID
-			enabled = next
+			enabled = *patch.Enabled
 			view := apiEntityWithState(nil)
-			view.Entity.Enabled = next
+			view.Entity.Enabled = enabled
 			return view, nil
 		},
 		executeCommand: func(_ context.Context, input devices.CommandInput) (devices.CommandResult, error) {

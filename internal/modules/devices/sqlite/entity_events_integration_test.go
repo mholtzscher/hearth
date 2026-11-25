@@ -286,7 +286,7 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	}
 
 	// A disabled Entity rejects even a supported name.
-	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
+	if _, err := service.PatchEntity(ctx, entityID, devices.EntityPatch{Enabled: new(false)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -347,7 +347,7 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	}
 
 	// An enabled Entity with a supported type rejects only an unlisted name.
-	if _, err := service.SetEntityEnabled(ctx, entityID, true); err != nil {
+	if _, err := service.PatchEntity(ctx, entityID, devices.EntityPatch{Enabled: new(true)}); err != nil {
 		t.Fatal(err)
 	}
 	unsupported := newEntityEvent(t, entityID, "triple_press", now)
@@ -519,7 +519,7 @@ func TestEntityEventHistoryPagesNewestFirstByReceiveOrder(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
+	if _, err := service.PatchEntity(ctx, entityID, devices.EntityPatch{Enabled: new(false)}); err != nil {
 		t.Fatal(err)
 	}
 	rejected := newEntityEvent(t, entityID, "double_press", now.Add(-time.Hour))
@@ -528,7 +528,7 @@ func TestEntityEventHistoryPagesNewestFirstByReceiveOrder(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SetEntityEnabled(ctx, entityID, true); err != nil {
+	if _, err := service.PatchEntity(ctx, entityID, devices.EntityPatch{Enabled: new(true)}); err != nil {
 		t.Fatal(err)
 	}
 	newest := newEntityEvent(t, entityID, "double_press", now)
@@ -760,7 +760,7 @@ func TestEntityEventIdentityOutcomeSurvivesRuntimeAndSupportChanges(t *testing.T
 	if result.Outcome != devices.EntityEventOutcomeIdentityConflict || result.Rejection != nil {
 		t.Fatalf("replacement runtime reprocessed ID outcome = %#v", result)
 	}
-	if _, err := service.SetEntityEnabled(ctx, entityID, false); err != nil {
+	if _, err := service.PatchEntity(ctx, entityID, devices.EntityPatch{Enabled: new(false)}); err != nil {
 		t.Fatal(err)
 	}
 	result, recordErr = service.RecordEntityEvent(ctx, entityEventTestAdapter, entityEventTestRuntimeID, accepted, now)

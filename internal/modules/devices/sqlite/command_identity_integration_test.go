@@ -155,7 +155,7 @@ func testImmediateTerminalCommandIdentity(t *testing.T, status devices.CommandSt
 	entityID := binding.Entities[0].EntityID
 	wantErr := devices.ErrEntityDisabled
 	if status == devices.CommandStatusEntityDisabled {
-		if _, err = service.SetEntityEnabled(ctx, entityID, false); err != nil {
+		if _, err = service.PatchEntity(ctx, entityID, devices.EntityPatch{Enabled: new(false)}); err != nil {
 			t.Fatal(err)
 		}
 	} else {

@@ -7,6 +7,17 @@ import (
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
+// renameFailure maps a name override write. The domain rejects an override that
+// is blank, too long, or contains control characters after the schema accepts it.
+func renameFailure(err error) *mcptools.ToolError {
+	if errors.Is(err, devices.ErrInvalidMetadataPatch) {
+		return invalidRequestFailure(
+			"name_override must be 1 to 128 code points after trimming and contain no control characters",
+		)
+	}
+	return readFailure(err)
+}
+
 func readFailure(err error) *mcptools.ToolError {
 	switch {
 	case errors.Is(err, devices.ErrEntityNotFound):

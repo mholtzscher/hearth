@@ -55,7 +55,7 @@ func assertDisabledTemperatureRefresh(
 		t.Fatal("read-only temperature Entity was not registered")
 	}
 	entity := entities.Items[index]
-	if _, err = service.SetEntityEnabled(ctx, entity.Entity.ID, false); err != nil {
+	if _, err = service.PatchEntity(ctx, entity.Entity.ID, devices.EntityPatch{Enabled: new(false)}); err != nil {
 		t.Fatal(err)
 	}
 	input.Arguments = json.RawMessage(`{"entity_id":"` + string(entity.Entity.ID) + `"}`)

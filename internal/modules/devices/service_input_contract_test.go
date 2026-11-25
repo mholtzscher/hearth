@@ -8,7 +8,7 @@ import (
 
 func TestServiceReadIdentityAndOperationalContracts(t *testing.T) {
 	t.Parallel()
-	for _, operation := range []string{"device", "entity", "command", "enablement"} {
+	for _, operation := range []string{"device", "entity", "command", "metadata"} {
 		for _, mode := range []string{"missing", "storage", "canceled"} {
 			t.Run(operation+"/"+mode, func(t *testing.T) {
 				t.Parallel()
@@ -62,8 +62,8 @@ func callInputContract(service *Service, operation string, valid bool) error {
 		_, err = service.GetEntity(context.Background(), EntityID("ent_"+id))
 	case "command":
 		_, err = service.GetCommand(context.Background(), CommandID("cmd_"+id))
-	case "enablement":
-		_, err = service.SetEntityEnabled(context.Background(), EntityID("ent_"+id), true)
+	case "metadata":
+		_, err = service.PatchEntity(context.Background(), EntityID("ent_"+id), EntityPatch{Enabled: new(true)})
 	}
 	return err
 }
@@ -88,10 +88,12 @@ func (repo *inputContractRepository) GetCommand(context.Context, CommandID) (Com
 	return CommandRecord{}, repo.cause
 }
 
-func (repo *inputContractRepository) SetEntityEnabled(
-	context.Context,
-	SetEntityEnabledParams,
-) (EntityWithState, error) {
+func (repo *inputContractRepository) PatchDevice(context.Context, PatchDeviceParams) (Device, error) {
+	repo.calls++
+	return Device{}, repo.cause
+}
+
+func (repo *inputContractRepository) PatchEntity(context.Context, PatchEntityParams) (EntityWithState, error) {
 	repo.calls++
 	return EntityWithState{}, repo.cause
 }

@@ -275,7 +275,7 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 
 	// A disabled stateless entity without a linked command reports
 	// entity_disabled, preserving the disabled-before-stateless order.
-	_, enablementErr := service.SetEntityEnabled(ctx, entityID, false)
+	_, enablementErr := service.PatchEntity(ctx, entityID, devices.EntityPatch{Enabled: new(false)})
 	if enablementErr != nil {
 		t.Fatal(enablementErr)
 	}
@@ -289,7 +289,7 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 		*result.Rejection != devices.RejectionEntityDisabled {
 		t.Fatalf("disabled stateless projection = %#v", result)
 	}
-	_, reenableErr := service.SetEntityEnabled(ctx, entityID, true)
+	_, reenableErr := service.PatchEntity(ctx, entityID, devices.EntityPatch{Enabled: new(true)})
 	if reenableErr != nil {
 		t.Fatal(reenableErr)
 	}
@@ -339,7 +339,11 @@ func TestDisabledEntityRejectsUnlinkedObservationAndAllowsActiveCommandRefresh(t
 		t.Fatal(createErr)
 	}
 	now = now.Add(2 * time.Second)
-	if _, enablementErr := service.SetEntityEnabled(ctx, entityID, false); enablementErr != nil {
+	if _, enablementErr := service.PatchEntity(
+		ctx,
+		entityID,
+		devices.EntityPatch{Enabled: new(false)},
+	); enablementErr != nil {
 		t.Fatal(enablementErr)
 	}
 
@@ -414,7 +418,11 @@ func TestDisabledEntityDoesNotExemptUnknownExpiredOrTerminalCommandLinks(t *test
 	}); completionErr != nil {
 		t.Fatal(completionErr)
 	}
-	if _, enablementErr := service.SetEntityEnabled(ctx, entityID, false); enablementErr != nil {
+	if _, enablementErr := service.PatchEntity(
+		ctx,
+		entityID,
+		devices.EntityPatch{Enabled: new(false)},
+	); enablementErr != nil {
 		t.Fatal(enablementErr)
 	}
 	unknown, err := devices.NewCommandID()
