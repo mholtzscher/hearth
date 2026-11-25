@@ -25,6 +25,7 @@ const (
 	invalidEntityIDMessage  = "entity_id must be a canonical Hearth Entity ID"
 	invalidDeviceIDMessage  = "device_id must be a canonical Hearth Device ID"
 	invalidCommandIDMessage = "command_id must be a canonical Hearth Command ID"
+	invalidLabelIDMessage   = "label IDs must be canonical Hearth Label IDs"
 )
 
 // pageLimit is a page size argument bounded to the range every list
@@ -111,4 +112,31 @@ func (id *commandID) UnmarshalJSON(data []byte) error {
 	}
 	*id = commandID(parsed)
 	return nil
+}
+
+// labelID is a canonical Hearth Label ID argument.
+type labelID string
+
+func (id *labelID) UnmarshalJSON(data []byte) error {
+	value, err := idValue(data)
+	if err != nil {
+		return toolError(failureInvalidLabelID, invalidLabelIDMessage)
+	}
+	parsed, err := devices.ParseLabelID(value)
+	if err != nil {
+		return toolError(failureInvalidLabelID, invalidLabelIDMessage)
+	}
+	*id = labelID(parsed)
+	return nil
+}
+
+func labelIDs(ids []labelID) []devices.LabelID {
+	if len(ids) == 0 {
+		return nil
+	}
+	result := make([]devices.LabelID, len(ids))
+	for index, id := range ids {
+		result[index] = devices.LabelID(id)
+	}
+	return result
 }

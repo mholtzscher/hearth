@@ -18,6 +18,10 @@ type Devices interface {
 	ListDevices(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
 	GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	ListEntities(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
+	CreateLabel(context.Context, devices.CreateLabelParams) (devices.Label, error)
+	RenameLabel(context.Context, devices.LabelID, string) (devices.Label, error)
+	DeleteLabel(context.Context, devices.LabelID) error
+	ListLabels(context.Context) ([]devices.Label, error)
 	GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 	ListEntityCommands(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
 	ListCommands(context.Context, devices.ListCommandsParams) (devices.Page[devices.CommandRecord], error)

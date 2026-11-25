@@ -43,7 +43,7 @@ func TestEveryCollectionContinuesItsOwnDomainPosition(t *testing.T) {
 	}{
 		{"list_entities", `{"device_id":"` + string(apiDeviceID) + `","limit":1}`, "next_cursor", `{"items":[]}`, devices.ListEntitiesParams{DeviceID: &apiDeviceIDValue, AfterID: &apiEntityIDValue, Limit: 1}},
 		{"list_devices", `{"limit":1}`, "next_cursor", `{"items":[]}`, devices.ListDevicesParams{AfterID: &apiDeviceIDValue, Limit: 1}},
-		{"get_device", `{"device_id":"` + string(apiDeviceID) + `","entity_limit":1}`, "next_entity_cursor", `{"device_id":"` + string(apiDeviceID) + `","name":"Office","kind":"light","entities":[]}`, devices.GetDeviceParams{ID: apiDeviceID, AfterEntityID: &apiEntityIDValue, EntityLimit: 1}},
+		{"get_device", `{"device_id":"` + string(apiDeviceID) + `","entity_limit":1}`, "next_entity_cursor", `{"device_id":"` + string(apiDeviceID) + `","name":"Office","kind":"light","area":null,"tags":[],"entities":[]}`, devices.GetDeviceParams{ID: apiDeviceID, AfterEntityID: &apiEntityIDValue, EntityLimit: 1}},
 		{"list_commands", `{"entity_id":"` + string(apiEntityID) + `","status":"satisfied","limit":1}`, "next_cursor", `{"items":[]}`, devices.ListCommandsParams{EntityID: &apiEntityIDValue, Status: &satisfiedStatusValue, BeforeRequestedAt: &beforeTime, BeforeID: &beforeID, Limit: 1}},
 		{"list_entity_commands", entityArgs, "next_cursor", `{"items":[]}`, devices.ListEntityCommandsParams{EntityID: apiEntityID, BeforeRequestedAt: &beforeTime, BeforeID: &beforeID, Limit: 1}},
 		{"list_entity_state_history", entityArgs, "next_cursor", `{"items":[]}`, devices.ListEntityStateHistoryParams{EntityID: apiEntityID, Filter: devices.EntityStateHistoryFilterUpdates, BeforeReceiveOrder: &receiveOrder, Limit: 1}},

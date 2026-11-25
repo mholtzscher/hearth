@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -45,7 +47,10 @@ func (handler *handler) listDevices(ctx context.Context, input ListDevicesInput)
 	}
 	body := Page[DeviceSummary]{Items: make([]DeviceSummary, len(page.Items))}
 	for index, device := range page.Items {
-		body.Items[index] = DeviceSummary{DeviceID: string(device.ID), Name: device.Name, Kind: string(device.Kind)}
+		body.Items[index] = DeviceSummary{
+			DeviceID: string(device.ID), Name: device.Name, Kind: string(device.Kind),
+			Area: deviceArea(device.Labels.Area), Tags: labelSummaries(device.Labels.Tags),
+		}
 	}
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeDevicesCursor(page.Items[len(page.Items)-1].ID)
@@ -58,7 +63,14 @@ func (handler *handler) listDevices(ctx context.Context, input ListDevicesInput)
 }
 
 type DeviceSummary struct {
-	DeviceID string `json:"device_id"`
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
+	DeviceID string         `json:"device_id"`
+	Name     string         `json:"name"`
+	Kind     string         `json:"kind"`
+	Area     *LabelSummary  `json:"area"`
+	Tags     []LabelSummary `json:"tags"      nullable:"false"`
+}
+
+func (DeviceSummary) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Properties["area"] = nullableSchema[LabelSummary](registry)
+	return schema
 }

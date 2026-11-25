@@ -27,13 +27,16 @@ type EntitySummary struct {
 	Enabled      bool                                `json:"enabled"`
 	Availability AvailabilitySummary                 `json:"availability"`
 	State        *StateSummary                       `json:"state"`
+	Area         *EntityArea                         `json:"area"`
+	Tags         []LabelSummary                      `json:"tags"         nullable:"false"`
 	Quantities   map[string]devices.QuantityMetadata `json:"quantities"`
 }
 
 func (EntitySummary) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {
 	// State is required even when no accepted Observation has supplied it yet.
 	schema.Properties["state"] = &huma.Schema{AnyOf: []*huma.Schema{
-		{Type: "null"}, registry.Schema(reflect.TypeFor[StateSummary](), true, ""),
+		{Type: schemaTypeNull}, registry.Schema(reflect.TypeFor[StateSummary](), true, ""),
 	}}
+	schema.Properties["area"] = nullableSchema[EntityArea](registry)
 	return schema
 }

@@ -93,6 +93,10 @@ func TestRegisteredToolsReturnIndependentProjections(t *testing.T) {
 	view.Availability = devices.EntityAvailability{Status: devices.EntityAvailabilityUnavailable,
 		Source: "adapter_health", Since: now, EvidenceAt: now, SourceObservedAt: &now,
 		Reason: &devices.HealthReason{Code: "hearth.external_system_unavailable"}}
+	view.Labels = devices.EntityLabels{
+		Area: &devices.EffectiveArea{Label: apiAreaRef(), Source: devices.AreaSourceDevice},
+		Tags: []devices.LabelRef{apiTagRef()},
+	}
 	command := listableCommand()
 	command.Parameters = devices.CommandParameters(opaque)
 	command.RequestedAt = now
@@ -106,6 +110,7 @@ func TestRegisteredToolsReturnIndependentProjections(t *testing.T) {
 		Name:        "Effective name",
 		AdapterName: "private",
 		Kind:        devices.DeviceKindLight,
+		Labels:      devices.DeviceLabels{Area: new(apiAreaRef()), Tags: []devices.LabelRef{apiTagRef()}},
 	}
 	calls := map[string]int{}
 	stub := &stubDevices{}
@@ -126,19 +131,23 @@ func TestRegisteredToolsReturnIndependentProjections(t *testing.T) {
 		string(apiObservationID),
 		"$V",
 		string(apiEntityEventID),
+		"$A",
+		string(apiAreaLabelID),
+		"$G",
+		string(apiTagLabelID),
 		"$T",
 		timestamp,
 	)
-	const entitySummary = `{"entity_id":"$E","device_id":"$D","name":"Power","type":"hearth.power/v1","enabled":true,"availability":{"status":"unavailable","reason_code":"hearth.external_system_unavailable"},"state":{"value":` + opaque + `,"observed_at":"$T"},"quantities":{}}`
+	const entitySummary = `{"entity_id":"$E","device_id":"$D","name":"Power","type":"hearth.power/v1","enabled":true,"availability":{"status":"unavailable","reason_code":"hearth.external_system_unavailable"},"state":{"value":` + opaque + `,"observed_at":"$T"},"area":{"label_id":"$A","name":"Kitchen","source":"device"},"tags":[{"label_id":"$G","name":"Lamps"}],"quantities":{}}`
 	const commandSummary = `{"command_id":"$C","entity_id":"$E","operation":"set","status":"satisfied","requested_at":"$T","completed_at":"$T"}`
 	for _, test := range []struct{ tool, arguments, want string }{
 		{"list_entities", `{}`, `{"items":[` + entitySummary + `]}`},
-		{"get_entity", `{"entity_id":"$E"}`, `{"entity_id":"$E","device_id":"$D","name":"Power","type":"hearth.power/v1","enabled":true,"adapter_id":"simulator","support":{"state":{},"operations":{"set":{}}},"availability":{"status":"unavailable","reason_code":"hearth.external_system_unavailable","source":"adapter_health","since":"$T","evidence_at":"$T","source_observed_at":"$T"},"state":{"value":` + opaque + `,"observed_at":"$T","observation_id":"$O","adapter_received_at":"$T","source_updated_at":"$T"},"quantities":{}}`},
-		{"update_entity", `{"entity_id":"$E","enabled":false}`, `{"entity_id":"$E","enabled":true}`},
+		{"get_entity", `{"entity_id":"$E"}`, `{"entity_id":"$E","device_id":"$D","name":"Power","type":"hearth.power/v1","enabled":true,"adapter_id":"simulator","support":{"state":{},"operations":{"set":{}}},"availability":{"status":"unavailable","reason_code":"hearth.external_system_unavailable","source":"adapter_health","since":"$T","evidence_at":"$T","source_observed_at":"$T"},"state":{"value":` + opaque + `,"observed_at":"$T","observation_id":"$O","adapter_received_at":"$T","source_updated_at":"$T"},"area":{"label_id":"$A","name":"Kitchen","source":"device"},"tags":[{"label_id":"$G","name":"Lamps"}],"quantities":{}}`},
+		{"update_entity", `{"entity_id":"$E","enabled":false}`, `{"entity_id":"$E","name":"Power","adapter_name":"private adapter name","name_override":null,"enabled":true,"area":{"label_id":"$A","name":"Kitchen","source":"device"},"tags":[{"label_id":"$G","name":"Lamps"}]}`},
 		{"execute_entity_command", `{"entity_id":"$E","operation":"set","parameters":` + opaque + `}`, `{"command_id":"$C","status":"satisfied","observation_id":"$O","value":null}`},
 		{"list_entity_commands", `{"entity_id":"$E"}`, `{"items":[` + commandSummary + `]}`},
-		{"list_devices", `{}`, `{"items":[{"device_id":"$D","name":"Effective name","kind":"light"}]}`},
-		{"get_device", `{"device_id":"$D"}`, `{"device_id":"$D","name":"Effective name","kind":"light","entities":[` + entitySummary + `]}`},
+		{"list_devices", `{}`, `{"items":[{"device_id":"$D","name":"Effective name","kind":"light","area":{"label_id":"$A","name":"Kitchen"},"tags":[{"label_id":"$G","name":"Lamps"}]}]}`},
+		{"get_device", `{"device_id":"$D"}`, `{"device_id":"$D","name":"Effective name","kind":"light","area":{"label_id":"$A","name":"Kitchen"},"tags":[{"label_id":"$G","name":"Lamps"}],"entities":[` + entitySummary + `]}`},
 		{"get_command", `{"command_id":"$C"}`, `{"command_id":"$C","entity_id":"$E","operation":"set","status":"satisfied","requested_at":"$T","completed_at":"$T","parameters":` + opaque + `,"deadline_at":"$T","accepted_at":"$T","outcome_observation_id":"$O"}`},
 		{"list_commands", `{}`, `{"items":[` + commandSummary + `]}`},
 		{"list_entity_availability_history", `{"entity_id":"$E"}`, `{"items":[{"status":"unavailable","source":"adapter_health","observed_at":"$T","source_observed_at":"$T","reason_code":"hearth.external_system_unavailable"}]}`},
@@ -176,6 +185,11 @@ func TestNullArgumentsNeverReachService(t *testing.T) {
 		{"list_entities", `{"limit":null}`},
 		{"list_entities", `{"cursor":null}`},
 		{"update_entity", `{"entity_id":"` + string(apiEntityID) + `","enabled":null}`},
+		{"update_entity", `{"entity_id":"` + string(apiEntityID) + `","tag_ids":null}`},
+		{"update_device", `{"device_id":"` + string(apiDeviceID) + `","tag_ids":null}`},
+		{"update_device", `{"device_id":null,"name_override":"Lamp"}`},
+		{"list_entities", `{"label_ids":null}`},
+		{"list_entities", `{"types":null}`},
 		{"execute_entity_command", `{"entity_id":"` + string(apiEntityID) + `","operation":"set","parameters":null}`},
 	} {
 		t.Run(test.tool+test.arguments, func(t *testing.T) {

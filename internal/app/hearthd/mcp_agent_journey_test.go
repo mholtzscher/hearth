@@ -109,7 +109,7 @@ func TestAgentBridgeDiscoversInspectsExecutesOnceAndReadsReceiptIdentity(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(bridged) != 35 {
+	if len(bridged) != 38 {
 		t.Fatalf("agent tool count = %d", len(bridged))
 	}
 	tools := journeyToolsByName(ctx, t, bridged)
