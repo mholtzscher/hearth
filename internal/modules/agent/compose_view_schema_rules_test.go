@@ -56,6 +56,8 @@ func TestComposeViewGuidanceUsesSchemaKeys(t *testing.T) {
 	stale := []string{
 		"OutsideNow uses wind_direction", "Wind uses direction", "wind (speed)",
 		"Wind needs speed", "gust, direction,", "numeric source and window",
+		// Generalized to cards with no main Entity, such as TimeSeries.
+		"Every card names its main Entity",
 	}
 	for name, guidance := range map[string]string{
 		"tool description": composeViewDescription, "system prompt": defaultSystemPrompt,
@@ -65,7 +67,13 @@ func TestComposeViewGuidanceUsesSchemaKeys(t *testing.T) {
 		}
 	}
 	require.Contains(t, defaultSystemPrompt, "wind_speed, wind_direction")
-	require.Contains(t, composeViewDescription, "main Entity entity_id")
+	for _, guidance := range []string{composeViewDescription, defaultSystemPrompt} {
+		require.Contains(
+			t,
+			guidance,
+			"A card bound to one Entity names it entity_id; TimeSeries lists its Entities in series",
+		)
+	}
 }
 
 // walkSchemaObjects calls visit with every properties map in the schema.

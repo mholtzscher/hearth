@@ -35,7 +35,7 @@ const composeViewDescription = "Present a live dashboard draft without saving or
 	"Follow the keys for each card type. Omit unused optional fields; never send null. " +
 	"For AirPurifier, entity_id is its main power Entity. Use fan_mode for named modes and fan_level for numbered speeds. " +
 	"Use those exact keys, not power or mode. " +
-	"Grid requires columns. Every card names its main Entity entity_id; an Entity is always a bare ID string. " +
+	"Grid requires columns. A card bound to one Entity names it entity_id; TimeSeries lists its Entities in series, and ReadingList, StateTimeline, and ToggleList in rows. An Entity is always a bare ID string. " +
 	"A view has at most 32 nodes, 8 levels, and 16 distinct Entities and Devices."
 
 //go:embed compose_view.schema.json

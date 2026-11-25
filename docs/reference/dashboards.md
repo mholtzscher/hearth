@@ -52,9 +52,9 @@ History also retains artifacts from legacy `present_view` calls. Neither tool is
 available through external MCP. Presentation never saves a dashboard. Invalid
 compositions or edits return `invalid_definition`; invalid argument shapes return
 `invalid_arguments` with safe diagnostics for every problem, up to eight (see
-[MCP errors](mcp-errors.md)). Every card names its main Entity `entity_id`,
-and every Entity in the tool's input is a bare ID string; Hearth maps them to
-the portable slots below. The dashboards HTTP API keeps its
+[MCP errors](mcp-errors.md)). In the tool's input, a card bound to one Entity
+names it `entity_id`, list cards name theirs in `series` or `rows`, and every
+Entity is a bare ID string; Hearth maps them to the portable slots below. The dashboards HTTP API keeps its
 fixed `invalid dashboard input` detail.
 
 Manual edits and agent revisions change a browser draft. **Save dashboard**
