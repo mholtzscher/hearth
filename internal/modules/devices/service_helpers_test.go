@@ -16,6 +16,7 @@ func storesForTest(repository any) Stores {
 	stores.Availability, _ = repository.(AvailabilityRepository)
 	stores.Reads, _ = repository.(ReadRepository)
 	stores.Enablement, _ = repository.(EnablementRepository)
+	stores.Metadata, _ = repository.(MetadataRepository)
 	stores.Commands, _ = repository.(CommandLedger)
 	stores.Observations, _ = repository.(ObservationRepository)
 	stores.EntityEvents, _ = repository.(EntityEventRepository)

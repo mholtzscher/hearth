@@ -18,7 +18,7 @@ const (
 type stubDevices struct {
 	queryHistory                  func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
 	getEntity                     func(context.Context, devices.EntityID) (devices.EntityWithState, error)
-	setEntityEnabled              func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
+	patchEntity                   func(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
 	listDevices                   func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
 	getDevice                     func(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	listEntities                  func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
@@ -64,15 +64,15 @@ func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityI
 	return stub.getEntity(ctx, entityID)
 }
 
-func (stub *stubDevices) SetEntityEnabled(
+func (stub *stubDevices) PatchEntity(
 	ctx context.Context,
 	entityID devices.EntityID,
-	enabled bool,
+	patch devices.EntityPatch,
 ) (devices.EntityWithState, error) {
-	if stub.setEntityEnabled == nil {
-		panic("unexpected SetEntityEnabled call")
+	if stub.patchEntity == nil {
+		panic("unexpected PatchEntity call")
 	}
-	return stub.setEntityEnabled(ctx, entityID, enabled)
+	return stub.patchEntity(ctx, entityID, patch)
 }
 
 func (stub *stubDevices) ListDevices(

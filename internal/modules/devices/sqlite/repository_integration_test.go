@@ -602,7 +602,11 @@ func TestRegistrationInitialEnablementAndRetryPreservesCurrentValue(t *testing.T
 	}
 
 	now = now.Add(time.Minute)
-	if _, enablementErr := service.SetEntityEnabled(ctx, view.Entity.ID, true); enablementErr != nil {
+	if _, enablementErr := service.PatchEntity(
+		ctx,
+		view.Entity.ID,
+		devices.EntityPatch{Enabled: new(true)},
+	); enablementErr != nil {
 		t.Fatal(enablementErr)
 	}
 	now = now.Add(time.Minute)
@@ -653,7 +657,7 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	}
 
 	now = now.Add(time.Minute)
-	view, err := service.SetEntityEnabled(ctx, entityID, false)
+	view, err := service.PatchEntity(ctx, entityID, devices.EntityPatch{Enabled: new(false)})
 	if err != nil || view.Entity.Enabled {
 		t.Fatalf("management no-op = %#v, %v", view, err)
 	}
@@ -681,7 +685,7 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	if entityIDErr != nil {
 		t.Fatal(entityIDErr)
 	}
-	if _, enablementErr := service.SetEntityEnabled(ctx, unknown, true); !errors.Is(
+	if _, enablementErr := service.PatchEntity(ctx, unknown, devices.EntityPatch{Enabled: new(true)}); !errors.Is(
 		enablementErr, devices.ErrEntityNotFound,
 	) {
 		t.Fatalf("unknown Entity error = %v", enablementErr)
@@ -770,7 +774,11 @@ func TestCreateCommandDurablyClassifiesDisabledEntity(t *testing.T) {
 		t.Fatal(err)
 	}
 	entityID := binding.Entities[0].EntityID
-	if _, enablementErr := service.SetEntityEnabled(ctx, entityID, false); enablementErr != nil {
+	if _, enablementErr := service.PatchEntity(
+		ctx,
+		entityID,
+		devices.EntityPatch{Enabled: new(false)},
+	); enablementErr != nil {
 		t.Fatal(enablementErr)
 	}
 	requestedAt := time.Date(2026, 8, 26, 12, 0, 0, 123, time.UTC)
@@ -859,7 +867,11 @@ func TestCommandCreationAndEnablementFollowCommitOrder(t *testing.T) {
 	if err != nil || created.Status != devices.CommandStatusRequested {
 		t.Fatalf("Command-first creation = %#v, %v", created, err)
 	}
-	if _, enablementErr := service.SetEntityEnabled(ctx, entityID, false); enablementErr != nil {
+	if _, enablementErr := service.PatchEntity(
+		ctx,
+		entityID,
+		devices.EntityPatch{Enabled: new(false)},
+	); enablementErr != nil {
 		t.Fatal(enablementErr)
 	}
 	stored, err := repository.GetCommand(ctx, commandFirst.ID)

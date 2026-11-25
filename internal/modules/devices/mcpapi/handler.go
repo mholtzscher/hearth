@@ -8,7 +8,7 @@ import (
 
 type Devices interface {
 	QueryHistory(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
-	SetEntityEnabled(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
+	PatchEntity(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	ExecuteCommand(
 		context.Context,

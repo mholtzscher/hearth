@@ -31,10 +31,10 @@ func projectionEntityFixture(
 		}
 		return devices.Page[devices.EntityWithState]{Items: []devices.EntityWithState{view}}, nil
 	}
-	stub.setEntityEnabled = func(_ context.Context, id devices.EntityID, enabled bool) (devices.EntityWithState, error) {
+	stub.patchEntity = func(_ context.Context, id devices.EntityID, patch devices.EntityPatch) (devices.EntityWithState, error) {
 		calls["update_entity"]++
-		if id != apiEntityID || enabled {
-			t.Errorf("update = %s %v", id, enabled)
+		if id != apiEntityID || patch.Enabled == nil || *patch.Enabled || patch.NameEdit != nil {
+			t.Errorf("update = %s %+v", id, patch)
 		}
 		// Deliberately differs from input: receipts describe the returned record.
 		return view, nil

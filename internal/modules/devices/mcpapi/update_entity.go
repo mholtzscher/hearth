@@ -29,7 +29,11 @@ type EntityReceipt struct {
 }
 
 func (h *handler) updateEntity(ctx context.Context, input UpdateEntityInput) (EntityReceipt, error) {
-	view, err := h.devices.SetEntityEnabled(ctx, devices.EntityID(input.EntityID), input.Enabled)
+	view, err := h.devices.PatchEntity(
+		ctx,
+		devices.EntityID(input.EntityID),
+		devices.EntityPatch{Enabled: &input.Enabled},
+	)
 	if err != nil {
 		return EntityReceipt{}, readFailure(err)
 	}
