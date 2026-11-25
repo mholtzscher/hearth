@@ -44,8 +44,8 @@ reference:
   - call: compose_view
     arguments: |-
       {"mode": "create", "title": "Weather", "layout": {"type": "Stack", "gap": "medium", "children": [
-        {"type": "OutsideNow", "temperature": "{{entity:outdoor-weather-array/temperature}}", "humidity": "{{entity:outdoor-weather-array/humidity}}", "wind": "{{entity:outdoor-weather-array/wind}}", "wind_direction": "{{entity:outdoor-weather-array/wind-direction}}"},
+        {"type": "OutsideNow", "entity_id": "{{entity:outdoor-weather-array/temperature}}", "humidity": "{{entity:outdoor-weather-array/humidity}}", "wind_speed": "{{entity:outdoor-weather-array/wind}}", "wind_direction": "{{entity:outdoor-weather-array/wind-direction}}"},
         {"type": "Grid", "columns": 2, "children": [
-          {"type": "Wind", "speed": "{{entity:outdoor-weather-array/wind}}", "gust": "{{entity:outdoor-weather-array/gust}}", "direction": "{{entity:outdoor-weather-array/wind-direction}}"},
+          {"type": "Wind", "entity_id": "{{entity:outdoor-weather-array/wind}}", "gust": "{{entity:outdoor-weather-array/gust}}", "wind_direction": "{{entity:outdoor-weather-array/wind-direction}}"},
           {"type": "Pressure", "entity_id": "{{entity:weather-station-gateway/relative-pressure}}"}]}]}}
   - reply: ""

@@ -67,6 +67,7 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"For ratgdo, Lock remotes is remote lockout, and firmware may report lockout changes optimistically: " +
 	"satisfied means firmware reported the requested State, not independently verified remote enforcement. " +
 	"Discover compose_view to present a dashboard. Use create with a nested layout and discovered sources; Hearth constructs the view. " +
+	"A card bound to one Entity names it entity_id; TimeSeries lists its Entities in series, and ReadingList, StateTimeline, and ToggleList in rows. Every Entity is a bare ID string with an optional field beside it. " +
 	"With a draft selected in the current user message, use edit only for title, forecast period counts, or a TimeSeries window. " +
 	"Use the exact card key in the selected draft. For other changes, direct the user to the dashboard editor; do not replace the draft. " +
 	"Use bound cards " +
@@ -78,7 +79,7 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"rows on one time axis, ledger leads with each current value and totals, feed lists the changes. " +
 	"WeekPattern shows when one yes/no field was true, hour by hour, over the last 7 days. " +
 	"ToggleTile is a tap-to-toggle tile bound to the root of a hearth.power/v1 Entity; use the Device name as its label. " +
-	"For a metering plug, its optional metric has one explicit numeric source and window (24h by default), " +
+	"For a metering plug, its optional metric binds one explicit numeric entity_id and field with a window (24h by default), " +
 	"shared by the displayed value and sparkline. Prefer discovered electrical power in watts, not cumulative energy; " +
 	"the editor can change that source. Optional metric.detail adds a separately bound reading such as total energy. " +
 	"All ToggleTile numeric sources must belong to the power Entity's Device; do not guess a source by name or list order. " +
@@ -98,10 +99,10 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"for track details, artwork, a timeline, and supported playback and volume controls. Use layout tile in a " +
 	"Grid for a compact play/pause control. Grouped speakers cannot be controlled. " +
 	"For a weather station, prefer the weather cards over separate Metrics. They bind named slots, each read from an Entity's root: " +
-	"OutsideNow needs an outdoor hearth.temperature/v1 and optionally humidity, wind (speed), wind_direction, rain_rate, and rain_today; " +
+	"OutsideNow's entity_id is an outdoor hearth.temperature/v1; it optionally binds humidity, wind_speed, wind_direction, rain_rate, and rain_today; " +
 	"it words conditions from the rain rate and wind speed but shows no feels-like or dew point. " +
-	"Rain needs a rain rate; storm and totals (day, week, month, year) " +
-	"bind the station's own counters, never sums of the rate. Wind needs speed, optionally gust, direction, and max_gust. " +
+	"Rain's entity_id is a rain rate; storm and totals (day, week, month, year) " +
+	"bind the station's own counters, never sums of the rate. Wind's entity_id is the sustained speed; it optionally binds gust, wind_direction, and max_gust. " +
 	"Pressure binds a hearth.pressure/v1 Entity and states its three-hour tendency. Slots taking hearth.numericsensor/v1 require " +
 	"its discovered unit: mm/h for a rain rate, mm for rain totals, deg for wind direction. Every rain counter is in mm, so " +
 	"also match each storm, day, week, month, or year slot to the sensor named for that period, such as Daily Rain for day; " +

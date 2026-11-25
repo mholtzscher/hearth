@@ -42,6 +42,6 @@ reference:
   - call: compose_view
     arguments: |-
       {"mode": "create", "title": "Simulated light", "layout": {"type": "Grid", "columns": 2, "children": [
-        {"type": "Metric", "label": "Temperature", "source": {"entity_id": "{{entity:simulated-light/temperature}}"}},
+        {"type": "Metric", "label": "Temperature", "entity_id": "{{entity:simulated-light/temperature}}"},
         {"type": "TimeSeries", "title": "Temperature", "window": "24h", "series": [{"entity_id": "{{entity:simulated-light/temperature}}"}]}]}}
   - reply: ""

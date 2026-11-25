@@ -87,7 +87,7 @@ func composeDiscoveredTemperature(raw string) (*schema.Message, error) {
 			continue
 		}
 		args := fmt.Sprintf(
-			`{"mode":"create","title":"Household temperatures","layout":{"type":"Stack","children":[{"type":"Heading","text":"Indoor conditions"},{"type":"Grid","columns":2,"children":[{"type":"Metric","label":"Current","source":{"entity_id":%q}},{"type":"TimeSeries","title":"Temperature history","series":[{"entity_id":%q}],"window":"24h"}]}]}}`,
+			`{"mode":"create","title":"Household temperatures","layout":{"type":"Stack","children":[{"type":"Heading","text":"Indoor conditions"},{"type":"Grid","columns":2,"children":[{"type":"Metric","label":"Current","entity_id":%q},{"type":"TimeSeries","title":"Temperature history","series":[{"entity_id":%q}],"window":"24h"}]}]}}`,
 			entity.ID,
 			entity.ID,
 		)
