@@ -19,6 +19,7 @@ type stubDevices struct {
 	queryHistory                  func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
 	getEntity                     func(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	patchEntity                   func(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
+	patchDevice                   func(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	listDevices                   func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
 	getDevice                     func(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	listEntities                  func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
@@ -73,6 +74,17 @@ func (stub *stubDevices) PatchEntity(
 		panic("unexpected PatchEntity call")
 	}
 	return stub.patchEntity(ctx, entityID, patch)
+}
+
+func (stub *stubDevices) PatchDevice(
+	ctx context.Context,
+	deviceID devices.DeviceID,
+	patch devices.DevicePatch,
+) (devices.Device, error) {
+	if stub.patchDevice == nil {
+		panic("unexpected PatchDevice call")
+	}
+	return stub.patchDevice(ctx, deviceID, patch)
 }
 
 func (stub *stubDevices) ListDevices(

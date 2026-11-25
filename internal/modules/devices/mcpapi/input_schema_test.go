@@ -92,6 +92,33 @@ func TestPresentationToolsPublishUnitsArgument(t *testing.T) {
 	}
 }
 
+// A rename call must say whether it sets or clears the override, so the
+// published schema requires name_override and admits null.
+func TestRenameToolsPublishRequiredNullableOverride(t *testing.T) {
+	t.Parallel()
+	inputs := listedDeviceInputSchemas(t)
+	for _, test := range []struct{ tool, id string }{
+		{"rename_device", "device_id"},
+		{"rename_entity", "entity_id"},
+	} {
+		var schema struct {
+			Properties map[string]map[string]any `json:"properties"`
+			Required   []string                  `json:"required"`
+		}
+		if err := json.Unmarshal(inputs[test.tool], &schema); err != nil {
+			t.Fatal(err)
+		}
+		override := schema.Properties["name_override"]
+		wantTypes := []any{map[string]any{"type": "null"}, map[string]any{"type": "string"}}
+		if !reflect.DeepEqual(override["anyOf"], wantTypes) {
+			t.Fatalf("%s name_override = %#v", test.tool, override)
+		}
+		if !reflect.DeepEqual(schema.Required, []string{test.id, "name_override"}) {
+			t.Fatalf("%s required = %v", test.tool, schema.Required)
+		}
+	}
+}
+
 func listedDeviceInputSchemas(t *testing.T) map[string]json.RawMessage {
 	t.Helper()
 	server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
@@ -121,7 +148,7 @@ func listedDeviceInputSchemas(t *testing.T) map[string]json.RawMessage {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Result.Tools) != 13 {
+	if len(envelope.Result.Tools) != 15 {
 		t.Fatalf("catalog has %d tools", len(envelope.Result.Tools))
 	}
 	inputs := make(map[string]json.RawMessage)
