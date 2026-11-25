@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.29.0](https://github.com/mholtzscher/hearth/compare/v0.28.0...v0.29.0) (2026-11-25)
+
+
+### Features
+
+* **agenteval:** score first-try view presentation ([#439](https://github.com/mholtzscher/hearth/issues/439)) ([6f3f314](https://github.com/mholtzscher/hearth/commit/6f3f3143adbf6a37dcd2a0e6d9bef57c751855c8))
+* **agent:** generate starter questions for empty conversations ([#443](https://github.com/mholtzscher/hearth/issues/443)) ([d2274c7](https://github.com/mholtzscher/hearth/commit/d2274c7dbb507f58aa267707af8342af307d99d6))
+* **agent:** keep a turn running after its caller disconnects ([#444](https://github.com/mholtzscher/hearth/issues/444)) ([cd07c4a](https://github.com/mholtzscher/hearth/commit/cd07c4a61ba08e531489a78fbaf499e9d8112054))
+* **agent:** spell each compose_view key one way and report every problem ([#441](https://github.com/mholtzscher/hearth/issues/441)) ([da57e06](https://github.com/mholtzscher/hearth/commit/da57e06814a59755f64b5bca8f642bf109f95a37))
+
+
+### Performance Improvements
+
+* **agenteval:** cut per-trial shutdown stalls and request pacing ([#440](https://github.com/mholtzscher/hearth/issues/440)) ([b5f8930](https://github.com/mholtzscher/hearth/commit/b5f8930527bdc15927b542bd384f6ca98155185b))
+
 ## [0.28.0](https://github.com/mholtzscher/hearth/compare/v0.27.0...v0.28.0) (2026-11-24)
 
 
