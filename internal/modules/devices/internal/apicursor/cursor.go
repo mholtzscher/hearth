@@ -3,6 +3,7 @@ package apicursor
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -12,10 +13,12 @@ import (
 const cursorVersion = 1
 
 type idCursor struct {
-	Version  int    `json:"v"`
-	Resource string `json:"resource"`
-	ID       string `json:"id"`
-	DeviceID string `json:"device_id,omitempty"`
+	Version  int      `json:"v"`
+	Resource string   `json:"resource"`
+	ID       string   `json:"id"`
+	DeviceID string   `json:"device_id,omitempty"`
+	Labels   []string `json:"labels,omitempty"`
+	Types    []string `json:"types,omitempty"`
 }
 
 type commandCursor struct {
@@ -77,7 +80,8 @@ func DecodeDevicesCursor(value string) (*devices.DeviceID, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cursor.Version != cursorVersion || cursor.Resource != "devices" || cursor.DeviceID != "" {
+	if cursor.Version != cursorVersion || cursor.Resource != "devices" || cursor.DeviceID != "" ||
+		cursor.Labels != nil || cursor.Types != nil {
 		return nil, errors.New("invalid device cursor scope")
 	}
 	id, err := devices.ParseDeviceID(cursor.ID)
@@ -87,45 +91,89 @@ func DecodeDevicesCursor(value string) (*devices.DeviceID, error) {
 	return &id, nil
 }
 
-func EncodeEntitiesCursor(id devices.EntityID, deviceID *devices.DeviceID) (string, error) {
+// EncodeEntitiesCursor positions an Entity list page. The cursor copies the
+// Device filter and the selector, in canonical order, so it cannot continue a
+// list with a different filter.
+func EncodeEntitiesCursor(
+	id devices.EntityID,
+	deviceID *devices.DeviceID,
+	selector devices.EntitySelector,
+) (string, error) {
 	requestedDeviceID := ""
 	if deviceID != nil {
 		requestedDeviceID = string(*deviceID)
 	}
-	return encodeEntityCursor("entities", id, requestedDeviceID)
-}
-
-func DecodeEntitiesCursor(value string, deviceID *devices.DeviceID) (*devices.EntityID, error) {
-	requestedDeviceID := ""
-	if deviceID != nil {
-		requestedDeviceID = string(*deviceID)
-	}
-	return decodeEntityCursor(value, "entities", requestedDeviceID)
-}
-
-func EncodeDeviceEntitiesCursor(id devices.EntityID, deviceID devices.DeviceID) (string, error) {
-	return encodeEntityCursor("device_entities", id, string(deviceID))
-}
-
-func DecodeDeviceEntitiesCursor(value string, deviceID devices.DeviceID) (*devices.EntityID, error) {
-	return decodeEntityCursor(value, "device_entities", string(deviceID))
-}
-
-func encodeEntityCursor(resource string, id devices.EntityID, deviceID string) (string, error) {
+	labels, types := selectorScope(selector)
 	return pagination.EncodeCursor(idCursor{
-		Version: cursorVersion, Resource: resource, ID: string(id), DeviceID: deviceID,
+		Version: cursorVersion, Resource: "entities", ID: string(id), DeviceID: requestedDeviceID,
+		Labels: labels, Types: types,
 	})
 }
 
-func decodeEntityCursor(value, resource, deviceID string) (*devices.EntityID, error) {
+func DecodeEntitiesCursor(
+	value string,
+	deviceID *devices.DeviceID,
+	selector devices.EntitySelector,
+) (*devices.EntityID, error) {
+	requestedDeviceID := ""
+	if deviceID != nil {
+		requestedDeviceID = string(*deviceID)
+	}
 	cursor, err := pagination.DecodeCursor[idCursor](value)
 	if err != nil {
 		return nil, err
 	}
-	if cursor.Version != cursorVersion || cursor.Resource != resource || cursor.DeviceID != deviceID {
+	labels, types := selectorScope(selector)
+	if cursor.Version != cursorVersion || cursor.Resource != "entities" || cursor.DeviceID != requestedDeviceID ||
+		!slices.Equal(cursor.Labels, labels) || !slices.Equal(cursor.Types, types) {
 		return nil, errors.New("invalid entity cursor scope")
 	}
-	id, err := devices.ParseEntityID(cursor.ID)
+	return parseEntityCursorID(cursor.ID)
+}
+
+// selectorScope returns the selector's Labels and types sorted and
+// deduplicated, so equal selectors scope cursors identically.
+func selectorScope(selector devices.EntitySelector) ([]string, []string) {
+	labels := make([]string, 0, len(selector.Labels))
+	for _, id := range selector.Labels {
+		labels = append(labels, string(id))
+	}
+	types := make([]string, 0, len(selector.Types))
+	for _, typeID := range selector.Types {
+		types = append(types, string(typeID))
+	}
+	slices.Sort(labels)
+	slices.Sort(types)
+	labels, types = slices.Compact(labels), slices.Compact(types)
+	if len(labels) == 0 {
+		labels = nil
+	}
+	if len(types) == 0 {
+		types = nil
+	}
+	return labels, types
+}
+
+func EncodeDeviceEntitiesCursor(id devices.EntityID, deviceID devices.DeviceID) (string, error) {
+	return pagination.EncodeCursor(idCursor{
+		Version: cursorVersion, Resource: "device_entities", ID: string(id), DeviceID: string(deviceID),
+	})
+}
+
+func DecodeDeviceEntitiesCursor(value string, deviceID devices.DeviceID) (*devices.EntityID, error) {
+	cursor, err := pagination.DecodeCursor[idCursor](value)
+	if err != nil {
+		return nil, err
+	}
+	if cursor.Version != cursorVersion || cursor.Resource != "device_entities" ||
+		cursor.DeviceID != string(deviceID) || cursor.Labels != nil || cursor.Types != nil {
+		return nil, errors.New("invalid entity cursor scope")
+	}
+	return parseEntityCursorID(cursor.ID)
+}
+
+func parseEntityCursorID(value string) (*devices.EntityID, error) {
+	id, err := devices.ParseEntityID(value)
 	if err != nil {
 		return nil, fmt.Errorf("invalid entity cursor ID: %w", err)
 	}

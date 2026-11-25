@@ -68,7 +68,7 @@ func TestWrongCursorScopeNeverReachesService(t *testing.T) {
 	Register(server, &stubDevices{}, testPresenter())
 	wrongDevice := devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ac")
 	wrongEntity := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ac")
-	entityCursor, err := apicursor.EncodeEntitiesCursor(apiEntityID, &wrongDevice)
+	entityCursor, err := apicursor.EncodeEntitiesCursor(apiEntityID, &wrongDevice, devices.EntitySelector{})
 	if err != nil {
 		t.Fatal(err)
 	}

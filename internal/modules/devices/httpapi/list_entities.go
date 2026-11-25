@@ -50,7 +50,7 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 	}
 	var afterID *devices.EntityID
 	if input.Cursor != "" {
-		parsed, cursorErr := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID)
+		parsed, cursorErr := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID, devices.EntitySelector{})
 		if cursorErr != nil {
 			return nil, huma.NewError(http.StatusBadRequest, "invalid cursor")
 		}
@@ -74,7 +74,9 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 		body.Items[index] = mapped
 	}
 	if page.HasMore && len(page.Items) > 0 {
-		cursor, cursorErr := apicursor.EncodeEntitiesCursor(page.Items[len(page.Items)-1].Entity.ID, deviceID)
+		cursor, cursorErr := apicursor.EncodeEntitiesCursor(
+			page.Items[len(page.Items)-1].Entity.ID, deviceID, devices.EntitySelector{},
+		)
 		if cursorErr != nil {
 			return nil, handler.internalAPIError(ctx, "list-entities", "mapping", cursorErr)
 		}

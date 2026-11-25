@@ -45,7 +45,7 @@ func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInpu
 	}
 	var afterID *devices.EntityID
 	if input.Cursor != "" {
-		parsed, cursorErr := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID)
+		parsed, cursorErr := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID, devices.EntitySelector{})
 		if cursorErr != nil {
 			return entityPage{}, invalidRequestFailure("invalid cursor")
 		}
@@ -68,7 +68,9 @@ func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInpu
 		}
 	}
 	if page.HasMore && len(page.Items) > 0 {
-		cursor, cursorErr := apicursor.EncodeEntitiesCursor(page.Items[len(page.Items)-1].Entity.ID, deviceID)
+		cursor, cursorErr := apicursor.EncodeEntitiesCursor(
+			page.Items[len(page.Items)-1].Entity.ID, deviceID, devices.EntitySelector{},
+		)
 		if cursorErr != nil {
 			return entityPage{}, mcptools.InternalToolError(cursorErr)
 		}
