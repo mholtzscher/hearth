@@ -95,7 +95,7 @@ func (reader householdDigestReader) ReadHouseholdDigest(ctx context.Context) (ag
 }
 
 func (reader householdDigestReader) readEntities(ctx context.Context) ([]agent.DigestEntity, error) {
-	deviceNames := make(map[devices.DeviceID]string)
+	devicesByID := make(map[devices.DeviceID]devices.Device)
 	var afterDevice *devices.DeviceID
 	for {
 		page, err := reader.devices.ListDevices(
@@ -106,7 +106,7 @@ func (reader householdDigestReader) readEntities(ctx context.Context) ([]agent.D
 			return nil, fmt.Errorf("list devices: %w", err)
 		}
 		for _, device := range page.Items {
-			deviceNames[device.ID] = effectiveName(device.Name, device.NameOverride)
+			devicesByID[device.ID] = device
 		}
 		if !page.HasMore || len(page.Items) == 0 {
 			break
@@ -124,7 +124,7 @@ func (reader householdDigestReader) readEntities(ctx context.Context) ([]agent.D
 			return nil, fmt.Errorf("list entities: %w", err)
 		}
 		for _, view := range page.Items {
-			if entity, ok := reader.digestEntity(view, deviceNames); ok {
+			if entity, ok := reader.digestEntity(view, devicesByID); ok {
 				entities = append(entities, entity)
 			}
 		}
@@ -138,7 +138,7 @@ func (reader householdDigestReader) readEntities(ctx context.Context) ([]agent.D
 
 func (reader householdDigestReader) digestEntity(
 	view devices.EntityWithState,
-	deviceNames map[devices.DeviceID]string,
+	devicesByID map[devices.DeviceID]devices.Device,
 ) (agent.DigestEntity, bool) {
 	if !view.Entity.Enabled {
 		return agent.DigestEntity{}, false
@@ -154,9 +154,12 @@ func (reader householdDigestReader) digestEntity(
 	default:
 		return agent.DigestEntity{}, false
 	}
+	device := devicesByID[view.Entity.DeviceID]
 	entity := agent.DigestEntity{
 		Name:         effectiveName(view.Entity.Name, view.Entity.NameOverride),
-		Device:       deviceNames[view.Entity.DeviceID],
+		DeviceID:     string(view.Entity.DeviceID),
+		Device:       effectiveName(device.Name, device.NameOverride),
+		DeviceKind:   string(device.Kind),
 		Type:         string(view.Entity.TypeID),
 		Availability: availability,
 	}

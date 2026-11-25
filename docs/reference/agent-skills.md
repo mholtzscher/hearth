@@ -79,10 +79,14 @@ a user request. The model call has no tools. Per-section caps and a 16 KiB total
 limit bound the digest; the limit drops the last lines first. It contains:
 
 - the local time and the household unit system
-- enabled Entities with known availability, with their Device names
+- offline Devices: Devices of any kind but `sensor` whose every Entity with
+  known availability is unavailable. A reachable Device with one unavailable
+  Entity, or a sensor, button, or remote that is quiet between uses, is not
+  listed.
 - current State in household units for locks, covers, binary sensors,
-  thermostats, temperature, humidity, and media players
-- counts of the other Entity types
+  thermostats, temperature, humidity, and media players, labeled with plain
+  type words rather than type IDs
+- counts of each Entity type
 - Automation failures, interruptions, and unknown-condition skips from the last
   24 hours
 - up to eight previews, from the most recently active conversations that have one

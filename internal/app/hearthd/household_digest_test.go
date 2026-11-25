@@ -124,7 +124,10 @@ func TestHouseholdDigestReaderFiltersAndProjectsEntities(t *testing.T) {
 	now := time.Date(2026, 11, 25, 1, 42, 0, 0, time.UTC)
 	reader := newHouseholdDigestReader(
 		&fakeDigestDevices{
-			devices: []devices.Device{{ID: "dev_1", Name: "Office Sensor"}, {ID: "dev_2", Name: "Garage"}},
+			devices: []devices.Device{
+				{ID: "dev_1", Kind: devices.DeviceKindSensor, Name: "Office Sensor"},
+				{ID: "dev_2", Kind: devices.DeviceKindLock, Name: "Garage"},
+			},
 			entities: []devices.EntityWithState{
 				renamed,
 				digestView(
@@ -171,7 +174,8 @@ func TestHouseholdDigestReaderFiltersAndProjectsEntities(t *testing.T) {
 		t.Fatalf("temperature State = %s, want 70.7 rounded to its display precision", temperature.State)
 	}
 	lock := digest.Entities[1]
-	if lock.Name != "Garage Lock" || lock.Device != "Garage" || lock.Availability != agent.DigestUnavailable ||
+	if lock.Name != "Garage Lock" || lock.DeviceID != "dev_2" || lock.Device != "Garage" ||
+		lock.DeviceKind != string(devices.DeviceKindLock) || lock.Availability != agent.DigestUnavailable ||
 		lock.State != nil {
 		t.Fatalf("lock = %+v", lock)
 	}
