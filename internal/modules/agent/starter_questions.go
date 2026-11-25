@@ -79,8 +79,12 @@ const (
 // DigestEntity is one enabled Entity, projected to household units.
 type DigestEntity struct {
 	// Name is the name override when set, otherwise the Entity name.
-	Name   string
-	Device string
+	Name string
+	// DeviceID identifies the owning Device; Device is its display name.
+	DeviceID string
+	Device   string
+	// DeviceKind is the owning Device's kind, such as lock or sensor.
+	DeviceKind string
 	// Type is the Entity type ID, such as hearth.temperature/v1.
 	Type         string
 	Availability string

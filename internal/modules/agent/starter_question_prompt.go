@@ -13,20 +13,27 @@ const starterQuestionInstruction = `You write starter questions for Hearth, a ho
 A household member sees them as buttons in an empty conversation. Tapping one sends its prompt
 to the assistant immediately.
 
-You receive a digest of the household right now. Write exactly 6 starter questions that:
-- the assistant can answer from what the digest lists. It can read Entity state and history,
+You receive a digest of the household right now. Write exactly 6 starter questions that a person
+living in this home would actually ask:
+- Write in everyday words, the way people talk about their home: "Is it warmer upstairs than in
+  the office?" or "Did anything go wrong overnight?". Never use the words entity or digest, and
+  never repeat type names, model numbers, or ID suffixes. Shorten technical names to what a
+  person would say, such as "the office air" for "SEN55 Temperature on Apollo AIR-1 8945e4".
+- Fit the time of day and what the digest shows: comfort, weather, doors and locks, what happened
+  overnight or while people were out, and how things changed today.
+- Ask about a problem only when the digest lists an offline Device or an Automation problem, and
+  write at most one such question.
+- Ask only what the assistant can answer from the digest. It can read current state and history,
   explain why an Automation failed or was skipped, chart readings over time, build dashboard
-  views, and draft Automations for the person to review and save.
-- never ask the assistant to change a device. Do not write requests to turn on or off, lock,
+  views, and draft Automations for the person to review and save. One question may suggest an
+  Automation or dashboard view that would suit this home.
+- Never ask the assistant to change anything. Do not write requests to turn on or off, lock,
   unlock, open, close, set, start, stop, play, or adjust anything.
-- name real Entities, Devices, and Automations from the digest when they are about something
-  specific.
-- mix current problems (unavailable Entities, Automation failures), current conditions, and one
-  general question.
-- differ from the previous starter questions when the digest lists them.
+- Differ from the previous starter questions when the digest lists them.
 
-The title is the button text: a short question or a phrase starting with "Show", at most 60
-characters. The prompt is the full message, at most 240 characters.
+The title is the button text: a short, natural question or a request starting with "Show me", at
+most 60 characters. The prompt is the full message in the person's own voice, at most 240
+characters.
 
 Answer with JSON only, no prose and no code fence:
 {"starter_questions":[{"title":"...","prompt":"..."}]}`
@@ -34,11 +41,11 @@ Answer with JSON only, no prose and no code fence:
 // Digest bounds keep one pass to a few thousand tokens however large the
 // household is.
 const (
-	maxDigestUnavailable = 20
-	maxDigestReadings    = 80
-	maxDigestEntityBytes = 400
-	maxDigestAutomations = 15
-	maxDigestBytes       = 16 << 10
+	maxDigestOfflineDevices = 20
+	maxDigestReadings       = 80
+	maxDigestEntityBytes    = 400
+	maxDigestAutomations    = 15
+	maxDigestBytes          = 16 << 10
 )
 
 // isDigestReadingType reports whether the digest lists an Entity type's State.
@@ -53,7 +60,11 @@ func isDigestReadingType(entityType string) bool {
 	}
 }
 
-const digestPowerType = "hearth.power/v1"
+const (
+	digestPowerType = "hearth.power/v1"
+	// digestSensorKind is the Device kind of sensors, buttons, and remotes.
+	digestSensorKind = "sensor"
+)
 
 // renderHouseholdDigest renders the user message for one pass. Sections are
 // ordered by usefulness so that the byte limit drops the least useful lines.
@@ -63,7 +74,7 @@ func renderHouseholdDigest(digest HouseholdDigest, previews []string, previous [
 		"Local time: "+digest.LocalTime.Format("Monday 2006-01-02 15:04")+" ("+partOfDay(digest.LocalTime.Hour())+")",
 		"Unit system: "+string(digest.UnitSystem),
 	)
-	lines = append(lines, digestUnavailableLines(digest.Entities)...)
+	lines = append(lines, digestOfflineDeviceLines(digest.Entities)...)
 	lines = append(lines, digestAutomationLines(digest.Automations)...)
 	lines = append(lines, digestReadingLines(digest.Entities)...)
 	lines = append(lines, digestCountLines(digest.Entities)...)
@@ -105,23 +116,44 @@ func partOfDay(hour int) string {
 	}
 }
 
-func digestUnavailableLines(entities []DigestEntity) []string {
-	var unavailable []DigestEntity
+// digestOfflineDeviceLines lists the Devices worth asking about because none
+// of their Entities is available. A reachable Device with one unavailable
+// Entity is usually in a mode that does not report it, and battery sensors and
+// buttons are routinely unavailable between uses, so neither is listed.
+func digestOfflineDeviceLines(entities []DigestEntity) []string {
+	type deviceAvailability struct {
+		label     string
+		kind      string
+		available bool
+	}
+	var order []string
+	byID := make(map[string]*deviceAvailability)
 	for _, entity := range entities {
-		if entity.Availability == DigestUnavailable {
-			unavailable = append(unavailable, entity)
+		device, seen := byID[entity.DeviceID]
+		if !seen {
+			device = &deviceAvailability{label: entity.Device + " (" + entity.DeviceKind + ")", kind: entity.DeviceKind}
+			byID[entity.DeviceID] = device
+			order = append(order, entity.DeviceID)
+		}
+		device.available = device.available || entity.Availability == DigestAvailable
+	}
+	var offline []string
+	for _, id := range order {
+		device := byID[id]
+		if !device.available && device.kind != "" && device.kind != digestSensorKind {
+			offline = append(offline, device.label)
 		}
 	}
-	if len(unavailable) == 0 {
-		return []string{"", "Unavailable Entities: none"}
+	if len(offline) == 0 {
+		return []string{"", "Offline Devices: none"}
 	}
-	lines := []string{"", fmt.Sprintf("Unavailable Entities (%d):", len(unavailable))}
-	for index, entity := range unavailable {
-		if index == maxDigestUnavailable {
-			lines = append(lines, fmt.Sprintf("- and %d more", len(unavailable)-maxDigestUnavailable))
+	lines := []string{"", fmt.Sprintf("Offline Devices (%d):", len(offline))}
+	for index, label := range offline {
+		if index == maxDigestOfflineDevices {
+			lines = append(lines, fmt.Sprintf("- and %d more", len(offline)-maxDigestOfflineDevices))
 			break
 		}
-		lines = append(lines, truncateBytes("- "+entityLabel(entity), maxDigestEntityBytes))
+		lines = append(lines, truncateBytes("- "+label, maxDigestEntityBytes))
 	}
 	return lines
 }
@@ -210,7 +242,7 @@ func digestCountLines(entities []DigestEntity) []string {
 	slices.Sort(types)
 	lines := []string{"", "Entity counts by type:"}
 	for _, entityType := range types {
-		line := fmt.Sprintf("- %s: %d", entityType, counts[entityType])
+		line := fmt.Sprintf("- %s: %d", typeWords(entityType), counts[entityType])
 		if entityType == digestPowerType {
 			line += fmt.Sprintf(" (%d on)", powerOn)
 		}
@@ -220,11 +252,48 @@ func digestCountLines(entities []DigestEntity) []string {
 }
 
 func entityLabel(entity DigestEntity) string {
-	label := entity.Name + " [" + entity.Type + "]"
+	label := entity.Name + " (" + typeWords(entity.Type) + ")"
 	if entity.Device != "" && entity.Device != entity.Name {
 		label += " on " + entity.Device
 	}
 	return label
+}
+
+// typeWords names an Entity type in plain words, such as "humidity" for
+// hearth.relativehumidity/v1, so the model has no type IDs to repeat.
+func typeWords(entityType string) string {
+	name := strings.TrimPrefix(entityType, "hearth.")
+	name, _, _ = strings.Cut(name, "/")
+	switch name {
+	case "binarysensor":
+		return "binary sensor"
+	case "colorhs", "colorrgb", "colorxy":
+		return "color"
+	case "colormode":
+		return "color mode"
+	case "colortemp":
+		return "color temperature"
+	case "dailyforecast":
+		return "daily forecast"
+	case "enumaction":
+		return "action"
+	case "enumevent":
+		return "button event"
+	case "enumsetting", "numericsetting":
+		return "setting"
+	case "hourlyforecast":
+		return "hourly forecast"
+	case "mediaplayer":
+		return "media player"
+	case "numericsensor":
+		return "measurement"
+	case "relativehumidity":
+		return "humidity"
+	case "textsensor":
+		return "status text"
+	default:
+		return name
+	}
 }
 
 func unitLabels(units map[string]string) string {

@@ -138,7 +138,10 @@ func refreshedStarterService(t *testing.T) (*Service, *starterModel, StarterQues
 	chat := &starterModel{}
 	reader := &fakeDigestReader{digest: HouseholdDigest{
 		LocalTime: starterPassTime(), UnitSystem: household.UnitSystemUS,
-		Entities: []DigestEntity{{Name: "Garage Lock", Type: "hearth.lock/v1", Availability: DigestUnavailable}},
+		Entities: []DigestEntity{{
+			Name: "Garage Lock", DeviceID: "dev_garage", Device: "Garage", DeviceKind: "lock",
+			Type: "hearth.lock/v1", Availability: DigestUnavailable,
+		}},
 	}}
 	service := newStarterService(t, chat, reader)
 	ctx := context.Background()
@@ -186,7 +189,7 @@ func TestRefreshStarterQuestionsSendsDigestAndPreviousQuestions(t *testing.T) {
 	if len(messages) != 2 {
 		t.Fatalf("model calls = %d, want 2", len(messages))
 	}
-	for _, want := range []string{"Garage Lock [hearth.lock/v1]", "- Why is the garage cold?", "Unit system: us"} {
+	for _, want := range []string{"- Garage (lock)", "- Why is the garage cold?", "Unit system: us"} {
 		if !strings.Contains(messages[0], want) {
 			t.Fatalf("first digest lacks %q:\n%s", want, messages[0])
 		}

@@ -60,8 +60,8 @@ func (fake *starterDigestModel) WithTools([]*schema.ToolInfo) (model.ToolCalling
 }
 
 // This test protects the assembly between Devices persistence, the household
-// digest reader, and the agent cache. It fails if the reader drops an
-// unavailable Entity, reports a reading in canonical instead of household
+// digest reader, and the agent cache. It fails if the reader loses an
+// offline Device's kind, reports a reading in canonical instead of household
 // units, includes an Entity whose availability is unknown, or a pass does not
 // reach the cache.
 func TestStarterQuestionPassReadsHouseholdFromPersistence(t *testing.T) {
@@ -93,11 +93,6 @@ func TestStarterQuestionPassReadsHouseholdFromPersistence(t *testing.T) {
 				TypeID: devices.EntityTypeTemperatureV1, Support: devices.EntitySupport(`{"state":{},"operations":{}}`),
 			},
 			{
-				Key: "lock", ExternalID: "office.lock", Name: "Garage Lock",
-				TypeID:  devices.EntityTypeLockV1,
-				Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
-			},
-			{
 				Key:        "contact",
 				ExternalID: "office.contact",
 				Name:       "Silent Contact",
@@ -109,7 +104,19 @@ func TestStarterQuestionPassReadsHouseholdFromPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	temperatureID, lockID := binding.Entities[0].EntityID, binding.Entities[1].EntityID
+	garage, err := deviceService.Register(ctx, "simulator", runtimeID, devices.Registration{
+		BindingKey: "garage",
+		Device:     devices.DeviceDescriptor{Name: "Garage", Kind: devices.DeviceKindLock},
+		Entities: []devices.EntityDescriptor{{
+			Key: "lock", ExternalID: "garage.lock", Name: "Garage Lock",
+			TypeID:  devices.EntityTypeLockV1,
+			Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	temperatureID, lockID := binding.Entities[0].EntityID, garage.Entities[0].EntityID
 	now := time.Now().UTC()
 	// Entity availability reports need a healthy Adapter: record a heartbeat
 	// and project its pending health update as the relay would.
@@ -182,8 +189,8 @@ func TestStarterQuestionPassReadsHouseholdFromPersistence(t *testing.T) {
 	digest := chat.digest
 	chat.mutex.Unlock()
 	for _, want := range []string{
-		"Unavailable Entities (1):\n- Garage Lock [hearth.lock/v1] on Office Sensor",
-		"- Office Temperature [hearth.temperature/v1] on Office Sensor: 70.7 (value in °F)",
+		"Offline Devices (1):\n- Garage (lock)",
+		"- Office Temperature (temperature) on Office Sensor: 70.7 (value in °F)",
 		"Unit system: us",
 	} {
 		if !strings.Contains(digest, want) {

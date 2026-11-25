@@ -30,7 +30,10 @@ func TestRenderHouseholdDigestListsSectionsInOrder(t *testing.T) {
 		UnitSystem: household.UnitSystemUS,
 		Entities: []DigestEntity{
 			temperature,
-			{Name: "Garage Lock", Device: "Garage", Type: "hearth.lock/v1", Availability: DigestUnavailable},
+			{
+				Name: "Garage Lock", DeviceID: "dev_garage", Device: "Garage", DeviceKind: "lock",
+				Type: "hearth.lock/v1", Availability: DigestUnavailable,
+			},
 			reading("Hall Light", "hearth.power/v1", `true`),
 			reading("Desk Lamp", "hearth.power/v1", `false`),
 			reading("Hourly Forecast", "hearth.hourlyforecast/v1", `{"secret_forecast":1}`),
@@ -50,13 +53,13 @@ func TestRenderHouseholdDigestListsSectionsInOrder(t *testing.T) {
 	wantInOrder := []string{
 		"Local time: Tuesday 2026-11-24 19:42 (evening)",
 		"Unit system: us",
-		"Unavailable Entities (1):",
-		"- Garage Lock [hearth.lock/v1] on Garage",
+		"Offline Devices (1):",
+		"- Garage (lock)",
 		"Automations: 1 enabled, 1 disabled",
 		"- Porch lights at sunset: failed at Tue 18:42",
 		"Current readings:",
-		"- Office Temperature [hearth.temperature/v1] on Office Temperature device: 21.5 (value in °F)",
-		"- hearth.power/v1: 2 (1 on)",
+		"- Office Temperature (temperature) on Office Temperature device: 21.5 (value in °F)",
+		"- power: 2 (1 on)",
 		"- Why is the garage cold?",
 		"- Show humidity today",
 	}
@@ -76,12 +79,43 @@ func TestRenderHouseholdDigestListsSectionsInOrder(t *testing.T) {
 	}
 }
 
+func TestRenderHouseholdDigestListsOnlyUnreachableControlledDevices(t *testing.T) {
+	t.Parallel()
+	entity := func(deviceID, device, kind, name, availability string) DigestEntity {
+		return DigestEntity{
+			Name: name, DeviceID: deviceID, Device: device, DeviceKind: kind,
+			Type: "hearth.power/v1", Availability: availability,
+		}
+	}
+	got := renderHouseholdDigest(HouseholdDigest{
+		LocalTime: digestTime(),
+		Entities: []DigestEntity{
+			entity("dev_fan", "Office Fan", "relay", "Power", DigestUnavailable),
+			entity("dev_button", "Office Fan Button", "sensor", "Action", DigestUnavailable),
+			entity("dev_button", "Office Fan Button", "sensor", "Battery", DigestUnavailable),
+			entity("dev_purifier", "Basement Air Purifier", "air-purifier", "Manual fan level", DigestUnavailable),
+			entity("dev_purifier", "Basement Air Purifier", "air-purifier", "Power", DigestAvailable),
+			entity("dev_unknown", "Mystery", "", "Power", DigestUnavailable),
+		},
+	}, nil, nil)
+	if !strings.Contains(got, "Offline Devices (1):\n- Office Fan (relay)\n") {
+		t.Fatalf("digest lacks the unreachable relay alone:\n%s", got)
+	}
+	for _, unwanted := range []string{"Office Fan Button", "Manual fan level", "Basement Air Purifier", "Mystery"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("digest lists %q as a problem:\n%s", unwanted, got)
+		}
+	}
+}
+
 func TestRenderHouseholdDigestRespectsBounds(t *testing.T) {
 	t.Parallel()
 	digest := HouseholdDigest{LocalTime: digestTime(), UnitSystem: household.UnitSystemMetric}
-	for index := range maxDigestUnavailable + 5 {
+	for index := range maxDigestOfflineDevices + 5 {
+		name := fmt.Sprintf("Offline %02d", index)
 		digest.Entities = append(digest.Entities, DigestEntity{
-			Name: fmt.Sprintf("Offline %02d", index), Type: "hearth.binarysensor/v1", Availability: DigestUnavailable,
+			Name: name, DeviceID: name, Device: name, DeviceKind: "relay",
+			Type: "hearth.power/v1", Availability: DigestUnavailable,
 		})
 	}
 	digest.Entities = append(
@@ -117,7 +151,7 @@ func TestRenderHouseholdDigestRespectsBounds(t *testing.T) {
 			t.Fatalf("line has %d bytes: %q", len(line), line)
 		}
 	}
-	readings := strings.Count(got, "[hearth.binarysensor/v1] on ")
+	readings := strings.Count(got, " (binary sensor) on ")
 	if readings != maxDigestReadings {
 		t.Fatalf("listed %d readings, want %d", readings, maxDigestReadings)
 	}
