@@ -14,14 +14,10 @@ const (
 	// starterQuestionStartupDelay gives Adapters time to report availability
 	// and State before the first pass reads the household.
 	starterQuestionStartupDelay = 2 * time.Minute
-	// starterQuestionPassTimeout bounds one pass, including the model call. A
-	// timed-out pass keeps the previous questions.
-	starterQuestionPassTimeout = 90 * time.Second
-	// starterQuestionTimeoutStage is the logged stage for a pass that ran out of time.
-	starterQuestionTimeoutStage = "timeout"
 )
 
-// StarterQuestionRefresher runs one starter question generation pass.
+// StarterQuestionRefresher runs one starter question generation pass; the
+// agent module owns the pass deadline.
 type StarterQuestionRefresher interface {
 	RefreshStarterQuestions(ctx context.Context) error
 }
@@ -52,7 +48,6 @@ func newStarterQuestionScheduler(
 		refresher:    refresher,
 		startupDelay: starterQuestionStartupDelay,
 		interval:     interval,
-		passTimeout:  starterQuestionPassTimeout,
 	}
 }
 
@@ -64,7 +59,6 @@ type starterQuestionScheduler struct {
 	refresher    StarterQuestionRefresher
 	startupDelay time.Duration
 	interval     time.Duration
-	passTimeout  time.Duration
 }
 
 // run waits for each pass in turn. The timer restarts after each pass ends, so
@@ -83,22 +77,17 @@ func (scheduler *starterQuestionScheduler) run(ctx context.Context) error {
 	}
 }
 
-// runPass runs one pass under its own deadline. A failure is logged with a
-// fixed stage and never stops the schedule; a pass interrupted by shutdown is
-// not a failure.
+// runPass runs one pass. A failure is logged with a fixed stage and never
+// stops the schedule; a pass interrupted by shutdown, including admission
+// closing before the worker is canceled, is not a failure.
 func (scheduler *starterQuestionScheduler) runPass(ctx context.Context) {
-	passContext, cancel := context.WithTimeout(ctx, scheduler.passTimeout)
-	defer cancel()
-	err := scheduler.refresher.RefreshStarterQuestions(passContext)
-	if err == nil || ctx.Err() != nil {
+	err := scheduler.refresher.RefreshStarterQuestions(ctx)
+	if err == nil || ctx.Err() != nil || errors.Is(err, agent.ErrAdmissionUnavailable) {
 		return
 	}
 	stage := "unknown"
 	if refreshErr, ok := errors.AsType[*agent.StarterQuestionRefreshError](err); ok {
 		stage = refreshErr.Stage
-	}
-	if errors.Is(passContext.Err(), context.DeadlineExceeded) {
-		stage = starterQuestionTimeoutStage
 	}
 	scheduler.logger.WarnContext(
 		ctx,

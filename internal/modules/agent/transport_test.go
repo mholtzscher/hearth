@@ -27,6 +27,7 @@ type stubOperations struct {
 	conversationExists func(ctx context.Context, conversationID string) (bool, error)
 	admissionOpen      func() bool
 	starterQuestions   StarterQuestions
+	refreshStarters    func(ctx context.Context) error
 }
 
 func (stub *stubOperations) CreateConversation(ctx context.Context) (Conversation, error) {
@@ -63,6 +64,10 @@ func (stub *stubOperations) AdmissionOpen() bool {
 
 func (stub *stubOperations) StarterQuestions() StarterQuestions {
 	return stub.starterQuestions
+}
+
+func (stub *stubOperations) RefreshStarterQuestions(ctx context.Context) error {
+	return stub.refreshStarters(ctx)
 }
 
 func newOperationsRouter(service Operations) *echo.Echo {

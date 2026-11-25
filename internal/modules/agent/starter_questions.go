@@ -28,6 +28,9 @@ const (
 	// recentConversationPreviews is how many conversation previews the digest
 	// includes, newest first.
 	recentConversationPreviews = 8
+	// defaultStarterQuestionPassTimeout bounds one pass, including the model
+	// call. A timed-out pass keeps the previous questions.
+	defaultStarterQuestionPassTimeout = 90 * time.Second
 	// starterQuestionModelConversation names the provider conversation for
 	// generation requests. Providers that route by conversation require one.
 	starterQuestionModelConversation = "starter-questions"
@@ -41,10 +44,12 @@ type StarterQuestion struct {
 }
 
 // StarterQuestions is the current cache. GeneratedAt is zero before the first
-// successful pass, and Questions is then empty.
+// successful pass, and Questions is then empty. Enabled reports whether
+// generation is on, so a manual refresh can run.
 type StarterQuestions struct {
 	Questions   []StarterQuestion
 	GeneratedAt time.Time
+	Enabled     bool
 }
 
 // HouseholdDigestReader reads the household snapshot one generation pass uses.
@@ -110,11 +115,11 @@ type DigestAutomationProblem struct {
 // Stages a [StarterQuestionRefreshError] reports. They are fixed so callers can
 // log them without the underlying error text.
 const (
-	StarterQuestionStageUnconfigured     = "unconfigured"
 	StarterQuestionStageDigestRead       = "digest_read"
 	StarterQuestionStageConversationRead = "conversation_read"
 	StarterQuestionStageModel            = "model"
 	StarterQuestionStageReply            = "reply"
+	StarterQuestionStageTimeout          = "timeout"
 )
 
 // StarterQuestionRefreshError reports which stage of a generation pass failed.
@@ -136,26 +141,73 @@ func starterQuestionError(stage string, err error) error {
 
 // StarterQuestions returns the current cache. It never blocks on a pass.
 func (service *Service) StarterQuestions() StarterQuestions {
+	current := StarterQuestions{}
 	if cached := service.starterQuestions.Load(); cached != nil {
-		return *cached
+		current = *cached
 	}
-	return StarterQuestions{}
+	current.Enabled = service.householdDigest != nil
+	return current
 }
 
-// RefreshStarterQuestions runs one generation pass: it reads the household
-// digest and recent conversations, asks the model for questions without tools,
-// and replaces the cache when at least three valid questions survive. It
-// returns nil without a model call when admission is closed. A pass holds no
-// admission reservation, so Drain does not wait for it; its caller owns its
-// lifetime through ctx. On any error the cache is unchanged. Callers serialize
-// passes; concurrent passes are safe but the last to finish wins.
+// ErrStarterQuestionsOff reports that starter question generation is turned
+// off, so no household digest reader is configured.
+var ErrStarterQuestionsOff = errors.New("starter questions are off")
+
+// starterQuestionRefresh is one in-flight pass that later callers join.
+type starterQuestionRefresh struct {
+	done chan struct{}
+	err  error
+}
+
+// RefreshStarterQuestions runs one generation pass, or joins the pass already
+// running and returns its result, so concurrent scheduled and manual requests
+// share one model call. A pass reads the household digest and recent
+// conversations, asks the model for questions without tools under its own
+// deadline, and replaces the cache when at least three valid questions
+// survive. It returns ErrAdmissionUnavailable when admission is closed and
+// ErrStarterQuestionsOff when generation is off. A pass holds no admission
+// reservation, so Drain does not wait for it; the leading caller owns its
+// lifetime through ctx. On any error the cache is unchanged.
 func (service *Service) RefreshStarterQuestions(ctx context.Context) error {
 	if !service.AdmissionOpen() {
-		return nil
+		return ErrAdmissionUnavailable
 	}
 	if service.householdDigest == nil {
-		return starterQuestionError(StarterQuestionStageUnconfigured, errors.New("no household digest reader"))
+		return ErrStarterQuestionsOff
 	}
+	service.starterMu.Lock()
+	if running := service.starterRefresh; running != nil {
+		service.starterMu.Unlock()
+		select {
+		case <-running.done:
+			return running.err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	refresh := &starterQuestionRefresh{done: make(chan struct{})}
+	service.starterRefresh = refresh
+	service.starterMu.Unlock()
+
+	refresh.err = service.runStarterQuestionPass(ctx)
+	service.starterMu.Lock()
+	service.starterRefresh = nil
+	service.starterMu.Unlock()
+	close(refresh.done)
+	return refresh.err
+}
+
+func (service *Service) runStarterQuestionPass(ctx context.Context) error {
+	passContext, cancel := context.WithTimeout(ctx, service.starterPassTimeout)
+	defer cancel()
+	err := service.generateStarterQuestions(passContext)
+	if err != nil && ctx.Err() == nil && errors.Is(passContext.Err(), context.DeadlineExceeded) {
+		return starterQuestionError(StarterQuestionStageTimeout, err)
+	}
+	return err
+}
+
+func (service *Service) generateStarterQuestions(ctx context.Context) error {
 	digest, err := service.householdDigest.ReadHouseholdDigest(ctx)
 	if err != nil {
 		return starterQuestionError(StarterQuestionStageDigestRead, err)

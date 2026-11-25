@@ -26,6 +26,11 @@ type starterModel struct {
 	replies  []starterModelReply
 	requests [][]*schema.Message
 	sessions []string
+	// started and release, when set, hold each call open until release closes
+	// or its context ends.
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
 }
 
 type starterModelReply struct {
@@ -39,10 +44,20 @@ func (fake *starterModel) Generate(
 	_ ...model.Option,
 ) (*schema.Message, error) {
 	fake.mutex.Lock()
-	defer fake.mutex.Unlock()
 	fake.requests = append(fake.requests, messages)
 	session, _ := ctx.Value(modelConversationKey{}).(string)
 	fake.sessions = append(fake.sessions, session)
+	fake.mutex.Unlock()
+	if fake.started != nil {
+		fake.once.Do(func() { close(fake.started) })
+		select {
+		case <-fake.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	fake.mutex.Lock()
+	defer fake.mutex.Unlock()
 	if len(fake.replies) == 0 {
 		return nil, errors.New("starterModel: no scripted reply")
 	}
@@ -242,32 +257,81 @@ func TestRefreshStarterQuestionsKeepsCacheOnFailure(t *testing.T) {
 	}
 }
 
-func TestRefreshStarterQuestionsSkipsWhenAdmissionClosed(t *testing.T) {
+func TestRefreshStarterQuestionsRefusesWhenClosedOrOff(t *testing.T) {
 	t.Parallel()
 	chat := &starterModel{}
 	reader := &fakeDigestReader{}
-	service := newStarterService(t, chat, reader)
-	service.StopAdmission()
-	if err := service.RefreshStarterQuestions(context.Background()); err != nil {
-		t.Fatal(err)
+	closed := newStarterService(t, chat, reader)
+	closed.StopAdmission()
+	if err := closed.RefreshStarterQuestions(context.Background()); !errors.Is(err, ErrAdmissionUnavailable) {
+		t.Fatalf("closed admission: err = %v", err)
 	}
 	if reader.calls != 0 || len(chat.userMessages()) != 0 {
-		t.Fatalf(
-			"closed admission read the digest %d times and called the model %d times",
-			reader.calls,
-			len(chat.userMessages()),
-		)
+		t.Fatalf("closed admission read the digest %d times and called the model %d times",
+			reader.calls, len(chat.userMessages()))
+	}
+	off := newStarterService(t, &starterModel{}, nil)
+	if err := off.RefreshStarterQuestions(context.Background()); !errors.Is(err, ErrStarterQuestionsOff) {
+		t.Fatalf("no digest reader: err = %v", err)
+	}
+	if off.StarterQuestions().Enabled || !closed.StarterQuestions().Enabled {
+		t.Fatal("Enabled does not follow the digest reader")
 	}
 }
 
-func TestRefreshStarterQuestionsRequiresDigestReader(t *testing.T) {
+// This test fails if a refresh requested while a pass runs starts a second
+// model call instead of sharing the running pass's result.
+func TestRefreshStarterQuestionsJoinsRunningPass(t *testing.T) {
 	t.Parallel()
-	service := newStarterService(t, &starterModel{}, nil)
+	chat := &starterModel{
+		replies: []starterModelReply{{content: validStarterReply("A")}},
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	service := newStarterService(t, chat, &fakeDigestReader{digest: HouseholdDigest{LocalTime: starterPassTime()}})
+	results := make(chan error, 2)
+	go func() { results <- service.RefreshStarterQuestions(context.Background()) }()
+	<-chat.started
+	// The second caller's first use of its context is the select that joins
+	// the running pass, so the model answers only after it is waiting.
+	joining := &doneObservedContext{Context: context.Background(), observed: make(chan struct{})}
+	go func() { results <- service.RefreshStarterQuestions(joining) }()
+	<-joining.observed
+	close(chat.release)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls := len(chat.userMessages()); calls != 1 {
+		t.Fatalf("model calls = %d, want 1", calls)
+	}
+	if got := service.StarterQuestions().Questions[0].Title; got != "A Which devices are offline?" {
+		t.Fatalf("cache title = %q", got)
+	}
+}
+
+// doneObservedContext closes observed the first time Done is called.
+type doneObservedContext struct {
+	context.Context
+
+	observed chan struct{}
+	once     sync.Once
+}
+
+func (ctx *doneObservedContext) Done() <-chan struct{} {
+	ctx.once.Do(func() { close(ctx.observed) })
+	return ctx.Context.Done()
+}
+
+func TestRefreshStarterQuestionsReportsItsOwnDeadline(t *testing.T) {
+	t.Parallel()
+	chat := &starterModel{started: make(chan struct{}), release: make(chan struct{})}
+	service := newStarterService(t, chat, &fakeDigestReader{digest: HouseholdDigest{LocalTime: starterPassTime()}})
+	service.starterPassTimeout = 20 * time.Millisecond
 	err := service.RefreshStarterQuestions(context.Background())
-	if refreshErr, ok := errors.AsType[*StarterQuestionRefreshError](
-		err,
-	); !ok ||
-		refreshErr.Stage != StarterQuestionStageUnconfigured {
-		t.Fatalf("err = %v, want the unconfigured stage", err)
+	if refreshErr, ok := errors.AsType[*StarterQuestionRefreshError](err); !ok ||
+		refreshErr.Stage != StarterQuestionStageTimeout {
+		t.Fatalf("err = %v, want the timeout stage", err)
 	}
 }

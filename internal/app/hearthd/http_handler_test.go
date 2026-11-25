@@ -279,7 +279,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 36 {
+	if len(document.Paths) != 37 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/household"].Get, "get-household", "200", "500")
@@ -327,6 +327,15 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		document.Paths["/v1/agent/starter-questions"].Get,
 		"list-agent-starter-questions",
 		"200",
+		"500",
+	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/agent/starter-questions/refresh"].Post,
+		"refresh-agent-starter-questions",
+		"200",
+		"502",
+		"503",
 		"500",
 	)
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities"].Get, "list-entities", "200", "400", "422", "500")

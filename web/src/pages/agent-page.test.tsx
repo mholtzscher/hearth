@@ -606,6 +606,11 @@ const stubMarkdownReply = () => {
   );
 };
 
+const starterQuestion = (title: string) => ({
+  title,
+  prompt: `${title} Explain.`,
+});
+
 describe("agent page", () => {
   beforeEach(installNoopResizeObserver);
   afterEach(() => {
@@ -1170,6 +1175,7 @@ describe("agent page", () => {
               prompt: "What happened in the house overnight?",
             },
           ],
+          enabled: true,
           generated_at: "2026-11-24T19:00:00Z",
         });
       }
@@ -1204,6 +1210,96 @@ describe("agent page", () => {
       })
     );
     await waitFor(() => expect(starterReads).toBe(readsBeforeSend + 1));
+  });
+
+  it("asks Core for other starter questions and offers the new ones", async () => {
+    let refreshes = 0;
+    let streamed: { text: string } | undefined;
+    const fetcher = vi.fn<
+      (input: RequestInfo | URL, init?: RequestInit) => Response
+    >((input, init) => {
+      const path = String(input);
+      if (path === "/v1/agent/starter-questions/refresh") {
+        refreshes += 1;
+        return Response.json({
+          starter_questions: [
+            starterQuestion("Is the porch light on?"),
+            starterQuestion("Which doors are open?"),
+            starterQuestion("Show humidity today"),
+          ],
+          enabled: true,
+          generated_at: "2026-11-24T20:00:00Z",
+        });
+      }
+      if (path === "/v1/agent/starter-questions") {
+        return Response.json({
+          starter_questions: [
+            starterQuestion("Why is the Garage Lock offline?"),
+            starterQuestion("Show the office temperature"),
+            starterQuestion("What happened overnight?"),
+          ],
+          enabled: true,
+          generated_at: "2026-11-24T19:00:00Z",
+        });
+      }
+      if (path === "/v1/agent/conversations" && init?.method === "POST") {
+        return Response.json({ id: "conv-new" });
+      }
+      if (path === "/v1/agent/conversations") {
+        return Response.json({ conversations: [] });
+      }
+      if (path.endsWith("/messages/stream")) {
+        streamed = JSON.parse(String(init?.body));
+        return new Response('data: {"type":"turn.finished"}\n\n');
+      }
+      if (path.endsWith("/messages")) {
+        return Response.json({ messages: [] });
+      }
+      throw new Error(`Unexpected request ${path}`);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    mount("/");
+    await screen.findByRole("button", {
+      name: "Why is the Garage Lock offline?",
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Suggest other questions" })
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Is the porch light on?" })
+    );
+    expect(refreshes).toBe(1);
+    expect(
+      screen.queryByRole("button", { name: "Why is the Garage Lock offline?" })
+    ).toBeNull();
+    await waitFor(() =>
+      expect(streamed).toStrictEqual({
+        text: "Is the porch light on? Explain.",
+      })
+    );
+  });
+
+  it("does not offer other starter questions when Core does not generate them", async () => {
+    const fetcher = vi.fn<(input: RequestInfo | URL) => Response>((input) => {
+      const path = String(input);
+      if (path === "/v1/agent/starter-questions") {
+        return Response.json({
+          starter_questions: [],
+          enabled: false,
+          generated_at: null,
+        });
+      }
+      if (path === "/v1/agent/conversations") {
+        return Response.json({ conversations: [] });
+      }
+      throw new Error(`Unexpected request ${path}`);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    mount("/");
+    await screen.findByRole("button", { name: "Show me the temperatures" });
+    expect(
+      screen.queryByRole("button", { name: "Suggest other questions" })
+    ).toBeNull();
   });
 
   it("sends a starter immediately and lists the new conversation once the turn completes", async () => {

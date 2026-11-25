@@ -32,6 +32,20 @@ export const conversationPrompt = "Show me a morning overview.";
 export const conversationReply =
   "Here is your morning overview. The hallway lamp is on.";
 export const sentReply = "The living room is 21.5 °C.";
+export const regeneratedStarterQuestions = [
+  {
+    title: "Is the hallway lamp on?",
+    prompt: "Is the hallway lamp on right now?",
+  },
+  {
+    title: "Which rooms are warmest?",
+    prompt: "Which rooms are warmest right now?",
+  },
+  {
+    title: "Show humidity today",
+    prompt: "Show humidity throughout the house today.",
+  },
+];
 export const generatedStarterQuestions = [
   {
     title: "Why is the hallway lamp offline?",
@@ -619,10 +633,23 @@ export const createApplicationHandlers = (
         scenario.starterQuestions === "generated"
           ? {
               starter_questions: generatedStarterQuestions,
+              enabled: true,
               generated_at: fixtureNow,
             }
-          : { starter_questions: [], generated_at: null }
+          : { starter_questions: [], enabled: false, generated_at: null }
       )
+    ),
+    http.post("/v1/agent/starter-questions/refresh", () =>
+      scenario.starterQuestions === "generated"
+        ? HttpResponse.json({
+            starter_questions: regeneratedStarterQuestions,
+            enabled: true,
+            generated_at: fixtureNow,
+          })
+        : HttpResponse.json(
+            { detail: "starter questions are off" },
+            { status: 503 }
+          )
     ),
     http.post("/v1/agent/conversations", async () => {
       if (scenario.turn === "queue-collision") {

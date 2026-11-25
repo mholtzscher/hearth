@@ -9,7 +9,11 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
-import { listConversations, listStarterQuestions } from "../../api/agent";
+import {
+  listConversations,
+  listStarterQuestions,
+  refreshStarterQuestions as postStarterQuestionRefresh,
+} from "../../api/agent";
 import type { StarterQuestion } from "../../api/agent";
 import { useBaseUrlVersion } from "../../api/client";
 import { useApi } from "../../api/hooks";
@@ -29,9 +33,14 @@ interface ConversationsValue {
   session: (key: string, id?: string) => ConversationSession;
   /** Core's generated starter questions, or null before they load or when the read fails. */
   starterQuestions: readonly StarterQuestion[] | null;
+  /** Core generates starter questions, so they can be regenerated on request. */
+  starterQuestionsEnabled: boolean;
   /** The first read of starter questions has not answered yet. */
   starterQuestionsPending: boolean;
+  /** Reads Core's current starter questions again. */
   refreshStarterQuestions: () => void;
+  /** Asks Core to generate new starter questions now and returns them. */
+  regenerateStarterQuestions: () => Promise<readonly StarterQuestion[]>;
 }
 class SessionRegistry {
   readonly version: number;
@@ -89,15 +98,23 @@ export const ConversationsProvider = ({
   );
   // Read at mount so generated questions are usually ready before history loads.
   const {
-    data: starterQuestions,
+    data: starterData,
     loading: starterQuestionsLoading,
     error: starterQuestionsError,
     refresh: reloadStarterQuestions,
+    setData: setStarterData,
   } = useApi("agent-starter-questions", () => listStarterQuestions());
+  const starterQuestions = starterData?.questions ?? null;
+  const starterQuestionsEnabled = starterData?.enabled ?? false;
   const starterQuestionsPending =
-    starterQuestions === null &&
+    starterData === null &&
     starterQuestionsLoading &&
     starterQuestionsError === null;
+  const regenerateStarterQuestions = useCallback(async () => {
+    const next = await postStarterQuestionRefresh();
+    setStarterData(next);
+    return next.questions;
+  }, [setStarterData]);
   const refreshStarterQuestions = useCallback(() => {
     void reloadStarterQuestions();
   }, [reloadStarterQuestions]);
@@ -188,8 +205,10 @@ export const ConversationsProvider = ({
       startNew,
       session,
       starterQuestions,
+      starterQuestionsEnabled,
       starterQuestionsPending,
       refreshStarterQuestions,
+      regenerateStarterQuestions,
     }),
     [
       conversations,
@@ -200,8 +219,10 @@ export const ConversationsProvider = ({
       startNew,
       session,
       starterQuestions,
+      starterQuestionsEnabled,
       starterQuestionsPending,
       refreshStarterQuestions,
+      regenerateStarterQuestions,
     ]
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;

@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -22,16 +22,26 @@ interface Props {
   loading: boolean;
   served: typeof served | null;
   pending?: boolean;
+  enabled?: boolean;
 }
 
-const renderSelection = (initial: Props) => {
+const renderSelection = (
+  initial: Props,
+  regenerate = vi.fn<() => Promise<readonly (typeof served)[number][]>>()
+) => {
   const refresh = vi.fn<() => void>();
   const hook = renderHook(
     (props: Props) =>
-      useStarterQuestionSelection({ pending: false, ...props, refresh }),
+      useStarterQuestionSelection({
+        pending: false,
+        enabled: true,
+        ...props,
+        refresh,
+        regenerate,
+      }),
     { initialProps: initial }
   );
-  return { ...hook, refresh };
+  return { ...hook, refresh, regenerate };
 };
 
 describe(useStarterQuestionSelection, () => {
@@ -41,7 +51,7 @@ describe(useStarterQuestionSelection, () => {
       loading: false,
       served,
     });
-    expect(result.current).toBe(served);
+    expect(result.current.questions).toBe(served);
   });
 
   it("falls back when Core has none, has not answered, or failed", () => {
@@ -51,7 +61,7 @@ describe(useStarterQuestionSelection, () => {
         loading: false,
         served: value,
       });
-      expect(result.current).toBe(FALLBACK_STARTER_QUESTIONS);
+      expect(result.current.questions).toBe(FALLBACK_STARTER_QUESTIONS);
     }
   });
 
@@ -62,11 +72,11 @@ describe(useStarterQuestionSelection, () => {
       served: null,
       pending: true,
     });
-    expect(result.current).toHaveLength(0);
+    expect(result.current.questions).toHaveLength(0);
     rerender({ empty: true, loading: false, served, pending: false });
-    expect(result.current).toBe(served);
+    expect(result.current.questions).toBe(served);
     rerender({ empty: true, loading: false, served: newer, pending: false });
-    expect(result.current).toBe(served);
+    expect(result.current.questions).toBe(served);
   });
 
   it("keeps the displayed questions while the empty state stays open", () => {
@@ -76,9 +86,9 @@ describe(useStarterQuestionSelection, () => {
       served: null,
     });
     rerender({ empty: true, loading: false, served });
-    expect(result.current).toBe(FALLBACK_STARTER_QUESTIONS);
+    expect(result.current.questions).toBe(FALLBACK_STARTER_QUESTIONS);
     rerender({ empty: true, loading: false, served: newer });
-    expect(result.current).toBe(FALLBACK_STARTER_QUESTIONS);
+    expect(result.current.questions).toBe(FALLBACK_STARTER_QUESTIONS);
   });
 
   it("waits for history to load before choosing", () => {
@@ -88,7 +98,7 @@ describe(useStarterQuestionSelection, () => {
       served: null,
     });
     rerender({ empty: true, loading: false, served });
-    expect(result.current).toBe(served);
+    expect(result.current.questions).toBe(served);
   });
 
   it("reads Core again when the empty state closes and uses newer questions next time", () => {
@@ -102,7 +112,7 @@ describe(useStarterQuestionSelection, () => {
     expect(refresh).toHaveBeenCalledOnce();
     rerender({ empty: false, loading: false, served: newer });
     rerender({ empty: true, loading: false, served: newer });
-    expect(result.current).toBe(newer);
+    expect(result.current.questions).toBe(newer);
   });
 
   it("does not read Core again for a conversation that was never empty", () => {
@@ -113,5 +123,73 @@ describe(useStarterQuestionSelection, () => {
     });
     rerender({ empty: false, loading: false, served });
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("replaces the shown questions with newly generated ones on request", async () => {
+    const regenerate = vi.fn<() => Promise<typeof newer>>(() =>
+      Promise.resolve(newer)
+    );
+    const { result } = renderSelection(
+      { empty: true, loading: false, served },
+      regenerate
+    );
+    expect(result.current.canRegenerate).toBeTruthy();
+    await act(() => result.current.regenerate());
+    expect(regenerate).toHaveBeenCalledOnce();
+    expect(result.current.questions).toBe(newer);
+    expect(result.current.regenerating).toBeFalsy();
+    expect(result.current.regenerateFailed).toBeFalsy();
+  });
+
+  it("keeps the shown questions and reports a failed request", async () => {
+    const regenerate = vi.fn<() => Promise<typeof newer>>(() =>
+      Promise.reject(new Error("502"))
+    );
+    const { result } = renderSelection(
+      { empty: true, loading: false, served },
+      regenerate
+    );
+    await act(() => result.current.regenerate());
+    expect(result.current.questions).toBe(served);
+    expect(result.current.regenerateFailed).toBeTruthy();
+  });
+
+  it("ignores an answer that arrives after the conversation started", async () => {
+    const answer = Promise.withResolvers<typeof newer>();
+    const regenerate = vi.fn<() => Promise<typeof newer>>(() => answer.promise);
+    const { result, rerender } = renderSelection(
+      { empty: true, loading: false, served },
+      regenerate
+    );
+    let request: Promise<void> = Promise.resolve();
+    act(() => {
+      request = result.current.regenerate();
+    });
+    expect(result.current.regenerating).toBeTruthy();
+    act(() => rerender({ empty: false, loading: false, served }));
+    await act(async () => {
+      answer.resolve(newer);
+      await request;
+    });
+    rerender({ empty: true, loading: false, served });
+    await waitFor(() => expect(result.current.questions).toBe(served));
+    expect(result.current.regenerating).toBeFalsy();
+  });
+
+  it("offers no regeneration when Core does not generate questions or none are shown", () => {
+    const off = renderSelection({
+      empty: true,
+      loading: false,
+      served: null,
+      enabled: false,
+    });
+    expect(off.result.current.canRegenerate).toBeFalsy();
+    const hidden = renderSelection({
+      empty: true,
+      loading: false,
+      served: null,
+      pending: true,
+    });
+    expect(hidden.result.current.canRegenerate).toBeFalsy();
   });
 });

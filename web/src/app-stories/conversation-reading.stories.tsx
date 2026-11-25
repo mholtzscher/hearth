@@ -7,6 +7,7 @@ import {
   conversationPath,
   conversationReply,
   generatedStarterQuestions,
+  regeneratedStarterQuestions,
   sentReply,
 } from "../../.storybook/application-fixtures";
 import { expectNoHorizontalOverflow } from "../../.storybook/play";
@@ -99,5 +100,23 @@ export const GeneratedStarterQuestions: ApplicationStory = {
     await expect(
       within(context.canvas.getByRole("log")).getByText(first.prompt)
     ).toBeVisible();
+  },
+};
+
+export const OtherStarterQuestions: ApplicationStory = {
+  parameters: { applicationScenario: { starterQuestions: "generated" } },
+  play: async ({ canvas, userEvent }) => {
+    const [generated] = generatedStarterQuestions;
+    const [regenerated] = regeneratedStarterQuestions;
+    await canvas.findByRole("button", { name: generated.title });
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Suggest other questions" })
+    );
+    await expect(
+      await canvas.findByRole("button", { name: regenerated.title })
+    ).toBeVisible();
+    await expect(
+      canvas.queryByRole("button", { name: generated.title })
+    ).toBeNull();
   },
 };

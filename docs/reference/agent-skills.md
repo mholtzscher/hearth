@@ -95,12 +95,23 @@ Core drops any question whose title or prompt starts with a command verb such as
 Core keeps the first four. Any failure keeps the previous questions and logs
 `core.starter_questions_refresh_failed` with a fixed `stage`.
 
-`GET /v1/agent/starter-questions` serves the in-memory questions. It returns an
-empty list and a null `generated_at` until the first successful pass after
-startup, and always when generation is off. The browser reads it when the
-dashboard loads and offers no questions until that read answers. It chooses once
-when an empty conversation appears and keeps that choice until the conversation
-has its first message. It shows the fixed questions when the list is empty or the read fails.
+`GET /v1/agent/starter-questions` serves the in-memory questions and `enabled`.
+It returns an empty list and a null `generated_at` until the first successful
+pass after startup, and always when generation is off.
+
+`POST /v1/agent/starter-questions/refresh` runs a pass now and returns the same
+body. If a pass is already running, scheduled or manual, the request waits for
+that pass instead of starting another model call. It returns 503 when generation
+is off, admission is closed, or the caller goes away, and 502 when the model
+call fails, times out, or yields fewer than three valid questions. A refresh
+does not move the schedule.
+
+The browser reads the questions when the dashboard loads and offers no questions
+until that read answers. It chooses once when an empty conversation appears and
+keeps that choice until the conversation has its first message. It shows the
+fixed questions when the list is empty or the read fails. While Core generates
+questions, **Suggest other questions** under the chips calls the refresh route
+and replaces the chips with the new ones. A failure keeps the current chips.
 See [starter question generation](../../internal/modules/agent/starter_questions.go)
 and the [digest reader](../../internal/app/hearthd/household_digest.go).
 

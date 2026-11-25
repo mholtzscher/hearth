@@ -372,7 +372,12 @@ func runWithOptions(
 		coreLogger,
 		newDevicesPresenter(householdSettings),
 	)
-	householdDigest := newHouseholdDigestReader(service, automationService, householdSettings, householdLocation)
+	// Without a digest reader the agent reports starter questions as off, so a
+	// manual refresh is refused as well as the schedule.
+	var householdDigest agent.HouseholdDigestReader
+	if config.StarterQuestionsEnabled() {
+		householdDigest = newHouseholdDigestReader(service, automationService, householdSettings, householdLocation)
+	}
 	agentService, agentErr := startAgentService(
 		dependencyContext, config, mcpServer, dashboardService, householdDigest, database, agentLogger,
 	)

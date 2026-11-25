@@ -26,6 +26,7 @@ type ListStarterQuestionsOutput struct {
 // StarterQuestionsBody is the current starter question cache.
 type StarterQuestionsBody struct {
 	StarterQuestions []StarterQuestionBody `json:"starter_questions" nullable:"false" doc:"Generated questions; empty before the first successful pass or when generation is off"`
+	Enabled          bool                  `json:"enabled"                            doc:"Whether Core generates starter questions, so a refresh can run"`
 	GeneratedAt      *string               `json:"generated_at"                       doc:"When the pass that produced these questions read the household (RFC3339); null before the first successful pass"`
 }
 
@@ -40,8 +41,16 @@ func (handler *Handler) ListStarterQuestions(
 	_ context.Context,
 	_ *ListStarterQuestionsInput,
 ) (*ListStarterQuestionsOutput, error) {
-	cached := handler.service.StarterQuestions()
-	body := StarterQuestionsBody{StarterQuestions: make([]StarterQuestionBody, len(cached.Questions))}
+	return &ListStarterQuestionsOutput{Body: starterQuestionsBody(handler.service.StarterQuestions())}, nil
+}
+
+// starterQuestionsBody maps the cache to the body both starter question
+// operations return.
+func starterQuestionsBody(cached StarterQuestions) StarterQuestionsBody {
+	body := StarterQuestionsBody{
+		StarterQuestions: make([]StarterQuestionBody, len(cached.Questions)),
+		Enabled:          cached.Enabled,
+	}
 	for index, question := range cached.Questions {
 		body.StarterQuestions[index] = StarterQuestionBody(question)
 	}
@@ -49,5 +58,5 @@ func (handler *Handler) ListStarterQuestions(
 		generatedAt := cached.GeneratedAt.Format(rfc3339Nano)
 		body.GeneratedAt = &generatedAt
 	}
-	return &ListStarterQuestionsOutput{Body: body}, nil
+	return body
 }

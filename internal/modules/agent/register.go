@@ -25,6 +25,7 @@ type Operations interface {
 	ConversationExists(ctx context.Context, conversationID string) (bool, error)
 	AdmissionOpen() bool
 	StarterQuestions() StarterQuestions
+	RefreshStarterQuestions(ctx context.Context) error
 }
 
 // RegisterHTTP mounts the agent operations on api. A nil service registers
@@ -64,6 +65,7 @@ func RegisterHTTP(api huma.API, service Operations, logger *slog.Logger) {
 		Errors: []int{http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.History)
 	registerListStarterQuestions(api, handler)
+	registerRefreshStarterQuestions(api, handler)
 }
 
 const agentTag = "Agent"

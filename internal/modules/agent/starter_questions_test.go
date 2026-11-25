@@ -1,7 +1,9 @@
 package agent //nolint:testpackage // Tests exercise package-private reply validation.
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -128,7 +130,11 @@ func TestListStarterQuestionsRouteServesCache(t *testing.T) {
 		want  string
 	}{
 		"before first pass": {
-			want: `{"starter_questions":[],"generated_at":null}`,
+			cache: StarterQuestions{Enabled: true},
+			want:  `{"starter_questions":[],"enabled":true,"generated_at":null}`,
+		},
+		"off": {
+			want: `{"starter_questions":[],"enabled":false,"generated_at":null}`,
 		},
 		"cached": {
 			cache: StarterQuestions{
@@ -136,9 +142,10 @@ func TestListStarterQuestionsRouteServesCache(t *testing.T) {
 					{Title: "Which devices are offline?", Prompt: "Which devices are offline right now?"},
 				},
 				GeneratedAt: generatedAt,
+				Enabled:     true,
 			},
 			want: `{"starter_questions":[{"title":"Which devices are offline?","prompt":"Which devices are offline right now?"}],` +
-				`"generated_at":"2026-11-24T19:00:00Z"}`,
+				`"enabled":true,"generated_at":"2026-11-24T19:00:00Z"}`,
 		},
 	}
 	for name, test := range cases {
@@ -161,5 +168,97 @@ func TestListStarterQuestionsRouteServesCache(t *testing.T) {
 		if string(gotJSON) != string(wantJSON) {
 			t.Fatalf("%s: body=%s want %s", name, response.Body.String(), test.want)
 		}
+	}
+}
+
+func TestRefreshStarterQuestionsRouteMapsOutcomes(t *testing.T) {
+	t.Parallel()
+	staged := func(stage string) error {
+		return starterQuestionError(stage, errors.New("private cause"))
+	}
+	cases := map[string]struct {
+		err        error
+		wantStatus int
+		wantDetail string
+	}{
+		"refreshed": {wantStatus: http.StatusOK},
+		"off": {
+			err:        ErrStarterQuestionsOff,
+			wantStatus: http.StatusServiceUnavailable,
+			wantDetail: "starter questions are off",
+		},
+		"closed": {
+			err:        ErrAdmissionUnavailable,
+			wantStatus: http.StatusServiceUnavailable,
+			wantDetail: "agent admission is unavailable",
+		},
+		"model": {
+			err:        staged(StarterQuestionStageModel),
+			wantStatus: http.StatusBadGateway,
+			wantDetail: "starter question generation failed",
+		},
+		"reply": {
+			err:        staged(StarterQuestionStageReply),
+			wantStatus: http.StatusBadGateway,
+			wantDetail: "starter question generation failed",
+		},
+		"timeout": {
+			err:        staged(StarterQuestionStageTimeout),
+			wantStatus: http.StatusBadGateway,
+			wantDetail: "starter question generation failed",
+		},
+		"digest read":  {err: staged(StarterQuestionStageDigestRead), wantStatus: http.StatusInternalServerError},
+		"unclassified": {err: errors.New("private cause"), wantStatus: http.StatusInternalServerError},
+	}
+	for name, test := range cases {
+		stub := &stubOperations{
+			starterQuestions: StarterQuestions{
+				Questions: []StarterQuestion{{Title: "Which devices are offline?", Prompt: "Which are offline?"}},
+				Enabled:   true,
+			},
+			refreshStarters: func(context.Context) error { return test.err },
+		}
+		response := httptest.NewRecorder()
+		newOperationsRouter(stub).ServeHTTP(
+			response, httptest.NewRequest(http.MethodPost, "/v1/agent/starter-questions/refresh", nil),
+		)
+		if response.Code != test.wantStatus {
+			t.Fatalf("%s: status=%d body=%s", name, response.Code, response.Body.String())
+		}
+		if strings.Contains(response.Body.String(), "private cause") {
+			t.Fatalf("%s: response exposes the cause: %s", name, response.Body.String())
+		}
+		var body struct {
+			Detail           string `json:"detail"`
+			StarterQuestions []struct {
+				Title string `json:"title"`
+			} `json:"starter_questions"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if test.wantDetail != "" && body.Detail != test.wantDetail {
+			t.Fatalf("%s: detail = %q, want %q", name, body.Detail, test.wantDetail)
+		}
+		if test.err == nil &&
+			(len(body.StarterQuestions) != 1 || body.StarterQuestions[0].Title != "Which devices are offline?") {
+			t.Fatalf("%s: body = %s", name, response.Body.String())
+		}
+	}
+}
+
+func TestRefreshStarterQuestionsRouteReportsCallerCancellation(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	stub := &stubOperations{refreshStarters: func(context.Context) error {
+		cancel()
+		return starterQuestionError(StarterQuestionStageModel, context.Canceled)
+	}}
+	response := httptest.NewRecorder()
+	request := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/agent/starter-questions/refresh", nil)
+	newOperationsRouter(stub).ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable ||
+		!strings.Contains(response.Body.String(), "starter question refresh canceled") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

@@ -157,14 +157,21 @@ const AgentPage = () => {
     [items, optimistic, live, queued]
   );
   const replies = useMemo(() => groupReplies(allItems), [allItems]);
-  const { starterQuestions, starterQuestionsPending, refreshStarterQuestions } =
-    useConversations();
-  const suggestions = useStarterQuestionSelection({
+  const {
+    starterQuestions,
+    starterQuestionsEnabled,
+    starterQuestionsPending,
+    refreshStarterQuestions,
+    regenerateStarterQuestions,
+  } = useConversations();
+  const starters = useStarterQuestionSelection({
     empty: allItems.length === 0,
     loading,
     served: starterQuestions,
     pending: starterQuestionsPending,
+    enabled: starterQuestionsEnabled,
     refresh: refreshStarterQuestions,
+    regenerate: regenerateStarterQuestions,
   });
   const messageId = useTurnMessageIds(session.key, replies, optimistic?.id);
   const sendBlocked = sendIsBlocked({
@@ -179,7 +186,7 @@ const AgentPage = () => {
     isRunning: busy,
     isLoading: loading,
     isSendDisabled: sendBlocked,
-    suggestions,
+    suggestions: starters.questions,
     convertMessage: (item, index) =>
       convertMessage(item, messageId(item, index), busy),
     onNew: async (message) => {
@@ -286,6 +293,12 @@ const AgentPage = () => {
               messageCount: replies.length,
               canvasOpen: !!draft,
               hidden: mobileCanvas,
+            }}
+            starters={{
+              canRegenerate: starters.canRegenerate,
+              regenerating: starters.regenerating,
+              regenerateFailed: starters.regenerateFailed,
+              onRegenerate: starters.regenerate,
             }}
             composer={{
               prompt,
