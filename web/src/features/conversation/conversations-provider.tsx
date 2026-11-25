@@ -3,7 +3,9 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -110,8 +112,18 @@ export const ConversationsProvider = ({
     starterData === null &&
     starterQuestionsLoading &&
     starterQuestionsError === null;
+  // A refresh answered after the backend changed belongs to the previous
+  // household; dropping it keeps its questions out of the new backend's cache.
+  const backendVersion = useRef(version);
+  useLayoutEffect(() => {
+    backendVersion.current = version;
+  }, [version]);
   const regenerateStarterQuestions = useCallback(async () => {
+    const requestedFrom = backendVersion.current;
     const next = await postStarterQuestionRefresh();
+    if (backendVersion.current !== requestedFrom) {
+      return [];
+    }
     setStarterData(next);
     return next.questions;
   }, [setStarterData]);

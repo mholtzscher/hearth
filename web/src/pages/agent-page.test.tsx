@@ -1279,6 +1279,66 @@ describe("agent page", () => {
     );
   });
 
+  it("drops other starter questions that a previous backend answers after a switch", async () => {
+    const pendingRefresh = Promise.withResolvers<Response>();
+    const fetcher = vi.fn<
+      (
+        input: RequestInfo | URL,
+        init?: RequestInit
+      ) => Response | Promise<Response>
+    >((input) => {
+      const path = String(input);
+      const otherCore = path.startsWith("http://other-core");
+      if (path.endsWith("/v1/agent/starter-questions/refresh")) {
+        return pendingRefresh.promise;
+      }
+      if (path.endsWith("/v1/agent/starter-questions")) {
+        return Response.json({
+          starter_questions: [
+            starterQuestion(
+              otherCore ? "New house question?" : "First house question?"
+            ),
+            starterQuestion("Show the temperatures?"),
+            starterQuestion("What happened overnight?"),
+          ],
+          enabled: true,
+          generated_at: "2026-11-24T19:00:00Z",
+        });
+      }
+      return Response.json({ conversations: [] });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    mount("/");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Suggest other questions" })
+    );
+    await act(() => {
+      setBaseUrl("http://other-core");
+    });
+    await act(async () => {
+      pendingRefresh.resolve(
+        Response.json({
+          starter_questions: [
+            starterQuestion("Old house question?"),
+            starterQuestion("Old house lights?"),
+            starterQuestion("Old house doors?"),
+          ],
+          enabled: true,
+          generated_at: "2026-11-24T20:00:00Z",
+        })
+      );
+      await pendingRefresh.promise;
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Suggest other questions" })
+      ).toHaveProperty("disabled", false)
+    );
+    expect(
+      screen.queryByRole("button", { name: "Old house question?" })
+    ).toBeNull();
+  });
+
   it("does not offer other starter questions when Core does not generate them", async () => {
     const fetcher = vi.fn<(input: RequestInfo | URL) => Response>((input) => {
       const path = String(input);

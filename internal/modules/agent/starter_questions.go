@@ -234,6 +234,11 @@ func (service *Service) generateStarterQuestions(ctx context.Context) error {
 	if err != nil {
 		return starterQuestionError(StarterQuestionStageModel, err)
 	}
+	// A model may return neither a reply nor an error; turns reject that at the
+	// model boundary, and a scheduled pass must not dereference it.
+	if response == nil {
+		return starterQuestionError(StarterQuestionStageModel, errModelResponseInvalid)
+	}
 	questions, err := parseStarterQuestions(response.Content)
 	if err != nil {
 		return starterQuestionError(StarterQuestionStageReply, err)

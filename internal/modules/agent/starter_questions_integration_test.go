@@ -335,3 +335,31 @@ func TestRefreshStarterQuestionsReportsItsOwnDeadline(t *testing.T) {
 		t.Fatalf("err = %v, want the timeout stage", err)
 	}
 }
+
+// nilReplyModel returns neither a reply nor an error.
+type nilReplyModel struct{ starterModel }
+
+func (*nilReplyModel) Generate(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
+	return nil, nil //nolint:nilnil // The test exercises a model that breaks the contract.
+}
+
+// This test fails if a model that returns no reply and no error crashes the
+// pass instead of failing it and keeping the previous questions.
+func TestRefreshStarterQuestionsRejectsAMissingReply(t *testing.T) {
+	t.Parallel()
+	chat := &starterModel{replies: []starterModelReply{{content: validStarterReply("A")}}}
+	service := newStarterService(t, chat, &fakeDigestReader{digest: HouseholdDigest{LocalTime: starterPassTime()}})
+	if err := service.RefreshStarterQuestions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	before := service.StarterQuestions()
+	service.chatModel = &nilReplyModel{}
+	err := service.RefreshStarterQuestions(context.Background())
+	if refreshErr, ok := errors.AsType[*StarterQuestionRefreshError](err); !ok ||
+		refreshErr.Stage != StarterQuestionStageModel {
+		t.Fatalf("err = %v, want the model stage", err)
+	}
+	if got := service.StarterQuestions(); got.Questions[0] != before.Questions[0] {
+		t.Fatalf("cache changed to %+v", got)
+	}
+}
