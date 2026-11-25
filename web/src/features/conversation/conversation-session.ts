@@ -59,14 +59,16 @@ interface SentTurn {
   draftVersion: number;
 }
 
-/** Core recorded the sent prompt as a new user row. */
+/**
+ * Core recorded the sent prompt as a user row newer than the last one before
+ * the send. Another client may have sent a later prompt to the same
+ * conversation, so every newer user row counts, not only the last.
+ */
 const recordedPrompt = (items: ConversationItem[], sent: SentTurn) => {
-  const last = lastUser(items);
-  return (
-    last !== undefined &&
-    last.id !== sent.recordedBefore &&
-    last.text === sent.prompt
-  );
+  const after = items.findIndex((item) => item.id === sent.recordedBefore) + 1;
+  return items
+    .slice(after)
+    .some((item) => item.role === "user" && item.text === sent.prompt);
 };
 
 /**

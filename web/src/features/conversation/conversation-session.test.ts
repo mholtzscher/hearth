@@ -490,5 +490,37 @@ describe(ConversationSession, () => {
       await sending;
       expect(presented).toHaveBeenCalledExactlyOnceWith("view-1", 3);
     });
+
+    it("finds a dropped prompt even when another client's prompt follows it", async () => {
+      let historyReads = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: RequestInfo | URL) => {
+          if (String(input).endsWith("/messages/stream")) {
+            return new Response("");
+          }
+          historyReads += 1;
+          return json({
+            messages:
+              historyReads === 1
+                ? []
+                : [
+                    userRow("Which sensors?"),
+                    replyRow("Two."),
+                    { ...userRow("Another tab's question"), message_id: 3 },
+                    { ...replyRow("Another answer"), message_id: 4 },
+                  ],
+          });
+        })
+      );
+      const { conversation } = session();
+      await conversation.load();
+      await conversation.send("Which sensors?", options);
+      expect(conversation.getSnapshot()).toMatchObject({
+        busy: false,
+        error: "",
+        failedPrompt: "",
+      });
+    });
   });
 });
