@@ -52,6 +52,9 @@ func lookup(kind, name string, inventory Inventory) (string, bool) {
 	case "automation":
 		saved, ok := inventory.Automations[name]
 		return saved.ID, ok
+	case "label":
+		id, ok := inventory.Labels[name]
+		return id, ok
 	}
 	return "", false
 }

@@ -57,11 +57,36 @@ func (ref EntityRef) InventoryKey() string {
 	return adapter + "/" + ref.Device + "/" + ref.Key
 }
 
+// DeviceRef names a simulator Device independently of per-run canonical IDs.
+type DeviceRef struct {
+	Adapter string `yaml:"adapter" json:"adapter"`
+	Device  string `yaml:"device"  json:"device"`
+}
+
+// InventoryKey is the record key "adapter/device".
+func (ref DeviceRef) InventoryKey() string {
+	adapter := ref.Adapter
+	if adapter == "" {
+		adapter = DefaultAdapter
+	}
+	return adapter + "/" + ref.Device
+}
+
 // Setup prepares the household before the first turn.
 type Setup struct {
 	Pin         []Pin           `yaml:"pin"`
+	Labels      []SeedLabel     `yaml:"labels"`
 	Dashboards  []SeedDashboard `yaml:"dashboards"`
 	Automations []SeedJSON      `yaml:"automations"`
+}
+
+// SeedLabel is created before the turn and assigned to Devices and Entities.
+// An Area replaces each target's Area; a tag is added to each target's tags.
+type SeedLabel struct {
+	Name     string      `yaml:"name"`
+	Kind     string      `yaml:"kind"` // area or tag
+	Devices  []DeviceRef `yaml:"devices"`
+	Entities []EntityRef `yaml:"entities"`
 }
 
 // Pin pauses an Entity's scripted output and publishes a fixed canonical value.
@@ -316,6 +341,9 @@ func (setup Setup) validate() (map[string]bool, error) {
 			return nil, fmt.Errorf("setup.automations[%d]: name and JSON definition required", index)
 		}
 	}
+	if err := validateSeedLabels(setup.Labels); err != nil {
+		return nil, err
+	}
 	for index, pin := range setup.Pin {
 		if err := validateRef(pin.Entity); err != nil {
 			return nil, fmt.Errorf("setup.pin[%d].entity: %w", index, err)
@@ -325,6 +353,64 @@ func (setup Setup) validate() (map[string]bool, error) {
 		}
 	}
 	return dashboards, nil
+}
+
+// Seed Label kinds.
+const (
+	seedLabelArea = "area"
+	seedLabelTag  = "tag"
+)
+
+// validateSeedLabels requires unique names that a placeholder can name, and
+// at most one Area per target.
+func validateSeedLabels(labels []SeedLabel) error {
+	names := map[string]bool{}
+	areas := map[string]bool{}
+	for index, label := range labels {
+		key := strings.ToLower(label.Name)
+		if label.Name == "" || names[key] || !placeholderName.MatchString(key) {
+			return fmt.Errorf("setup.labels[%d].name: required, unique, and placeholder-safe", index)
+		}
+		names[key] = true
+		targets, err := label.targets()
+		if err != nil {
+			return fmt.Errorf("setup.labels[%d]%w", index, err)
+		}
+		if label.Kind != seedLabelArea {
+			continue
+		}
+		for _, target := range targets {
+			if areas[target] {
+				return fmt.Errorf("setup.labels[%d]: %s already has an Area", index, target)
+			}
+			areas[target] = true
+		}
+	}
+	return nil
+}
+
+// targets validates the kind and references and returns one key per target.
+func (label SeedLabel) targets() ([]string, error) {
+	if label.Kind != seedLabelArea && label.Kind != seedLabelTag {
+		return nil, errors.New(".kind: area or tag")
+	}
+	if len(label.Devices)+len(label.Entities) == 0 {
+		return nil, errors.New(": at least one Device or Entity")
+	}
+	targets := make([]string, 0, len(label.Devices)+len(label.Entities))
+	for index, device := range label.Devices {
+		if device.Device == "" {
+			return nil, fmt.Errorf(".devices[%d]: device required", index)
+		}
+		targets = append(targets, "device:"+device.InventoryKey())
+	}
+	for index, entity := range label.Entities {
+		if err := validateRef(entity); err != nil {
+			return nil, fmt.Errorf(".entities[%d]: %w", index, err)
+		}
+		targets = append(targets, "entity:"+entity.InventoryKey())
+	}
+	return targets, nil
 }
 
 func validateTurns(turns []Turn, dashboards map[string]bool) error {
@@ -506,7 +592,10 @@ func (view ViewWant) validate() error {
 
 // placeholder matches {{entity:...}}, {{device:...}}, {{dashboard:...}}, and
 // {{automation:...}} references resolved per trial.
-var placeholder = regexp.MustCompile(`\{\{(entity|device|dashboard|automation):([a-z0-9_/-]+)\}\}`)
+var placeholder = regexp.MustCompile(`\{\{(entity|device|dashboard|automation|label):([a-z0-9_/-]+)\}\}`)
+
+// placeholderName matches the names a placeholder can carry.
+var placeholderName = regexp.MustCompile(`^[a-z0-9_/-]+$`)
 
 // expandShape replaces placeholders with a syntactically valid stand-in so
 // templates can be JSON-checked at load time.
