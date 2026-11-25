@@ -45,6 +45,11 @@ const (
 	// MinimumAgentHistoryRetention keeps agent conversation retention at the
 	// module's own floor: a shorter window would delete more than intended.
 	MinimumAgentHistoryRetention = agent.MinimumConversationRetention
+	// DefaultStarterQuestionRefreshInterval spaces starter question passes.
+	DefaultStarterQuestionRefreshInterval = time.Hour
+	// MinimumStarterQuestionRefreshInterval bounds how often Core sends the
+	// household digest to the model provider.
+	MinimumStarterQuestionRefreshInterval = 5 * time.Minute
 )
 
 type Config struct {
@@ -94,11 +99,24 @@ type AgentConfig struct {
 	// Zero selects DefaultAgentHistoryRetention; a restart applies policy
 	// changes on the startup prune pass.
 	HistoryRetention time.Duration `yaml:"history_retention"`
+	// StarterQuestions configures scheduled starter question generation.
+	StarterQuestions StarterQuestionsConfig `yaml:"starter_questions"`
 	// ChatModel replaces the provider chat model the agent would construct,
 	// which lets tests and embeddings run a turn without a live provider. It
 	// is deliberately not YAML configuration.
 	ChatModel      model.ToolCallingChatModel `yaml:"-"`
 	legacyMaxSteps bool
+}
+
+// StarterQuestionsConfig controls the scheduled model call that generates
+// starter questions for empty conversations from a household digest.
+type StarterQuestionsConfig struct {
+	// Enabled turns generation on. Nil selects true.
+	Enabled *bool `yaml:"enabled"`
+	// RefreshInterval is the time between passes, measured from the end of the
+	// previous pass. Zero selects DefaultStarterQuestionRefreshInterval; the
+	// minimum is MinimumStarterQuestionRefreshInterval.
+	RefreshInterval time.Duration `yaml:"refresh_interval"`
 }
 
 // UnmarshalYAML retains the presence of the removed setting, including null,
@@ -134,6 +152,9 @@ func NormalizeConfig(value Config) Config {
 	}
 	if value.Agent.HistoryRetention == 0 {
 		value.Agent.HistoryRetention = DefaultAgentHistoryRetention
+	}
+	if value.Agent.StarterQuestions.RefreshInterval == 0 {
+		value.Agent.StarterQuestions.RefreshInterval = DefaultStarterQuestionRefreshInterval
 	}
 	return value
 }
@@ -175,6 +196,21 @@ func (value Config) EffectiveAgentHistoryRetention() time.Duration {
 		return DefaultAgentHistoryRetention
 	}
 	return value.Agent.HistoryRetention
+}
+
+// StarterQuestionsEnabled reports whether Core runs starter question passes;
+// an unset agent.starter_questions.enabled selects true.
+func (value Config) StarterQuestionsEnabled() bool {
+	return value.Agent.StarterQuestions.Enabled == nil || *value.Agent.StarterQuestions.Enabled
+}
+
+// EffectiveStarterQuestionRefreshInterval returns the configured interval, or
+// DefaultStarterQuestionRefreshInterval when the setting is unset.
+func (value Config) EffectiveStarterQuestionRefreshInterval() time.Duration {
+	if value.Agent.StarterQuestions.RefreshInterval == 0 {
+		return DefaultStarterQuestionRefreshInterval
+	}
+	return value.Agent.StarterQuestions.RefreshInterval
 }
 
 // LoadAgentAPIKey reads only the selected provider's Hearth environment variable.
@@ -275,6 +311,12 @@ func (value Config) validateAgent() error {
 		value.Agent.HistoryRetention < MinimumAgentHistoryRetention {
 		return fmt.Errorf(
 			"agent.history_retention must be at least %s", MinimumAgentHistoryRetention,
+		)
+	}
+	if value.Agent.StarterQuestions.RefreshInterval != 0 &&
+		value.Agent.StarterQuestions.RefreshInterval < MinimumStarterQuestionRefreshInterval {
+		return fmt.Errorf(
+			"agent.starter_questions.refresh_interval must be at least %s", MinimumStarterQuestionRefreshInterval,
 		)
 	}
 	return nil

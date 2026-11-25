@@ -34,7 +34,7 @@ work or proposals awaiting an owner decision.
 
 ## Reference
 
-- [Agent skills and provider continuation](reference/agent-skills.md): for agent maintainers. How do draft authorization, provider protocols and conversation continuation work?
+- [Agent skills and provider continuation](reference/agent-skills.md): for agent maintainers. How do draft authorization, provider protocols, conversation continuation and starter questions work?
 - [Adapter Functions](reference/adapter-functions.md): for Adapter developers and API clients. What do discovery, invocation and retained evidence guarantee?
 - [Automation Conditions](reference/automation-conditions.md): for Automation authors. When are Conditions evaluated, and what do three-valued results mean?
 - [Definition diagnostics](reference/automation-definition-diagnostics.md): for API and MCP clients. How do I interpret diagnostic codes, paths and spans?

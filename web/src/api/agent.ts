@@ -184,6 +184,35 @@ export const listConversations = async (signal?: AbortSignal) => {
   );
   return response.conversations;
 };
+const starterQuestionsSchema = z.object({
+  starter_questions: z.array(
+    z.object({ title: z.string().min(1), prompt: z.string().min(1) })
+  ),
+  enabled: z.boolean(),
+  generated_at: z.string().nullable(),
+});
+export type StarterQuestion = z.infer<
+  typeof starterQuestionsSchema
+>["starter_questions"][number];
+export interface StarterQuestions {
+  questions: readonly StarterQuestion[];
+  /** Core generates starter questions, so a refresh can run. */
+  enabled: boolean;
+}
+const readStarterQuestions = (text: string): StarterQuestions => {
+  const body = parse(starterQuestionsSchema)(text);
+  return { questions: body.starter_questions, enabled: body.enabled };
+};
+/** Reads Core's generated starter questions; empty until Core has generated some. */
+export const listStarterQuestions = (signal?: AbortSignal) =>
+  apiFetch("/v1/agent/starter-questions", { signal }, readStarterQuestions);
+/** Asks Core to generate starter questions now; joins a pass already running. */
+export const refreshStarterQuestions = (signal?: AbortSignal) =>
+  apiFetch(
+    "/v1/agent/starter-questions/refresh",
+    { method: "POST", signal },
+    readStarterQuestions
+  );
 export const createConversation = async (signal?: AbortSignal) => {
   const response = await apiFetch(
     "/v1/agent/conversations",

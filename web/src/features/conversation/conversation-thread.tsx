@@ -3,7 +3,7 @@ import {
   SuggestionPrimitive,
   useThreadViewport,
 } from "@assistant-ui/react";
-import { ArrowDownIcon, ArrowRightIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowRightIcon, RefreshCwIcon } from "lucide-react";
 
 import { Button } from "../../components/button";
 import { Notice } from "../../components/notice";
@@ -32,6 +32,14 @@ export interface ThreadActions {
   onDiscardFailed: () => void;
   onCancelQueued: () => void;
   onRetryHistory: () => Promise<void>;
+}
+
+/** The "Suggest other questions" control under the starter questions. */
+export interface StarterQuestionControls {
+  canRegenerate: boolean;
+  regenerating: boolean;
+  regenerateFailed: boolean;
+  onRegenerate: () => Promise<void>;
 }
 
 export interface ThreadDisplay {
@@ -67,9 +75,11 @@ const JumpToLatest = () => {
 const ConversationPlaceholder = ({
   loading,
   empty,
+  starters,
 }: {
   loading: boolean;
   empty: boolean;
+  starters?: StarterQuestionControls;
 }) => {
   if (loading) {
     return <output className="block">Loading conversation…</output>;
@@ -106,6 +116,28 @@ const ConversationPlaceholder = ({
           )}
         </ThreadPrimitive.Suggestions>
       </ul>
+      {starters?.canRegenerate && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Button
+            variant="ghost"
+            size="touch"
+            disabled={starters.regenerating}
+            onClick={() => {
+              void starters.onRegenerate();
+            }}
+          >
+            <RefreshCwIcon aria-hidden="true" />
+            {starters.regenerating
+              ? "Suggesting questions…"
+              : "Suggest other questions"}
+          </Button>
+          {starters.regenerateFailed && (
+            <output className="text-label text-muted-foreground">
+              Couldn’t suggest new questions. These are still available.
+            </output>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -230,10 +262,13 @@ export const ConversationThread = ({
   actions,
   display,
   composer,
+  starters,
 }: {
   state: ThreadState;
   actions: ThreadActions;
   display: ThreadDisplay;
+  /** Omitted when the page offers no way to ask for other questions. */
+  starters?: StarterQuestionControls;
   composer: Pick<
     ComposerProps,
     "prompt" | "automationName" | "viewTitle" | "onShow" | "onCloseDraft"
@@ -267,6 +302,7 @@ export const ConversationThread = ({
               <ConversationPlaceholder
                 loading={state.loading}
                 empty={state.empty}
+                starters={starters}
               />
               <ConversationMessages
                 select={display.select}

@@ -58,6 +58,18 @@ func newHearthdCommand(
 				cli.EnvVar("HEARTHD_AGENT_HISTORY_RETENTION"),
 			),
 		},
+		&cli.BoolFlag{
+			Name: "agent-starter-questions",
+			Sources: cli.NewValueSourceChain(
+				cli.EnvVar("HEARTHD_AGENT_STARTER_QUESTIONS"),
+			),
+		},
+		&cli.DurationFlag{
+			Name: "agent-starter-question-refresh-interval",
+			Sources: cli.NewValueSourceChain(
+				cli.EnvVar("HEARTHD_AGENT_STARTER_QUESTION_REFRESH_INTERVAL"),
+			),
+		},
 		&cli.StringFlag{
 			Name: "log-level", Value: "info", Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTHD_LOG_LEVEL")),
 			Usage: "log level: debug, info, warn, or error",
@@ -149,6 +161,13 @@ func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {
 	}
 	if cmd.IsSet("agent-history-retention") {
 		config.Agent.HistoryRetention = cmd.Duration("agent-history-retention")
+	}
+	if cmd.IsSet("agent-starter-questions") {
+		enabled := cmd.Bool("agent-starter-questions")
+		config.Agent.StarterQuestions.Enabled = &enabled
+	}
+	if cmd.IsSet("agent-starter-question-refresh-interval") {
+		config.Agent.StarterQuestions.RefreshInterval = cmd.Duration("agent-starter-question-refresh-interval")
 	}
 	config = hearthd.NormalizeConfig(config)
 	if validationErr := config.Validate(); validationErr != nil {

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -229,6 +230,9 @@ type Config struct {
 	// unconfigured and fails safely at prune time, never at construction.
 	Retention time.Duration
 	Logger    *slog.Logger
+	// HouseholdDigest reads the snapshot starter questions are generated from.
+	// Nil leaves starter questions empty, and RefreshStarterQuestions fails.
+	HouseholdDigest HouseholdDigestReader
 }
 
 // ErrAdmissionUnavailable reports that agent turn admission is closed, so
@@ -248,6 +252,16 @@ type Service struct {
 	maxIterations int
 	retention     time.Duration
 	logger        *slog.Logger
+
+	// householdDigest reads the snapshot for starter question generation.
+	householdDigest HouseholdDigestReader
+	// starterQuestions is the cache HTTP reads while a pass replaces it.
+	starterQuestions atomic.Pointer[StarterQuestions]
+	// starterPassTimeout bounds one starter question pass.
+	starterPassTimeout time.Duration
+	// starterMu guards starterRefresh, the pass later callers join.
+	starterMu      sync.Mutex
+	starterRefresh *starterQuestionRefresh
 
 	// admission gates new turns and tracks admitted ones for Drain.
 	admission *lifecycle.AdmissionGroup
@@ -313,19 +327,21 @@ func NewService(_ context.Context, config Config) (*Service, error) {
 		logger = slog.Default()
 	}
 	return &Service{
-		database:      config.DB,
-		queries:       dbsqlc.New(config.DB),
-		chatModel:     chatModel,
-		provider:      config.Model.Provider.Effective(),
-		tools:         config.Tools,
-		viewAuthoring: authoring,
-		skills:        skills,
-		maxIterations: maxIterations,
-		retention:     config.Retention,
-		logger:        logger,
-		admission:     lifecycle.NewAdmissionGroup(),
-		turns:         make(map[uint64]context.CancelFunc),
-		gates:         make(map[string]*conversationGate),
+		database:           config.DB,
+		queries:            dbsqlc.New(config.DB),
+		chatModel:          chatModel,
+		provider:           config.Model.Provider.Effective(),
+		tools:              config.Tools,
+		viewAuthoring:      authoring,
+		skills:             skills,
+		maxIterations:      maxIterations,
+		retention:          config.Retention,
+		logger:             logger,
+		householdDigest:    config.HouseholdDigest,
+		starterPassTimeout: defaultStarterQuestionPassTimeout,
+		admission:          lifecycle.NewAdmissionGroup(),
+		turns:              make(map[uint64]context.CancelFunc),
+		gates:              make(map[string]*conversationGate),
 	}, nil
 }
 

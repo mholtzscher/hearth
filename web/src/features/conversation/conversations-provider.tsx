@@ -3,13 +3,20 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
 
-import { listConversations } from "../../api/agent";
+import {
+  listConversations,
+  listStarterQuestions,
+  refreshStarterQuestions as postStarterQuestionRefresh,
+} from "../../api/agent";
+import type { StarterQuestion } from "../../api/agent";
 import { useBaseUrlVersion } from "../../api/client";
 import { useApi } from "../../api/hooks";
 import { ConversationSession } from "./conversation-session";
@@ -26,6 +33,16 @@ interface ConversationsValue {
   newEpoch: number;
   startNew: () => void;
   session: (key: string, id?: string) => ConversationSession;
+  /** Core's generated starter questions, or null before they load or when the read fails. */
+  starterQuestions: readonly StarterQuestion[] | null;
+  /** Core generates starter questions, so they can be regenerated on request. */
+  starterQuestionsEnabled: boolean;
+  /** The first read of starter questions has not answered yet. */
+  starterQuestionsPending: boolean;
+  /** Reads Core's current starter questions again. */
+  refreshStarterQuestions: () => void;
+  /** Asks Core to generate new starter questions now and returns them. */
+  regenerateStarterQuestions: () => Promise<readonly StarterQuestion[]>;
 }
 class SessionRegistry {
   readonly version: number;
@@ -81,6 +98,38 @@ export const ConversationsProvider = ({
   const { data, error, loading, refresh } = useApi("agent-conversations", () =>
     listConversations()
   );
+  // Read at mount so generated questions are usually ready before history loads.
+  const {
+    data: starterData,
+    loading: starterQuestionsLoading,
+    error: starterQuestionsError,
+    refresh: reloadStarterQuestions,
+    setData: setStarterData,
+  } = useApi("agent-starter-questions", () => listStarterQuestions());
+  const starterQuestions = starterData?.questions ?? null;
+  const starterQuestionsEnabled = starterData?.enabled ?? false;
+  const starterQuestionsPending =
+    starterData === null &&
+    starterQuestionsLoading &&
+    starterQuestionsError === null;
+  // A refresh answered after the backend changed belongs to the previous
+  // household; dropping it keeps its questions out of the new backend's cache.
+  const backendVersion = useRef(version);
+  useLayoutEffect(() => {
+    backendVersion.current = version;
+  }, [version]);
+  const regenerateStarterQuestions = useCallback(async () => {
+    const requestedFrom = backendVersion.current;
+    const next = await postStarterQuestionRefresh();
+    if (backendVersion.current !== requestedFrom) {
+      return [];
+    }
+    setStarterData(next);
+    return next.questions;
+  }, [setStarterData]);
+  const refreshStarterQuestions = useCallback(() => {
+    void reloadStarterQuestions();
+  }, [reloadStarterQuestions]);
   const [newEpoch, setNewEpoch] = useState(0);
   const [created, setCreated] = useState<{
     version: number;
@@ -167,8 +216,26 @@ export const ConversationsProvider = ({
       newEpoch,
       startNew,
       session,
+      starterQuestions,
+      starterQuestionsEnabled,
+      starterQuestionsPending,
+      refreshStarterQuestions,
+      regenerateStarterQuestions,
     }),
-    [conversations, error, loading, refresh, newEpoch, startNew, session]
+    [
+      conversations,
+      error,
+      loading,
+      refresh,
+      newEpoch,
+      startNew,
+      session,
+      starterQuestions,
+      starterQuestionsEnabled,
+      starterQuestionsPending,
+      refreshStarterQuestions,
+      regenerateStarterQuestions,
+    ]
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 };

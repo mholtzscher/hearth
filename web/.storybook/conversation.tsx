@@ -7,12 +7,12 @@ import { useMemo, useRef, useSyncExternalStore } from "react";
 
 import { ConversationThread } from "../src/features/conversation/conversation-thread";
 import { groupReplies } from "../src/features/conversation/runtime";
+import { FALLBACK_STARTER_QUESTIONS } from "../src/features/conversation/starter-questions";
 import {
   conversationItems,
   convertMessage,
   promptText,
   sendIsBlocked,
-  STARTERS,
 } from "../src/features/conversation/thread-messages";
 import { useTurnMessageIds } from "../src/features/conversation/turn-ids";
 import type { FixtureConversation } from "./fixture-conversation";
@@ -54,7 +54,7 @@ const useFixtureRuntime = (
       saving,
       editorValid,
     }),
-    suggestions: STARTERS,
+    suggestions: FALLBACK_STARTER_QUESTIONS,
     convertMessage: (item, index) =>
       convertMessage(item, messageId(item, index), busy),
     onNew: (message) => {

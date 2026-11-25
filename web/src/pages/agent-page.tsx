@@ -8,15 +8,18 @@ import { useParams } from "react-router-dom";
 
 import { SegmentedControl } from "../components/segmented-control";
 import { ConversationThread } from "../features/conversation/conversation-thread";
-import { useConversationSession } from "../features/conversation/conversations-provider";
+import {
+  useConversations,
+  useConversationSession,
+} from "../features/conversation/conversations-provider";
 import { groupReplies } from "../features/conversation/runtime";
 import type { PresentedArtifact } from "../features/conversation/runtime";
+import { useStarterQuestionSelection } from "../features/conversation/starter-questions";
 import {
   conversationItems,
   convertMessage,
   promptText,
   sendIsBlocked,
-  STARTERS,
 } from "../features/conversation/thread-messages";
 import { useTurnMessageIds } from "../features/conversation/turn-ids";
 import { Canvas } from "../features/dashboards/canvas";
@@ -154,6 +157,22 @@ const AgentPage = () => {
     [items, optimistic, live, queued]
   );
   const replies = useMemo(() => groupReplies(allItems), [allItems]);
+  const {
+    starterQuestions,
+    starterQuestionsEnabled,
+    starterQuestionsPending,
+    refreshStarterQuestions,
+    regenerateStarterQuestions,
+  } = useConversations();
+  const starters = useStarterQuestionSelection({
+    empty: allItems.length === 0,
+    loading,
+    served: starterQuestions,
+    pending: starterQuestionsPending,
+    enabled: starterQuestionsEnabled,
+    refresh: refreshStarterQuestions,
+    regenerate: regenerateStarterQuestions,
+  });
   const messageId = useTurnMessageIds(session.key, replies, optimistic?.id);
   const sendBlocked = sendIsBlocked({
     busy,
@@ -167,7 +186,7 @@ const AgentPage = () => {
     isRunning: busy,
     isLoading: loading,
     isSendDisabled: sendBlocked,
-    suggestions: STARTERS,
+    suggestions: starters.questions,
     convertMessage: (item, index) =>
       convertMessage(item, messageId(item, index), busy),
     onNew: async (message) => {
@@ -274,6 +293,12 @@ const AgentPage = () => {
               messageCount: replies.length,
               canvasOpen: !!draft,
               hidden: mobileCanvas,
+            }}
+            starters={{
+              canRegenerate: starters.canRegenerate,
+              regenerating: starters.regenerating,
+              regenerateFailed: starters.regenerateFailed,
+              onRegenerate: starters.regenerate,
             }}
             composer={{
               prompt,

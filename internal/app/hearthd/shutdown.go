@@ -58,6 +58,7 @@ type coreShutdown struct {
 	functionRegistrations     *adaptersnats.FunctionRegistrationServer
 	cancelDependencies        context.CancelFunc
 	historyPruneWorker        *lifecycle.WorkerHandle
+	starterQuestionWorker     *lifecycle.WorkerHandle
 	heldStateWorker           *lifecycle.WorkerHandle
 	scheduleWorker            *lifecycle.WorkerHandle
 	healthSupervisor          *healthSupervisor
@@ -104,6 +105,7 @@ func (shutdown *coreShutdown) run() error {
 		shutdown.cancelDependencies()
 	}
 	fail("stop_history_pruning", shutdown.stopHistoryPruning())
+	fail("stop_starter_questions", shutdown.stopStarterQuestions())
 	if shutdown.healthSupervisor != nil {
 		shutdown.healthSupervisor.Stop()
 	}
@@ -237,6 +239,16 @@ func (shutdown *coreShutdown) stopHistoryPruning() error {
 		return nil
 	}
 	return shutdown.historyPruneWorker.Stop(context.Background())
+}
+
+// stopStarterQuestions joins the starter question worker before SQLite closes.
+// Its context is already canceled by run, which also cancels an in-flight model
+// call. A never-started or disabled worker is a no-op.
+func (shutdown *coreShutdown) stopStarterQuestions() error {
+	if shutdown.starterQuestionWorker == nil {
+		return nil
+	}
+	return shutdown.starterQuestionWorker.Stop(context.Background())
 }
 
 // stopHTTP force-closes connections when graceful shutdown times out. An

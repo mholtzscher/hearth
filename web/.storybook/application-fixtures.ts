@@ -32,6 +32,34 @@ export const conversationPrompt = "Show me a morning overview.";
 export const conversationReply =
   "Here is your morning overview. The hallway lamp is on.";
 export const sentReply = "The living room is 21.5 °C.";
+export const regeneratedStarterQuestions = [
+  {
+    title: "Is the hallway lamp on?",
+    prompt: "Is the hallway lamp on right now?",
+  },
+  {
+    title: "Which rooms are warmest?",
+    prompt: "Which rooms are warmest right now?",
+  },
+  {
+    title: "Show humidity today",
+    prompt: "Show humidity throughout the house today.",
+  },
+];
+export const generatedStarterQuestions = [
+  {
+    title: "Why is the hallway lamp offline?",
+    prompt: "Why is the hallway lamp unavailable right now?",
+  },
+  {
+    title: "Show the living room temperature",
+    prompt: "Show the living room temperature over the past day.",
+  },
+  {
+    title: "What happened overnight?",
+    prompt: "What happened in the house overnight?",
+  },
+];
 
 const artifact = {
   kind: "hearth.view" as const,
@@ -291,6 +319,8 @@ export interface ApplicationScenario {
   saveConflict?: boolean;
   dashboards?: "empty";
   conversations?: "searchable" | "empty" | "error";
+  /** Core has generated starter questions; otherwise it has none and the fixed ones show. */
+  starterQuestions?: "generated";
   messages?:
     | "compact-view"
     | "legacy-view"
@@ -598,6 +628,29 @@ export const createApplicationHandlers = (
         })),
       });
     }),
+    http.get("/v1/agent/starter-questions", () =>
+      HttpResponse.json(
+        scenario.starterQuestions === "generated"
+          ? {
+              starter_questions: generatedStarterQuestions,
+              enabled: true,
+              generated_at: fixtureNow,
+            }
+          : { starter_questions: [], enabled: false, generated_at: null }
+      )
+    ),
+    http.post("/v1/agent/starter-questions/refresh", () =>
+      scenario.starterQuestions === "generated"
+        ? HttpResponse.json({
+            starter_questions: regeneratedStarterQuestions,
+            enabled: true,
+            generated_at: fixtureNow,
+          })
+        : HttpResponse.json(
+            { detail: "starter questions are off" },
+            { status: 503 }
+          )
+    ),
     http.post("/v1/agent/conversations", async () => {
       if (scenario.turn === "queue-collision") {
         histories.set(queuedConversationId, []);

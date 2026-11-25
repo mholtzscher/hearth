@@ -65,6 +65,56 @@ field when this integration was developed. Deterministic protocol and restart
 tests are synthetic; they do not establish household-use eligibility or
 physical-device behavior.
 
+## Starter questions
+
+Core generates the starter questions an empty conversation offers. A scheduler
+in Core assembly runs the first pass two minutes after startup, then one pass
+per `agent.starter_questions.refresh_interval` (default `1h`, minimum `5m`),
+measured from the end of the previous pass. Each pass has a 90-second deadline.
+Set `agent.starter_questions.enabled: false`, `--agent-starter-questions=false`,
+or `HEARTHD_AGENT_STARTER_QUESTIONS=false` to turn generation off.
+
+Each pass sends a household digest to the configured provider and model without
+a user request. The model call has no tools. Per-section caps and a 16 KiB total
+limit bound the digest; the limit drops the last lines first. It contains:
+
+- the local time and the household unit system
+- enabled Entities with known availability, with their Device names
+- current State in household units for locks, covers, binary sensors,
+  thermostats, temperature, humidity, and media players
+- counts of the other Entity types
+- Automation failures, interruptions, and unknown-condition skips from the last
+  24 hours
+- up to eight previews, from the most recently active conversations that have one
+- the previous starter questions
+
+Tapping a starter question sends its prompt immediately, so Core guards against
+questions that request a Command. The instruction forbids device changes, and
+Core drops any question whose title or prompt starts with a command verb such as
+"turn", "unlock", or "set". A reply needs at least three valid questions, and
+Core keeps the first four. Any failure keeps the previous questions and logs
+`core.starter_questions_refresh_failed` with a fixed `stage`.
+
+`GET /v1/agent/starter-questions` serves the in-memory questions and `enabled`.
+It returns an empty list and a null `generated_at` until the first successful
+pass after startup, and always when generation is off.
+
+`POST /v1/agent/starter-questions/refresh` runs a pass now and returns the same
+body. If a pass is already running, scheduled or manual, the request waits for
+that pass instead of starting another model call. It returns 503 when generation
+is off, admission is closed, or the caller goes away, and 502 when the model
+call fails, times out, or yields fewer than three valid questions. A refresh
+does not move the schedule.
+
+The browser reads the questions when the dashboard loads and offers no questions
+until that read answers. It chooses once when an empty conversation appears and
+keeps that choice until the conversation has its first message. It shows the
+fixed questions when the list is empty or the read fails. While Core generates
+questions, **Suggest other questions** under the chips calls the refresh route
+and replaces the chips with the new ones. A failure keeps the current chips.
+See [starter question generation](../../internal/modules/agent/starter_questions.go)
+and the [digest reader](../../internal/app/hearthd/household_digest.go).
+
 ## Configuration compatibility
 
 The removed `agent.max_steps` key is rejected, including when set to zero or null.
