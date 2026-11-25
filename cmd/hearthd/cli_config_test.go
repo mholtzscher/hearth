@@ -31,6 +31,9 @@ agent:
   service_tier: flex
   max_iterations: 9
   history_retention: 48h
+  starter_questions:
+    enabled: false
+    refresh_interval: 2h
 `
 
 // Executable fixtures inherit only a synthetic credential, never the developer's.
@@ -233,6 +236,22 @@ func TestHearthdSourcesPrecedence(t *testing.T) {
 			"56h",
 			"48h",
 		},
+		{
+			"starter questions", "HEARTHD_AGENT_STARTER_QUESTIONS", "agent-starter-questions", "enabled",
+			"false", "true", "false", "false", "true", "false",
+		},
+		{
+			"starter question interval",
+			"HEARTHD_AGENT_STARTER_QUESTION_REFRESH_INTERVAL",
+			"agent-starter-question-refresh-interval",
+			"refresh_interval",
+			"2h",
+			"3h",
+			"4h",
+			"4h",
+			"3h",
+			"2h",
+		},
 	}
 	for _, field := range fields {
 		t.Run(field.name, func(t *testing.T) {
@@ -251,7 +270,8 @@ func TestHearthdSourcesPrecedence(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv(field.env, field.envValue)
-			gotFlag := invokeConfig(t, []string{"--config", path, "--" + field.flag, field.flagValue})
+			// The joined form also sets boolean flags, which take no separate value.
+			gotFlag := invokeConfig(t, []string{"--config", path, "--" + field.flag + "=" + field.flagValue})
 			assertField(t, gotFlag, field.name, field.wantFlag)
 			t.Setenv(field.env, field.envValue)
 			gotEnv := invokeConfig(t, []string{"--config", path})
@@ -453,7 +473,8 @@ func TestNormalizationAndInvalidValueMasking(t *testing.T) {
 		"HEARTHD_SQLITE_PATH", "HEARTHD_OBSERVATION_RETENTION", "HEARTHD_AUTOMATION_HISTORY_RETENTION",
 		"HEARTHD_AGENT_MODEL", "HEARTHD_AGENT_BASE_URL",
 		"HEARTHD_AGENT_REASONING_EFFORT", "HEARTHD_AGENT_SERVICE_TIER", "HEARTHD_AGENT_MAX_ITERATIONS",
-		"HEARTHD_AGENT_HISTORY_RETENTION",
+		"HEARTHD_AGENT_HISTORY_RETENTION", "HEARTHD_AGENT_STARTER_QUESTIONS",
+		"HEARTHD_AGENT_STARTER_QUESTION_REFRESH_INTERVAL",
 	} {
 		unsetEnv(t, key)
 	}
@@ -687,10 +708,15 @@ func assertField(t *testing.T, config hearthd.Config, name, want string) {
 		got = strconv.Itoa(config.Agent.MaxIterations)
 	case "agent retention":
 		got = durationString(t, config.Agent.HistoryRetention)
+	case "starter questions":
+		got = strconv.FormatBool(config.StarterQuestionsEnabled())
+	case "starter question interval":
+		got = durationString(t, config.Agent.StarterQuestions.RefreshInterval)
 	default:
 		t.Fatalf("unknown field %q", name)
 	}
-	if name == "observation retention" || name == "automation retention" || name == "agent retention" {
+	if name == "observation retention" || name == "automation retention" || name == "agent retention" ||
+		name == "starter question interval" {
 		parsed, err := time.ParseDuration(want)
 		if err != nil {
 			t.Fatal(err)

@@ -441,6 +441,78 @@ func TestAgentHistoryRetentionRejectsBelowMinimum(t *testing.T) {
 	}
 }
 
+type starterQuestionConfigCase struct {
+	name, input  string
+	wantEnabled  bool
+	wantInterval time.Duration
+	wantErr      string
+}
+
+func checkStarterQuestionConfig(t *testing.T, test starterQuestionConfigCase) {
+	t.Helper()
+	value := validConfig()
+	if err := yaml.Unmarshal([]byte(test.input), &value); err != nil {
+		t.Fatal(err)
+	}
+	value = hearthd.NormalizeConfig(value)
+	err := value.Validate()
+	if test.wantErr != "" {
+		if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+			t.Fatalf("Validate() = %v, want an error naming %s", err, test.wantErr)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := value.StarterQuestionsEnabled(); got != test.wantEnabled {
+		t.Fatalf("enabled = %v, want %v", got, test.wantEnabled)
+	}
+	if got := value.EffectiveStarterQuestionRefreshInterval(); got != test.wantInterval {
+		t.Fatalf("refresh interval = %s, want %s", got, test.wantInterval)
+	}
+}
+
+// TestStarterQuestionConfig protects the documented starter question defaults
+// (on, hourly) and the five-minute floor on how often Core sends the household
+// digest to the model provider.
+func TestStarterQuestionConfig(t *testing.T) {
+	t.Parallel()
+	for _, test := range []starterQuestionConfigCase{
+		{name: "omitted", input: "agent: {}", wantEnabled: true, wantInterval: time.Hour},
+		{name: "empty block", input: "agent: {starter_questions: {}}", wantEnabled: true, wantInterval: time.Hour},
+		{
+			name: "disabled", input: "agent: {starter_questions: {enabled: false, refresh_interval: 2h}}",
+			wantEnabled: false, wantInterval: 2 * time.Hour,
+		},
+		{
+			name: "minimum", input: "agent: {starter_questions: {refresh_interval: 5m}}",
+			wantEnabled: true, wantInterval: 5 * time.Minute,
+		},
+		{
+			name: "below minimum", input: "agent: {starter_questions: {refresh_interval: 4m}}",
+			wantErr: "agent.starter_questions.refresh_interval",
+		},
+		{
+			name: "negative", input: "agent: {starter_questions: {refresh_interval: -1h}}",
+			wantErr: "agent.starter_questions.refresh_interval",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			checkStarterQuestionConfig(t, test)
+		})
+	}
+}
+
+func TestUnsetStarterQuestionConfigSelectsDefaults(t *testing.T) {
+	t.Parallel()
+	var unset hearthd.Config
+	if !unset.StarterQuestionsEnabled() || unset.EffectiveStarterQuestionRefreshInterval() != time.Hour {
+		t.Fatal("unset starter question configuration does not select on and hourly")
+	}
+}
+
 // The startup seam trims the environment credential without storing it in Config.
 func TestLoadAgentAPIKeyReadsEnvironment(t *testing.T) {
 	t.Setenv("HEARTH_OPENAI_API_KEY", "  test-secret-key\n")

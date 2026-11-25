@@ -6,6 +6,7 @@ import type { ApplicationStory } from "../../.storybook/application";
 import {
   conversationPath,
   conversationReply,
+  generatedStarterQuestions,
   sentReply,
 } from "../../.storybook/application-fixtures";
 import { expectNoHorizontalOverflow } from "../../.storybook/play";
@@ -68,7 +69,9 @@ export const StarterQuestion: ApplicationStory = {
       await context.canvas.findByRole("textbox", { name: "Ask Hearth" })
     ).toBeEnabled();
     await context.userEvent.click(
-      context.canvas.getByRole("button", { name: "Show me the temperatures" })
+      await context.canvas.findByRole("button", {
+        name: "Show me the temperatures",
+      })
     );
     const reply = await context.canvas.findByText(sentReply);
     await waitFor(() => expect(reply).toBeVisible());
@@ -76,6 +79,25 @@ export const StarterQuestion: ApplicationStory = {
       within(context.canvas.getByRole("log")).getByText(
         "Show me the temperatures throughout the house."
       )
+    ).toBeVisible();
+  },
+};
+
+export const GeneratedStarterQuestions: ApplicationStory = {
+  parameters: { applicationScenario: { starterQuestions: "generated" } },
+  play: async (context) => {
+    const [first] = generatedStarterQuestions;
+    const starter = await context.canvas.findByRole("button", {
+      name: first.title,
+    });
+    await expect(
+      context.canvas.queryByRole("button", { name: "Show me the temperatures" })
+    ).toBeNull();
+    await context.userEvent.click(starter);
+    const reply = await context.canvas.findByText(sentReply);
+    await waitFor(() => expect(reply).toBeVisible());
+    await expect(
+      within(context.canvas.getByRole("log")).getByText(first.prompt)
     ).toBeVisible();
   },
 };

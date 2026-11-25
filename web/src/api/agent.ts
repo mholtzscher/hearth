@@ -184,6 +184,26 @@ export const listConversations = async (signal?: AbortSignal) => {
   );
   return response.conversations;
 };
+const starterQuestionsSchema = z.object({
+  starter_questions: z.array(
+    z.object({ title: z.string().min(1), prompt: z.string().min(1) })
+  ),
+  generated_at: z.string().nullable(),
+});
+export type StarterQuestion = z.infer<
+  typeof starterQuestionsSchema
+>["starter_questions"][number];
+/** Reads Core's generated starter questions; empty until Core has generated some. */
+export const listStarterQuestions = async (
+  signal?: AbortSignal
+): Promise<readonly StarterQuestion[]> => {
+  const response = await apiFetch(
+    "/v1/agent/starter-questions",
+    { signal },
+    parse(starterQuestionsSchema)
+  );
+  return response.starter_questions;
+};
 export const createConversation = async (signal?: AbortSignal) => {
   const response = await apiFetch(
     "/v1/agent/conversations",

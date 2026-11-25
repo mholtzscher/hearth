@@ -63,6 +63,7 @@ func startAgentService(
 	config Config,
 	mcpServer *mcpapi.Server,
 	viewAuthoring agent.ViewAuthoring,
+	householdDigest agent.HouseholdDigestReader,
 	database *sql.DB,
 	logger *slog.Logger,
 ) (*agent.Service, error) {
@@ -86,10 +87,11 @@ func startAgentService(
 			ReasoningEffort: config.Agent.ReasoningEffort,
 			ServiceTier:     config.Agent.ServiceTier,
 		},
-		ChatModel:     config.Agent.ChatModel,
-		MaxIterations: config.Agent.MaxIterations,
-		Retention:     config.EffectiveAgentHistoryRetention(),
-		Logger:        logger,
+		ChatModel:       config.Agent.ChatModel,
+		MaxIterations:   config.Agent.MaxIterations,
+		Retention:       config.EffectiveAgentHistoryRetention(),
+		Logger:          logger,
+		HouseholdDigest: householdDigest,
 	})
 }
 
@@ -370,8 +372,9 @@ func runWithOptions(
 		coreLogger,
 		newDevicesPresenter(householdSettings),
 	)
+	householdDigest := newHouseholdDigestReader(service, automationService, householdSettings, householdLocation)
 	agentService, agentErr := startAgentService(
-		dependencyContext, config, mcpServer, dashboardService, database, agentLogger,
+		dependencyContext, config, mcpServer, dashboardService, householdDigest, database, agentLogger,
 	)
 	if agentErr != nil {
 		return mapStartupCancellation(ctx, failStage("start_agent", agentErr))
@@ -385,6 +388,13 @@ func runWithOptions(
 	shutdown.historyPruneWorker = startHistoryPruning(
 		dependencyContext, coreLogger, service, automationService, agentService, notificationService, functionService,
 	)
+	// Starter questions send a household digest to the model provider on a
+	// schedule; operators can turn them off.
+	if config.StarterQuestionsEnabled() {
+		shutdown.starterQuestionWorker = startStarterQuestionRefresh(
+			dependencyContext, agentLogger, agentService, config.EffectiveStarterQuestionRefreshInterval(),
+		)
+	}
 	shutdown.heldStateWorker = startHeldStateScheduling(
 		dependencyContext, automationsLogger, automationService, nil, nil,
 	)

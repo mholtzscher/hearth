@@ -41,6 +41,13 @@ agent:
   max_iterations: 10
   # Conversation retention window (default 30d, minimum 24h). Applies on the startup prune pass.
   history_retention: 720h
+  # Starter questions for empty conversations. Each pass sends a household digest
+  # (Entity and Device names, current State, Automation problems, and recent
+  # conversation previews) to the provider above without a user request.
+  starter_questions:
+    enabled: true
+    # Time between passes (default 1h, minimum 5m). The first pass runs 2m after startup.
+    refresh_interval: 1h
 
 # IANA timezone; required, changes take effect after restart.
 household_timezone: UTC

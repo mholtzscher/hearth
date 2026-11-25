@@ -11,6 +11,12 @@ committed agent tool result. It is not a saved dashboard.
 **Dashboard draft**: The browser's working view definition. Manual edits and
 generated revisions remain drafts until explicitly saved.
 
+**Starter question**: A suggested prompt offered in an empty conversation.
+Tapping one sends its prompt immediately. Core generates them from a household
+digest on a schedule, and the browser falls back to fixed questions. A starter
+question must not request a Command. Core drops any that starts with a command
+verb. See [starter questions](docs/reference/agent-skills.md#starter-questions).
+
 **Saved dashboard**: An independently persisted view definition with resource
 references and a revision checked on replacement or deletion. It renders current
 data without its source conversation or a model request.

@@ -39,6 +39,8 @@ type stubAgent struct {
 
 func (stub *stubAgent) AdmissionOpen() bool { return !stub.admissionClosed }
 
+func (stub *stubAgent) StarterQuestions() agent.StarterQuestions { return agent.StarterQuestions{} }
+
 func (stub *stubAgent) CreateConversation(ctx context.Context) (agent.Conversation, error) {
 	if stub.createConversation == nil {
 		panic("unexpected CreateConversation call")

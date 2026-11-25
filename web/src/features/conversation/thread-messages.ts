@@ -1,26 +1,7 @@
-import type {
-  AppendMessage,
-  ThreadMessageLike,
-  ThreadSuggestion,
-} from "@assistant-ui/react";
+import type { AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
 
 import { pendingArtifactCalls } from "./runtime";
 import type { ConversationItem, LiveTurn } from "./runtime";
-
-export const STARTERS: readonly ThreadSuggestion[] = [
-  {
-    title: "Show me the temperatures",
-    prompt: "Show me the temperatures throughout the house.",
-  },
-  {
-    title: "Which devices are unavailable?",
-    prompt: "Which devices are unavailable right now?",
-  },
-  {
-    title: "Chart light brightness today",
-    prompt: "Show light brightness over the past day.",
-  },
-];
 
 type MessageStatus = ThreadMessageLike["status"];
 

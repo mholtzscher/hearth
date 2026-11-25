@@ -1146,6 +1146,66 @@ describe("agent page", () => {
     ).toBeFalsy();
   });
 
+  it("offers Core's generated starter questions and reads them again once the conversation starts", async () => {
+    let streamed: { text: string } | undefined;
+    let starterReads = 0;
+    const fetcher = vi.fn<
+      (input: RequestInfo | URL, init?: RequestInit) => Response
+    >((input, init) => {
+      const path = String(input);
+      if (path === "/v1/agent/starter-questions") {
+        starterReads += 1;
+        return Response.json({
+          starter_questions: [
+            {
+              title: "Why is the Garage Lock offline?",
+              prompt: "Why is the Garage Lock unavailable right now?",
+            },
+            {
+              title: "Show the office temperature",
+              prompt: "Show the office temperature today.",
+            },
+            {
+              title: "What happened overnight?",
+              prompt: "What happened in the house overnight?",
+            },
+          ],
+          generated_at: "2026-11-24T19:00:00Z",
+        });
+      }
+      if (path === "/v1/agent/conversations" && init?.method === "POST") {
+        return Response.json({ id: "conv-new" });
+      }
+      if (path === "/v1/agent/conversations") {
+        return Response.json({ conversations: [] });
+      }
+      if (path.endsWith("/messages/stream")) {
+        streamed = JSON.parse(String(init?.body));
+        return new Response('data: {"type":"turn.finished"}\n\n');
+      }
+      if (path.endsWith("/messages")) {
+        return Response.json({ messages: [] });
+      }
+      throw new Error(`Unexpected request ${path}`);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    mount("/");
+    const served = await screen.findByRole("button", {
+      name: "Why is the Garage Lock offline?",
+    });
+    const readsBeforeSend = starterReads;
+    fireEvent.click(served);
+    expect(
+      screen.queryByRole("button", { name: "Show me the temperatures" })
+    ).toBeNull();
+    await waitFor(() =>
+      expect(streamed).toStrictEqual({
+        text: "Why is the Garage Lock unavailable right now?",
+      })
+    );
+    await waitFor(() => expect(starterReads).toBe(readsBeforeSend + 1));
+  });
+
   it("sends a starter immediately and lists the new conversation once the turn completes", async () => {
     let streamed: { text: string } | undefined;
     const fetcher = vi.fn<

@@ -9,7 +9,8 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
-import { listConversations } from "../../api/agent";
+import { listConversations, listStarterQuestions } from "../../api/agent";
+import type { StarterQuestion } from "../../api/agent";
 import { useBaseUrlVersion } from "../../api/client";
 import { useApi } from "../../api/hooks";
 import { ConversationSession } from "./conversation-session";
@@ -26,6 +27,11 @@ interface ConversationsValue {
   newEpoch: number;
   startNew: () => void;
   session: (key: string, id?: string) => ConversationSession;
+  /** Core's generated starter questions, or null before they load or when the read fails. */
+  starterQuestions: readonly StarterQuestion[] | null;
+  /** The first read of starter questions has not answered yet. */
+  starterQuestionsPending: boolean;
+  refreshStarterQuestions: () => void;
 }
 class SessionRegistry {
   readonly version: number;
@@ -81,6 +87,20 @@ export const ConversationsProvider = ({
   const { data, error, loading, refresh } = useApi("agent-conversations", () =>
     listConversations()
   );
+  // Read at mount so generated questions are usually ready before history loads.
+  const {
+    data: starterQuestions,
+    loading: starterQuestionsLoading,
+    error: starterQuestionsError,
+    refresh: reloadStarterQuestions,
+  } = useApi("agent-starter-questions", () => listStarterQuestions());
+  const starterQuestionsPending =
+    starterQuestions === null &&
+    starterQuestionsLoading &&
+    starterQuestionsError === null;
+  const refreshStarterQuestions = useCallback(() => {
+    void reloadStarterQuestions();
+  }, [reloadStarterQuestions]);
   const [newEpoch, setNewEpoch] = useState(0);
   const [created, setCreated] = useState<{
     version: number;
@@ -167,8 +187,22 @@ export const ConversationsProvider = ({
       newEpoch,
       startNew,
       session,
+      starterQuestions,
+      starterQuestionsPending,
+      refreshStarterQuestions,
     }),
-    [conversations, error, loading, refresh, newEpoch, startNew, session]
+    [
+      conversations,
+      error,
+      loading,
+      refresh,
+      newEpoch,
+      startNew,
+      session,
+      starterQuestions,
+      starterQuestionsPending,
+      refreshStarterQuestions,
+    ]
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 };

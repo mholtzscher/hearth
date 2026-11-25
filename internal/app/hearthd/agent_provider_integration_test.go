@@ -59,6 +59,7 @@ func TestAgentAssemblySelectsGoWithoutOpenAICredential(t *testing.T) {
 		config,
 		catalog,
 		dashboards.NewService(nil, nil, nil),
+		nil,
 		database,
 		slog.New(slog.DiscardHandler),
 	)
