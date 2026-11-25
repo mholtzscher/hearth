@@ -17,8 +17,10 @@ import (
 
 func TestTurnOwnedCancellationIsNotAnInternalFailure(t *testing.T) {
 	t.Parallel()
+	// Callers no longer own turns; turn_lifetime_integration_test.go covers a
+	// caller leaving. Drain is the owner that cancels.
 	for _, test := range []struct{ stop, position string }{
-		{"caller", "active"}, {"caller", "queued"}, {"drain", "active"}, {"drain", "queued"},
+		{"drain", "active"}, {"drain", "queued"},
 	} {
 		stop, position := test.stop, test.position
 		t.Run(stop+"/"+position, func(t *testing.T) {
@@ -178,40 +180,10 @@ func assertDependencyContextResponse(t *testing.T, response *httptest.ResponseRe
 	}
 }
 
-func TestTurnCallerDeadlineKeepsCancellationIdentity(t *testing.T) {
-	t.Parallel()
-	service := newTurnService(t, failingChatModel{err: errors.New("model not installed")})
-	conversation := mustCreateConversation(t, service)
-	var logs lockedBuffer
-	service.logger = slog.New(slog.NewJSONHandler(&logs, nil))
-	synctest.Test(t, func(t *testing.T) {
-		// Both model wait channels must belong to the bubble for fake time to
-		// advance while Generate waits for the caller deadline.
-		chatModel := newFakeChatModel("unused")
-		service.chatModel = chatModel
-		ctx, cancel := context.WithTimeout(t.Context(), time.Hour)
-		defer cancel()
-		done := make(chan error, 1)
-		go func() {
-			_, err := service.SendMessage(ctx, conversation.ID, MessageInput{Text: "synthetic request"})
-			done <- err
-		}()
-		<-chatModel.started
-		time.Sleep(time.Hour)
-		err := <-done
-		if !errors.Is(err, context.DeadlineExceeded) || !errors.As(err, &turnCancellationError{}) {
-			t.Fatalf("turn error = %v, want owned deadline", err)
-		}
-	})
-	if logs.String() != "" {
-		t.Fatalf("caller deadline emitted failure diagnostic: %s", logs.String())
-	}
-}
-
 func TestTurnOwnedCancellationTransportContract(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ stop, transport string }{
-		{"caller", "http"}, {"caller", "sse"}, {"drain", "http"}, {"drain", "sse"},
+		{"drain", "http"}, {"drain", "sse"},
 	} {
 		t.Run(test.stop+"/"+test.transport, func(t *testing.T) {
 			t.Parallel()

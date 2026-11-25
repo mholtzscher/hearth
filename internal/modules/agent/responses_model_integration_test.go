@@ -503,7 +503,7 @@ func assertFailedTurnEvents(t *testing.T, events []TurnEvent) {
 	}
 }
 
-func TestResponsesRequestJoinsOnCallerCancellation(t *testing.T) {
+func TestResponsesRequestJoinsOnTurnCancellation(t *testing.T) {
 	t.Parallel()
 	started := make(chan struct{})
 	exited := make(chan struct{})
@@ -543,7 +543,10 @@ func TestResponsesRequestJoinsOnCallerCancellation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("provider request did not start")
 	}
-	cancel()
+	// The caller no longer owns the turn; Drain cancels and joins it.
+	if drainErr := service.Drain(t.Context()); drainErr != nil {
+		t.Fatal(drainErr)
+	}
 	select {
 	case err = <-done:
 		if !errors.Is(err, context.Canceled) {

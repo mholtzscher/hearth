@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setBaseUrl } from "../../api/client";
 import AgentPage from "../../pages/agent-page";
+import { FOLLOW_INTERVAL_MS } from "../conversation/conversation-session";
 import { ConversationsProvider } from "../conversation/conversations-provider";
 import { ViewDataProvider } from "../views/data/provider";
 import { Canvas } from "./canvas";
@@ -872,7 +873,7 @@ describe("dashboard workspace", () => {
     );
   });
 
-  it("retains streamed evidence when history is unreachable and requires explicit recovery before another send", async () => {
+  it("keeps streamed evidence while following a dropped turn until history is readable", async () => {
     const artifact = { kind: "hearth.view", artifact_id: "view-1", definition };
     const rows = [
       { message_id: 1, role: "user", content: "show view", created_at: "" },
@@ -918,26 +919,29 @@ describe("dashboard workspace", () => {
     await waitFor(() => expect(input).not.toHaveProperty("disabled", true));
     fireEvent.change(input, { target: { value: "show view" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-    const recover = await screen.findByRole("button", {
-      name: "Retry loading history",
-    });
+    // The stream ended without a terminal event and history is unreachable,
+    // so the page keeps the streamed view while it follows the turn.
     await waitFor(() =>
       expect(
         screen.getAllByRole("button", { name: /in canvas/u })
       ).toHaveLength(1)
     );
     expect(
-      screen.getByRole("button", { name: "Retry message" })
-    ).toHaveProperty("disabled", true);
-    fireEvent.click(recover);
+      screen.queryByRole("button", { name: "Retry loading history" })
+    ).toBeNull();
+    await waitFor(() => expect(histories).toBeGreaterThanOrEqual(3), {
+      timeout: FOLLOW_INTERVAL_MS * 2,
+    });
     await waitFor(() =>
-      expect(
-        screen.queryByRole("button", { name: "Retry loading history" })
-      ).toBeNull()
+      expect(screen.getByLabelText("Ask Hearth")).not.toHaveProperty(
+        "disabled",
+        true
+      )
     );
     expect(screen.getAllByRole("button", { name: /in canvas/u })).toHaveLength(
       1
     );
+    expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
     expect(
       fetcher.mock.calls.filter(([url]) =>
         String(url).endsWith("/messages/stream")

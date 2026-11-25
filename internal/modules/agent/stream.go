@@ -40,9 +40,9 @@ const maxStreamBodyBytes = 1 << 20
 
 // sendStream runs one turn and forwards its events as SSE frames. The
 // conversation is checked before headers flush so unknown IDs still return a
-// JSON 404; afterwards the outcome travels as turn.finished/turn.failed, and a
-// client disconnect merely cancels the turn context. Persisted rows stay
-// readable either way.
+// JSON 404; afterwards the outcome travels as turn.finished/turn.failed. A
+// client disconnect only stops the events: the turn keeps running, and its
+// rows and TurnState stay readable through history.
 func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 	// The JSON serializer reads the whole body before decoding, so the bound has
 	// to be installed on the request first.
@@ -108,8 +108,8 @@ func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 	_, streamErr := handler.service.SendMessageWithEvents(
 		ctx.Request().Context(), ctx.Param("id"), body, emit,
 	)
-	// turn.finished/turn.failed already traveled; a transport error here
-	// only ends the stream.
+	// turn.finished/turn.failed already traveled, or the client left and the
+	// turn continues without it; either way the stream ends here.
 	_ = streamErr
 	return nil
 }

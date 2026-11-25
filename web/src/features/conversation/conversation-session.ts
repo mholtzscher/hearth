@@ -1,5 +1,10 @@
 import { createConversation, loadHistory, streamTurn } from "../../api/agent";
-import type { SelectedContext } from "../../api/agent";
+import type {
+  ConversationHistory,
+  SelectedContext,
+  TurnState,
+} from "../../api/agent";
+import { ApiError } from "../../api/client";
 import { emptyTurn, projectHistory, reduceTurn } from "./runtime";
 import type { ConversationItem, LiveTurn, PresentedArtifact } from "./runtime";
 
@@ -10,7 +15,11 @@ interface SessionState {
   loading: boolean;
   error: string;
   failedPrompt: string;
+  /** The start time Core reported for the failed turn behind failedPrompt, if it came from history. */
+  failedTurn: string;
   needsRecovery: boolean;
+  /** Core is still running a turn this page is not streaming; history is re-read until it ends. */
+  following: boolean;
   live: LiveTurn | null;
   optimistic: ConversationItem | null;
   queued: ConversationItem | null;
@@ -35,10 +44,37 @@ const turnBase = (context: SelectedContext | undefined) => {
   return null;
 };
 
+/** How often a page re-reads history while Core runs a turn it is not streaming. */
+export const FOLLOW_INTERVAL_MS = 2000;
+
+const lastUser = (items: ConversationItem[]) =>
+  items.findLast((item) => item.role === "user");
+
+/** A turn this page sent, followed or reconciled after its stream ended. */
+interface SentTurn {
+  prompt: string;
+  /** The newest stored user row before the send, so a repeated prompt is not mistaken for this one. */
+  recordedBefore: string | undefined;
+  context: SelectedContext | undefined;
+  draftVersion: number;
+}
+
+/** Core recorded the sent prompt as a new user row. */
+const recordedPrompt = (items: ConversationItem[], sent: SentTurn) => {
+  const last = lastUser(items);
+  return (
+    last !== undefined &&
+    last.id !== sent.recordedBefore &&
+    last.text === sent.prompt
+  );
+};
+
 /**
  * One browser-owned conversation. Routes subscribe to its snapshot; leaving a
  * route does not cancel work. Only the owning provider (unmount/server switch)
- * disposes requests. Core still owns durable history and cancellation on tab close.
+ * disposes requests. Core owns each turn: it keeps running when the stream
+ * drops or the tab closes, so the session follows it through history until it
+ * ends.
  */
 export class ConversationSession {
   readonly key: string;
@@ -57,6 +93,10 @@ export class ConversationSession {
   private task: Promise<void> | null = null;
   private lifecycle = 0;
   private queuedOptions: SendOptions | null = null;
+  /** Ends the current wait between follow reads early. */
+  private wake: (() => void) | null = null;
+  /** The failed turn whose prompt the person discarded, so later reads do not offer it again. */
+  private dismissedFailure = "";
 
   constructor(
     key: string,
@@ -79,7 +119,9 @@ export class ConversationSession {
       loading: !!id,
       error: "",
       failedPrompt: "",
+      failedTurn: "",
       needsRecovery: false,
+      following: false,
       live: null,
       optimistic: null,
       queued: null,
@@ -132,6 +174,7 @@ export class ConversationSession {
     this.lifecycle += 1;
     this.request?.abort();
     this.request = null;
+    this.wake?.();
   }
 
   private track(task: Promise<void>) {
@@ -160,16 +203,19 @@ export class ConversationSession {
     const controller = new AbortController();
     this.request = controller;
     this.update({ loading: true });
+    let turn: TurnState | null = null;
     try {
-      const items = projectHistory(await loadHistory(id, controller.signal));
+      const history = await loadHistory(id, controller.signal);
       if (!controller.signal.aborted) {
+        ({ turn } = history);
         this.update({
-          items,
+          items: projectHistory(history.messages),
           live: null,
           optimistic: null,
           needsRecovery: false,
           error: "",
         });
+        this.reportFailedTurn(history);
       }
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -190,6 +236,127 @@ export class ConversationSession {
       }
       this.releaseWhenUnused();
     }
+    if (turn?.state === "running" && !controller.signal.aborted) {
+      await this.follow(id);
+    }
+  }
+
+  /**
+   * A turn that failed while nobody was streaming it offers its own prompt
+   * again, once. Core reports that prompt because the turn may have failed
+   * before saving it, when history ends with an earlier turn's prompt.
+   */
+  private reportFailedTurn({ turn }: ConversationHistory) {
+    if (turn?.state !== "failed" || turn.started_at === this.dismissedFailure) {
+      return;
+    }
+    this.update({
+      error: turn.error,
+      failedPrompt: turn.prompt ?? "",
+      failedTurn: turn.started_at,
+    });
+  }
+
+  /**
+   * Reports how a turn this page did not see end went. When the page sent it,
+   * a prompt history never recorded as a new user row did not start, even if
+   * an older turn's failure is still reported, so that prompt is offered again.
+   */
+  private reportTurnEnd(
+    history: ConversationHistory,
+    items: ConversationItem[],
+    sent?: SentTurn
+  ) {
+    if (sent && !recordedPrompt(items, sent)) {
+      this.update({
+        error: "The connection ended before the turn started.",
+        failedPrompt: sent.prompt,
+        failedTurn: "",
+      });
+      return;
+    }
+    this.reportFailedTurn(history);
+  }
+
+  /**
+   * Re-reads history every FOLLOW_INTERVAL_MS, and as soon as the page becomes
+   * visible again, until Core reports the turn is no longer running. Reads that
+   * fail, such as on a phone that is offline, are retried, and streamed
+   * activity stays on screen until one succeeds. When the session sent the
+   * turn itself, drafts it completes reach the open editor, and a prompt
+   * history never recorded is offered again because the turn did not start.
+   */
+  private async follow(id: string, sent?: SentTurn) {
+    const { lifecycle } = this;
+    const controller = new AbortController();
+    this.request = controller;
+    this.update({ busy: true, following: true });
+    try {
+      while (lifecycle === this.lifecycle) {
+        // oxlint-disable-next-line no-await-in-loop -- each read waits for the previous interval.
+        await this.waitToFollow();
+        if (lifecycle !== this.lifecycle) {
+          return;
+        }
+        try {
+          // oxlint-disable-next-line no-await-in-loop -- reads are sequential by design.
+          const history = await loadHistory(id, controller.signal);
+          if (lifecycle !== this.lifecycle) {
+            return;
+          }
+          const items = projectHistory(history.messages);
+          if (sent) {
+            this.presentNewArtifact(items, sent.context, sent.draftVersion);
+          }
+          this.update({ items, live: null, optimistic: null, error: "" });
+          if (history.turn?.state !== "running") {
+            this.reportTurnEnd(history, items, sent);
+            break;
+          }
+        } catch (error) {
+          // A client error such as a pruned conversation will not recover by
+          // waiting; anything else keeps following, since the turn's outcome
+          // is still in Core.
+          if (
+            error instanceof ApiError &&
+            error.status >= 400 &&
+            error.status < 500
+          ) {
+            this.update({ needsRecovery: true, error: error.message });
+            break;
+          }
+        }
+      }
+      if (lifecycle !== this.lifecycle) {
+        return;
+      }
+      this.update({ busy: false, following: false });
+      this.settled();
+    } finally {
+      if (this.request === controller) {
+        this.request = null;
+      }
+      this.releaseWhenUnused();
+    }
+  }
+
+  private waitToFollow() {
+    const { promise, resolve } = Promise.withResolvers<undefined>();
+    const visible = () => {
+      if (document.visibilityState === "visible") {
+        done();
+      }
+    };
+    const done = () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visible);
+      this.wake = null;
+      resolve(undefined);
+    };
+    const timer = setTimeout(done, FOLLOW_INTERVAL_MS);
+    document.addEventListener("visibilitychange", visible);
+    this.wake = done;
+    return promise;
   }
 
   send(text: string, options: SendOptions): Promise<void> {
@@ -237,7 +404,8 @@ export class ConversationSession {
     this.releaseWhenUnused();
   }
   discardFailedPrompt() {
-    this.update({ failedPrompt: "" });
+    this.dismissedFailure = this.state.failedTurn;
+    this.update({ failedPrompt: "", failedTurn: "" });
     this.releaseWhenUnused();
   }
   async sendQueued() {
@@ -277,16 +445,69 @@ export class ConversationSession {
     }
   }
 
+  /**
+   * Re-reads history after a turn's stream ends and reports whether Core is
+   * still running a turn whose stream dropped, so the session should follow it.
+   */
+  private async reconcile(
+    sent: SentTurn,
+    dropped: boolean,
+    controller: AbortController
+  ): Promise<boolean> {
+    const { id } = this.state;
+    if (!id) {
+      return false;
+    }
+    const { context, draftVersion } = sent;
+    try {
+      const history = await loadHistory(id, controller.signal);
+      if (controller.signal.aborted) {
+        return false;
+      }
+      const items = projectHistory(history.messages);
+      this.presentNewArtifact(items, context, draftVersion);
+      this.update({ items, live: null, optimistic: null });
+      if (!dropped) {
+        return false;
+      }
+      if (history.turn?.state === "running") {
+        return true;
+      }
+      this.reportTurnEnd(history, items, sent);
+      return false;
+    } catch {
+      if (controller.signal.aborted) {
+        return false;
+      }
+      // A dropped stream whose history cannot be read yet is followed until
+      // Core answers.
+      if (!dropped) {
+        this.update({
+          needsRecovery: true,
+          error: `${this.state.error ? `${this.state.error} ` : ""}Could not reconcile history; streamed activity is retained here.`,
+        });
+      }
+      return dropped;
+    }
+  }
+
   private async run(prompt: string, options: SendOptions) {
     const { context, draftVersion, onCreated } = options;
     const controller = new AbortController();
     this.request = controller;
     const base = turnBase(context);
+    const sent: SentTurn = {
+      prompt,
+      recordedBefore: lastUser(this.state.items)?.id,
+      context,
+      draftVersion,
+    };
     let live = emptyTurn();
     this.update({
       busy: true,
       error: "",
       failedPrompt: "",
+      failedTurn: "",
       live,
       optimistic: {
         id: `pending-user-${crypto.randomUUID()}`,
@@ -298,6 +519,8 @@ export class ConversationSession {
       },
     });
     let handedOff = false;
+    let streaming = false;
+    let dropped = false;
     let { id } = this.state;
     try {
       if (!id) {
@@ -315,6 +538,7 @@ export class ConversationSession {
         }
       }
       const scope = `${id}:${crypto.randomUUID()}`;
+      streaming = true;
       await streamTurn(
         id,
         prompt,
@@ -339,46 +563,35 @@ export class ConversationSession {
       if (controller.signal.aborted) {
         return;
       }
-      if (!live.terminal) {
-        throw new Error("The connection ended before the turn completed.");
-      }
+      // Core keeps running a turn whose stream ended early; history says how it went.
+      dropped = !live.terminal;
       if (live.failed) {
         throw new Error(live.failed);
       }
     } catch (error) {
-      if (!controller.signal.aborted) {
+      // A connection lost after the request left can still have started a turn.
+      dropped = streaming && !(error instanceof ApiError) && !live.failed;
+      if (!(controller.signal.aborted || dropped)) {
         this.update({
           error: error instanceof Error ? error.message : "The request failed.",
           failedPrompt: prompt,
         });
       }
     } finally {
-      if (!handedOff && !controller.signal.aborted && this.state.id) {
-        try {
-          const items = projectHistory(
-            await loadHistory(this.state.id, controller.signal)
-          );
-          if (!controller.signal.aborted) {
-            this.presentNewArtifact(items, context, draftVersion);
-            this.update({ items, live: null, optimistic: null });
-          }
-        } catch {
-          if (!controller.signal.aborted) {
-            this.update({
-              needsRecovery: true,
-              error: `${this.state.error ? `${this.state.error} ` : ""}Could not reconcile history; streamed activity is retained here.`,
-            });
-          }
-        }
+      const follow =
+        !handedOff &&
+        !controller.signal.aborted &&
+        (await this.reconcile(sent, dropped, controller));
+      if (this.request === controller) {
+        this.request = null;
       }
-      if (!controller.signal.aborted) {
+      if (follow && this.state.id) {
+        await this.follow(this.state.id, sent);
+      } else if (!controller.signal.aborted) {
         this.update({ busy: false });
         if (!handedOff) {
           this.settled();
         }
-      }
-      if (this.request === controller) {
-        this.request = null;
       }
       this.releaseWhenUnused();
     }

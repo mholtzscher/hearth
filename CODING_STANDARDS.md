@@ -287,13 +287,15 @@ operation deadlines, shutdown cancellation, and wait timeouts.
 
 Work that outlives its caller needs an explicit owner, a tracked completion and
 joining path, and its own deadline or explicit stop policy. Do not detach ordinary
-reads or Agent turns merely because Commands use detached workers.
+reads merely because Commands use detached workers.
 
 [`ExecuteCommand`](internal/modules/devices/command.go) transfers its reservation
 to a worker with the Command deadline. Notification
 [`send`](internal/modules/notifications/service.go) owns send and persistence
-deadlines. [Agent turns](internal/modules/agent/service.go), by contrast, inherit
-caller cancellation and register cancellation with the service's drain path.
+deadlines. [Agent turns](internal/modules/agent/service.go) run on a worker that
+holds the admission reservation, keeps the caller's values but not its
+cancellation, ends at the configured turn deadline, and registers cancellation
+with the service's drain path; a caller that leaves only stops receiving events.
 **Source:** observed + stated.
 
 ### Join dependent work before closing its resources

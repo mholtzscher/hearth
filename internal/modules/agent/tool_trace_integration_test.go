@@ -74,8 +74,7 @@ func TestNativeParallelCallsRetainGroupingAndResults(t *testing.T) {
 
 func TestPartialParallelBatchRepairsOnlyModelInput(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
+	canceled := make(chan struct{})
 	released := make(chan struct{})
 	slowStarted := make(chan struct{})
 	toolExited := make(chan struct{})
@@ -95,6 +94,8 @@ func TestPartialParallelBatchRepairsOnlyModelInput(t *testing.T) {
 		},
 	}
 	service := newTurnService(t, script)
+	// The turn owns its lifetime, so the test interrupts it the way Drain does:
+	// by canceling the registered turn, not the caller.
 	service.tools = []tool.BaseTool{
 		callbackTool{
 			name:   "fast",
@@ -112,19 +113,20 @@ func TestPartialParallelBatchRepairsOnlyModelInput(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := service.SendMessageWithEvents(
-			ctx,
+			t.Context(),
 			conversation.ID,
 			MessageInput{Text: "Run both."},
 			func(event TurnEvent) {
 				if event.Type == EventToolFinished && event.Name == "fast" {
-					cancel()
+					service.cancelActiveTurns()
+					close(canceled)
 				}
 			},
 		)
 		done <- err
 	}()
 	select {
-	case <-ctx.Done():
+	case <-canceled:
 	case <-time.After(5 * time.Second):
 		t.Fatal("first result not retained")
 	}

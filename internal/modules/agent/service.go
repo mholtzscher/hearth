@@ -233,6 +233,9 @@ type Config struct {
 	// HouseholdDigest reads the snapshot starter questions are generated from.
 	// Nil leaves starter questions empty, and RefreshStarterQuestions fails.
 	HouseholdDigest HouseholdDigestReader
+	// TurnTimeout bounds one turn from admission to its final reply. Zero
+	// selects DefaultTurnTimeout.
+	TurnTimeout time.Duration
 }
 
 // ErrAdmissionUnavailable reports that agent turn admission is closed, so
@@ -275,6 +278,12 @@ type Service struct {
 	// clients cannot build the same history snapshot or interleave rows.
 	gatesMu sync.Mutex
 	gates   map[string]*conversationGate
+
+	// turnTimeout bounds one turn; zero selects DefaultTurnTimeout.
+	turnTimeout time.Duration
+	// turnStatesMu guards turnStates, each conversation's latest turn state.
+	turnStatesMu sync.Mutex
+	turnStates   map[string]TurnState
 }
 
 // conversationGate is one conversation's turn semaphore: token admits one turn,
@@ -297,6 +306,8 @@ func NewService(_ context.Context, config Config) (*Service, error) {
 		return nil, errors.New("agent tools are required")
 	case config.MaxIterations < 0:
 		return nil, errors.New("agent max_iterations must not be negative")
+	case config.TurnTimeout < 0:
+		return nil, errors.New("agent turn_timeout must not be negative")
 	case config.ChatModel == nil && strings.TrimSpace(config.Model.APIKey) == "":
 		return nil, errors.New("agent model API key is required")
 	case config.ChatModel == nil && strings.TrimSpace(config.Model.Model) == "":
@@ -339,6 +350,7 @@ func NewService(_ context.Context, config Config) (*Service, error) {
 		logger:             logger,
 		householdDigest:    config.HouseholdDigest,
 		starterPassTimeout: defaultStarterQuestionPassTimeout,
+		turnTimeout:        config.TurnTimeout,
 		admission:          lifecycle.NewAdmissionGroup(),
 		turns:              make(map[uint64]context.CancelFunc),
 		gates:              make(map[string]*conversationGate),
@@ -440,6 +452,16 @@ func (service *Service) acquireConversationTurn(ctx context.Context, conversatio
 	}
 }
 
+// turnWaiting reports whether another turn waits for the conversation's slot
+// while the caller holds it, so the conversation stays busy after the current
+// turn ends.
+func (service *Service) turnWaiting(conversationID string) bool {
+	service.gatesMu.Lock()
+	defer service.gatesMu.Unlock()
+	gate := service.gates[conversationID]
+	return gate != nil && gate.refs > 1
+}
+
 // releaseConversationTurn frees the slot and forgets this turn's interest in
 // the conversation.
 func (service *Service) releaseConversationTurn(conversationID string, gate *conversationGate) {
@@ -455,6 +477,10 @@ func (service *Service) releaseConversationRef(conversationID string, gate *conv
 	gate.refs--
 	if gate.refs == 0 && service.gates[conversationID] == gate {
 		delete(service.gates, conversationID)
+		// No turn holds or waits for the conversation, so a running state left
+		// for a turn that never started is stale. The gate lock keeps a new turn
+		// from starting before it is removed.
+		service.clearRunningState(conversationID)
 	}
 }
 
@@ -567,10 +593,16 @@ func (service *Service) SendMessage(ctx context.Context, conversationID string, 
 	return service.SendMessageWithEvents(ctx, conversationID, input, nil)
 }
 
-// SendMessageWithEvents runs one turn, reporting turn.started/tool.started/
-// tool.finished/turn.finished (or turn.failed) through emit. A nil emit
-// disables events; persistence is identical either way, so the blocking POST
-// and the stream rebuild the same rows.
+// SendMessageWithEvents admits one turn and reports turn.started/tool.started/
+// tool.finished/turn.finished (or turn.failed) through emit while the caller
+// waits. A nil emit disables events; persistence is identical either way, so
+// the blocking POST and the stream rebuild the same rows.
+//
+// The turn runs under its own context: it keeps the caller's values but not its
+// cancellation, and ends at the turn deadline or when Drain cancels it. When
+// ctx ends first, the caller stops receiving events and gets a
+// TurnContinuesError while the turn finishes on its own; its outcome is in the
+// conversation's history and TurnState.
 func (service *Service) SendMessageWithEvents(
 	ctx context.Context,
 	conversationID string, messageInput MessageInput,
@@ -586,28 +618,53 @@ func (service *Service) SendMessageWithEvents(
 		emitTurnFailed(emit, ErrAdmissionUnavailable)
 		return Turn{}, ErrAdmissionUnavailable
 	}
-	defer reservation.Release()
-	// Drain cancels this context and joins the runner before releasing admission.
+	listener := newTurnListener(emit)
+	defer listener.detach()
+	// Drain cancels this context and joins the turn before admission releases.
 	// Completed messages remain evidence even when a later call is interrupted.
-	turnCtx, cancelTurn := context.WithCancel(ctx)
+	turnCtx, cancelTurn := service.turnContext(ctx)
 	turnID := service.trackTurn(cancelTurn)
-	defer func() {
-		service.untrackTurn(turnID)
-		cancelTurn()
-	}()
 	// A turn admitted just before admission closed can register after Drain's
 	// cancel sweep; cancel it here so Drain's join is also a cancellation.
 	if !service.AdmissionOpen() {
 		cancelTurn()
 	}
-	fail := func(stage string, err error) (Turn, error) {
-		if expectedTurnCancellation(turnCtx, err) {
-			err = turnCancellationError{err: err}
-		} else {
-			service.logTurnFailure(turnCtx, conversationID, stage, err)
+	type outcome struct {
+		turn Turn
+		err  error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		defer reservation.Release()
+		defer service.untrackTurn(turnID)
+		defer cancelTurn()
+		turn, err := service.runTurn(turnCtx, conversationID, messageInput, listener)
+		done <- outcome{turn: turn, err: err}
+	}()
+	select {
+	case result := <-done:
+		return result.turn, result.err
+	case <-ctx.Done():
+		select {
+		case result := <-done:
+			return result.turn, result.err
+		default:
+			return Turn{}, TurnContinuesError{err: ctx.Err()}
 		}
-		emitTurnFailed(emit, err)
-		return Turn{}, err
+	}
+}
+
+// runTurn runs one admitted turn to its end under turnCtx and records the
+// conversation's TurnState: running once the turn holds the conversation,
+// cleared when it finishes or Drain cancels it, failed otherwise.
+func (service *Service) runTurn(
+	turnCtx context.Context,
+	conversationID string, messageInput MessageInput,
+	listener *turnListener,
+) (Turn, error) {
+	var started *time.Time
+	fail := func(stage string, err error) (Turn, error) {
+		return Turn{}, service.failTurn(turnCtx, conversationID, started, messageInput.Text, stage, err, listener)
 	}
 	// Serialize turns within one conversation: two clients submitting at once
 	// would otherwise rebuild the same history snapshot and interleave their
@@ -617,6 +674,13 @@ func (service *Service) SendMessageWithEvents(
 		return fail(turnStageQueue, gateErr)
 	}
 	defer releaseTurn()
+	// An unknown conversation never runs, so it records no state.
+	if err := service.requireConversation(turnCtx, conversationID); err != nil {
+		return fail(turnStageHistory, err)
+	}
+	startedAt := time.Now().UTC()
+	started = &startedAt
+	service.setTurnState(conversationID, TurnState{State: TurnStateRunning, StartedAt: startedAt})
 	history, err := service.loadModelMessages(turnCtx, conversationID)
 	if err != nil {
 		return fail(turnStageHistory, err)
@@ -628,14 +692,12 @@ func (service *Service) SendMessageWithEvents(
 	if persistErr := service.persistMessage(turnCtx, conversationID, userMessage); persistErr != nil {
 		return fail(turnStagePersist, persistErr)
 	}
-	if emit != nil {
-		emit(TurnEvent{Type: EventTurnStarted})
-	}
+	listener.send(TurnEvent{Type: EventTurnStarted})
 	input, err := prepareTurnInput(history, userMessage)
 	if err != nil {
 		return fail(turnStageHistory, err)
 	}
-	trace := &turnTrace{service: service, conversationID: conversationID, emit: emit}
+	trace := &turnTrace{service: service, conversationID: conversationID, emit: listener.send}
 	agentRunner, err := service.newAgentRunner(turnCtx, trace, messageInput.ViewContext)
 	if err != nil {
 		return fail(turnStageRunner, err)
@@ -649,10 +711,52 @@ func (service *Service) SendMessageWithEvents(
 		return fail(turnStageRunner, errors.New("agent turn: empty runner response"))
 	}
 	turn := Turn{Reply: trace.final.Content, ToolCalls: trace.tools, Artifacts: trace.committedArtifacts()}
-	if emit != nil {
-		emit(TurnEvent{Type: EventTurnFinished, Reply: turn.Reply, ToolCalls: turn.ToolCalls})
+	if !service.turnWaiting(conversationID) {
+		service.clearTurnState(conversationID)
 	}
+	listener.send(TurnEvent{Type: EventTurnFinished, Reply: turn.Reply, ToolCalls: turn.ToolCalls})
 	return turn, nil
+}
+
+// failTurn classifies a turn failure, logs unexpected ones, records the
+// conversation's TurnState, and tells the listener. started is nil until the
+// turn holds the conversation; prompt is the turn's own message, kept with a
+// failed state because the turn may fail before saving it. It returns the
+// classified error.
+func (service *Service) failTurn(
+	turnCtx context.Context,
+	conversationID string,
+	started *time.Time,
+	prompt string,
+	stage string,
+	err error,
+	listener *turnListener,
+) error {
+	switch {
+	case errors.Is(turnCtx.Err(), context.DeadlineExceeded):
+		err = turnDeadlineError{err: err}
+		service.logTurnFailure(turnCtx, conversationID, turnStageDeadline, err)
+	case expectedTurnCancellation(turnCtx, err):
+		err = turnCancellationError{err: err}
+	default:
+		service.logTurnFailure(turnCtx, conversationID, stage, err)
+	}
+	switch {
+	case started == nil:
+		// The turn never held the conversation; releasing the gate clears any
+		// running state it was waiting behind.
+	case service.turnWaiting(conversationID):
+		// The next turn's state replaces this one when it starts; until then
+		// the conversation is still busy.
+	case errors.As(err, &turnCancellationError{}):
+		service.clearTurnState(conversationID)
+	default:
+		service.setTurnState(conversationID, TurnState{
+			State: TurnStateFailed, StartedAt: *started, Error: turnFailureText(err), Prompt: prompt,
+		})
+	}
+	emitTurnFailed(listener.send, err)
+	return err
 }
 
 // emitTurnFailed closes a streamed turn with the opaque text for err, so an SSE
@@ -679,6 +783,10 @@ func turnFailureText(err error) string {
 		return "agent admission is unavailable"
 	case errors.As(err, &turnCancellationError{}):
 		return "agent turn canceled"
+	case errors.As(err, &turnDeadlineError{}):
+		return "agent turn timed out"
+	case errors.As(err, &TurnContinuesError{}):
+		return "agent turn continues in the background"
 	default:
 		return "agent turn failed"
 	}
@@ -705,6 +813,9 @@ const (
 	turnStageModel   = "model"
 	turnStageTool    = "tool"
 	turnStageRunner  = "runner"
+	// turnStageDeadline is logged when a turn outlives its own deadline,
+	// whichever operation was running at the time.
+	turnStageDeadline = "deadline"
 )
 
 // turnFailureCode classifies one turn failure for logs. Provider, tool, and
@@ -716,6 +827,8 @@ func turnFailureCode(err error) string {
 		return "conversation_not_found"
 	case errors.Is(err, ErrAdmissionUnavailable):
 		return "admission_unavailable"
+	case errors.As(err, &turnDeadlineError{}):
+		return "turn_deadline_exceeded"
 	case errors.As(err, &tracePersistError{}):
 		return "trace_persist_failed"
 	case errors.As(err, &toolCallError{}):

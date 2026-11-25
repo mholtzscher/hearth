@@ -275,9 +275,11 @@ history queries. Artifacts remain in committed tool results; unsupported stored
 content remains recoverable without automatic rewriting. Eino owns Agent runtime
 and repair, while provider continuation metadata and native call identity remain
 with their providers. A conversation pins its provider; switching requires a new
-conversation. Core assembly reads a household digest from Devices and
-Automations for the Agent's scheduled starter questions, so the Agent does not
-import those modules. See [dashboards](../reference/dashboards.md) and
+conversation. Core owns each turn: it outlives the request that started it and
+ends with its reply, a failure, its own deadline, or Drain. Core assembly reads
+a household digest from Devices and Automations for the Agent's scheduled
+starter questions, so the Agent does not import those modules. See
+[dashboards](../reference/dashboards.md) and
 [Agent skills and continuation](../reference/agent-skills.md).
 
 ### Transport, recovery and shutdown

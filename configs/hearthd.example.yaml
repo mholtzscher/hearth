@@ -48,6 +48,9 @@ agent:
     enabled: true
     # Time between passes (default 1h, minimum 5m). The first pass runs 2m after startup.
     refresh_interval: 1h
+  # Bounds one turn from admission to its final reply (default 5m, minimum 30s). A turn keeps
+  # running after its browser disconnects until it finishes or this deadline passes.
+  turn_timeout: 5m
 
 # IANA timezone; required, changes take effect after restart.
 household_timezone: UTC

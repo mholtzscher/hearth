@@ -34,6 +34,7 @@ agent:
   starter_questions:
     enabled: false
     refresh_interval: 2h
+  turn_timeout: 2m
 `
 
 // Executable fixtures inherit only a synthetic credential, never the developer's.
@@ -251,6 +252,10 @@ func TestHearthdSourcesPrecedence(t *testing.T) {
 			"4h",
 			"3h",
 			"2h",
+		},
+		{
+			"turn timeout", "HEARTHD_AGENT_TURN_TIMEOUT", "agent-turn-timeout", "turn_timeout",
+			"2m", "3m", "4m", "4m", "3m", "2m",
 		},
 	}
 	for _, field := range fields {
@@ -474,7 +479,7 @@ func TestNormalizationAndInvalidValueMasking(t *testing.T) {
 		"HEARTHD_AGENT_MODEL", "HEARTHD_AGENT_BASE_URL",
 		"HEARTHD_AGENT_REASONING_EFFORT", "HEARTHD_AGENT_SERVICE_TIER", "HEARTHD_AGENT_MAX_ITERATIONS",
 		"HEARTHD_AGENT_HISTORY_RETENTION", "HEARTHD_AGENT_STARTER_QUESTIONS",
-		"HEARTHD_AGENT_STARTER_QUESTION_REFRESH_INTERVAL",
+		"HEARTHD_AGENT_STARTER_QUESTION_REFRESH_INTERVAL", "HEARTHD_AGENT_TURN_TIMEOUT",
 	} {
 		unsetEnv(t, key)
 	}
@@ -712,11 +717,13 @@ func assertField(t *testing.T, config hearthd.Config, name, want string) {
 		got = strconv.FormatBool(config.StarterQuestionsEnabled())
 	case "starter question interval":
 		got = durationString(t, config.Agent.StarterQuestions.RefreshInterval)
+	case "turn timeout":
+		got = durationString(t, config.Agent.TurnTimeout)
 	default:
 		t.Fatalf("unknown field %q", name)
 	}
 	if name == "observation retention" || name == "automation retention" || name == "agent retention" ||
-		name == "starter question interval" {
+		name == "starter question interval" || name == "turn timeout" {
 		parsed, err := time.ParseDuration(want)
 		if err != nil {
 			t.Fatal(err)

@@ -7,9 +7,10 @@ type MessageStatus = ThreadMessageLike["status"];
 
 const messageStatus = (
   item: ConversationItem,
-  running: boolean
+  running: boolean,
+  followedId?: string
 ): MessageStatus => {
-  if (item.id === "live" && running) {
+  if ((item.id === "live" || item.id === followedId) && running) {
     return { type: "running" };
   }
   if (item.activities.some((call) => call.result === undefined)) {
@@ -18,17 +19,22 @@ const messageStatus = (
   return { type: "complete", reason: "stop" };
 };
 
+/**
+ * followedId names the stored reply of a turn Core is still running while the
+ * page follows it through history, so it shows as running like a live turn.
+ */
 export const convertMessage = (
   item: ConversationItem,
   messageId: string,
-  running: boolean
+  running: boolean,
+  followedId?: string
 ): ThreadMessageLike => {
   const text = item.text ? [{ type: "text" as const, text: item.text }] : [];
   return {
     id: messageId,
     role: item.role,
     ...(item.role === "assistant"
-      ? { status: messageStatus(item, running) }
+      ? { status: messageStatus(item, running, followedId) }
       : {}),
     // Summarize tool activity before the presented views and terminal reply text.
     content:

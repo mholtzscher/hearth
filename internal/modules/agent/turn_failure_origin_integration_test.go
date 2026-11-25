@@ -12,7 +12,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
@@ -229,41 +228,6 @@ func assertTurnDiagnosticOwner(t *testing.T, raw string) {
 	}
 	if record["event"] != "agent.turn_failed" {
 		t.Fatalf("diagnostic owner=%v, want turn service", record)
-	}
-}
-
-func TestTurnCallerCancellationPreservesCause(t *testing.T) {
-	t.Parallel()
-	chatModel := newFakeChatModel("unused")
-	service := newTurnService(t, chatModel)
-	conversation := mustCreateConversation(t, service)
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	done := make(chan error, 1)
-	go func() {
-		_, err := service.SendMessage(ctx, conversation.ID, MessageInput{Text: "synthetic request"})
-		done <- err
-	}()
-	select {
-	case <-chatModel.started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("turn never reached model")
-	}
-	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) || !errors.As(err, &turnCancellationError{}) {
-			t.Fatalf("turn error = %v, want preserved caller cancellation", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("turn did not honor caller cancellation")
-	}
-	history, err := service.History(t.Context(), conversation.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(history) != 1 || history[0].Role != string(schema.User) {
-		t.Fatalf("history = %+v, want only the admitted user message", history)
 	}
 }
 

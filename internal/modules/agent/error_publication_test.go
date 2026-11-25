@@ -97,7 +97,7 @@ func TestAgentOperationErrorCatalogs(t *testing.T) {
 		{paths["/agent/conversations"].Post, []int{500}},
 		{paths["/agent/conversations"].Get, []int{500}},
 		{paths["/agent/conversations/{id}/messages"].Get, []int{404, 422, 500}},
-		{paths["/agent/conversations/{id}/messages"].Post, []int{400, 404, 413, 415, 422, 500, 502, 503}},
+		{paths["/agent/conversations/{id}/messages"].Post, []int{400, 404, 413, 415, 422, 500, 502, 503, 504}},
 	} {
 		var statuses []int
 		for code := range test.operation.Responses {

@@ -122,17 +122,49 @@ Use `agent.max_iterations`, `--agent-max-iterations`, or
 `HEARTHD_AGENT_MAX_ITERATIONS`. This limit counts model-generation cycles, not
 the former graph steps; the values are not interchangeable.
 
+## Turn lifetime
+
+Core owns each turn, not the request that started it. A turn keeps the caller's
+values but not its cancellation: when the browser disconnects, the turn keeps
+running and only the events stop. It ends with its final reply, a failure, its
+`agent.turn_timeout` deadline (default `5m`, minimum `30s`), or Drain at
+shutdown. The deadline starts at admission, so time spent waiting behind another
+turn in the same conversation counts against it. A waiting turn keeps waiting
+after its caller leaves and runs when the conversation is free.
+
+`GET /v1/agent/conversations/{id}/messages` reports the latest turn in `turn`:
+`{"state":"running","started_at":…}` while it runs, and
+`{"state":"failed","started_at":…,"error":…,"prompt":…}` after it ends without a
+reply. `prompt` is the failed turn's own message, which it may have failed
+before saving.
+`turn` is absent once the turn finished, when a Drain cancellation ended it, and
+after Core restarts, because the state is held in memory. While another turn
+waits for the conversation, `turn` stays running until that turn replaces it. A
+turn for an unknown conversation records no state. Saved rows appear as the turn
+runs, so history also shows its progress.
+
+The dashboard follows a turn it is not streaming. When a stream ends without
+`turn.finished` or `turn.failed`, or a conversation opens while its turn runs,
+the page stays busy and re-reads history every two seconds, and immediately when
+the page becomes visible, until `turn` is no longer running. A failed turn
+offers its own prompt again. When the page sent the dropped turn and history never
+recorded its prompt, the turn did not start, and the page offers that prompt
+again even if an older turn's failure is still reported. A client error such as
+404 stops following and asks the person to reload history.
+
 ## Public turn failures
 
 Blocking HTTP turns return 502 for a provider call failure or nil model response,
-503 for caller/Drain cancellation or caller expiry, and a safe internal 500 for
-tool transport, trace persistence, or other setup faults. A provider timeout with
-an active caller remains a model failure, not caller cancellation.
+503 for Drain cancellation, 503 with "agent turn continues in the background"
+when the caller leaves first, 504 when the turn outlives its deadline, and a safe
+internal 500 for tool transport, trace persistence, or other setup faults. A
+provider timeout inside the turn deadline remains a model failure.
 
 The SSE message route is mounted directly on Echo and is not in OpenAPI.
 It streams the same turn as the blocking route. After headers commit,
 unexpected failure ends with opaque `turn.failed` text rather than a new HTTP
-status. Expected caller/Drain cancellation retains its cancellation message.
+status. A deadline ends with "agent turn timed out", and Drain cancellation with
+its cancellation message.
 Modeled MCP failures remain recoverable tool observations; transport/session
 and trace persistence faults are turn-fatal. Private infrastructure errors do
 not become public history or SSE text. See the

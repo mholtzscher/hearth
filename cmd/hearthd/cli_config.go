@@ -70,6 +70,10 @@ func newHearthdCommand(
 				cli.EnvVar("HEARTHD_AGENT_STARTER_QUESTION_REFRESH_INTERVAL"),
 			),
 		},
+		&cli.DurationFlag{
+			Name:    "agent-turn-timeout",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTHD_AGENT_TURN_TIMEOUT")),
+		},
 		&cli.StringFlag{
 			Name: "log-level", Value: "info", Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTHD_LOG_LEVEL")),
 			Usage: "log level: debug, info, warn, or error",
@@ -168,6 +172,9 @@ func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {
 	}
 	if cmd.IsSet("agent-starter-question-refresh-interval") {
 		config.Agent.StarterQuestions.RefreshInterval = cmd.Duration("agent-starter-question-refresh-interval")
+	}
+	if cmd.IsSet("agent-turn-timeout") {
+		config.Agent.TurnTimeout = cmd.Duration("agent-turn-timeout")
 	}
 	config = hearthd.NormalizeConfig(config)
 	if validationErr := config.Validate(); validationErr != nil {
