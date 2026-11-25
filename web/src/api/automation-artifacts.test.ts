@@ -185,7 +185,8 @@ describe("Automation artifact conversation flow", () => {
     vi.stubGlobal("fetch", () =>
       Promise.resolve(Response.json({ messages: rows }))
     );
-    const history = projectHistory(await loadHistory("conversation"));
+    const loaded = await loadHistory("conversation");
+    const history = projectHistory(loaded.messages);
     expect(history[0].context).toStrictEqual(rows[0].automation_context);
     expect(history[1].activities[0].result).toBe("exact original");
     expect(

@@ -44,6 +44,7 @@ func (stub *stubAgent) StarterQuestions() agent.StarterQuestions { return agent.
 func (stub *stubAgent) RefreshStarterQuestions(context.Context) error {
 	panic("unexpected RefreshStarterQuestions call")
 }
+func (stub *stubAgent) TurnState(string) (agent.TurnState, bool) { return agent.TurnState{}, false }
 
 func (stub *stubAgent) CreateConversation(ctx context.Context) (agent.Conversation, error) {
 	if stub.createConversation == nil {

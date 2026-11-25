@@ -26,6 +26,7 @@ type Operations interface {
 	AdmissionOpen() bool
 	StarterQuestions() StarterQuestions
 	RefreshStarterQuestions(ctx context.Context) error
+	TurnState(conversationID string) (TurnState, bool)
 }
 
 // RegisterHTTP mounts the agent operations on api. A nil service registers
@@ -56,7 +57,7 @@ func RegisterHTTP(api huma.API, service Operations, logger *slog.Logger) {
 		Errors: []int{
 			http.StatusBadRequest, http.StatusNotFound, http.StatusServiceUnavailable,
 			http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType,
-			http.StatusBadGateway, http.StatusInternalServerError,
+			http.StatusBadGateway, http.StatusGatewayTimeout, http.StatusInternalServerError,
 		},
 	}, handler.SendMessage)
 	huma.Register(api, huma.Operation{
@@ -193,6 +194,10 @@ func (handler *Handler) SendMessage(
 		return nil, huma.NewError(http.StatusServiceUnavailable, "agent admission is unavailable")
 	case errors.As(err, &turnCancellationError{}):
 		return nil, huma.NewError(http.StatusServiceUnavailable, "agent turn canceled")
+	case errors.As(err, &TurnContinuesError{}):
+		return nil, huma.NewError(http.StatusServiceUnavailable, "agent turn continues in the background")
+	case errors.As(err, &turnDeadlineError{}):
+		return nil, huma.NewError(http.StatusGatewayTimeout, "agent turn timed out")
 	case errors.As(err, &invalidText):
 		return nil, huma.NewError(http.StatusBadRequest, invalidText.detail)
 	case errors.As(err, &modelError{}):
@@ -213,9 +218,18 @@ type HistoryOutput struct {
 	Body HistoryBody
 }
 
-// HistoryBody is the persisted message stream.
+// HistoryBody is the persisted message stream and the latest turn's state.
 type HistoryBody struct {
-	Messages []MessageBody `json:"messages" doc:"Persisted messages, oldest first"`
+	Messages []MessageBody  `json:"messages"       doc:"Persisted messages, oldest first"`
+	Turn     *TurnStateBody `json:"turn,omitempty" doc:"Latest turn while it runs or after it failed; absent once it finished or after a Core restart"`
+}
+
+// TurnStateBody is a conversation's latest turn state.
+type TurnStateBody struct {
+	State     string `json:"state"            enum:"running,failed" doc:"running until the turn ends; failed if it ended without a reply"`
+	StartedAt string `json:"started_at"                             doc:"When the turn began running (RFC3339)"`
+	Error     string `json:"error,omitempty"                        doc:"Public failure text for a failed turn"`
+	Prompt    string `json:"prompt,omitempty"                       doc:"The failed turn's own message, which it may have failed before saving"`
 }
 
 // MessageBody is one persisted message with its tool-call trace.
@@ -238,6 +252,10 @@ func (handler *Handler) History(
 	ctx context.Context,
 	input *HistoryInput,
 ) (*HistoryOutput, error) {
+	// Read the turn state before the messages. A turn saves its reply before it
+	// leaves the running state, so a running state may come with the finished
+	// reply, but a finished state never comes with history that lacks it.
+	state, hasState := handler.service.TurnState(input.ID)
 	history, err := handler.service.History(ctx, input.ID)
 	switch {
 	case errors.Is(err, ErrConversationNotFound):
@@ -247,6 +265,12 @@ func (handler *Handler) History(
 		return nil, internalError()
 	}
 	body := HistoryBody{Messages: make([]MessageBody, len(history))}
+	if hasState {
+		body.Turn = &TurnStateBody{
+			State: state.State, StartedAt: state.StartedAt.Format(rfc3339Nano), Error: state.Error,
+			Prompt: state.Prompt,
+		}
+	}
 	for index, stored := range history {
 		body.Messages[index] = MessageBody{
 			ID: stored.ID, Role: stored.Role, Content: stored.Content,

@@ -28,6 +28,7 @@ type stubOperations struct {
 	admissionOpen      func() bool
 	starterQuestions   StarterQuestions
 	refreshStarters    func(ctx context.Context) error
+	turnState          func(conversationID string) (TurnState, bool)
 }
 
 func (stub *stubOperations) CreateConversation(ctx context.Context) (Conversation, error) {
@@ -68,6 +69,13 @@ func (stub *stubOperations) StarterQuestions() StarterQuestions {
 
 func (stub *stubOperations) RefreshStarterQuestions(ctx context.Context) error {
 	return stub.refreshStarters(ctx)
+}
+
+func (stub *stubOperations) TurnState(conversationID string) (TurnState, bool) {
+	if stub.turnState == nil {
+		return TurnState{}, false
+	}
+	return stub.turnState(conversationID)
 }
 
 func newOperationsRouter(service Operations) *echo.Echo {
@@ -479,4 +487,29 @@ func postStreamBodyForConversation(
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 	return recorder
+}
+
+// This test fails if the history route reads the turn state after the
+// messages: a turn finishing between the two reads would report no running
+// turn with history that lacks its reply, and a following page would stop.
+func TestHistoryRouteReadsTurnStateBeforeMessages(t *testing.T) {
+	t.Parallel()
+	var order []string
+	stub := &stubOperations{
+		history: func(context.Context, string) ([]StoredMessage, error) {
+			order = append(order, "messages")
+			return nil, nil
+		},
+		turnState: func(string) (TurnState, bool) {
+			order = append(order, "turn")
+			return TurnState{State: TurnStateRunning}, true
+		},
+	}
+	response := httptest.NewRecorder()
+	newOperationsRouter(stub).ServeHTTP(
+		response, httptest.NewRequest(http.MethodGet, "/v1/agent/conversations/aconv_x/messages", nil),
+	)
+	if response.Code != http.StatusOK || strings.Join(order, ",") != "turn,messages" {
+		t.Fatalf("status=%d read order=%v, want turn state first", response.Code, order)
+	}
 }

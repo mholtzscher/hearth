@@ -376,7 +376,7 @@ func TestGoSessionsAreIsolatedAcrossConcurrentConversations(t *testing.T) {
 	}
 }
 
-func TestGoCancellationJoinsProviderRequest(t *testing.T) {
+func TestGoTurnCancellationJoinsProviderRequest(t *testing.T) {
 	t.Parallel()
 	started, exited := make(chan struct{}), make(chan struct{})
 	peer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -404,7 +404,10 @@ func TestGoCancellationJoinsProviderRequest(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("provider not called")
 	}
-	cancel()
+	// The caller no longer owns the turn; Drain cancels and joins it.
+	if drainErr := service.Drain(t.Context()); drainErr != nil {
+		t.Fatal(drainErr)
+	}
 	select {
 	case err := <-finished:
 		if !errors.Is(err, context.Canceled) {

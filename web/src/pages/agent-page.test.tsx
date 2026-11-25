@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setBaseUrl } from "../api/client";
 import { ConversationHistory } from "../features/conversation/conversation-history";
+import { FOLLOW_INTERVAL_MS } from "../features/conversation/conversation-session";
 import { ConversationsProvider } from "../features/conversation/conversations-provider";
 import { WorkspaceProvider } from "../features/dashboards/workspace";
 import { ViewDataProvider } from "../features/views/data/provider";
@@ -983,7 +984,7 @@ describe("agent page", () => {
     );
   });
 
-  it("retains failed background activity and the prompt until history recovery succeeds", async () => {
+  it("follows a dropped turn and offers the prompt again when Core never recorded it", async () => {
     let stream!: ReadableStreamDefaultController<Uint8Array>;
     let historyUnavailable = false;
     let recover = false;
@@ -1025,24 +1026,21 @@ describe("agent page", () => {
     await act(async () => {
       await router.navigate("/conversations/c-failed");
     });
-    await expect(
-      screen.findByRole("button", { name: "Retry loading history" })
-    ).resolves.toBeTruthy();
+    // Core may still be running the turn, so the page keeps following it
+    // instead of offering a retry while history is unreachable.
+    expect(screen.getByText("Looking through your home…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry message" })).toBeNull();
+    recover = true;
+    await waitFor(
+      () =>
+        expect(
+          screen.getByRole("button", { name: "Retry message" })
+        ).toHaveProperty("disabled", false),
+      { timeout: FOLLOW_INTERVAL_MS * 2 }
+    );
     expect(screen.getByRole("textbox", { name: "Ask Hearth" })).toHaveProperty(
       "value",
       "Keep this prompt"
-    );
-    expect(
-      screen.getByRole("button", { name: "Retry message" })
-    ).toHaveProperty("disabled", true);
-    recover = true;
-    fireEvent.click(
-      screen.getByRole("button", { name: "Retry loading history" })
-    );
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Retry message" })
-      ).toHaveProperty("disabled", false)
     );
   });
 

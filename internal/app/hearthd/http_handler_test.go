@@ -311,6 +311,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"422",
 		"502",
 		"503",
+		"504",
 		"500",
 	)
 	assertRuntimeOpenAPIOperation(

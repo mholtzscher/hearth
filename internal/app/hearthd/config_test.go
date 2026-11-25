@@ -513,6 +513,49 @@ func TestUnsetStarterQuestionConfigSelectsDefaults(t *testing.T) {
 	}
 }
 
+// TestAgentTurnTimeoutConfig protects the documented turn deadline: five
+// minutes by default, at least thirty seconds when set.
+func TestAgentTurnTimeoutConfig(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, input string
+		want        time.Duration
+		wantErr     bool
+	}{
+		{name: "omitted", input: "agent: {}", want: 5 * time.Minute},
+		{name: "minimum", input: "agent: {turn_timeout: 30s}", want: 30 * time.Second},
+		{name: "longer", input: "agent: {turn_timeout: 10m}", want: 10 * time.Minute},
+		{name: "below minimum", input: "agent: {turn_timeout: 29s}", wantErr: true},
+		{name: "negative", input: "agent: {turn_timeout: -1m}", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			value := validConfig()
+			if err := yaml.Unmarshal([]byte(test.input), &value); err != nil {
+				t.Fatal(err)
+			}
+			value = hearthd.NormalizeConfig(value)
+			err := value.Validate()
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "agent.turn_timeout") {
+					t.Fatalf("Validate() = %v, want an agent.turn_timeout error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := value.EffectiveAgentTurnTimeout(); got != test.want {
+				t.Fatalf("turn timeout = %s, want %s", got, test.want)
+			}
+		})
+	}
+	var unset hearthd.Config
+	if unset.EffectiveAgentTurnTimeout() != hearthd.DefaultAgentTurnTimeout {
+		t.Fatal("unset turn timeout does not select the default")
+	}
+}
+
 // The startup seam trims the environment credential without storing it in Config.
 func TestLoadAgentAPIKeyReadsEnvironment(t *testing.T) {
 	t.Setenv("HEARTH_OPENAI_API_KEY", "  test-secret-key\n")

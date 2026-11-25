@@ -221,13 +221,37 @@ export const createConversation = async (signal?: AbortSignal) => {
   );
   return response.id;
 };
-export const loadHistory = async (id: string, signal?: AbortSignal) => {
+const turnStateSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("running"), started_at: z.string() }),
+  z.object({
+    state: z.literal("failed"),
+    started_at: z.string(),
+    error: z.string(),
+    /** The failed turn's own message; it may have failed before saving it. */
+    prompt: z.string().optional(),
+  }),
+]);
+export type TurnState = z.infer<typeof turnStateSchema>;
+export interface ConversationHistory {
+  messages: z.infer<typeof messageSchema>[];
+  /** The latest turn while it runs or after it failed; null once it finished. */
+  turn: TurnState | null;
+}
+export const loadHistory = async (
+  id: string,
+  signal?: AbortSignal
+): Promise<ConversationHistory> => {
   const response = await apiFetch(
     `/v1/agent/conversations/${encodeURIComponent(id)}/messages`,
     { signal },
-    parse(z.object({ messages: z.array(messageSchema) }))
+    parse(
+      z.object({
+        messages: z.array(messageSchema),
+        turn: turnStateSchema.optional(),
+      })
+    )
   );
-  return response.messages;
+  return { messages: response.messages, turn: response.turn ?? null };
 };
 export const sendMessage = async (
   id: string,

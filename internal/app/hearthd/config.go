@@ -50,6 +50,10 @@ const (
 	// MinimumStarterQuestionRefreshInterval bounds how often Core sends the
 	// household digest to the model provider.
 	MinimumStarterQuestionRefreshInterval = 5 * time.Minute
+	// DefaultAgentTurnTimeout bounds one agent turn when agent.turn_timeout is unset.
+	DefaultAgentTurnTimeout = agent.DefaultTurnTimeout
+	// MinimumAgentTurnTimeout leaves room for at least a few model steps.
+	MinimumAgentTurnTimeout = 30 * time.Second
 )
 
 type Config struct {
@@ -101,6 +105,10 @@ type AgentConfig struct {
 	HistoryRetention time.Duration `yaml:"history_retention"`
 	// StarterQuestions configures scheduled starter question generation.
 	StarterQuestions StarterQuestionsConfig `yaml:"starter_questions"`
+	// TurnTimeout bounds one turn from admission to its final reply. A turn
+	// keeps running after its browser disconnects until it finishes or this
+	// deadline passes. Zero selects DefaultAgentTurnTimeout.
+	TurnTimeout time.Duration `yaml:"turn_timeout"`
 	// ChatModel replaces the provider chat model the agent would construct,
 	// which lets tests and embeddings run a turn without a live provider. It
 	// is deliberately not YAML configuration.
@@ -155,6 +163,9 @@ func NormalizeConfig(value Config) Config {
 	}
 	if value.Agent.StarterQuestions.RefreshInterval == 0 {
 		value.Agent.StarterQuestions.RefreshInterval = DefaultStarterQuestionRefreshInterval
+	}
+	if value.Agent.TurnTimeout == 0 {
+		value.Agent.TurnTimeout = DefaultAgentTurnTimeout
 	}
 	return value
 }
@@ -211,6 +222,15 @@ func (value Config) EffectiveStarterQuestionRefreshInterval() time.Duration {
 		return DefaultStarterQuestionRefreshInterval
 	}
 	return value.Agent.StarterQuestions.RefreshInterval
+}
+
+// EffectiveAgentTurnTimeout returns the configured turn timeout, or
+// DefaultAgentTurnTimeout when the setting is unset.
+func (value Config) EffectiveAgentTurnTimeout() time.Duration {
+	if value.Agent.TurnTimeout == 0 {
+		return DefaultAgentTurnTimeout
+	}
+	return value.Agent.TurnTimeout
 }
 
 // LoadAgentAPIKey reads only the selected provider's Hearth environment variable.
@@ -318,6 +338,9 @@ func (value Config) validateAgent() error {
 		return fmt.Errorf(
 			"agent.starter_questions.refresh_interval must be at least %s", MinimumStarterQuestionRefreshInterval,
 		)
+	}
+	if value.Agent.TurnTimeout != 0 && value.Agent.TurnTimeout < MinimumAgentTurnTimeout {
+		return fmt.Errorf("agent.turn_timeout must be at least %s", MinimumAgentTurnTimeout)
 	}
 	return nil
 }

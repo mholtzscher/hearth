@@ -92,6 +92,7 @@ func startAgentService(
 		Retention:       config.EffectiveAgentHistoryRetention(),
 		Logger:          logger,
 		HouseholdDigest: householdDigest,
+		TurnTimeout:     config.EffectiveAgentTurnTimeout(),
 	})
 }
 

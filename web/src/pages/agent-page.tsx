@@ -74,6 +74,7 @@ const AgentPage = () => {
     failedPrompt,
     needsRecovery,
     queued,
+    following,
     id,
   } = useConversationSession(routeId);
   const [mobileCanvas, setMobileCanvas] = useState(false);
@@ -173,6 +174,9 @@ const AgentPage = () => {
     refresh: refreshStarterQuestions,
     regenerate: regenerateStarterQuestions,
   });
+  const lastReply = replies.at(-1);
+  const followedId =
+    following && lastReply?.role === "assistant" ? lastReply.id : undefined;
   const messageId = useTurnMessageIds(session.key, replies, optimistic?.id);
   const sendBlocked = sendIsBlocked({
     busy,
@@ -188,7 +192,7 @@ const AgentPage = () => {
     isSendDisabled: sendBlocked,
     suggestions: starters.questions,
     convertMessage: (item, index) =>
-      convertMessage(item, messageId(item, index), busy),
+      convertMessage(item, messageId(item, index), busy, followedId),
     onNew: async (message) => {
       await send(promptText(message));
     },

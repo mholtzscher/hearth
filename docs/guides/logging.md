@@ -47,10 +47,12 @@ git grep -n '"device_fact.poison"' -- internal
 `core.http_listening` proves a bound socket, not readiness. Likewise, Adapter
 registration and Command subscriptions do not prove upstream health.
 `agent.turn_failed` diagnoses unexpected turns without provider/tool/persistence
-error text. Expected caller/Drain cancellation and caller expiry stay silent;
-dependency context errors retain their failure origin rather than implying caller
-cancellation. A transient provider status is reported after its single retry
-fails. See [Agent failure semantics](../reference/agent-skills.md#public-turn-failures).
+error text. A turn that outlives `agent.turn_timeout` is logged with
+`stage=deadline` and `error_code=turn_deadline_exceeded`. Drain cancellation
+stays silent. A caller leaving is not a turn outcome, because the turn keeps
+running. Dependency context errors retain their failure origin rather than
+implying cancellation. A transient provider status is reported after its single
+retry fails. See [Agent failure semantics](../reference/agent-skills.md#public-turn-failures).
 Registration and Session persistence faults remain no-reply outcomes, not modeled
 rejections.
 
