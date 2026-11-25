@@ -31,7 +31,11 @@ func (repository *DeviceRepository) ListDevices(
 	for index, row := range rows {
 		items[index] = deviceFromRow(dbsqlc.GetDeviceRow(row))
 	}
-	return pageFromExtra(items, params.Limit), nil
+	page := pageFromExtra(items, params.Limit)
+	if err = attachDeviceLabels(ctx, repository.queries, page.Items); err != nil {
+		return devices.Page[devices.Device]{}, err
+	}
+	return page, nil
 }
 
 func (repository *DeviceRepository) GetDevice(
@@ -56,8 +60,12 @@ func (repository *DeviceRepository) GetDevice(
 	if err != nil {
 		return devices.DeviceAggregate{}, err
 	}
+	device, err := attachDeviceLabel(ctx, queries, deviceFromRow(row))
+	if err != nil {
+		return devices.DeviceAggregate{}, err
+	}
 	return devices.DeviceAggregate{
-		Device:   deviceFromRow(row),
+		Device:   device,
 		Entities: entities,
 	}, nil
 }
@@ -69,36 +77,46 @@ func (repository *DeviceRepository) ListEntities(
 	if !devices.ValidPageLimit(params.Limit) {
 		return devices.Page[devices.EntityWithState]{}, devices.ErrInvalidPage
 	}
+	selector, err := devices.PrepareEntitySelector(repository.catalog, params.Selector)
+	if err != nil {
+		return devices.Page[devices.EntityWithState]{}, err
+	}
+	params.Selector = selector
 	afterID := ""
 	if params.AfterID != nil {
 		afterID = string(*params.AfterID)
 	}
 	queries := repository.queries
-	if params.DeviceID != nil {
-		return listEntitiesByDevice(ctx, queries, params, afterID)
+	var rows []dbsqlc.EntityReadProjection
+	switch {
+	case !selector.IsZero():
+		rows, err = listEntitiesBySelector(ctx, repository.database, queries, params, afterID)
+	case params.DeviceID != nil:
+		rows, err = queries.ListEntitiesByDevice(ctx, dbsqlc.ListEntitiesByDeviceParams{
+			DeviceID: string(*params.DeviceID), ID: afterID, Limit: int64(params.Limit + 1),
+		})
+		if err != nil {
+			err = fmt.Errorf("list entities by device: %w", err)
+		}
+	default:
+		rows, err = queries.ListEntities(ctx, dbsqlc.ListEntitiesParams{
+			ID: afterID, Limit: int64(params.Limit + 1),
+		})
+		if err != nil {
+			err = fmt.Errorf("list entities: %w", err)
+		}
 	}
-	rows, err := queries.ListEntities(ctx, dbsqlc.ListEntitiesParams{
-		ID: afterID, Limit: int64(params.Limit + 1),
-	})
 	if err != nil {
-		return devices.Page[devices.EntityWithState]{}, fmt.Errorf("list entities: %w", err)
+		return devices.Page[devices.EntityWithState]{}, err
 	}
-	return entityPageFromRows(rows, params.Limit)
-}
-
-func listEntitiesByDevice(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
-	params devices.ListEntitiesParams,
-	afterID string,
-) (devices.Page[devices.EntityWithState], error) {
-	rows, err := queries.ListEntitiesByDevice(ctx, dbsqlc.ListEntitiesByDeviceParams{
-		DeviceID: string(*params.DeviceID), ID: afterID, Limit: int64(params.Limit + 1),
-	})
+	page, err := entityPageFromRows(rows, params.Limit)
 	if err != nil {
-		return devices.Page[devices.EntityWithState]{}, fmt.Errorf("list entities by device: %w", err)
+		return devices.Page[devices.EntityWithState]{}, err
 	}
-	return entityPageFromRows(rows, params.Limit)
+	if err = attachEntityLabels(ctx, queries, page.Items); err != nil {
+		return devices.Page[devices.EntityWithState]{}, err
+	}
+	return page, nil
 }
 
 func (repository *DeviceRepository) ListEntityCommands(
@@ -236,5 +254,9 @@ func (repository *DeviceRepository) GetEntity(
 	if err != nil {
 		return devices.EntityWithState{}, fmt.Errorf("get entity: %w", err)
 	}
-	return entityWithStateFromRow(row)
+	view, err := entityWithStateFromRow(row)
+	if err != nil {
+		return devices.EntityWithState{}, err
+	}
+	return attachEntityLabel(ctx, repository.queries, view)
 }

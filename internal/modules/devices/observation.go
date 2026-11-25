@@ -149,6 +149,7 @@ func CopyEntityWithState(view EntityWithState) EntityWithState {
 		cloned.Entity.NameOverride = &value
 	}
 	cloned.Entity.Support = append(EntitySupport(nil), view.Entity.Support...)
+	cloned.Labels = CopyEntityLabels(view.Labels)
 	if view.State != nil {
 		state := copyState(*view.State)
 		cloned.State = &state

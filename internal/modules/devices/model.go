@@ -70,6 +70,7 @@ type Device struct {
 	Name         string
 	AdapterName  string
 	NameOverride *string
+	Labels       DeviceLabels
 }
 
 type Entity struct {
@@ -96,6 +97,7 @@ type State struct {
 
 type EntityWithState struct {
 	Entity       Entity
+	Labels       EntityLabels
 	State        *State
 	Availability EntityAvailability
 }
@@ -116,8 +118,22 @@ type ListDevicesParams struct {
 	Limit   int
 }
 
+// EntitySelector narrows an Entity list. The zero value selects every Entity.
+// Every listed Label must be effective on a matching Entity, and its type must
+// be one of the listed types when any are listed.
+type EntitySelector struct {
+	Labels []LabelID
+	Types  []EntityTypeID
+}
+
+// IsZero reports whether the selector selects every Entity.
+func (selector EntitySelector) IsZero() bool {
+	return len(selector.Labels) == 0 && len(selector.Types) == 0
+}
+
 type ListEntitiesParams struct {
 	DeviceID *DeviceID
+	Selector EntitySelector
 	AfterID  *EntityID
 	Limit    int
 }

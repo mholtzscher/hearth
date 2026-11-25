@@ -407,14 +407,17 @@ func TestNameOverrideMigrationDownUpPreservesAdapterMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Current projection code also records yes/no State changes, a table that
-	// migration 31 adds; create it so this version-20 fixture can project one.
-	changes, err := os.ReadFile("../../../platform/db/migrations/00031_state_changes.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	changesUp, _, _ := strings.Cut(string(changes), "-- +goose Down")
-	if _, err = database.ExecContext(ctx, changesUp); err != nil {
-		t.Fatal(err)
+	// migration 31 adds, and current reads attach Labels, which migration 34
+	// adds; create both so this version-20 fixture can project and read.
+	for _, later := range []string{"00031_state_changes.sql", "00034_labels.sql"} {
+		changes, readErr := os.ReadFile("../../../platform/db/migrations/" + later)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		changesUp, _, _ := strings.Cut(string(changes), "-- +goose Down")
+		if _, err = database.ExecContext(ctx, changesUp); err != nil {
+			t.Fatal(err)
+		}
 	}
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)

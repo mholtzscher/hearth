@@ -107,6 +107,16 @@ type PatchEntityParams struct {
 	UpdatedAt time.Time
 }
 
+// LabelRepository persists the household Label catalog. Each method checks
+// changing facts, such as name uniqueness and the catalog bound, in its own
+// transaction.
+type LabelRepository interface {
+	CreateLabel(context.Context, CreateLabelRecord) (Label, error)
+	RenameLabel(context.Context, RenameLabelRecord) (Label, error)
+	DeleteLabel(context.Context, LabelID) error
+	ListLabels(context.Context) ([]Label, error)
+}
+
 type MetadataRepository interface {
 	PatchDevice(context.Context, PatchDeviceParams) (Device, error)
 	PatchEntity(context.Context, PatchEntityParams) (EntityWithState, error)

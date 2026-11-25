@@ -19,6 +19,11 @@ func NewEntityID() (EntityID, error) {
 	return EntityID(id), err
 }
 
+func NewLabelID() (LabelID, error) {
+	id, err := newID("lbl")
+	return LabelID(id), err
+}
+
 func NewObservationID() (ObservationID, error) {
 	id, err := newID("obs")
 	return ObservationID(id), err
@@ -58,6 +63,13 @@ func ParseEntityID(value string) (EntityID, error) {
 		return "", err
 	}
 	return EntityID(value), nil
+}
+
+func ParseLabelID(value string) (LabelID, error) {
+	if err := validateID(value, "lbl"); err != nil {
+		return "", err
+	}
+	return LabelID(value), nil
 }
 
 func ParseObservationID(value string) (ObservationID, error) {

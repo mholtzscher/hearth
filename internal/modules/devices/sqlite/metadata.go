@@ -16,7 +16,7 @@ func (repository *DeviceRepository) PatchEntity(
 	ctx context.Context,
 	params devices.PatchEntityParams,
 ) (devices.EntityWithState, error) {
-	patch, err := devices.PrepareMetadataPatch(params.Patch.Enabled, params.Patch.NameEdit)
+	patch, err := devices.PrepareEntityPatch(params.Patch)
 	if err != nil {
 		return devices.EntityWithState{}, err
 	}
@@ -45,7 +45,7 @@ func (repository *DeviceRepository) mutateEntity(
 	}
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
-		return devices.EntityWithState{}, fmt.Errorf("begin entity enablement update: %w", err)
+		return devices.EntityWithState{}, fmt.Errorf("begin entity metadata update: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	queries := repository.queries.WithTx(tx)
@@ -62,28 +62,9 @@ func (repository *DeviceRepository) mutateEntity(
 	if params.RequiredOwner != nil && row.AdapterID != *params.RequiredOwner {
 		return devices.EntityWithState{}, devices.ErrEntityWrongAdapter
 	}
-	changed := false
-	if patch.Enabled != nil && row.Enabled != boolToInt64(*patch.Enabled) {
-		if _, updateErr := queries.UpdateEntityEnablement(ctx, dbsqlc.UpdateEntityEnablementParams{
-			Enabled: boolToInt64(*patch.Enabled), UpdatedAt: formatTime(params.UpdatedAt),
-			ID: string(params.EntityID),
-		}); updateErr != nil {
-			return devices.EntityWithState{}, fmt.Errorf("update entity enablement: %w", updateErr)
-		}
-		changed = true
-	}
-	if entityNameChanged(row.NameOverride, patch.NameEdit) {
-		if err = queries.UpdateEntityNameOverride(
-			ctx,
-			dbsqlc.UpdateEntityNameOverrideParams{
-				ID:           string(id),
-				NameOverride: nullableString(patch.NameEdit.Override),
-				UpdatedAt:    formatTime(updatedAt),
-			},
-		); err != nil {
-			return devices.EntityWithState{}, fmt.Errorf("update entity name: %w", err)
-		}
-		changed = true
+	changed, err := applyEntityEdits(ctx, queries, row, patch, updatedAt)
+	if err != nil {
+		return devices.EntityWithState{}, err
 	}
 	if changed {
 		row, err = queries.GetEntity(ctx, dbsqlc.GetEntityParams{ID: string(params.EntityID)})
@@ -95,10 +76,48 @@ func (repository *DeviceRepository) mutateEntity(
 	if err != nil {
 		return devices.EntityWithState{}, fmt.Errorf("map updated entity: %w", err)
 	}
+	if view, err = attachEntityLabel(ctx, queries, view); err != nil {
+		return devices.EntityWithState{}, err
+	}
 	if commitErr := tx.Commit(); commitErr != nil {
-		return devices.EntityWithState{}, fmt.Errorf("commit entity enablement update: %w", commitErr)
+		return devices.EntityWithState{}, fmt.Errorf("commit entity metadata update: %w", commitErr)
 	}
 	return devices.CopyEntityWithState(view), nil
+}
+
+// applyEntityEdits writes the changed enablement, name, and Label edits and
+// reports whether any changed.
+func applyEntityEdits(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	row dbsqlc.EntityReadProjection,
+	patch devices.EntityPatch,
+	updatedAt time.Time,
+) (bool, error) {
+	changed := false
+	if patch.Enabled != nil && row.Enabled != boolToInt64(*patch.Enabled) {
+		if _, err := queries.UpdateEntityEnablement(ctx, dbsqlc.UpdateEntityEnablementParams{
+			Enabled: boolToInt64(*patch.Enabled), UpdatedAt: formatTime(updatedAt), ID: row.ID,
+		}); err != nil {
+			return false, fmt.Errorf("update entity enablement: %w", err)
+		}
+		changed = true
+	}
+	if entityNameChanged(row.NameOverride, patch.NameEdit) {
+		if err := queries.UpdateEntityNameOverride(ctx, dbsqlc.UpdateEntityNameOverrideParams{
+			ID: row.ID, NameOverride: nullableString(patch.NameEdit.Override), UpdatedAt: formatTime(updatedAt),
+		}); err != nil {
+			return false, fmt.Errorf("update entity name: %w", err)
+		}
+		changed = true
+	}
+	labelsChanged, err := applyLabelEdits(
+		ctx, queries, entityAssignmentQueries(queries), row.ID, patch.AreaEdit, patch.TagEdit, updatedAt,
+	)
+	if err != nil {
+		return false, err
+	}
+	return changed || labelsChanged, nil
 }
 
 func entityNameChanged(current sql.NullString, edit *devices.NameEdit) bool {

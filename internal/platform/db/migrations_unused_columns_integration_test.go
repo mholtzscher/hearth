@@ -34,6 +34,15 @@ func TestUnusedColumnsMigrationPreservesRetainedData(t *testing.T) {
 		"health_transitions":            "*",
 	}
 	for table, columns := range projections {
+		if columns == "*" {
+			// Pin the version-28 columns so later migrations may add columns.
+			if err = database.QueryRowContext(t.Context(),
+				`SELECT group_concat(name, ', ') FROM pragma_table_info(?)`, table,
+			).Scan(&columns); err != nil {
+				t.Fatal(err)
+			}
+			projections[table] = columns
+		}
 		if _, err = database.ExecContext(t.Context(),
 			`CREATE TEMP TABLE expected_`+table+` AS SELECT `+columns+` FROM `+table,
 		); err != nil {
