@@ -85,6 +85,8 @@ type DigestEntity struct {
 	Device   string
 	// DeviceKind is the owning Device's kind, such as lock or sensor.
 	DeviceKind string
+	// Area is the name of the Entity's effective Area; empty when it has none.
+	Area string
 	// Type is the Entity type ID, such as hearth.temperature/v1.
 	Type         string
 	Availability string
