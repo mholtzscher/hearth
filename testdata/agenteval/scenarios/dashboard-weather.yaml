@@ -5,37 +5,25 @@ tags: [dashboard, create, weather, retries]
 turns:
   - text: >-
       Build a weather dashboard from my weather station showing current
-      outdoor conditions, wind, and pressure.
+      outdoor conditions, wind, and relative pressure.
 
 # The station is a gateway with the pressure sensors and an outdoor array.
 # Home's current conditions come from a forecast service, not the station.
+# The request names relative pressure: the gateway also has absolute
+# pressure, and the Agent is told to ask when the choice is ambiguous.
 checks:
-  - kind: any_of
-    any_of:
-      - kind: view
-        view:
-          cards:
-            - type: OutsideNow
-              bindings:
-                temperature: {device: outdoor-weather-array, key: temperature}
-            - type: Wind
-              bindings:
-                speed: {device: outdoor-weather-array, key: wind}
-            - type: Pressure
-              bindings:
-                source: {device: weather-station-gateway, key: relative-pressure}
-      - kind: view
-        view:
-          cards:
-            - type: OutsideNow
-              bindings:
-                temperature: {device: outdoor-weather-array, key: temperature}
-            - type: Wind
-              bindings:
-                speed: {device: outdoor-weather-array, key: wind}
-            - type: Pressure
-              bindings:
-                source: {device: weather-station-gateway, key: absolute-pressure}
+  - kind: view
+    view:
+      cards:
+        - type: OutsideNow
+          bindings:
+            temperature: {device: outdoor-weather-array, key: temperature}
+        - type: Wind
+          bindings:
+            speed: {device: outdoor-weather-array, key: wind}
+        - type: Pressure
+          bindings:
+            source: {device: weather-station-gateway, key: relative-pressure}
   - kind: view_without_rejections
 
 judge:
