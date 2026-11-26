@@ -73,13 +73,15 @@ func (handler *handler) getDevice(ctx context.Context, input *GetDeviceInput) (*
 }
 
 type DeviceDetailBody struct {
-	AdapterName      string       `json:"adapter_name"`
-	NameOverride     *string      `json:"name_override"                nullable:"true"`
-	ID               string       `json:"id"`
-	Kind             string       `json:"kind"`
-	Name             string       `json:"name"`
-	Entities         []EntityBody `json:"entities"`
-	NextEntityCursor *string      `json:"next_entity_cursor,omitempty"`
+	AdapterName      string          `json:"adapter_name"`
+	NameOverride     *string         `json:"name_override"                nullable:"true"`
+	ID               string          `json:"id"`
+	Kind             string          `json:"kind"`
+	Name             string          `json:"name"`
+	Area             *DeviceAreaBody `json:"area"`
+	Tags             []LabelRefBody  `json:"tags"                         nullable:"false"`
+	Entities         []EntityBody    `json:"entities"`
+	NextEntityCursor *string         `json:"next_entity_cursor,omitempty"`
 }
 
 func (handler *handler) deviceDetailBody(
@@ -89,6 +91,7 @@ func (handler *handler) deviceDetailBody(
 	body := DeviceDetailBody{
 		AdapterName: aggregate.Device.AdapterName, NameOverride: aggregate.Device.NameOverride,
 		ID: string(aggregate.Device.ID), Kind: string(aggregate.Device.Kind), Name: aggregate.Device.Name,
+		Area: deviceAreaBody(aggregate.Device.Labels), Tags: labelRefBodies(aggregate.Device.Labels.Tags),
 		Entities: make([]EntityBody, len(aggregate.Entities.Items)),
 	}
 	for index, entity := range aggregate.Entities.Items {

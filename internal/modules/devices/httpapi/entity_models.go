@@ -15,6 +15,8 @@ type EntityBody struct {
 	Availability AvailabilityBody                    `json:"availability"`
 	State        *StateBody                          `json:"state"`
 	Quantities   map[string]devices.QuantityMetadata `json:"quantities"`
+	Area         *EntityAreaBody                     `json:"area"`
+	Tags         []LabelRefBody                      `json:"tags"          nullable:"false"`
 }
 
 type AvailabilityBody struct {

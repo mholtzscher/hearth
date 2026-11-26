@@ -23,6 +23,10 @@ const (
 )
 
 type stubDevices struct {
+	listLabels                    func(context.Context) ([]devices.Label, error)
+	createLabel                   func(context.Context, devices.CreateLabelParams) (devices.Label, error)
+	renameLabel                   func(context.Context, devices.LabelID, string) (devices.Label, error)
+	deleteLabel                   func(context.Context, devices.LabelID) error
 	queryHistory                  func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
 	queryStateChanges             func(context.Context, devices.StateChangeQuery) (devices.StateChangeQueryResult, error)
 	patchEntity                   func(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
@@ -53,6 +57,34 @@ type stubDevices struct {
 		context.Context,
 		devices.CommandInput,
 	) (devices.CommandResult, error)
+}
+
+func (stub *stubDevices) ListLabels(ctx context.Context) ([]devices.Label, error) {
+	if stub.listLabels == nil {
+		panic("unexpected ListLabels call")
+	}
+	return stub.listLabels(ctx)
+}
+
+func (stub *stubDevices) CreateLabel(ctx context.Context, params devices.CreateLabelParams) (devices.Label, error) {
+	if stub.createLabel == nil {
+		panic("unexpected CreateLabel call")
+	}
+	return stub.createLabel(ctx, params)
+}
+
+func (stub *stubDevices) RenameLabel(ctx context.Context, id devices.LabelID, name string) (devices.Label, error) {
+	if stub.renameLabel == nil {
+		panic("unexpected RenameLabel call")
+	}
+	return stub.renameLabel(ctx, id, name)
+}
+
+func (stub *stubDevices) DeleteLabel(ctx context.Context, id devices.LabelID) error {
+	if stub.deleteLabel == nil {
+		panic("unexpected DeleteLabel call")
+	}
+	return stub.deleteLabel(ctx, id)
 }
 
 func (stub *stubDevices) QueryHistory(

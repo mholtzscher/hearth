@@ -20,10 +20,12 @@ func registerListEntities(api huma.API, handler *handler) {
 }
 
 type ListEntitiesInput struct {
-	Limit    int    `query:"limit"     default:"50" minimum:"1" maximum:"200"`
-	Cursor   string `query:"cursor"`
-	DeviceID string `query:"device_id"                                        doc:"Canonical Hearth Device ID"`
-	Units    string `query:"units"                                            doc:"Omit for household units; canonical returns canonical values"`
+	Limit    int      `query:"limit"     default:"50" minimum:"1" maximum:"200"`
+	Cursor   string   `query:"cursor"`
+	DeviceID string   `query:"device_id"                                        doc:"Canonical Hearth Device ID"`
+	Units    string   `query:"units"                                            doc:"Omit for household units; canonical returns canonical values"`
+	LabelIDs []string `query:"label_id"                                         doc:"Comma-separated Label IDs. Entities must have every listed Label; an Entity inherits its Device's Area and tags. At most 8" explode:"false" nullable:"false"`
+	Types    []string `query:"type"                                             doc:"Comma-separated Entity types. Entities must have one of the listed types. At most 16"                                       explode:"false" nullable:"false"`
 }
 
 type ListEntitiesOutput struct {
@@ -48,19 +50,29 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 		}
 		deviceID = &parsed
 	}
+	selector, err := entitySelector(input.LabelIDs, input.Types)
+	if err != nil {
+		return nil, err
+	}
 	var afterID *devices.EntityID
 	if input.Cursor != "" {
-		parsed, cursorErr := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID, devices.EntitySelector{})
+		parsed, cursorErr := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID, selector)
 		if cursorErr != nil {
 			return nil, huma.NewError(http.StatusBadRequest, "invalid cursor")
 		}
 		afterID = parsed
 	}
 	page, err := handler.devices.ListEntities(ctx, devices.ListEntitiesParams{
-		DeviceID: deviceID, AfterID: afterID, Limit: input.Limit,
+		DeviceID: deviceID, Selector: selector, AfterID: afterID, Limit: input.Limit,
 	})
 	if errors.Is(err, devices.ErrInvalidPage) {
 		return nil, huma.NewError(http.StatusBadRequest, "invalid page")
+	}
+	if errors.Is(err, devices.ErrInvalidEntitySelector) {
+		return nil, huma.NewError(http.StatusBadRequest, "invalid label_id or type filter")
+	}
+	if errors.Is(err, devices.ErrLabelNotFound) {
+		return nil, huma.NewError(http.StatusBadRequest, "label_id names an unknown Label")
 	}
 	if err != nil {
 		return nil, handler.internalAPIError(ctx, "list-entities", "service", err)
@@ -75,7 +87,7 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 	}
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeEntitiesCursor(
-			page.Items[len(page.Items)-1].Entity.ID, deviceID, devices.EntitySelector{},
+			page.Items[len(page.Items)-1].Entity.ID, deviceID, selector,
 		)
 		if cursorErr != nil {
 			return nil, handler.internalAPIError(ctx, "list-entities", "mapping", cursorErr)
@@ -83,4 +95,22 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 		body.NextCursor = &cursor
 	}
 	return &ListEntitiesOutput{Body: body}, nil
+}
+
+func entitySelector(labelIDs, types []string) (devices.EntitySelector, error) {
+	selector := devices.EntitySelector{}
+	for _, value := range labelIDs {
+		id, err := devices.ParseLabelID(value)
+		if err != nil {
+			return devices.EntitySelector{}, huma.NewError(
+				http.StatusBadRequest,
+				"label_id must be a canonical Hearth Label ID",
+			)
+		}
+		selector.Labels = append(selector.Labels, id)
+	}
+	for _, value := range types {
+		selector.Types = append(selector.Types, devices.EntityTypeID(value))
+	}
+	return selector, nil
 }

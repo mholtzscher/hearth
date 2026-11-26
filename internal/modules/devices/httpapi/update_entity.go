@@ -18,7 +18,7 @@ func registerUpdateEntity(api huma.API, handler *handler) {
 		Path:        "/entities/{entity_id}",
 		Summary:     "Update an Entity",
 		Tags:        []string{entitiesTag},
-		Description: "Merge writable metadata fields. Omitted fields are unchanged; null name_override clears the override. An empty object returns the current Entity without mutation.",
+		Description: "Merge writable metadata fields. Omitted fields are unchanged; null name_override clears the override and null area_id makes the Entity inherit its Device Area. tag_ids replaces the tags assigned to the Entity and must not be null. An unknown or wrong-kind Label returns 400. An empty object returns the current Entity without mutation.",
 		Middlewares: huma.Middlewares{requireMergePatch(api)},
 		Errors: []int{
 			http.StatusBadRequest,
@@ -50,13 +50,20 @@ func (handler *handler) patchEntity(ctx context.Context, input *PatchEntityInput
 	if err != nil {
 		return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 	}
+	areaEdit, tagEdit, err := labelPatchEdits(
+		input.Body.areaPresent, input.Body.AreaID, input.Body.tagIDsPresent, input.Body.TagIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
 	var view devices.EntityWithState
-	if input.Body.Enabled == nil && !input.Body.nameOverridePresent {
+	if input.Body.Enabled == nil && !input.Body.nameOverridePresent && areaEdit == nil && tagEdit == nil {
 		view, err = handler.devices.GetEntity(ctx, entityID)
 	} else {
 		view, err = handler.devices.PatchEntity(ctx, entityID, devices.EntityPatch{
 			Enabled:  input.Body.Enabled,
 			NameEdit: domainNameEdit(input.Body.nameOverridePresent, input.Body.NameOverride),
+			AreaEdit: areaEdit, TagEdit: tagEdit,
 		})
 	}
 	switch {
@@ -75,9 +82,13 @@ func (handler *handler) patchEntity(ctx context.Context, input *PatchEntityInput
 }
 
 type PatchEntityBody struct {
-	Enabled             *bool   `json:"enabled,omitempty"`
-	NameOverride        *string `json:"name_override,omitempty" nullable:"true"`
+	Enabled             *bool    `json:"enabled,omitempty"`
+	NameOverride        *string  `json:"name_override,omitempty" nullable:"true"`
+	AreaID              *string  `json:"area_id,omitempty"       nullable:"true"  doc:"Area Label ID; null makes the Entity inherit its Device's Area"`
+	TagIDs              []string `json:"tag_ids,omitempty"       nullable:"false" doc:"Replaces the tag Label IDs assigned directly to the Entity; an empty array clears them"`
 	nameOverridePresent bool
+	areaPresent         bool
+	tagIDsPresent       bool
 }
 
 func (body *PatchEntityBody) UnmarshalJSON(data []byte) error {
@@ -91,6 +102,8 @@ func (body *PatchEntityBody) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	_, decoded.nameOverridePresent = properties["name_override"]
+	_, decoded.areaPresent = properties["area_id"]
+	_, decoded.tagIDsPresent = properties["tag_ids"]
 	*body = PatchEntityBody(decoded)
 	return nil
 }

@@ -26,6 +26,8 @@ func (h *handler) entityBody(view devices.EntityWithState, units devices.ReadUni
 		Support:      support,
 		Enabled:      view.Entity.Enabled,
 		Availability: availabilityBody(view.Availability),
+		Area:         entityAreaBody(view.Labels),
+		Tags:         labelRefBodies(view.Labels.Tags),
 	}
 	if view.State == nil {
 		return body, nil

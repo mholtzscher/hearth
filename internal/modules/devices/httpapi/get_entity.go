@@ -64,6 +64,8 @@ type PairedEntityBody struct {
 	Enabled      bool             `json:"enabled"`
 	Availability AvailabilityBody `json:"availability"`
 	State        *PairedStateBody `json:"state"`
+	Area         *EntityAreaBody  `json:"area"`
+	Tags         []LabelRefBody   `json:"tags"          nullable:"false"`
 }
 
 type PairedStateBody struct {
@@ -148,7 +150,7 @@ func (handler *handler) pairedEntityBody(view devices.EntityWithState) (PairedEn
 	body := PairedEntityBody{
 		AdapterName: base.AdapterName, NameOverride: base.NameOverride, ID: base.ID, DeviceID: base.DeviceID,
 		AdapterID: base.AdapterID, Name: base.Name, Type: base.Type, Support: base.Support,
-		Enabled: base.Enabled, Availability: base.Availability,
+		Enabled: base.Enabled, Availability: base.Availability, Area: base.Area, Tags: base.Tags,
 	}
 	if view.State == nil {
 		return body, nil

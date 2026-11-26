@@ -79,9 +79,16 @@ func assertMetadataPatchSchema(t *testing.T, raw json.RawMessage, entity bool) {
 	if !slices.Contains(types, "string") || !slices.Contains(types, "null") {
 		t.Fatalf("name_override must allow string and null: %s", override.Type)
 	}
-	wantProperties := 1
+	area := decodeMetadataSchema(t, patch.Properties["area_id"])
+	if string(area.Type) != `["string","null"]` {
+		t.Fatalf("area_id must allow string and null: %s", area.Type)
+	}
+	if string(decodeMetadataSchema(t, patch.Properties["tag_ids"]).Type) != `"array"` {
+		t.Fatalf("tag_ids must be a non-null array: %s", patch.Properties["tag_ids"])
+	}
+	wantProperties := 3
 	if entity {
-		wantProperties = 2
+		wantProperties = 4
 		if string(decodeMetadataSchema(t, patch.Properties["enabled"]).Type) != `"boolean"` {
 			t.Fatal("enabled must be a non-null boolean")
 		}

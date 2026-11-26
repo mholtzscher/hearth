@@ -30,7 +30,7 @@ func registerExecuteEntityCommand(api huma.API, handler *handler) {
 			"409": {
 				Description: http.StatusText(http.StatusConflict),
 				Content: map[string]*huma.MediaType{
-					"application/problem+json": {Schema: disabledProblemSchema},
+					problemJSONContentType: {Schema: disabledProblemSchema},
 				},
 			},
 		},
