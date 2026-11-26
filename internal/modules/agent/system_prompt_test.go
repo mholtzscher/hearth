@@ -30,20 +30,10 @@ func TestAgentGuidanceKeepsSafetyRules(t *testing.T) {
 		{"prompt", prompt, "units:canonical"},
 		{"prompt", prompt, "Never copy a displayed number into a canonical write"},
 		{"prompt", prompt, "Automation definitions remain canonical"},
-		// Thermostats.
-		{"prompt", prompt, "Mode is a setting and activity is a separate report"},
-		{"prompt", prompt, "integer milli-Celsius, not displayed Celsius or Fahrenheit"},
-		{"prompt", prompt, "`set_range` requires both `low` and `high`"},
-		{"prompt", prompt, "Setting targets does not select a mode"},
-		{"prompt", prompt, "exact advertised `fan_mode`"},
-		{"prompt", prompt, "reported setting, not active heating or cooling"},
-		// Covers and locks.
-		{"prompt", prompt, "set position 100 to open, 0 to close"},
-		{"prompt", prompt, "confirms dispatch, not that motion stopped"},
-		{"prompt", prompt, "Position may be estimated or uninitialized"},
-		{"prompt", prompt, "Remote lockout is not a physical door bolt"},
-		{"prompt", prompt, "do not infer a lock's meaning from its name alone"},
-		{"prompt", prompt, "not independently verified remote enforcement"},
+		// Reports and Command outcomes.
+		{"prompt", prompt, "never claim a door, lock, or home is secured or verified"},
+		{"prompt", prompt, "not that the physical result was independently verified"},
+		{"prompt", prompt, "A dispatched Command was sent, not completed"},
 		// Dashboards.
 		{"prompt", prompt, "never fabricate readings in text"},
 		{"prompt", prompt, "do not replace the draft"},
@@ -78,13 +68,16 @@ func TestAgentGuidanceKeepsSafetyRules(t *testing.T) {
 	}
 }
 
-// TestSystemPromptLeavesCardDetailsToComposeView keeps per-card binding
-// rules out of the guidance sent on every turn.
-func TestSystemPromptLeavesCardDetailsToComposeView(t *testing.T) {
+// TestSystemPromptStaysGeneral keeps per-card binding rules and Entity-type
+// specifics out of the guidance sent on every turn.
+func TestSystemPromptStaysGeneral(t *testing.T) {
 	t.Parallel()
-	for _, card := range []string{"AirPurifier", "ToggleTile", "OutsideNow", "confirm_open", "Rheem", "ratgdo"} {
-		if strings.Contains(defaultSystemPrompt, card) {
-			t.Errorf("system prompt mentions %q", card)
+	for _, specific := range []string{
+		"AirPurifier", "ToggleTile", "OutsideNow", "confirm_open",
+		"hearth.thermostat/v1", "hearth.cover/v1", "set_range", "milli-Celsius", "Rheem", "ratgdo",
+	} {
+		if strings.Contains(defaultSystemPrompt, specific) {
+			t.Errorf("system prompt mentions %q", specific)
 		}
 	}
 }
