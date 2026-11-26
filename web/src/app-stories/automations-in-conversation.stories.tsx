@@ -1,6 +1,6 @@
 import type { Meta } from "@storybook/react-vite";
 import { http, HttpResponse } from "msw";
-import { expect, within } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 
 import { applicationMeta } from "../../.storybook/application";
 import type {
@@ -67,9 +67,10 @@ export const AutomationShowingInCanvas: ApplicationStory = {
     await expect(
       await log.findByRole("button", { name: "Showing in canvas" })
     ).toBeVisible();
-    await expect(
-      await canvas.findByRole("region", { name: "Automation canvas" })
-    ).toBeVisible();
+    const automationCanvas = await canvas.findByRole("region", {
+      name: "Automation canvas",
+    });
+    await waitFor(() => expect(automationCanvas).toBeVisible());
   },
 };
 
