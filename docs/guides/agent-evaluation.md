@@ -213,7 +213,20 @@ Entities are named by simulator `device` (binding key) and `key`, with an
 optional `adapter` that defaults to `sim-healthy`, because canonical IDs change
 with every trial. Reference arguments and replies, and seeded definitions, use
 placeholders resolved per trial: `{{entity:device/key}}`, `{{device:device}}`,
-`{{dashboard:name}}`, and `{{automation:name}}`.
+`{{dashboard:name}}`, `{{automation:name}}`, and `{{label:name}}`.
+
+`setup.labels` creates Labels before the first turn and assigns them over HTTP.
+Each entry has a lower-case `name`, a `kind` of `area` or `tag`, and the
+`devices` (`{device}`, optional `adapter`) and `entities` it applies to. A
+target can receive at most one Area.
+
+```yaml
+setup:
+  labels:
+    - name: downstairs
+      kind: area
+      devices: [{device: hallway-light}, {device: living-room-lamp}]
+```
 
 `setup.dashboards` and `setup.automations` save named definitions before the
 first turn. A turn's `select_dashboard` attaches a seeded dashboard as the

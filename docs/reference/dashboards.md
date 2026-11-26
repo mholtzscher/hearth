@@ -528,8 +528,8 @@ and unchanged. See [agent skills](agent-skills.md) for provider migration.
 Entity-detail and aggregate-history reads always return paired `canonical` and
 `display` trees, without representation flags. Deploy Core and web together;
 older clients expecting `state.value` or single-history metrics must migrate.
-Collections, embedded Device Entities, PATCH responses, and MCP remain unchanged.
-This units change does not rewrite stored observations or
+The units change left collections, embedded Device Entities, PATCH responses,
+and MCP results in their single representation. It does not rewrite stored observations or
 require a database reset. See [quantity metadata and read units](units.md) for
 the Core-first Adapter rollout and rollback constraints.
 

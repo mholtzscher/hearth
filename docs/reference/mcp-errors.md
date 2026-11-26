@@ -101,10 +101,18 @@ not mean omission and never reaches the service:
 | `list_entities` with `{"device_id":null}` | Modeled `invalid_device_id` rejection with message `device_id must not be null` |
 | `list_commands` with `{}` | Lists Commands without an Entity filter |
 | `list_commands` with `{"entity_id":null}` | Modeled `invalid_entity_id` rejection with message `entity_id must not be null` |
+| `list_entities` with `{"label_ids":null}` | Modeled `invalid_label_id` rejection |
+| `update_entity` or `update_device` without editable fields | Returns the current receipt without writing |
+| `update_entity` or `update_device` with `"area_id":null` | Clears the Area; an Entity then inherits its Device's Area |
+| `update_entity` or `update_device` with `"tag_ids":null` | Modeled `invalid_label_id` rejection; `[]` clears tags |
 
 Devices typed argument decoding also uses `invalid_entity_id`,
-`invalid_device_id`, `invalid_command_id`, and `invalid_limit` for malformed
-identities or out-of-range page sizes. Shared structural rejections, including
+`invalid_device_id`, `invalid_command_id`, `invalid_label_id`, and
+`invalid_limit` for malformed identities or out-of-range page sizes. Label tools
+report `invalid_label`, `label_not_found`, `label_name_conflict`, and
+`label_limit_reached`; a malformed `list_entities` selector reports
+`invalid_selector`. A metadata update naming an unknown Label reports
+`label_not_found` before the general `invalid_request`. Shared structural rejections, including
 missing required or unknown fields, use `invalid_arguments`. Custom scalar errors
 can take precedence over structural failures; no first-error order is promised
 when several arguments are invalid. Integer envelope scalars accept exact integral
@@ -123,6 +131,8 @@ Do not translate between these protocols by guessing from error text:
 | Function persistence failure with a retained Invocation identity | 500 problem with `code: internal_error` and optional `invocation_id` | `internal_error` with optional flat `invocation_id` |
 | Invalid Notification input | 422 native problem, without a required machine code | `invalid_input` |
 | Closed Notification admission | 503 native problem | `admission_closed` |
+| Label name conflict or catalog bound | 409 problem with `code: label_name_conflict` or `label_limit_reached` | `label_name_conflict` or `label_limit_reached` |
+| Unknown Label in a metadata patch or selector | 400 native problem | `label_not_found` |
 
 Function reads use `adapter_not_found`, `function_not_found`, and
 `invocation_not_found` (HTTP 404). Invocation rejection uses `invalid_input`

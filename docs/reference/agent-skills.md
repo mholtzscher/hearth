@@ -85,7 +85,7 @@ limit bound the digest; the limit drops the last lines first. It contains:
   listed.
 - current State in household units for locks, covers, binary sensors,
   thermostats, temperature, humidity, and media players, labeled with plain
-  type words rather than type IDs
+  type words rather than type IDs and with the Entity's effective Area
 - counts of each Entity type
 - Automation failures, interruptions, and unknown-condition skips from the last
   24 hours

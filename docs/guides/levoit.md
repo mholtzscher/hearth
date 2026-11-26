@@ -138,7 +138,7 @@ and Bypass V2 purifier methods follow
 not a published VeSync API.
 
 Device identity derives from its VeSync CID, never its name. Renaming preserves
-Hearth IDs, enablement, and name overrides. Replacing hardware with a new CID
+Hearth IDs, enablement, name overrides, Areas, and tags. Replacing hardware with a new CID
 creates a new Device. Removing a purifier from the account marks its Entities
 unavailable and removes its command routes; it does not delete history or disable
 Entities. Re-adding the same CID restores its identity. A failed or partial
