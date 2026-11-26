@@ -34,6 +34,7 @@ func TestAgentGuidanceKeepsSafetyRules(t *testing.T) {
 		{"prompt", prompt, "never claim a door, lock, or home is secured or verified"},
 		{"prompt", prompt, "not that the physical result was independently verified"},
 		{"prompt", prompt, "A dispatched Command was sent, not completed"},
+		{"prompt", prompt, "invalid parameters are rejected before any Command is created"},
 		// Dashboards.
 		{"prompt", prompt, "never fabricate readings in text"},
 		{"prompt", prompt, "do not replace the draft"},
