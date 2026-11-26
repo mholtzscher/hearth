@@ -10,7 +10,8 @@ import (
 )
 
 // agentToolSearch keeps common inventory reads visible and makes the remaining
-// tools discoverable through Eino's client-side search.
+// tools discoverable through Eino's client-side search. list_labels stays
+// visible because resolving a room or group name precedes most selector reads.
 func agentToolSearch(
 	ctx context.Context,
 	tools []tool.BaseTool,
@@ -24,7 +25,7 @@ func agentToolSearch(
 		switch info.Name {
 		case legacyViewToolName:
 			continue
-		case "list_devices", "get_device", "list_entities", "get_entity":
+		case "list_devices", "get_device", "list_entities", "get_entity", "list_labels":
 			static = append(static, candidate)
 		default:
 			dynamic = append(dynamic, candidate)

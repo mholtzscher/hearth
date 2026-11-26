@@ -214,6 +214,19 @@ func TestScenarioLoadRejectsInvalidFiles(t *testing.T) {
 	if err := base.validate(); err != nil {
 		t.Fatal(err)
 	}
+	labeled := base
+	labeled.Setup.Labels = []SeedLabel{
+		{Name: "den", Kind: "area", Devices: []DeviceRef{{Device: "lamp"}}},
+		{
+			Name:     "bedtime",
+			Kind:     "tag",
+			Devices:  []DeviceRef{{Device: "lamp"}},
+			Entities: []EntityRef{ref("lamp", "power")},
+		},
+	}
+	if err := labeled.validate(); err != nil {
+		t.Fatalf("valid labels: %v", err)
+	}
 	broken := []func(*Scenario){
 		func(s *Scenario) { s.ID = "Not Kebab" },
 		func(s *Scenario) { s.Checks = []Check{{Kind: "nope"}} },
@@ -225,6 +238,25 @@ func TestScenarioLoadRejectsInvalidFiles(t *testing.T) {
 		func(s *Scenario) {
 			s.Checks = []Check{
 				{Kind: CheckAnyOf, AnyOf: []Check{{Kind: CheckNoView}, {Kind: CheckReplyMatches, Pattern: "("}}},
+			}
+		},
+		func(s *Scenario) {
+			s.Setup.Labels = []SeedLabel{{Name: "Den", Kind: "floor", Devices: []DeviceRef{{Device: "lamp"}}}}
+		},
+		func(s *Scenario) { s.Setup.Labels = []SeedLabel{{Name: "Den", Kind: "area"}} },
+		func(s *Scenario) {
+			s.Setup.Labels = []SeedLabel{{Name: "Living Room", Kind: "tag", Devices: []DeviceRef{{Device: "lamp"}}}}
+		},
+		func(s *Scenario) {
+			s.Setup.Labels = []SeedLabel{
+				{Name: "den", Kind: "area", Devices: []DeviceRef{{Device: "lamp"}}},
+				{Name: "DEN", Kind: "tag", Devices: []DeviceRef{{Device: "lamp"}}},
+			}
+		},
+		func(s *Scenario) {
+			s.Setup.Labels = []SeedLabel{
+				{Name: "den", Kind: "area", Devices: []DeviceRef{{Device: "lamp"}}},
+				{Name: "office", Kind: "area", Devices: []DeviceRef{{Device: "lamp"}}},
 			}
 		},
 	}

@@ -254,6 +254,9 @@ func turnBody(turn Turn, inventory Inventory) (map[string]any, error) {
 }
 
 func seed(ctx context.Context, household *Household, scenario Scenario) error {
+	if err := seedLabels(ctx, household, scenario.Setup.Labels); err != nil {
+		return err
+	}
 	for _, dashboard := range scenario.Setup.Dashboards {
 		definition, err := Resolve(dashboard.Definition, household.Inventory)
 		if err != nil {
@@ -289,6 +292,97 @@ func seed(ctx context.Context, household *Household, scenario Scenario) error {
 		}
 	}
 	return nil
+}
+
+// labelAssignments collects each target's seeded Area and tags in seed order.
+type labelAssignments struct {
+	order   []string
+	targets map[string]*labelTargets
+}
+
+// labelTargets is one Device's or Entity's seeded Area and tags.
+type labelTargets struct {
+	area string
+	tags []string
+}
+
+func (assignments *labelAssignments) add(path, id, kind string) {
+	target, known := assignments.targets[path]
+	if !known {
+		target = &labelTargets{tags: []string{}}
+		assignments.targets[path] = target
+		assignments.order = append(assignments.order, path)
+	}
+	if kind == seedLabelArea {
+		target.area = id
+		return
+	}
+	target.tags = append(target.tags, id)
+}
+
+// seedLabels creates each Label, then patches every target once with its Area
+// and tags through the public HTTP API.
+func seedLabels(ctx context.Context, household *Household, labels []SeedLabel) error {
+	assignments := labelAssignments{targets: map[string]*labelTargets{}}
+	for _, label := range labels {
+		id, err := createSeedLabel(ctx, household, label)
+		if err != nil {
+			return err
+		}
+		paths, err := seedLabelPaths(household.Inventory, label)
+		if err != nil {
+			return err
+		}
+		for _, path := range paths {
+			assignments.add(path, id, label.Kind)
+		}
+	}
+	for _, path := range assignments.order {
+		target := assignments.targets[path]
+		patch := map[string]any{"tag_ids": target.tags}
+		if target.area != "" {
+			patch["area_id"] = target.area
+		}
+		if err := household.patchJSON(ctx, household.CoreURL+path, patch, nil); err != nil {
+			return fmt.Errorf("assign labels to %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func createSeedLabel(ctx context.Context, household *Household, label SeedLabel) (string, error) {
+	var created struct {
+		ID string `json:"id"`
+	}
+	body := map[string]string{"name": label.Name, "kind": label.Kind}
+	if err := household.postJSON(ctx, household.CoreURL+"/v1/labels", body, &created); err != nil {
+		return "", fmt.Errorf("seed label %s: %w", label.Name, err)
+	}
+	if created.ID == "" {
+		return "", fmt.Errorf("seed label %s: no id", label.Name)
+	}
+	household.Inventory.Labels[strings.ToLower(label.Name)] = created.ID
+	return created.ID, nil
+}
+
+// seedLabelPaths resolves a seeded Label's targets to Core resource paths.
+func seedLabelPaths(inventory Inventory, label SeedLabel) ([]string, error) {
+	paths := make([]string, 0, len(label.Devices)+len(label.Entities))
+	for _, device := range label.Devices {
+		id, ok := inventory.Devices[device.InventoryKey()]
+		if !ok {
+			return nil, fmt.Errorf("seed label %s: unknown Device %s", label.Name, device.InventoryKey())
+		}
+		paths = append(paths, "/v1/devices/"+url.PathEscape(id))
+	}
+	for _, entity := range label.Entities {
+		id := inventory.EntityID(entity)
+		if id == "" {
+			return nil, fmt.Errorf("seed label %s: unknown Entity %s", label.Name, entity.InventoryKey())
+		}
+		paths = append(paths, "/v1/entities/"+url.PathEscape(id))
+	}
+	return paths, nil
 }
 
 func savedRef(raw json.RawMessage) (Saved, error) {

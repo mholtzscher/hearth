@@ -3,6 +3,8 @@ package mcpapi
 import (
 	"context"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -30,8 +32,15 @@ type DeviceDetail struct {
 	DeviceID         string          `json:"device_id"`
 	Name             string          `json:"name"`
 	Kind             string          `json:"kind"`
+	Area             *LabelSummary   `json:"area"`
+	Tags             []LabelSummary  `json:"tags"                         nullable:"false"`
 	Entities         []EntitySummary `json:"entities"                     nullable:"false"`
 	NextEntityCursor *string         `json:"next_entity_cursor,omitempty"`
+}
+
+func (DeviceDetail) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Properties["area"] = nullableSchema[LabelSummary](registry)
+	return schema
 }
 
 func (h *handler) getDevice(ctx context.Context, input GetDeviceInput) (DeviceDetail, error) {
@@ -56,6 +65,8 @@ func (h *handler) getDevice(ctx context.Context, input GetDeviceInput) (DeviceDe
 		DeviceID: string(aggregate.Device.ID),
 		Name:     aggregate.Device.Name,
 		Kind:     string(aggregate.Device.Kind),
+		Area:     deviceArea(aggregate.Device.Labels.Area),
+		Tags:     labelSummaries(aggregate.Device.Labels.Tags),
 		Entities: make([]EntitySummary, len(aggregate.Entities.Items)),
 	}
 	for i, entity := range aggregate.Entities.Items {

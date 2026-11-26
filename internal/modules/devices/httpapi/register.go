@@ -12,6 +12,7 @@ const (
 	devicesTag  = "Devices"
 	entitiesTag = "Entities"
 	commandsTag = "Commands"
+	labelsTag   = "Labels"
 )
 
 // Register publishes Device operations. A nil logger discards HTTP diagnostics.
@@ -23,6 +24,10 @@ func Register(api huma.API, service Devices, presenter *devices.Presenter, logge
 		logger = slog.New(slog.DiscardHandler)
 	}
 	handler := &handler{devices: service, presenter: presenter, logger: logger}
+	registerListLabels(api, handler)
+	registerCreateLabel(api, handler)
+	registerUpdateLabel(api, handler)
+	registerDeleteLabel(api, handler)
 	registerUpdateDevice(api, handler)
 	registerListEntities(api, handler)
 	registerGetEntity(api, handler)

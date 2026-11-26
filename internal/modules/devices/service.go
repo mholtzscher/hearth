@@ -23,6 +23,7 @@ type Dependencies struct {
 	NewEntityID          func() (EntityID, error)
 	NewCommandID         func() (CommandID, error)
 	NewCorrelationID     func() (CorrelationID, error)
+	NewLabelID           func() (LabelID, error)
 	// ArtworkTransport fetches media player artwork; nil uses http.DefaultTransport.
 	ArtworkTransport http.RoundTripper
 }
@@ -40,6 +41,7 @@ type Stores struct {
 	StateChanges        StateChangeReader
 	Enablement          EnablementRepository
 	Metadata            MetadataRepository
+	Labels              LabelRepository
 	Commands            CommandLedger
 	Observations        ObservationRepository
 	EntityEvents        EntityEventRepository
@@ -81,6 +83,9 @@ func NewService(stores Stores, sender CommandSender, catalog *TypeCatalog, depen
 	}
 	if dependencies.NewCorrelationID == nil {
 		dependencies.NewCorrelationID = NewCorrelationID
+	}
+	if dependencies.NewLabelID == nil {
+		dependencies.NewLabelID = NewLabelID
 	}
 	return &Service{
 		artwork:          newArtworkClient(dependencies.ArtworkTransport),

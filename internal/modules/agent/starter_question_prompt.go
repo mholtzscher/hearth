@@ -256,6 +256,9 @@ func entityLabel(entity DigestEntity) string {
 	if entity.Device != "" && entity.Device != entity.Name {
 		label += " on " + entity.Device
 	}
+	if entity.Area != "" {
+		label += " in " + entity.Area
+	}
 	return label
 }
 

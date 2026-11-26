@@ -8,6 +8,10 @@ import (
 )
 
 type Devices interface {
+	ListLabels(context.Context) ([]devices.Label, error)
+	CreateLabel(context.Context, devices.CreateLabelParams) (devices.Label, error)
+	RenameLabel(context.Context, devices.LabelID, string) (devices.Label, error)
+	DeleteLabel(context.Context, devices.LabelID) error
 	QueryHistory(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
 	QueryStateChanges(context.Context, devices.StateChangeQuery) (devices.StateChangeQueryResult, error)
 	PatchEntity(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)

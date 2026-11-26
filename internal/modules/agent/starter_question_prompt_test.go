@@ -25,6 +25,7 @@ func TestRenderHouseholdDigestListsSectionsInOrder(t *testing.T) {
 	t.Parallel()
 	temperature := reading("Office Temperature", "hearth.temperature/v1", `21.5`)
 	temperature.Units = map[string]string{"": "°F"}
+	temperature.Area = "Office"
 	digest := HouseholdDigest{
 		LocalTime:  digestTime(),
 		UnitSystem: household.UnitSystemUS,
@@ -58,7 +59,7 @@ func TestRenderHouseholdDigestListsSectionsInOrder(t *testing.T) {
 		"Automations: 1 enabled, 1 disabled",
 		"- Porch lights at sunset: failed at Tue 18:42",
 		"Current readings:",
-		"- Office Temperature (temperature) on Office Temperature device: 21.5 (value in °F)",
+		"- Office Temperature (temperature) on Office Temperature device in Office: 21.5 (value in °F)",
 		"- power: 2 (1 on)",
 		"- Why is the garage cold?",
 		"- Show humidity today",

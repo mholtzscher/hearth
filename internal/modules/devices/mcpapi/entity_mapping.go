@@ -20,6 +20,8 @@ func entitySummary(view devices.EntityWithState, quantities map[string]devices.Q
 		EntityID:   string(view.Entity.ID), DeviceID: string(view.Entity.DeviceID),
 		Name: view.Entity.Name, Type: string(view.Entity.TypeID), Enabled: view.Entity.Enabled,
 		Availability: AvailabilitySummary{Status: string(view.Availability.Status)},
+		Area:         entityArea(view.Labels.Area),
+		Tags:         labelSummaries(view.Labels.Tags),
 	}
 	if view.Availability.Reason != nil {
 		result.Availability.ReasonCode = view.Availability.Reason.Code

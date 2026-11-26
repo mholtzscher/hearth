@@ -34,6 +34,8 @@ func TestUnusedColumnsMigrationPreservesRetainedData(t *testing.T) {
 		"health_transitions":            "*",
 	}
 	for table, columns := range projections {
+		columns = pinnedColumns(t, database, table, columns)
+		projections[table] = columns
 		if _, err = database.ExecContext(t.Context(),
 			`CREATE TEMP TABLE expected_`+table+` AS SELECT `+columns+` FROM `+table,
 		); err != nil {
@@ -138,4 +140,20 @@ func seedUnusedColumnsMigrationRows(t *testing.T, database *sql.DB) {
 		 'skip', 'ask_01890f47-7a6b-7c4d-8e9f-0123456789ab'),
 		('fct_01890f47-7a6b-7c4d-8e9f-0123456789ac', 'aut_01890f47-7a6b-7c4d-8e9f-0123456789ab',
 		 'run', 'arn_01890f47-7a6b-7c4d-8e9f-0123456789ac')`)
+}
+
+// pinnedColumns replaces "*" with the table's columns at the fixture's
+// version, so later migrations may add columns without changing what this
+// test compares.
+func pinnedColumns(t *testing.T, database *sql.DB, table, columns string) string {
+	t.Helper()
+	if columns != "*" {
+		return columns
+	}
+	if err := database.QueryRowContext(t.Context(),
+		`SELECT group_concat(name, ', ') FROM pragma_table_info(?)`, table,
+	).Scan(&columns); err != nil {
+		t.Fatal(err)
+	}
+	return columns
 }

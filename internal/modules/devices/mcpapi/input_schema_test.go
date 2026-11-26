@@ -92,29 +92,80 @@ func TestPresentationToolsPublishUnitsArgument(t *testing.T) {
 	}
 }
 
-// A rename call must say whether it sets or clears the override, so the
-// published schema requires name_override and admits null.
-func TestRenameToolsPublishRequiredNullableOverride(t *testing.T) {
+// An update is a partial edit, so every metadata field is optional; the two
+// that an explicit null edits (name_override, area_id) admit null, and the
+// published schema rejects null for the rest.
+func TestUpdateToolsPublishOptionalMetadataFields(t *testing.T) {
 	t.Parallel()
 	inputs := listedDeviceInputSchemas(t)
-	for _, test := range []struct{ tool, id string }{
-		{"rename_device", "device_id"},
-		{"rename_entity", "entity_id"},
+	nullableString := []any{map[string]any{"type": "null"}, map[string]any{"type": "string"}}
+	for _, test := range []struct {
+		tool, id string
+		fields   []string
+	}{
+		{"update_device", "device_id", []string{"name_override", "area_id", "tag_ids"}},
+		{"update_entity", "entity_id", []string{"enabled", "name_override", "area_id", "tag_ids"}},
 	} {
 		var schema struct {
 			Properties map[string]map[string]any `json:"properties"`
 			Required   []string                  `json:"required"`
 		}
-		if err := json.Unmarshal(inputs[test.tool], &schema); err != nil {
-			t.Fatal(err)
+		require.NoError(t, json.Unmarshal(inputs[test.tool], &schema))
+		require.Equal(t, []string{test.id}, schema.Required, test.tool)
+		for _, field := range test.fields {
+			require.Contains(t, schema.Properties, field, test.tool)
 		}
-		override := schema.Properties["name_override"]
-		wantTypes := []any{map[string]any{"type": "null"}, map[string]any{"type": "string"}}
-		if !reflect.DeepEqual(override["anyOf"], wantTypes) {
-			t.Fatalf("%s name_override = %#v", test.tool, override)
+		for _, field := range []string{"name_override", "area_id"} {
+			require.Equal(t, nullableString, schema.Properties[field]["anyOf"], test.tool+" "+field)
 		}
-		if !reflect.DeepEqual(schema.Required, []string{test.id, "name_override"}) {
-			t.Fatalf("%s required = %v", test.tool, schema.Required)
+		require.Equal(t, "array", schema.Properties["tag_ids"]["type"], test.tool)
+		require.Equal(t, map[string]any{"type": "string"}, schema.Properties["tag_ids"]["items"], test.tool)
+		if test.tool == "update_entity" {
+			require.Equal(t, "boolean", schema.Properties["enabled"]["type"])
+		}
+	}
+}
+
+func TestListEntitiesPublishesSelectorArguments(t *testing.T) {
+	t.Parallel()
+	var schema struct {
+		Properties map[string]map[string]any `json:"properties"`
+		Required   []string                  `json:"required"`
+	}
+	require.NoError(t, json.Unmarshal(listedDeviceInputSchemas(t)["list_entities"], &schema))
+	require.Empty(t, schema.Required)
+	labels, types := schema.Properties["label_ids"], schema.Properties["types"]
+	require.Equal(t, "array", labels["type"])
+	require.Equal(t, "array", types["type"])
+	require.Equal(t, map[string]any{"type": "string"}, labels["items"])
+	require.Equal(t, map[string]any{"type": "string"}, types["items"])
+	require.Equal(
+		t,
+		"Entities must have every listed Label; an Entity inherits its Device's Area and tags",
+		labels["description"],
+	)
+}
+
+func TestLabelToolsPublishTheirInputs(t *testing.T) {
+	t.Parallel()
+	inputs := listedDeviceInputSchemas(t)
+	for _, test := range []struct {
+		tool     string
+		required []string
+	}{
+		{"list_labels", nil},
+		{"create_label", []string{"name", "kind"}},
+		{"rename_label", []string{"label_id", "name"}},
+		{"delete_label", []string{"label_id"}},
+	} {
+		var schema struct {
+			Properties map[string]map[string]any `json:"properties"`
+			Required   []string                  `json:"required"`
+		}
+		require.NoError(t, json.Unmarshal(inputs[test.tool], &schema))
+		require.ElementsMatch(t, test.required, schema.Required, test.tool)
+		if test.tool == "create_label" {
+			require.Equal(t, []any{"area", "tag"}, schema.Properties["kind"]["enum"])
 		}
 	}
 }
@@ -148,7 +199,7 @@ func listedDeviceInputSchemas(t *testing.T) map[string]json.RawMessage {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Result.Tools) != 15 {
+	if len(envelope.Result.Tools) != 18 {
 		t.Fatalf("catalog has %d tools", len(envelope.Result.Tools))
 	}
 	inputs := make(map[string]json.RawMessage)

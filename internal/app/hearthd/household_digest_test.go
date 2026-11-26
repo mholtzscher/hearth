@@ -120,6 +120,9 @@ func TestHouseholdDigestReaderFiltersAndProjectsEntities(t *testing.T) {
 		`21500`,
 	)
 	renamed.Entity.NameOverride = &override
+	renamed.Labels.Area = &devices.EffectiveArea{
+		Label: devices.LabelRef{ID: "lbl_office", Name: "Office"}, Source: devices.AreaSourceDevice,
+	}
 	location := time.FixedZone("CST", -6*60*60)
 	now := time.Date(2026, 11, 25, 1, 42, 0, 0, time.UTC)
 	reader := newHouseholdDigestReader(
@@ -167,7 +170,9 @@ func TestHouseholdDigestReaderFiltersAndProjectsEntities(t *testing.T) {
 	}
 	temperature := digest.Entities[0]
 	if temperature.Name != "Office Thermometer" || temperature.Device != "Office Sensor" ||
-		temperature.Availability != agent.DigestAvailable || temperature.Units[""] != "°F" {
+		temperature.Area != "Office" ||
+		temperature.Availability != agent.DigestAvailable ||
+		temperature.Units[""] != "°F" {
 		t.Fatalf("temperature = %+v", temperature)
 	}
 	if string(temperature.State) != "70.7" {
@@ -176,6 +181,7 @@ func TestHouseholdDigestReaderFiltersAndProjectsEntities(t *testing.T) {
 	lock := digest.Entities[1]
 	if lock.Name != "Garage Lock" || lock.DeviceID != "dev_2" || lock.Device != "Garage" ||
 		lock.DeviceKind != string(devices.DeviceKindLock) || lock.Availability != agent.DigestUnavailable ||
+		lock.Area != "" ||
 		lock.State != nil {
 		t.Fatalf("lock = %+v", lock)
 	}

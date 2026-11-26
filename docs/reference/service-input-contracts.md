@@ -11,8 +11,10 @@ invalid-identity sentinel or requirement that every parse error acquire one.
 | Entry point | Invalid input contract |
 | --- | --- |
 | Device/Entity/Command direct reads and Entity enablement | Reject malformed identities before storage; return contextual canonical-parser errors, not not-found |
-| Device/Entity metadata patches | Keep `ErrInvalidMetadataPatch` for malformed identity or patch content |
+| Device/Entity metadata patches | Keep `ErrInvalidMetadataPatch` for malformed identity or patch content, including an Area or tag that names a Label of the other kind; an unknown Label also matches `ErrLabelNotFound` |
+| Label catalog writes | `ErrInvalidLabel` for a malformed ID, name, or kind; `ErrLabelNotFound`, `ErrLabelNameConflict`, and `ErrLabelLimitReached` for changing facts checked in the write transaction |
 | Device/Entity/Command collection queries | Keep `ErrInvalidPage` for invalid page/filter/position combinations |
+| Entity Label selector | `ErrInvalidEntitySelector` for malformed or excess Label IDs and unknown or excess Entity types; `ErrLabelNotFound` for a well-formed Label that does not exist |
 | Adapter management read | Reject malformed slug with `ValidateAdapterID` before storage |
 | Adapter collection/history queries | Keep `ErrInvalidPage` for invalid parent/page/position input; reuse `ValidateAdapterID` for slug shape |
 | Function input and Notification input | Keep their existing module-specific invalid-input classes; management reads do not acquire those unrelated classes |

@@ -24,6 +24,10 @@ type stubDevices struct {
 	getDevice                     func(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 	listEntities                  func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error)
 	getCommand                    func(context.Context, devices.CommandID) (devices.CommandRecord, error)
+	createLabel                   func(context.Context, devices.CreateLabelParams) (devices.Label, error)
+	renameLabel                   func(context.Context, devices.LabelID, string) (devices.Label, error)
+	deleteLabel                   func(context.Context, devices.LabelID) error
+	listLabels                    func(context.Context) ([]devices.Label, error)
 	listEntityCommands            func(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
 	listCommands                  func(context.Context, devices.ListCommandsParams) (devices.Page[devices.CommandRecord], error)
 	listEntityAvailabilityHistory func(
@@ -117,6 +121,34 @@ func (stub *stubDevices) ListEntities(
 	return stub.listEntities(ctx, params)
 }
 
+func (stub *stubDevices) CreateLabel(ctx context.Context, params devices.CreateLabelParams) (devices.Label, error) {
+	if stub.createLabel == nil {
+		panic("unexpected CreateLabel call")
+	}
+	return stub.createLabel(ctx, params)
+}
+
+func (stub *stubDevices) RenameLabel(ctx context.Context, id devices.LabelID, name string) (devices.Label, error) {
+	if stub.renameLabel == nil {
+		panic("unexpected RenameLabel call")
+	}
+	return stub.renameLabel(ctx, id, name)
+}
+
+func (stub *stubDevices) DeleteLabel(ctx context.Context, id devices.LabelID) error {
+	if stub.deleteLabel == nil {
+		panic("unexpected DeleteLabel call")
+	}
+	return stub.deleteLabel(ctx, id)
+}
+
+func (stub *stubDevices) ListLabels(ctx context.Context) ([]devices.Label, error) {
+	if stub.listLabels == nil {
+		panic("unexpected ListLabels call")
+	}
+	return stub.listLabels(ctx)
+}
+
 func (stub *stubDevices) GetCommand(ctx context.Context, id devices.CommandID) (devices.CommandRecord, error) {
 	if stub.getCommand == nil {
 		panic("unexpected GetCommand call")
@@ -204,6 +236,15 @@ func apiEntityWithState(state *devices.State) devices.EntityWithState {
 		},
 	}
 }
+
+const (
+	apiAreaLabelID = devices.LabelID("lbl_01890f47-7a6b-7c4d-8e9f-0123456789a1")
+	apiTagLabelID  = devices.LabelID("lbl_01890f47-7a6b-7c4d-8e9f-0123456789a2")
+)
+
+func apiAreaRef() devices.LabelRef { return devices.LabelRef{ID: apiAreaLabelID, Name: "Kitchen"} }
+
+func apiTagRef() devices.LabelRef { return devices.LabelRef{ID: apiTagLabelID, Name: "Lamps"} }
 
 const apiCommandID = devices.CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 

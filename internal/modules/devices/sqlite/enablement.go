@@ -10,7 +10,8 @@ func (repository *DeviceRepository) SetEntityEnabled(
 	ctx context.Context,
 	params devices.SetEntityEnabledParams,
 ) (devices.EntityWithState, error) {
-	patch, err := devices.PrepareMetadataPatch(&params.Enabled, nil)
+	enabled := params.Enabled
+	patch, err := devices.PrepareEntityPatch(devices.EntityPatch{Enabled: &enabled})
 	if err != nil {
 		return devices.EntityWithState{}, err
 	}

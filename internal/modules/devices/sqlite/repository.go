@@ -78,6 +78,7 @@ func DeviceStores(repository *DeviceRepository) devices.Stores {
 		StateChanges:        repository,
 		Enablement:          repository,
 		Metadata:            repository,
+		Labels:              repository,
 		Commands:            repository,
 		Observations:        repository,
 		EntityEvents:        repository,

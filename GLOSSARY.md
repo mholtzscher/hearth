@@ -85,6 +85,23 @@ its Adapter unless a Hearth name override takes precedence. It is not identity.
 updates. Removing it restores the latest Adapter-supplied name without renaming
 the external object or changing canonical identity.
 
+**Label**: A household-owned grouping fact for Devices and Entities, with a
+canonical ID and a display name that is unique across kinds. Its kind, Area or
+tag, is fixed when it is created. Assignments are household metadata: they
+emit no Device Facts and never come from an Adapter.
+
+**Area**: A single-valued Label, such as a room. A Device or Entity has at most
+one Area. An Entity's own Area overrides its Device's; otherwise it inherits
+the Device's Area.
+
+**Tag**: A multi-valued Label, such as `bedtime`. An Entity's effective tags
+are its own tags plus its Device's.
+
+**Label selector**: An Entity list filter by effective Labels and Entity types.
+An Entity matches when it has every listed Label and, when types are listed,
+one of them. A Label in the selector that does not exist is an error, not an
+empty result.
+
 **Entity availability**: The Devices-owned projection of whether an Entity can
 be reached through its owner. It is `unknown` without eligible health and report
 evidence, `available` with a matching available report from a healthy owner, and

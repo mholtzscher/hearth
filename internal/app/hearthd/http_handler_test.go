@@ -44,6 +44,22 @@ type stubDevices struct {
 	admissionClosed bool
 }
 
+func (*stubDevices) ListLabels(context.Context) ([]devices.Label, error) {
+	panic("unexpected ListLabels call")
+}
+
+func (*stubDevices) CreateLabel(context.Context, devices.CreateLabelParams) (devices.Label, error) {
+	panic("unexpected CreateLabel call")
+}
+
+func (*stubDevices) RenameLabel(context.Context, devices.LabelID, string) (devices.Label, error) {
+	panic("unexpected RenameLabel call")
+}
+
+func (*stubDevices) DeleteLabel(context.Context, devices.LabelID) error {
+	panic("unexpected DeleteLabel call")
+}
+
 func (*stubDevices) QueryHistory(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error) {
 	panic("unexpected QueryHistory call")
 }
@@ -279,10 +295,17 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 37 {
+	if len(document.Paths) != 39 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/household"].Get, "get-household", "200", "500")
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/labels"].Get, "list-labels", "200", "500")
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/labels"].Post,
+		"create-label", "201", "400", "409", "413", "415", "422", "500")
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/labels/{label_id}"].Patch,
+		"update-label", "200", "400", "404", "409", "413", "415", "422", "500")
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/labels/{label_id}"].Delete,
+		"delete-label", "204", "400", "404", "422", "500")
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/dashboards"].Post,
 		"create-dashboard", "201", "400", "413", "415", "422", "500")
 	assertRuntimeOpenAPIOperation(
@@ -473,7 +496,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 
 	for schemaName, properties := range map[string][]string{
 		"EntityBody": {
-			"id", "device_id", "adapter_id", "name", "adapter_name", "name_override", "type", "support", "enabled", "availability", "state",
+			"id", "device_id", "adapter_id", "name", "adapter_name", "name_override", "type", "support", "enabled", "availability", "state", "area", "tags",
 		},
 		"AvailabilityBody": {"status", "source", "since", "evidence_at", "source_observed_at", "reason"},
 		"HealthReasonBody": {"code"},
@@ -486,12 +509,19 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		},
 		"HealthTransitionBody": {"status", "source", "reason", "source_observed_at", "observed_at"},
 		"StateBody":            {"value", "observation_id", "adapter_received_at", "source_updated_at", "observed_at"},
-		"PatchEntityBody":      {"enabled", "name_override"},
-		"PatchDeviceBody":      {"name_override"},
+		"PatchEntityBody":      {"enabled", "name_override", "area_id", "tag_ids"},
+		"PatchDeviceBody":      {"name_override", "area_id", "tag_ids"},
+		"PatchLabelBody":       {"name"},
+		"CreateLabelBody":      {"name", "kind"},
+		"LabelBody":            {"id", "name", "kind", "created_at", "updated_at"},
+		"LabelRefBody":         {"id", "name"},
+		"EntityAreaBody":       {"id", "name", "source"},
+		"DeviceAreaBody":       {"id", "name"},
+		"LabelCollectionBody":  {"items"},
 		"CommandBody":          {"operation", "parameters"},
 		"CommandResultBody":    {"command_id", "status", "observation_id", "value"},
-		"DeviceBody":           {"id", "kind", "name", "adapter_name", "name_override"},
-		"DeviceDetailBody":     {"id", "kind", "name", "adapter_name", "name_override", "entities", "next_entity_cursor"},
+		"DeviceBody":           {"id", "kind", "name", "adapter_name", "name_override", "area", "tags"},
+		"DeviceDetailBody":     {"id", "kind", "name", "adapter_name", "name_override", "area", "tags", "entities", "next_entity_cursor"},
 		"EntityCollectionBody": {"items", "next_cursor"},
 		"DeviceCollectionBody": {"items", "next_cursor"},
 		"CommandRecordBody": {
@@ -845,6 +875,10 @@ func assertRuntimeOpenAPIOperation(
 			}
 			continue
 		}
+		if status == "409" && strings.HasSuffix(operationID, "-label") {
+			assertLabelConflictResponse(t, operationID, response)
+			continue
+		}
 		if status != "200" && status != "201" && status != "204" &&
 			!strings.Contains(string(response), "#/components/schemas/ErrorModel") {
 			t.Errorf(
@@ -862,4 +896,12 @@ func appRequest(handler http.Handler, path string) *httptest.ResponseRecorder {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
+}
+
+func assertLabelConflictResponse(t *testing.T, operationID string, response json.RawMessage) {
+	t.Helper()
+	if !strings.Contains(string(response), `label_name_conflict`) ||
+		!strings.Contains(string(response), `label_limit_reached`) {
+		t.Errorf("OpenAPI operation %q response 409 is missing Label conflict codes: %s", operationID, response)
+	}
 }

@@ -21,15 +21,15 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	}
 
 	deviceFilter := apiDeviceID
-	entityCursor, err := EncodeEntitiesCursor(apiEntityID, &deviceFilter)
+	entityCursor, err := EncodeEntitiesCursor(apiEntityID, &deviceFilter, devices.EntitySelector{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	entityID, err := DecodeEntitiesCursor(entityCursor, &deviceFilter)
+	entityID, err := DecodeEntitiesCursor(entityCursor, &deviceFilter, devices.EntitySelector{})
 	if err != nil || *entityID != apiEntityID {
 		t.Fatalf("entity cursor = %q, %v", entityCursor, err)
 	}
-	if _, decodeErr := DecodeEntitiesCursor(entityCursor, nil); decodeErr == nil {
+	if _, decodeErr := DecodeEntitiesCursor(entityCursor, nil, devices.EntitySelector{}); decodeErr == nil {
 		t.Fatal("filtered entity cursor accepted without its filter")
 	}
 
@@ -41,7 +41,11 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	if err != nil || *entityID != apiEntityID {
 		t.Fatalf("device entity cursor = %q, %v", deviceEntityCursor, err)
 	}
-	if _, decodeErr := DecodeEntitiesCursor(deviceEntityCursor, &deviceFilter); decodeErr == nil {
+	if _, decodeErr := DecodeEntitiesCursor(
+		deviceEntityCursor,
+		&deviceFilter,
+		devices.EntitySelector{},
+	); decodeErr == nil {
 		t.Fatal("device-detail cursor accepted by the Entity-list endpoint")
 	}
 	otherDevice := devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ac")
@@ -301,5 +305,38 @@ func TestEntityEventCursorRoundTripAndEnforcesScope(t *testing.T) {
 		if _, decodeErr := DecodeEntityEventCursor(value, apiEntityID); decodeErr == nil {
 			t.Fatalf("DecodeEntityEventCursor(%q) succeeded", value)
 		}
+	}
+}
+
+func TestEntitiesCursorScopesTheLabelSelector(t *testing.T) {
+	t.Parallel()
+	kitchen := devices.LabelID("lbl_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	bedtime := devices.LabelID("lbl_01890f47-7a6b-7c4d-8e9f-0123456789ac")
+	selected := devices.EntitySelector{
+		Labels: []devices.LabelID{kitchen, bedtime}, Types: []devices.EntityTypeID{devices.EntityTypePowerV1},
+	}
+	selectedCursor, err := EncodeEntitiesCursor(apiEntityID, nil, selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered := devices.EntitySelector{
+		Labels: []devices.LabelID{bedtime, kitchen, bedtime}, Types: selected.Types,
+	}
+	if entityID, decodeErr := DecodeEntitiesCursor(selectedCursor, nil, reordered); decodeErr != nil ||
+		*entityID != apiEntityID {
+		t.Fatalf("selector cursor = %v, %v", entityID, decodeErr)
+	}
+	for name, other := range map[string]devices.EntitySelector{
+		"unfiltered":     {},
+		"fewer labels":   {Labels: []devices.LabelID{kitchen}, Types: selected.Types},
+		"different type": {Labels: selected.Labels, Types: []devices.EntityTypeID{devices.EntityTypeBrightnessV1}},
+	} {
+		if _, decodeErr := DecodeEntitiesCursor(selectedCursor, nil, other); decodeErr == nil {
+			t.Fatalf("selector cursor accepted for %s", name)
+		}
+	}
+	deviceFilter := apiDeviceID
+	if _, decodeErr := DecodeEntitiesCursor(selectedCursor, &deviceFilter, selected); decodeErr == nil {
+		t.Fatal("selector cursor accepted with a Device filter")
 	}
 }

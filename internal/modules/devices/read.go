@@ -67,6 +67,11 @@ func (service *Service) ListEntities(ctx context.Context, params ListEntitiesPar
 			return Page[EntityWithState]{}, fmt.Errorf("%w: parse entity position: %w", ErrInvalidPage, err)
 		}
 	}
+	selector, err := PrepareEntitySelector(service.catalog, params.Selector)
+	if err != nil {
+		return Page[EntityWithState]{}, err
+	}
+	params.Selector = selector
 	page, err := service.stores.Reads.ListEntities(ctx, params)
 	if err != nil {
 		return Page[EntityWithState]{}, err

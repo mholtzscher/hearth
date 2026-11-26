@@ -18,6 +18,7 @@ func testInventory() Inventory {
 			`{"id":"dash_1","revision":1,"definition":{"title":"Old","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"entity_id":"ent_temp"}}}}}}}`,
 		)}},
 		Automations: map[string]Saved{"bedtime": {ID: "aut_1", Revision: 1}},
+		Labels:      map[string]string{"downstairs": "lbl_1"},
 	}
 }
 
@@ -343,10 +344,10 @@ func TestLayoutNormalization(t *testing.T) {
 func TestResolveReportsUnknownReferences(t *testing.T) {
 	t.Parallel()
 	got, err := Resolve(
-		`{"a":"{{entity:lamp/power}}","d":"{{device:lamp}}","x":"{{dashboard:draft}}"}`,
+		`{"a":"{{entity:lamp/power}}","d":"{{device:lamp}}","x":"{{dashboard:draft}}","l":"{{label:downstairs}}"}`,
 		testInventory(),
 	)
-	if err != nil || got != `{"a":"ent_lamp","d":"dev_lamp","x":"dash_1"}` {
+	if err != nil || got != `{"a":"ent_lamp","d":"dev_lamp","x":"dash_1","l":"lbl_1"}` {
 		t.Fatalf("got %s, %v", got, err)
 	}
 	if _, err = Resolve(

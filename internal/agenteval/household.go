@@ -74,6 +74,7 @@ type Inventory struct {
 	Devices     map[string]string `json:"devices"`     // adapter/device → Device ID
 	Dashboards  map[string]Saved  `json:"dashboards"`  // seeded name → saved dashboard
 	Automations map[string]Saved  `json:"automations"` // seeded name → saved Automation
+	Labels      map[string]string `json:"labels"`      // lower-cased seeded name → Label ID
 }
 
 // Saved identifies a seeded record.
@@ -113,6 +114,7 @@ func StartHousehold(ctx context.Context, options HouseholdOptions) (*Household, 
 		Inventory: Inventory{
 			Entities: map[string]string{}, Devices: map[string]string{},
 			Dashboards: map[string]Saved{}, Automations: map[string]Saved{},
+			Labels: map[string]string{},
 		},
 	}
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
@@ -326,6 +328,15 @@ func (household *Household) getJSON(ctx context.Context, url string, into any) e
 }
 
 func (household *Household) postJSON(ctx context.Context, url string, body, into any) error {
+	return household.sendJSON(ctx, http.MethodPost, "application/json", url, body, into)
+}
+
+// patchJSON sends a JSON Merge Patch.
+func (household *Household) patchJSON(ctx context.Context, url string, body, into any) error {
+	return household.sendJSON(ctx, http.MethodPatch, "application/merge-patch+json", url, body, into)
+}
+
+func (household *Household) sendJSON(ctx context.Context, method, contentType, url string, body, into any) error {
 	var reader io.Reader = http.NoBody
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -334,11 +345,11 @@ func (household *Household) postJSON(ctx context.Context, url string, body, into
 		}
 		reader = bytes.NewReader(raw)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, reader)
+	request, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", contentType)
 	return household.do(request, into)
 }
 

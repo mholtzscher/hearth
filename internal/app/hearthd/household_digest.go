@@ -163,6 +163,9 @@ func (reader householdDigestReader) digestEntity(
 		Type:         string(view.Entity.TypeID),
 		Availability: availability,
 	}
+	if view.Labels.Area != nil {
+		entity.Area = view.Labels.Area.Label.Name
+	}
 	// A State that cannot be projected is left out rather than failing the
 	// digest; the Entity still counts and still reports availability.
 	projected, metadata, err := reader.presenter.Entity(view, "")

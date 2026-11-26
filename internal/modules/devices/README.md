@@ -63,8 +63,9 @@ Keep these operations transactional when moving or changing code:
   wait for the local projection without being discarded by older delivery.
 - Command creation reads current ownership and control eligibility in its write
   transaction before recording the attempt.
-- Metadata PATCH loads current naming and enablement and commits all requested
-  changes together. Adapter enablement uses the same Entity mutation workflow,
+- Metadata PATCH loads current naming, enablement, Area, and tags and commits
+  all requested changes together. It checks that each assigned Label exists and
+  has the edit's kind inside that transaction. Adapter enablement uses the same Entity mutation workflow,
   retaining runtime fencing before Entity lookup and ownership checks.
 
 Database `name` columns retain the latest Adapter name. Read queries derive the
@@ -73,6 +74,13 @@ writes overrides. Reset follows the latest Adapter name; same-text saves pin an
 explicit override. No-op metadata edits preserve timestamps and emit no Device
 Facts. Migration 8 downgrade discards overrides. Back up the database before
 downgrading.
+
+The `entity_effective_labels` view is the only definition of effective Labels:
+an Entity's own Area, else its Device's, and the union of both tag sets. Every
+read that returns an Entity or Device attaches Labels through
+`sqlite/label_mapping.go`. The Entity selector query is hand-written in
+`sqlite/entity_selector.go` because sqlc misbinds its slice parameters.
+Migration 34 downgrade discards Labels and their assignments.
 
 Pure policy functions may be called by persistence, but transaction-dependent
 rules must use values loaded inside that transaction, not preliminary Service

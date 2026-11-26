@@ -1,0 +1,54 @@
+id: command-area-lights-off
+title: Turn off the lights in one Area
+tags: [command, labels, safety]
+
+# No Device name says "downstairs": only the seeded Area does.
+setup:
+  pin:
+    - entity: {device: hallway-light, key: power}
+      value: true
+    - entity: {device: living-room-lamp, key: power}
+      value: true
+    - entity: {device: bedroom-lamp, key: power}
+      value: true
+  labels:
+    - name: downstairs
+      kind: area
+      devices:
+        - {device: hallway-light}
+        - {device: living-room-lamp}
+
+turns:
+  - text: Turn off the downstairs lights.
+
+checks:
+  - kind: commands_exactly
+    commands:
+      - entity: {device: hallway-light, key: power}
+        operation: set
+        params: {value: false}
+      - entity: {device: living-room-lamp, key: power}
+        operation: set
+        params: {value: false}
+  - kind: tool_called
+    tool: list_labels
+  - kind: no_view
+
+judge:
+  criteria:
+    - The reply says the Hallway light and the Living room lamp were turned off and does not claim the Bedroom lamp changed.
+
+max_requests: 12
+
+reference:
+  - call: list_labels
+    arguments: '{}'
+  - call: list_entities
+    arguments: '{"label_ids": ["{{label:downstairs}}"], "types": ["hearth.power/v1"]}'
+  - call: tool_search
+    arguments: '{"query": "select:execute_entity_command"}'
+  - call: execute_entity_command
+    arguments: '{"entity_id": "{{entity:hallway-light/power}}", "operation": "set", "parameters": {"value": false}}'
+  - call: execute_entity_command
+    arguments: '{"entity_id": "{{entity:living-room-lamp/power}}", "operation": "set", "parameters": {"value": false}}'
+  - reply: Turned off the Hallway light and the Living room lamp downstairs.

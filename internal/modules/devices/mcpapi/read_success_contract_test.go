@@ -13,8 +13,8 @@ import (
 
 func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 	t.Parallel()
-	const summary = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null,"quantities":{}}`
-	const detail = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":{},"availability":{"status":"online","source":"s","since":"t","evidence_at":"t"},"state":null,"quantities":{}}`
+	const summary = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null,"area":null,"tags":[],"quantities":{}}`
+	const detail = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":{},"availability":{"status":"online","source":"s","since":"t","evidence_at":"t"},"state":null,"area":null,"tags":[],"quantities":{}}`
 	const command = `{"command_id":"c","entity_id":"e","operation":"set","status":"succeeded","requested_at":"t","parameters":{},"deadline_at":"t"}`
 	const history = `"kind":"summary","entity_id":"e","range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at","coverage":{"basis":"retained_observations","completeness":"unverified"},"quantity":{"unit":"mCel","label":"mCel","fraction_digits":0}`
 	for _, test := range []struct {
@@ -35,13 +35,27 @@ func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"}}`,
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online","reason_code":null},"state":null}`,
 		}},
-		{"entity state", generatedSuccessSchema[EntitySummary](t), `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":{"value":{"n":9007199254740993,"tiny":1e-10000,"huge":1e10000,"nullable":null},"observed_at":"t"},"quantities":{}}`, []string{
+		{"entity state", generatedSuccessSchema[EntitySummary](t), `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":{"value":{"n":9007199254740993,"tiny":1e-10000,"huge":1e10000,"nullable":null},"observed_at":"t"},"area":null,"tags":[],"quantities":{}}`, []string{
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":{"observed_at":"t"}}`,
 		}},
+		{"entity summary labels", generatedSuccessSchema[EntitySummary](t), `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null,"area":{"label_id":"l","name":"Kitchen","source":"device"},"tags":[{"label_id":"t","name":"Lamps"}],"quantities":{}}`, []string{
+			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null,"tags":[],"quantities":{}}`,
+			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null,"area":null,"quantities":{}}`,
+			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null,"area":null,"tags":null,"quantities":{}}`,
+			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null,"area":{"label_id":"l","name":"Kitchen","source":"label"},"tags":[],"quantities":{}}`,
+		}},
+		{"device labels", generatedSuccessSchema[DeviceDetail](t), `{"device_id":"d","name":"n","kind":"k","area":{"label_id":"l","name":"Kitchen"},"tags":[{"label_id":"t","name":"Lamps"}],"entities":[]}`, []string{
+			`{"device_id":"d","name":"n","kind":"k","tags":[],"entities":[]}`,
+			`{"device_id":"d","name":"n","kind":"k","area":null,"tags":null,"entities":[]}`,
+		}},
+		{"device summary labels", generatedSuccessSchema[DeviceSummary](t), `{"device_id":"d","name":"n","kind":"k","area":null,"tags":[]}`, []string{
+			`{"device_id":"d","name":"n","kind":"k","tags":[]}`,
+			`{"device_id":"d","name":"n","kind":"k","area":null,"tags":null}`,
+		}},
 		{"entity page", generatedSuccessSchema[entityPage](t), `{"items":[` + summary + `]}`, []string{`{"items":null}`, `{"items":[],"next_cursor":null}`, `{"items":[],"extra":true}`}},
-		{"device", generatedSuccessSchema[DeviceDetail](t), `{"device_id":"d","name":"n","kind":"k","entities":[]}`, []string{
-			`{"device_id":"d","name":"n","kind":"k","entities":null}`,
-			`{"device_id":"d","name":"n","kind":"k","entities":[],"next_entity_cursor":null}`,
+		{"device", generatedSuccessSchema[DeviceDetail](t), `{"device_id":"d","name":"n","kind":"k","area":null,"tags":[],"entities":[]}`, []string{
+			`{"device_id":"d","name":"n","kind":"k","area":null,"tags":[],"entities":null}`,
+			`{"device_id":"d","name":"n","kind":"k","area":null,"tags":[],"entities":[],"next_entity_cursor":null}`,
 		}},
 		{"entity detail", generatedSuccessSchema[EntityDetail](t), detail, []string{
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":[],"availability":{"status":"online","source":"s","since":"t","evidence_at":"t"},"state":null}`,
@@ -56,6 +70,7 @@ func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 			`{"command_id":"c","entity_id":"e","operation":"set","status":"succeeded","requested_at":"t","parameters":{},"deadline_at":"t","outcome_observation_id":null}`,
 		}},
 		{"ordinary page nullable collection and cursor", generatedSuccessSchema[Page[DeviceSummary]](t), `{"items":null,"next_cursor":null}`, nil},
+		{"label list", generatedSuccessSchema[LabelList](t), `{"items":[{"label_id":"l","name":"Kitchen","kind":"area"}]}`, []string{`{"items":null}`, `{"items":[{"label_id":"l","name":"Kitchen","kind":"room"}]}`}},
 		{"command summary nullable optional strings", generatedSuccessSchema[CommandSummary](t), `{"command_id":"c","entity_id":"e","operation":"set","status":"satisfied","requested_at":"t","completed_at":null,"failure_code":null}`, nil},
 		{"availability history nullable source time", generatedSuccessSchema[HealthTransition](t), `{"status":"available","source":"s","observed_at":"t","source_observed_at":null}`, nil},
 		{"entity event nullable rejection", generatedSuccessSchema[EntityEvent](t), `{"event_id":"v","entity_id":"e","name":"n","disposition":"accepted","emitted_at":"t","received_at":"t","recorded_at":"t","rejection_code":null}`, nil},

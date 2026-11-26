@@ -232,6 +232,7 @@ type Device struct {
 	CreatedAt    string
 	UpdatedAt    string
 	NameOverride sql.NullString
+	AreaID       sql.NullString
 }
 
 type DeviceAdapterHealthProjection struct {
@@ -263,6 +264,11 @@ type DeviceFactsOutbox struct {
 	PreviousValueJson sql.NullString
 }
 
+type DeviceTag struct {
+	DeviceID string
+	LabelID  string
+}
+
 type Entity struct {
 	ID           string
 	DeviceID     string
@@ -273,6 +279,7 @@ type Entity struct {
 	UpdatedAt    string
 	Enabled      int64
 	NameOverride sql.NullString
+	AreaID       sql.NullString
 }
 
 type EntityAvailabilityCurrent struct {
@@ -302,6 +309,13 @@ type EntityAvailabilityReceipt struct {
 	RequestID   string
 	Fingerprint string
 	ReportedAt  string
+}
+
+type EntityEffectiveLabel struct {
+	EntityID string
+	LabelID  string
+	Kind     string
+	Source   string
 }
 
 type EntityEvent struct {
@@ -355,6 +369,11 @@ type EntityState struct {
 	ReceiveOrder      int64
 }
 
+type EntityTag struct {
+	EntityID string
+	LabelID  string
+}
+
 type HealthTransition struct {
 	ReceiveOrder         int64
 	ResourceKind         string
@@ -368,6 +387,15 @@ type HealthTransition struct {
 	ObservedAt           string
 	SourceHealthRevision sql.NullInt64
 	SourceHealthUpdateID sql.NullString
+}
+
+type Label struct {
+	ID        string
+	Name      string
+	NameKey   string
+	Kind      string
+	CreatedAt string
+	UpdatedAt string
 }
 
 type NotificationAttempt struct {

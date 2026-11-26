@@ -17,7 +17,7 @@ func (repository *DeviceRepository) PatchDevice(
 	if _, err := devices.ParseDeviceID(string(params.DeviceID)); err != nil {
 		return devices.Device{}, fmt.Errorf("%w: %w", devices.ErrInvalidMetadataPatch, err)
 	}
-	patch, err := devices.PrepareMetadataPatch(nil, params.Patch.NameEdit)
+	patch, err := devices.PrepareDevicePatch(params.Patch)
 	if err != nil {
 		return devices.Device{}, err
 	}
@@ -37,30 +37,40 @@ func (repository *DeviceRepository) PatchDevice(
 	if err != nil {
 		return devices.Device{}, fmt.Errorf("load device metadata: %w", err)
 	}
-	if override := nullableString(patch.NameEdit.Override); override != row.NameOverride {
-		if err = queries.UpdateDeviceNameOverride(
-			ctx,
-			dbsqlc.UpdateDeviceNameOverrideParams{
-				ID:           row.ID,
-				NameOverride: override,
-				UpdatedAt:    formatTime(params.UpdatedAt),
-			},
-		); err != nil {
-			return devices.Device{}, fmt.Errorf("update device metadata: %w", err)
+	changed := false
+	if patch.NameEdit != nil {
+		if override := nullableString(patch.NameEdit.Override); override != row.NameOverride {
+			if err = queries.UpdateDeviceNameOverride(
+				ctx,
+				dbsqlc.UpdateDeviceNameOverrideParams{
+					ID:           row.ID,
+					NameOverride: override,
+					UpdatedAt:    formatTime(params.UpdatedAt),
+				},
+			); err != nil {
+				return devices.Device{}, fmt.Errorf("update device metadata: %w", err)
+			}
+			changed = true
 		}
+	}
+	labelsChanged, err := applyLabelEdits(
+		ctx, queries, deviceAssignmentQueries(queries), row.ID, patch.AreaEdit, patch.TagEdit, params.UpdatedAt,
+	)
+	if err != nil {
+		return devices.Device{}, err
+	}
+	if changed || labelsChanged {
 		row, err = queries.GetDevice(ctx, dbsqlc.GetDeviceParams{ID: row.ID})
 		if err != nil {
 			return devices.Device{}, fmt.Errorf("load updated device metadata: %w", err)
 		}
 	}
+	device, err := withDeviceLabels(ctx, queries, deviceFromRow(row))
+	if err != nil {
+		return devices.Device{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return devices.Device{}, fmt.Errorf("commit device metadata: %w", err)
 	}
-	return devices.Device{
-		ID:           devices.DeviceID(row.ID),
-		Kind:         devices.DeviceKind(row.Kind),
-		Name:         row.Name,
-		AdapterName:  row.AdapterName,
-		NameOverride: nameOverrideFromSQL(row.NameOverride),
-	}, nil
+	return devices.CopyDevice(device), nil
 }

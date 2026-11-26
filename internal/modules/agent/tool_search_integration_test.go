@@ -20,7 +20,10 @@ import (
 func searchTestTools(t *testing.T) []tool.BaseTool {
 	t.Helper()
 	server := newBridgeTestServer()
-	for _, name := range []string{"list_devices", "get_device", "list_entities", "get_entity", "create_automation", "replace_automation"} {
+	for _, name := range []string{
+		"list_devices", "get_device", "list_entities", "get_entity", "list_labels",
+		"create_automation", "replace_automation",
+	} {
 		mcpapi.Register(server, mcpapi.Tool[bridgeEchoInput, bridgeEchoOutput]{
 			Name: name, Description: "Synthetic catalog tool",
 			Handler: func(_ context.Context, input bridgeEchoInput) (bridgeEchoOutput, error) {
@@ -88,13 +91,16 @@ func TestToolSearchTraceAndRetainedSelection(t *testing.T) {
 	if _, err := service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "Continue"}); err != nil {
 		t.Fatal(err)
 	}
-	wantInitial := []string{"get_device", "get_entity", "list_devices", "list_entities", "skill", "tool_search"}
+	wantInitial := []string{
+		"get_device", "get_entity", "list_devices", "list_entities", "list_labels", "skill", "tool_search",
+	}
 	wantSelected := []string{
 		"echo_text",
 		"get_device",
 		"get_entity",
 		"list_devices",
 		"list_entities",
+		"list_labels",
 		"skill",
 		"tool_search",
 	}
@@ -166,7 +172,9 @@ func TestToolSearchNoMatchAndMissingResultDoNotSelect(t *testing.T) {
 				options,
 			); !reflect.DeepEqual(
 				names,
-				[]string{"get_device", "get_entity", "list_devices", "list_entities", "skill", "tool_search"},
+				[]string{
+					"get_device", "get_entity", "list_devices", "list_entities", "list_labels", "skill", "tool_search",
+				},
 			) {
 				t.Errorf("step %d tools = %v", step, names)
 			}

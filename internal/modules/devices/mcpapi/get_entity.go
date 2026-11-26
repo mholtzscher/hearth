@@ -55,6 +55,8 @@ type EntityDetail struct {
 	Support      json.RawMessage                     `json:"support"`
 	Availability AvailabilityDetail                  `json:"availability"`
 	State        *StateDetail                        `json:"state"`
+	Area         *EntityArea                         `json:"area"`
+	Tags         []LabelSummary                      `json:"tags"         nullable:"false"`
 	Quantities   map[string]devices.QuantityMetadata `json:"quantities"`
 }
 
@@ -80,6 +82,8 @@ func (h *handler) getEntity(ctx context.Context, input GetEntityInput) (EntityDe
 		Name:       summary.Name,
 		Type:       summary.Type,
 		Enabled:    summary.Enabled,
+		Area:       summary.Area,
+		Tags:       summary.Tags,
 		AdapterID:  view.Entity.AdapterID,
 		Support:    json.RawMessage(view.Entity.Support),
 		Availability: AvailabilityDetail{
@@ -103,8 +107,9 @@ func (h *handler) getEntity(ctx context.Context, input GetEntityInput) (EntityDe
 
 func (EntityDetail) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {
 	schema.Properties["support"] = &huma.Schema{Type: "object"}
+	schema.Properties["area"] = nullableSchema[EntityArea](registry)
 	schema.Properties["state"] = &huma.Schema{AnyOf: []*huma.Schema{
-		{Type: "null"}, registry.Schema(reflect.TypeFor[StateDetail](), true, ""),
+		{Type: schemaTypeNull}, registry.Schema(reflect.TypeFor[StateDetail](), true, ""),
 	}}
 	return schema
 }

@@ -9,5 +9,7 @@ func deviceBody(device devices.Device) DeviceBody {
 		Name:         device.Name,
 		AdapterName:  device.AdapterName,
 		NameOverride: device.NameOverride,
+		Area:         deviceAreaBody(device.Labels),
+		Tags:         labelRefBodies(device.Labels.Tags),
 	}
 }
