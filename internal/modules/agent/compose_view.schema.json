@@ -73,6 +73,7 @@
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "One live numeric reading. trend adds history over a window.",
           "properties": {
             "type": {"const": "Metric"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Entity with a numeric State field."},
             "field": {"$ref": "#/$defs/field"},
@@ -81,6 +82,7 @@
         },
         {
           "type": "object", "required": ["type", "title", "series", "window"], "additionalProperties": false,
+          "description": "Numeric history for up to 8 Entities over one window.",
           "properties": {
             "type": {"const": "TimeSeries"}, "title": {"$ref": "#/$defs/label"},
             "series": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/entity_label"}, "description": "Distinct Entities of the same type and unit. The numeric field and window apply to all series."},
@@ -89,6 +91,7 @@
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "One live yes/no or text reading. For a binary sensor, supply words when its meaning is known.",
           "properties": {
             "type": {"const": "State"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Entity with a Boolean or text State field."},
             "field": {"$ref": "#/$defs/field"},
@@ -97,14 +100,17 @@
         },
         {
           "type": "object", "required": ["type", "title", "rows"], "additionalProperties": false,
+          "description": "Up to 12 mixed live readings in one card.",
           "properties": {"type": {"const": "ReadingList"}, "title": {"$ref": "#/$defs/label"}, "rows": {"$ref": "#/$defs/rows"}}
         },
         {
           "type": "object", "required": ["type", "device_id"], "additionalProperties": false,
+          "description": "Follows all of a Device's readable Entities live.",
           "properties": {"type": {"const": "Device"}, "device_id": {"$ref": "#/$defs/device"}, "label": {"$ref": "#/$defs/label"}}
         },
         {
           "type": "object", "required": ["type", "title", "style", "window", "rows"], "additionalProperties": false,
+          "description": "When up to 12 yes/no or text fields changed over one window.",
           "properties": {
             "type": {"const": "StateTimeline"}, "title": {"$ref": "#/$defs/label"},
             "style": {"enum": ["lanes", "ledger", "feed"], "description": "Lanes compare rows on one axis; ledger shows row totals; feed shows changes newest first."},
@@ -113,6 +119,7 @@
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "When one yes/no field was true, hour by hour, over the last 7 days.",
           "properties": {
             "type": {"const": "WeekPattern"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Entity with a Boolean State field."},
             "field": {"$ref": "#/$defs/field"},
@@ -121,6 +128,7 @@
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "Tap-to-toggle tile bound to the root of a hearth.power/v1 Entity, labeled with the Device name. Use a Grid of ToggleTiles for quick switches. Ordinary toggle tiles have no metric and no sparkline. For a metering plug, metric binds one explicit numeric entity_id and field with a window (24h unless asked otherwise), shared by the displayed value and sparkline. Prefer discovered electrical power in watts, not cumulative energy; the editor can change that source. metric.detail adds a separately bound reading such as total energy. Every metric source must belong to the power Entity's Device; do not guess a source by name or list order.",
           "properties": {
             "type": {"const": "ToggleTile"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Power Entity."},
             "label": {"$ref": "#/$defs/label"}, "metric": {"$ref": "#/$defs/meter"}
@@ -128,14 +136,16 @@
         },
         {
           "type": "object", "required": ["type", "title", "rows"], "additionalProperties": false,
+          "description": "1–12 distinct hearth.power/v1 Entities, each labeled with its Device name.",
           "properties": {
             "type": {"const": "ToggleList"}, "title": {"$ref": "#/$defs/label"},
             "rows": {"type": "array", "minItems": 1, "maxItems": 12, "items": {"$ref": "#/$defs/entity_label"}, "description": "Distinct power Entities."},
-            "all_off": {"const": true, "description": "Offer a Turn all off button."}
+            "all_off": {"const": true, "description": "Offer a native Turn all off button."}
           }
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "Current outdoor conditions from a weather station. It words conditions from the rain rate and wind speed but shows no feels-like or dew point.",
           "properties": {
             "type": {"const": "OutsideNow"}, "label": {"$ref": "#/$defs/label"},
             "entity_id": {"$ref": "#/$defs/entity", "description": "Outdoor temperature (hearth.temperature/v1)."},
@@ -147,12 +157,13 @@
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "Rain rate with optional storm and period totals. Every rain counter is in mm, so match each storm, day, week, month, or year slot to the sensor named for that period, such as Daily Rain for day.",
           "properties": {
             "type": {"const": "Rain"}, "label": {"$ref": "#/$defs/label"},
             "entity_id": {"$ref": "#/$defs/entity", "description": "Rain rate in mm/h."},
-            "storm": {"$ref": "#/$defs/entity", "description": "Storm rain counter in mm."},
+            "storm": {"$ref": "#/$defs/entity", "description": "The station's own storm rain counter in mm, never a sum of the rate."},
             "totals": {
-              "description": "Bind the station's own counters in mm; do not integrate the rate.",
+              "description": "Bind the station's own counters in mm, never sums of the rate.",
               "type": "object", "additionalProperties": false,
               "properties": {"day": {"$ref": "#/$defs/entity"}, "week": {"$ref": "#/$defs/entity"}, "month": {"$ref": "#/$defs/entity"}, "year": {"$ref": "#/$defs/entity"}}
             },
@@ -161,6 +172,7 @@
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "Sustained wind speed with optional gust, wind_direction, and max_gust.",
           "properties": {
             "type": {"const": "Wind"}, "label": {"$ref": "#/$defs/label"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Sustained wind speed."},
             "gust": {"$ref": "#/$defs/entity"}, "wind_direction": {"$ref": "#/$defs/entity", "description": "Direction in deg."},
@@ -169,6 +181,7 @@
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "A hearth.pressure/v1 Entity; the card states its three-hour tendency.",
           "properties": {
             "type": {"const": "Pressure"}, "label": {"$ref": "#/$defs/label"},
             "entity_id": {"$ref": "#/$defs/entity", "description": "Choose the relative or absolute pressure Entity that matches the request."},
@@ -177,6 +190,7 @@
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "Modeled hourly or daily forecast periods, not station readings.",
           "properties": {
             "type": {"const": "Forecast"}, "label": {"$ref": "#/$defs/label"},
             "entity_id": {"$ref": "#/$defs/entity", "description": "An hourly or daily forecast Entity, not a station sensor."}, "periods": {"$ref": "#/$defs/periods"}
@@ -184,26 +198,30 @@
         },
         {
           "type": "object", "required": ["type", "layout", "entity_id", "pm25"], "additionalProperties": false,
+          "description": "For a Device of kind air-purifier. Bind fan_mode, fan_level, display, child_lock, and filter_life when the Device has a matching Entity. Identify display and child_lock by their Entity names (Display, Child lock); never guess, and omit a role you cannot identify. Every bound Entity must belong to the power Entity's Device. Use layout card on its own or in a dashboard, and layout tile in a Grid of quick switches.",
           "properties": {
             "type": {"const": "AirPurifier"}, "layout": {"$ref": "#/$defs/card_layout"}, "label": {"$ref": "#/$defs/label"},
-            "entity_id": {"$ref": "#/$defs/entity", "description": "The purifier's power Entity."}, "pm25": {"$ref": "#/$defs/entity", "description": "Numeric sensor in µg/m³. Use a distinct Entity from the same Device for each role."},
+            "entity_id": {"$ref": "#/$defs/entity", "description": "The purifier's power Entity."}, "pm25": {"$ref": "#/$defs/entity", "description": "PM2.5 sensor in µg/m³. Use a distinct Entity from the same Device for each role."},
             "fan_mode": {"$ref": "#/$defs/entity", "description": "Enum with 2 to 5 modes, such as auto and sleep."}, "fan_level": {"$ref": "#/$defs/entity", "description": "Enum whose choices are 1 to N, N from 2 to 10."},
             "display": {"$ref": "#/$defs/entity"}, "child_lock": {"$ref": "#/$defs/entity"}, "filter_life": {"$ref": "#/$defs/entity", "description": "Numeric sensor in %."}
           }
         },
         {
           "type": "object", "required": ["type", "layout", "entity_id"], "additionalProperties": false,
+          "description": "For a hearth.cover/v1 Entity, such as a garage door or shade, bound to the Entity's root and labeled with the Device name. Use layout card on its own or in a dashboard, and layout tile in a Grid of quick switches.",
           "properties": {
             "type": {"const": "Cover"}, "layout": {"$ref": "#/$defs/card_layout"}, "label": {"$ref": "#/$defs/label"},
-            "entity_id": {"$ref": "#/$defs/entity"}, "confirm_open": {"type": "boolean", "description": "Omit unless the user explicitly asks to change Open confirmation. Defaults to true."}
+            "entity_id": {"$ref": "#/$defs/entity"}, "confirm_open": {"type": "boolean", "description": "Opening asks for a second press unless this is false. Defaults to true; omit it for garage doors and doors. Set it false only when the user says the cover is a shade, blind, or similar."}
           }
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "For a hearth.thermostat/v1 Entity, bound to its root. It shows the targets the current mode uses with −/+ controls, the mode and activity, inside temperature and humidity, and Mode and Fan controls.",
           "properties": {"type": {"const": "Thermostat"}, "label": {"$ref": "#/$defs/label"}, "entity_id": {"$ref": "#/$defs/entity"}}
         },
         {
           "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "For a hearth.mediaplayer/v1 Entity, bound to its root. Layout card shows track details, artwork, a timeline, and supported playback and volume controls; layout tile in a Grid is a compact play/pause control. Grouped speakers cannot be controlled.",
           "properties": {
             "type": {"const": "MediaPlayer"}, "layout": {"$ref": "#/$defs/card_layout", "description": "Full card (default) or play/pause tile."},
             "label": {"$ref": "#/$defs/label"}, "entity_id": {"$ref": "#/$defs/entity"}

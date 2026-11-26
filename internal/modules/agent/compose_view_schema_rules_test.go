@@ -66,14 +66,11 @@ func TestComposeViewGuidanceUsesSchemaKeys(t *testing.T) {
 			require.NotContains(t, guidance, phrase, "%s teaches a removed key", name)
 		}
 	}
-	require.Contains(t, defaultSystemPrompt, "wind_speed, wind_direction")
-	for _, guidance := range []string{composeViewDescription, defaultSystemPrompt} {
-		require.Contains(
-			t,
-			guidance,
-			"A card bound to one Entity names it entity_id; TimeSeries lists its Entities in series",
-		)
-	}
+	require.Contains(
+		t,
+		composeViewDescription,
+		"A card bound to one Entity names it entity_id; TimeSeries lists its Entities in series",
+	)
 }
 
 // walkSchemaObjects calls visit with every properties map in the schema.

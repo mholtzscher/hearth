@@ -36,6 +36,11 @@ const composeViewDescription = "Present a live dashboard draft without saving or
 	"For AirPurifier, entity_id is its main power Entity. Use fan_mode for named modes and fan_level for numbered speeds. " +
 	"Use those exact keys, not power or mode. " +
 	"Grid requires columns. A card bound to one Entity names it entity_id; TimeSeries lists its Entities in series, and ReadingList, StateTimeline, and ToggleList in rows. An Entity is always a bare ID string. " +
+	"Each card type's description says when to use it and how to bind it. " +
+	"For a weather station, prefer OutsideNow, Rain, Wind, Pressure, and Forecast over separate Metrics. " +
+	"A weather slot that takes a hearth.numericsensor/v1 Entity requires its discovered unit: mm/h for a rain rate, mm for rain totals, deg for wind direction. " +
+	"Ask which source to use if a requested binding is ambiguous, including relative versus absolute pressure. " +
+	"For quick switches, use a Grid of up to 4 columns of ToggleTiles or tile layouts. " +
 	"A view has at most 32 nodes, 8 levels, and 16 distinct Entities and Devices."
 
 //go:embed compose_view.schema.json
