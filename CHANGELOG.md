@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.30.0](https://github.com/mholtzscher/hearth/compare/v0.29.0...v0.30.0) (2026-11-26)
+
+
+### Features
+
+* **devices:** group Devices and Entities with Areas and tags ([#448](https://github.com/mholtzscher/hearth/issues/448)) ([95e816d](https://github.com/mholtzscher/hearth/commit/95e816d488f6e63289f0bea4763523bc4ca22b63))
+* **devices:** let the Agent rename Devices and Entities ([#447](https://github.com/mholtzscher/hearth/issues/447)) ([15dbe10](https://github.com/mholtzscher/hearth/commit/15dbe10ac9d1f6266f0f8ce325aa3f3b88f4d861))
+
+
+### Bug Fixes
+
+* **agent:** ask natural starter questions about real problems ([#445](https://github.com/mholtzscher/hearth/issues/445)) ([1337168](https://github.com/mholtzscher/hearth/commit/13371682b8214d85bb11f49c357f6a61614050fa))
+
 ## [0.29.0](https://github.com/mholtzscher/hearth/compare/v0.28.0...v0.29.0) (2026-11-25)
 
 
