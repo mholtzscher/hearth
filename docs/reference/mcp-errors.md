@@ -102,6 +102,8 @@ not mean omission and never reaches the service:
 | `list_commands` with `{}` | Lists Commands without an Entity filter |
 | `list_commands` with `{"entity_id":null}` | Modeled `invalid_entity_id` rejection with message `entity_id must not be null` |
 | `list_entities` with `{"label_ids":null}` | Modeled `invalid_label_id` rejection |
+| `list_entities` with `{"types":null}` | Modeled `invalid_request` rejection |
+| `update_entity` with `{"enabled":null}` | Modeled `invalid_request` rejection |
 | `update_entity` or `update_device` without editable fields | Returns the current receipt without writing |
 | `update_entity` or `update_device` with `"area_id":null` | Clears the Area; an Entity then inherits its Device's Area |
 | `update_entity` or `update_device` with `"tag_ids":null` | Modeled `invalid_label_id` rejection; `[]` clears tags |

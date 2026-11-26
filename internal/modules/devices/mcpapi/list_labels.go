@@ -3,7 +3,6 @@ package mcpapi
 import (
 	"context"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
@@ -21,19 +20,8 @@ func registerListLabels(server *mcptools.Server, h *handler) {
 
 type ListLabelsInput struct{}
 
-// LabelDetail is one catalog Label.
-type LabelDetail struct {
-	LabelID string `json:"label_id"`
-	Name    string `json:"name"`
-	Kind    string `json:"kind"     enum:"area,tag"`
-}
-
 type LabelList struct {
 	Items []LabelDetail `json:"items" nullable:"false"`
-}
-
-func labelDetail(label devices.Label) LabelDetail {
-	return LabelDetail{LabelID: string(label.ID), Name: label.Name, Kind: string(label.Kind)}
 }
 
 func (h *handler) listLabels(ctx context.Context, _ ListLabelsInput) (LabelList, error) {

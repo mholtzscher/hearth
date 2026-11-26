@@ -60,7 +60,7 @@ func (repository *DeviceRepository) GetDevice(
 	if err != nil {
 		return devices.DeviceAggregate{}, err
 	}
-	device, err := attachDeviceLabel(ctx, queries, deviceFromRow(row))
+	device, err := withDeviceLabels(ctx, queries, deviceFromRow(row))
 	if err != nil {
 		return devices.DeviceAggregate{}, err
 	}
@@ -258,5 +258,5 @@ func (repository *DeviceRepository) GetEntity(
 	if err != nil {
 		return devices.EntityWithState{}, err
 	}
-	return attachEntityLabel(ctx, repository.queries, view)
+	return withEntityLabels(ctx, repository.queries, view)
 }

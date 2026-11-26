@@ -366,11 +366,12 @@ func (q *Queries) ListDeviceTags(ctx context.Context, arg ListDeviceTagsParams) 
 }
 
 const listEffectiveEntityLabels = `-- name: ListEffectiveEntityLabels :many
-SELECT el.entity_id, el.label_id, el.kind, el.source, l.name
+SELECT el.entity_id, el.label_id, el.kind, CAST(MAX(el.source) AS TEXT) AS source, l.name
 FROM entity_effective_labels AS el
 JOIN labels AS l ON l.id = el.label_id
 WHERE el.entity_id IN (/*SLICE:entity_ids*/?)
-ORDER BY el.entity_id ASC, el.kind ASC, l.name_key ASC, el.label_id ASC, el.source DESC
+GROUP BY el.entity_id, el.kind, el.label_id, l.name, l.name_key
+ORDER BY el.entity_id ASC, el.kind ASC, l.name_key ASC, el.label_id ASC
 `
 
 type ListEffectiveEntityLabelsParams struct {
@@ -385,6 +386,8 @@ type ListEffectiveEntityLabelsRow struct {
 	Name     string
 }
 
+// Grouping returns a tag held by both an Entity and its Device once. An Area
+// has one row, so its source survives the grouping unchanged.
 func (q *Queries) ListEffectiveEntityLabels(ctx context.Context, arg ListEffectiveEntityLabelsParams) ([]ListEffectiveEntityLabelsRow, error) {
 	query := listEffectiveEntityLabels
 	var queryParams []interface{}

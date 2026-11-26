@@ -29,7 +29,7 @@ CREATE INDEX entity_tags_label_idx ON entity_tags(label_id);
 
 -- The only definition of effective Labels. An Entity's Area is its own, else
 -- its Device's. Its tags are the union of its own and its Device's; a tag held
--- by both appears once per source.
+-- by both appears once per source, so readers group by Label.
 CREATE VIEW entity_effective_labels AS
 SELECT e.id AS entity_id,
     CAST(COALESCE(e.area_id, d.area_id) AS TEXT) AS label_id,

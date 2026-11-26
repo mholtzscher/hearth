@@ -95,17 +95,16 @@ type CreateLabelParams struct {
 	Kind LabelKind
 }
 
-// CreateLabelRecord is a prepared Label ready to persist.
+// CreateLabelRecord is a prepared Label ready to persist. Persistence derives
+// the name's uniqueness key with NormalizeLabelName.
 type CreateLabelRecord struct {
-	Label   Label
-	NameKey string
+	Label Label
 }
 
 // RenameLabelRecord is a prepared rename ready to persist.
 type RenameLabelRecord struct {
 	ID        LabelID
 	Name      string
-	NameKey   string
 	UpdatedAt time.Time
 }
 
@@ -139,7 +138,7 @@ func PrepareCreateLabel(params CreateLabelParams, id LabelID, now time.Time) (Cr
 	if err != nil {
 		return CreateLabelRecord{}, err
 	}
-	name, key, err := NormalizeLabelName(params.Name)
+	name, _, err := NormalizeLabelName(params.Name)
 	if err != nil {
 		return CreateLabelRecord{}, err
 	}
@@ -148,8 +147,7 @@ func PrepareCreateLabel(params CreateLabelParams, id LabelID, now time.Time) (Cr
 	}
 	now = now.UTC()
 	return CreateLabelRecord{
-		Label:   Label{ID: id, Name: name, Kind: kind, CreatedAt: now, UpdatedAt: now},
-		NameKey: key,
+		Label: Label{ID: id, Name: name, Kind: kind, CreatedAt: now, UpdatedAt: now},
 	}, nil
 }
 
@@ -158,14 +156,14 @@ func PrepareRenameLabel(id LabelID, name string, now time.Time) (RenameLabelReco
 	if _, err := ParseLabelID(string(id)); err != nil {
 		return RenameLabelRecord{}, fmt.Errorf("%w: %w", ErrInvalidLabel, err)
 	}
-	normalized, key, err := NormalizeLabelName(name)
+	normalized, _, err := NormalizeLabelName(name)
 	if err != nil {
 		return RenameLabelRecord{}, err
 	}
 	if now.IsZero() {
 		return RenameLabelRecord{}, fmt.Errorf("%w: update time is required", ErrInvalidLabel)
 	}
-	return RenameLabelRecord{ID: id, Name: normalized, NameKey: key, UpdatedAt: now.UTC()}, nil
+	return RenameLabelRecord{ID: id, Name: normalized, UpdatedAt: now.UTC()}, nil
 }
 
 // CreateLabel adds a Label to the household catalog. It returns

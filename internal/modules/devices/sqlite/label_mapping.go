@@ -62,11 +62,6 @@ func attachEntityLabels(ctx context.Context, queries *dbsqlc.Queries, views []de
 			}
 			labels.Area = &devices.EffectiveArea{Label: ref, Source: source}
 		case string(devices.LabelKindTag):
-			// Rows are ordered by name and ID, so a tag held by both the Entity
-			// and its Device arrives as adjacent duplicates.
-			if last := len(labels.Tags) - 1; last >= 0 && labels.Tags[last].ID == ref.ID {
-				continue
-			}
 			labels.Tags = append(labels.Tags, ref)
 		default:
 			return fmt.Errorf("entity %s has label of unknown kind %q", row.EntityID, row.Kind)
@@ -75,7 +70,7 @@ func attachEntityLabels(ctx context.Context, queries *dbsqlc.Queries, views []de
 	return nil
 }
 
-func attachEntityLabel(
+func withEntityLabels(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	view devices.EntityWithState,
@@ -125,7 +120,7 @@ func attachDeviceLabels(ctx context.Context, queries *dbsqlc.Queries, items []de
 	return nil
 }
 
-func attachDeviceLabel(ctx context.Context, queries *dbsqlc.Queries, device devices.Device) (devices.Device, error) {
+func withDeviceLabels(ctx context.Context, queries *dbsqlc.Queries, device devices.Device) (devices.Device, error) {
 	items := []devices.Device{device}
 	if err := attachDeviceLabels(ctx, queries, items); err != nil {
 		return devices.Device{}, err

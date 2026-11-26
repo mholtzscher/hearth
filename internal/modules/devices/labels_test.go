@@ -18,9 +18,12 @@ func TestLabelPreparationNormalizesNamesKindsAndIDs(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.FixedZone("x", 3600))
 	record, err := PrepareCreateLabel(CreateLabelParams{Name: " Living Room ", Kind: LabelKindArea}, testAreaID, now)
-	if err != nil || record.Label.Name != "Living Room" || record.NameKey != "living room" ||
-		record.Label.CreatedAt.Location() != time.UTC {
+	if err != nil || record.Label.Name != "Living Room" || record.Label.CreatedAt.Location() != time.UTC {
 		t.Fatalf("prepared = %#v, %v", record, err)
+	}
+	if name, key, keyErr := NormalizeLabelName(" Living Room"); keyErr != nil || name != "Living Room" ||
+		key != "living room" {
+		t.Fatalf("normalized = %q, %q, %v", name, key, keyErr)
 	}
 	for name, test := range map[string]struct {
 		params CreateLabelParams

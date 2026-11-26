@@ -131,25 +131,15 @@ func DecodeEntitiesCursor(
 	return parseEntityCursorID(cursor.ID)
 }
 
-// selectorScope returns the selector's Labels and types sorted and
-// deduplicated, so equal selectors scope cursors identically.
+// selectorScope returns the selector's canonical Labels and types.
 func selectorScope(selector devices.EntitySelector) ([]string, []string) {
-	labels := make([]string, 0, len(selector.Labels))
-	for _, id := range selector.Labels {
+	canonical := devices.CanonicalEntitySelector(selector)
+	var labels, types []string
+	for _, id := range canonical.Labels {
 		labels = append(labels, string(id))
 	}
-	types := make([]string, 0, len(selector.Types))
-	for _, typeID := range selector.Types {
+	for _, typeID := range canonical.Types {
 		types = append(types, string(typeID))
-	}
-	slices.Sort(labels)
-	slices.Sort(types)
-	labels, types = slices.Compact(labels), slices.Compact(types)
-	if len(labels) == 0 {
-		labels = nil
-	}
-	if len(types) == 0 {
-		types = nil
 	}
 	return labels, types
 }

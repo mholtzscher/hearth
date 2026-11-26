@@ -14,7 +14,9 @@ import (
 // Device, any of a set of types, and all of a set of effective Labels. The type
 // and Label sets travel as JSON arrays expanded by json_each, so the statement
 // shape is fixed. It is hand-written because sqlc v1.31.1 cannot parse
-// json_each, and its slice expansion misbinds numbered parameters.
+// json_each. A sqlc.slice version is not a substitute: sqlc numbers named or
+// repeated arguments, and SQLite then misbinds the positional parameters a
+// slice expands to.
 //
 // The selected columns are the projection's, in dbsqlc.EntityReadProjection
 // order, so the generated row mapping applies.

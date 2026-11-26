@@ -216,9 +216,11 @@ placeholders resolved per trial: `{{entity:device/key}}`, `{{device:device}}`,
 `{{dashboard:name}}`, `{{automation:name}}`, and `{{label:name}}`.
 
 `setup.labels` creates Labels before the first turn and assigns them over HTTP.
-Each entry has a lower-case `name`, a `kind` of `area` or `tag`, and the
-`devices` (`{device}`, optional `adapter`) and `entities` it applies to. A
-target can receive at most one Area.
+Each entry has a `name`, a `kind` of `area` or `tag`, and the `devices`
+(`{device}`, optional `adapter`) and `entities` it applies to. Names are unique
+case-insensitively, and `{{label:name}}` uses the lower-cased name, so it may
+contain only `a`–`z`, digits, `_`, `/`, and `-`. A target can receive at most
+one Area.
 
 ```yaml
 setup:

@@ -65,7 +65,7 @@ func (repository *DeviceRepository) PatchDevice(
 			return devices.Device{}, fmt.Errorf("load updated device metadata: %w", err)
 		}
 	}
-	device, err := attachDeviceLabel(ctx, queries, deviceFromRow(row))
+	device, err := withDeviceLabels(ctx, queries, deviceFromRow(row))
 	if err != nil {
 		return devices.Device{}, err
 	}

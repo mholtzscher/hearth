@@ -65,17 +65,7 @@ func (h *handler) updateDevice(ctx context.Context, input UpdateDeviceInput) (De
 	if input.nameOverridePresent {
 		patch.NameEdit = &devices.NameEdit{Override: input.NameOverride}
 	}
-	if input.areaPresent {
-		edit := &devices.AreaEdit{}
-		if input.AreaID != nil {
-			area := devices.LabelID(*input.AreaID)
-			edit.AreaID = &area
-		}
-		patch.AreaEdit = edit
-	}
-	if input.TagIDs != nil {
-		patch.TagEdit = &devices.TagEdit{TagIDs: labelIDs(input.TagIDs)}
-	}
+	patch.AreaEdit, patch.TagEdit = labelPatchEdits(input.areaPresent, input.AreaID, input.TagIDs)
 	var device devices.Device
 	var err error
 	if patch == (devices.DevicePatch{}) {

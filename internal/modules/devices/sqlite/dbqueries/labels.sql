@@ -81,12 +81,13 @@ WHERE dt.device_id IN (sqlc.slice(device_ids))
 ORDER BY dt.device_id ASC, l.name_key ASC, l.id ASC;
 
 -- name: ListEffectiveEntityLabels :many
-SELECT el.entity_id, el.label_id, el.kind, el.source, l.name
+-- Grouping returns a tag held by both an Entity and its Device once. An Area
+-- has one row, so its source survives the grouping unchanged.
+SELECT el.entity_id, el.label_id, el.kind, CAST(MAX(el.source) AS TEXT) AS source, l.name
 FROM entity_effective_labels AS el
 JOIN labels AS l ON l.id = el.label_id
 WHERE el.entity_id IN (sqlc.slice(entity_ids))
-ORDER BY el.entity_id ASC, el.kind ASC, l.name_key ASC, el.label_id ASC, el.source DESC;
+GROUP BY el.entity_id, el.kind, el.label_id, l.name, l.name_key
+ORDER BY el.entity_id ASC, el.kind ASC, l.name_key ASC, el.label_id ASC;
 
--- ListEntitiesBySelector is hand-written in entity_selector.go: sqlc numbers
--- repeated or named arguments, which misbinds the positional parameters its
--- slice expansion produces, and it cannot parse json_each.
+-- ListEntitiesBySelector: see entity_selector.go.

@@ -76,7 +76,7 @@ func (repository *DeviceRepository) mutateEntity(
 	if err != nil {
 		return devices.EntityWithState{}, fmt.Errorf("map updated entity: %w", err)
 	}
-	if view, err = attachEntityLabel(ctx, queries, view); err != nil {
+	if view, err = withEntityLabels(ctx, queries, view); err != nil {
 		return devices.EntityWithState{}, err
 	}
 	if commitErr := tx.Commit(); commitErr != nil {

@@ -4,8 +4,6 @@ import (
 	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
-
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 const schemaTypeNull = "null"
@@ -24,29 +22,11 @@ type EntityArea struct {
 	Source string `json:"source" enum:"device,entity"`
 }
 
-func deviceArea(area *devices.LabelRef) *LabelSummary {
-	if area == nil {
-		return nil
-	}
-	return &LabelSummary{LabelID: string(area.ID), Name: area.Name}
-}
-
-func entityArea(area *devices.EffectiveArea) *EntityArea {
-	if area == nil {
-		return nil
-	}
-	return &EntityArea{
-		LabelID: string(area.Label.ID), Name: area.Label.Name, Source: string(area.Source),
-	}
-}
-
-// labelSummaries is never nil: a target without tags reports an empty array.
-func labelSummaries(refs []devices.LabelRef) []LabelSummary {
-	result := make([]LabelSummary, len(refs))
-	for index, ref := range refs {
-		result[index] = LabelSummary{LabelID: string(ref.ID), Name: ref.Name}
-	}
-	return result
+// LabelDetail is one catalog Label.
+type LabelDetail struct {
+	LabelID string `json:"label_id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"     enum:"area,tag"`
 }
 
 // nullableSchema is a property that is either null or the schema of T. The area
