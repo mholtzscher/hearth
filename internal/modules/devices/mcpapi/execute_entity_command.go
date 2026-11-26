@@ -107,8 +107,9 @@ const (
 // isError result, so these keys are the machine-readable half of the failure
 // contract.
 const (
-	detailStatus    = "status"
-	detailCommandID = "command_id"
+	detailStatus      = "status"
+	detailCommandID   = "command_id"
+	detailDiagnostics = "diagnostics"
 )
 
 // commandFailure maps one failed execute_entity_command to the tool error the
@@ -121,6 +122,15 @@ func commandFailure(err error) *mcptools.ToolError {
 		return mcptools.InternalToolError(err)
 	}
 	if failure.durableStatus == "" {
+		parameters, invalidParameters := errors.AsType[*devices.CommandParametersError](err)
+		if failure.code == failureInvalidRequest && invalidParameters {
+			// Diagnostics name schema-declared fields and allowed keys so the
+			// caller can correct the parameters; they never echo submitted input.
+			return &mcptools.ToolError{
+				Code: string(failure.code), Message: "invalid command parameters",
+				Details: map[string]any{detailDiagnostics: parameters.Diagnostics},
+			}
+		}
 		return toolError(failure.code, failure.message)
 	}
 	return commandToolError(failure.code, failure.message, failedCommandID(err), failure.durableStatus)

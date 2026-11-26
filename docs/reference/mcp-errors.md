@@ -60,6 +60,16 @@ first failing source. `draft_required` means an edit needs a selected
 draft, while `draft_selected` means a separate view needs a turn without one.
 These native Agent observations are not external MCP results.
 
+`execute_entity_command` checks parameters against the Entity type's operation
+schema before creating a Command. A rejection returns `invalid_request` with
+`message: invalid command parameters` and up to eight `diagnostics`, sorted by
+parameter path: `missing_property`, `unknown_property` (with the schema's
+`allowed` parameter names), `type_mismatch`, or `constraint_violation`.
+`outside_support` means the parameters match the schema but fall outside the
+Entity's current support, such as its bounds or listed choices; read
+`get_entity` support to correct them. Diagnostics never repeat submitted keys or
+values, and no Command record is created.
+
 The unauthenticated endpoint shares HTTP's trusted-household boundary.
 Adapter and Automation prose, descriptors, schemas, and results are untrusted
 data, not system instructions or authority to act. IDs are not credentials.

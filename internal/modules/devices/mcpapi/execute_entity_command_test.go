@@ -3,8 +3,11 @@ package mcpapi //nolint:testpackage // Tests the registered Command receipt and 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"testing"
 
+	"github.com/mholtzscher/hearth/entitytypes"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
@@ -74,5 +77,37 @@ func assertInternalWireFailure(t *testing.T, result wireResult) {
 	}
 	if failure.Code != "internal_error" || failure.Message != "internal error" {
 		t.Fatalf("failure = %+v", failure)
+	}
+}
+
+func TestCommandParameterRejectionPublishesDiagnostics(t *testing.T) {
+	t.Parallel()
+	rejection := &devices.CommandParametersError{Diagnostics: []entitytypes.SchemaDiagnostic{
+		{Code: entitytypes.DiagnosticUnknownProperty, Allowed: []string{"temperature"}},
+		{Code: entitytypes.DiagnosticMissingProperty, Path: "/temperature"},
+	}}
+	server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
+	Register(server, &stubDevices{
+		executeCommand: func(context.Context, devices.CommandInput) (devices.CommandResult, error) {
+			return devices.CommandResult{}, fmt.Errorf("%w: %w", devices.ErrInvalidCommand, rejection)
+		},
+	}, testPresenter())
+	result := callWire(t, server.HTTPHandler(), "execute_entity_command",
+		`{"entity_id":"`+string(apiEntityID)+`","operation":"set_target","parameters":{"target_temperature":21000}}`)
+	if !result.IsError {
+		t.Fatalf("result = %+v", result)
+	}
+	const want = `{"failure_code":"invalid_request","message":"invalid command parameters","diagnostics":[` +
+		`{"code":"unknown_property","path":"","allowed":["temperature"]},` +
+		`{"code":"missing_property","path":"/temperature"}]}`
+	var got, expected any
+	if err := json.Unmarshal(result.Structured, &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(want), &expected); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("failure = %s\nwant = %s", result.Structured, want)
 	}
 }

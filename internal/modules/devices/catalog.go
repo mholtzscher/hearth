@@ -2,6 +2,7 @@ package devices
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -12,6 +13,27 @@ import (
 )
 
 var operationNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+
+// DiagnosticOutsideSupport marks parameters that match the operation's schema
+// but fall outside the Entity's current support, such as its bounds or choices.
+const DiagnosticOutsideSupport = "outside_support"
+
+// CommandParametersError reports why Command parameters were rejected. Its
+// Diagnostics come from the operation's schema and never echo submitted input,
+// so a caller may publish them; the wrapped cause stays private.
+type CommandParametersError struct {
+	Diagnostics []entitytypes.SchemaDiagnostic
+	cause       error
+}
+
+func (err *CommandParametersError) Error() string {
+	if err.cause == nil {
+		return "invalid command parameters"
+	}
+	return err.cause.Error()
+}
+
+func (err *CommandParametersError) Unwrap() error { return err.cause }
 
 type OperationDefinition[State, Support any] struct {
 	name  OperationName
@@ -73,12 +95,19 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 					}
 					typedParameters, normalized, err := parameters.Decode(json.RawMessage(rawParameters))
 					if err != nil {
-						return nil, fmt.Errorf("decode parameters for operation %q: %w", name, err)
+						err = fmt.Errorf("decode parameters for operation %q: %w", name, err)
+						if violation, ok := errors.AsType[*entitytypes.SchemaViolationError](err); ok {
+							return nil, &CommandParametersError{Diagnostics: violation.Diagnostics, cause: err}
+						}
+						return nil, err
 					}
 					if validationErr := validateParameters(
 						typedSupport, operationSupport, typedParameters,
 					); validationErr != nil {
-						return nil, fmt.Errorf("validate parameters for operation %q: %w", name, validationErr)
+						return nil, &CommandParametersError{
+							Diagnostics: []entitytypes.SchemaDiagnostic{{Code: DiagnosticOutsideSupport}},
+							cause:       fmt.Errorf("validate parameters for operation %q: %w", name, validationErr),
+						}
 					}
 					return CommandParameters(normalized), nil
 				},

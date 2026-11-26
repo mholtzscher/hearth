@@ -52,7 +52,7 @@ func (codec *JSONCodec[T]) Decode(raw json.RawMessage) (T, json.RawMessage, erro
 		return zero, nil, fmt.Errorf("decode %q: %w", codec.schemaID, err)
 	}
 	if schemaErr := codec.schema.Validate(value); schemaErr != nil {
-		return zero, nil, fmt.Errorf("validate %q: %w", codec.schemaID, schemaErr)
+		return zero, nil, fmt.Errorf("validate %q: %w", codec.schemaID, newSchemaViolation(codec.schema, schemaErr))
 	}
 
 	bindingRaw, err := json.Marshal(normalizeIntegralNumbers(value))
