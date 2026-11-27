@@ -14,13 +14,10 @@ import (
 
 var operationNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 
-// DiagnosticOutsideSupport marks parameters that match the operation's schema
-// but fall outside the Entity's current support, such as its bounds or choices.
-const DiagnosticOutsideSupport = "outside_support"
-
-// CommandParametersError reports why Command parameters were rejected. Its
-// Diagnostics come from the operation's schema and never echo submitted input,
-// so a caller may publish them; the wrapped cause stays private.
+// CommandParametersError reports Command parameters that failed the operation's
+// schema. Its Diagnostics never echo submitted input, so a caller may publish
+// them; the wrapped cause stays private. It distinguishes parameter failures
+// from Entity support failures, which use the same schema error type.
 type CommandParametersError struct {
 	Diagnostics []entitytypes.SchemaDiagnostic
 	cause       error
@@ -105,10 +102,7 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 					if validationErr := validateParameters(
 						typedSupport, operationSupport, typedParameters,
 					); validationErr != nil {
-						return nil, &CommandParametersError{
-							Diagnostics: []entitytypes.SchemaDiagnostic{{Code: DiagnosticOutsideSupport}},
-							cause:       fmt.Errorf("validate parameters for operation %q: %w", name, validationErr),
-						}
+						return nil, fmt.Errorf("validate parameters for operation %q: %w", name, validationErr)
 					}
 					return CommandParameters(normalized), nil
 				},

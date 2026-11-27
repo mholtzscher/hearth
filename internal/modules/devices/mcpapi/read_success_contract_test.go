@@ -15,7 +15,7 @@ import (
 func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 	t.Parallel()
 	const summary = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"availability":{"status":"online"},"state":null,"area":null,"tags":[],"quantities":{}}`
-	const detail = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":{},"availability":{"status":"online","source":"s","since":"t","evidence_at":"t"},"state":null,"area":null,"tags":[],"quantities":{},"operations":{"set":{"parameters":{"type":"object"}}}}`
+	const detail = `{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":{},"availability":{"status":"online","source":"s","since":"t","evidence_at":"t"},"state":null,"area":null,"tags":[],"quantities":{},"operations":{"set":{"type":"object"}}}`
 	const command = `{"command_id":"c","entity_id":"e","operation":"set","status":"succeeded","requested_at":"t","parameters":{},"deadline_at":"t"}`
 	const history = `"kind":"summary","entity_id":"e","range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at","coverage":{"basis":"retained_observations","completeness":"unverified"},"quantity":{"unit":"mCel","label":"mCel","fraction_digits":0}`
 	for _, test := range []struct {
@@ -59,8 +59,7 @@ func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 			`{"device_id":"d","name":"n","kind":"k","area":null,"tags":[],"entities":[],"next_entity_cursor":null}`,
 		}},
 		{"entity detail", generatedSuccessSchema[EntityDetail](t), detail, []string{
-			strings.Replace(detail, `"operations":{"set":{"parameters":{"type":"object"}}}`, `"operations":{"set":{}}`, 1),
-			strings.Replace(detail, `,"operations":{"set":{"parameters":{"type":"object"}}}`, ``, 1),
+			strings.Replace(detail, `,"operations":{"set":{"type":"object"}}`, ``, 1),
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":[],"availability":{"status":"online","source":"s","since":"t","evidence_at":"t"},"state":null}`,
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":{},"availability":{"status":"online","source":"s","since":"t","evidence_at":"t","source_observed_at":null},"state":null}`,
 			`{"entity_id":"e","device_id":"d","name":"n","type":"t","enabled":true,"adapter_id":"a","support":{},"availability":{"status":"online","source":"s","since":"t","evidence_at":"t"},"state":{"value":null,"observed_at":"t","observation_id":"o","adapter_received_at":"t","source_updated_at":null}}`,

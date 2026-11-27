@@ -5,7 +5,6 @@ import (
 	"errors"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -20,12 +19,10 @@ const (
 	DiagnosticConstraint      = "constraint_violation"
 )
 
-// maxSchemaDiagnostics bounds one violation's diagnostics.
-const maxSchemaDiagnostics = 8
-
-// SchemaDiagnostic locates one schema violation. Path follows only
-// schema-declared properties, and Allowed lists the schema's property names at
-// Path for unknown_property, so neither echoes submitted keys or values.
+// SchemaDiagnostic locates one schema violation. Path names at most one
+// top-level property the schema declares, and Allowed lists the schema's
+// top-level property names for unknown_property, so neither echoes submitted
+// keys or values. Command parameter schemas are flat objects.
 type SchemaDiagnostic struct {
 	Code    string   `json:"code"`
 	Path    string   `json:"path"`
@@ -60,11 +57,17 @@ func newSchemaViolation(root *jsonschema.Schema, err error) error {
 	found = slices.CompactFunc(found, func(a, b SchemaDiagnostic) bool {
 		return a.Path == b.Path && a.Code == b.Code
 	})
-	return &SchemaViolationError{Diagnostics: found[:min(len(found), maxSchemaDiagnostics)], cause: err}
+	return &SchemaViolationError{Diagnostics: found, cause: err}
 }
 
 func collectSchemaDiagnostics(root *jsonschema.Schema, issue *jsonschema.ValidationError, found *[]SchemaDiagnostic) {
-	path, location := schemaLocation(root, issue.InstanceLocation)
+	path, location := "", root
+	if len(issue.InstanceLocation) > 0 {
+		location = nil
+		if token := issue.InstanceLocation[0]; root.Properties[token] != nil {
+			path = "/" + token
+		}
+	}
 	add := func(code, at string, allowed []string) {
 		*found = append(*found, SchemaDiagnostic{Code: code, Path: at, Allowed: allowed})
 	}
@@ -73,7 +76,7 @@ func collectSchemaDiagnostics(root *jsonschema.Schema, issue *jsonschema.Validat
 		for _, missing := range problem.Missing {
 			at := path
 			if location != nil && location.Properties[missing] != nil {
-				at += "/" + escapePointerToken(missing)
+				at = "/" + missing
 			}
 			add(DiagnosticMissingProperty, at, nil)
 		}
@@ -96,37 +99,4 @@ func collectSchemaDiagnostics(root *jsonschema.Schema, issue *jsonschema.Validat
 	for _, cause := range issue.Causes {
 		collectSchemaDiagnostics(root, cause, found)
 	}
-}
-
-// schemaLocation follows declared properties and array items, stopping at the
-// first token the schema does not declare.
-func schemaLocation(root *jsonschema.Schema, tokens []string) (string, *jsonschema.Schema) {
-	var path strings.Builder
-	location := schemaTarget(root)
-	for _, token := range tokens {
-		var child *jsonschema.Schema
-		if location != nil {
-			child = location.Properties[token]
-			if _, err := strconv.Atoi(token); child == nil && err == nil {
-				child = location.Items2020
-			}
-		}
-		if child == nil {
-			return path.String(), nil
-		}
-		path.WriteString("/" + escapePointerToken(token))
-		location = schemaTarget(child)
-	}
-	return path.String(), location
-}
-
-func schemaTarget(schema *jsonschema.Schema) *jsonschema.Schema {
-	for depth := 0; schema != nil && schema.Ref != nil && depth < 32; depth++ {
-		schema = schema.Ref
-	}
-	return schema
-}
-
-func escapePointerToken(token string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(token, "~", "~0"), "/", "~1")
 }

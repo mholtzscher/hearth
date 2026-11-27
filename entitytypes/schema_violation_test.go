@@ -10,22 +10,18 @@ import (
 	"github.com/mholtzscher/hearth/entitytypes"
 )
 
-type nestedFixture struct {
-	Outer struct {
-		Level int `json:"level"`
-	} `json:"outer"`
+type flatFixture struct {
+	Level int `json:"level"`
 }
 
 // TestSchemaViolationDiagnosticsFollowOnlyDeclaredNames keeps rejected input
-// out of published diagnostics: paths stop at undeclared keys, and Allowed
+// out of published diagnostics: paths name declared properties, and Allowed
 // lists the schema's names.
 func TestSchemaViolationDiagnosticsFollowOnlyDeclaredNames(t *testing.T) {
 	t.Parallel()
-	codec, err := entitytypes.CompileJSONCodec[nestedFixture]("urn:test:nested", json.RawMessage(`{
-		"type":"object","additionalProperties":false,"required":["outer"],
-		"properties":{"outer":{"$ref":"#/$defs/outer"}},
-		"$defs":{"outer":{"type":"object","additionalProperties":false,"required":["level"],
-			"properties":{"level":{"type":"integer","maximum":3}}}}}`), nil)
+	codec, err := entitytypes.CompileJSONCodec[flatFixture]("urn:test:flat", json.RawMessage(`{
+		"type":"object","additionalProperties":false,"required":["level"],
+		"properties":{"level":{"type":"integer","maximum":3}}}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,12 +29,12 @@ func TestSchemaViolationDiagnosticsFollowOnlyDeclaredNames(t *testing.T) {
 		name, value string
 		want        []entitytypes.SchemaDiagnostic
 	}{
-		{"unknown nested key", `{"outer":{"secret_key":{"x":1}}}`, []entitytypes.SchemaDiagnostic{
-			{Code: entitytypes.DiagnosticUnknownProperty, Path: "/outer", Allowed: []string{"level"}},
-			{Code: entitytypes.DiagnosticMissingProperty, Path: "/outer/level"},
+		{"unknown key", `{"secret_key":{"x":1}}`, []entitytypes.SchemaDiagnostic{
+			{Code: entitytypes.DiagnosticUnknownProperty, Path: "", Allowed: []string{"level"}},
+			{Code: entitytypes.DiagnosticMissingProperty, Path: "/level"},
 		}},
-		{"constraint", `{"outer":{"level":9}}`, []entitytypes.SchemaDiagnostic{
-			{Code: entitytypes.DiagnosticConstraint, Path: "/outer/level"},
+		{"constraint", `{"level":9}`, []entitytypes.SchemaDiagnostic{
+			{Code: entitytypes.DiagnosticConstraint, Path: "/level"},
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

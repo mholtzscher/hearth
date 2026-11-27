@@ -70,17 +70,11 @@ func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityI
 	return stub.getEntity(ctx, entityID)
 }
 
-// EntityOperations defaults to the built-in catalog, so get_entity fixtures
-// publish the operations their Entity type and support actually enable.
 func (stub *stubDevices) EntityOperations(entity devices.Entity) ([]devices.OperationContract, error) {
-	if stub.entityOperations != nil {
-		return stub.entityOperations(entity)
+	if stub.entityOperations == nil {
+		return nil, nil
 	}
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		return nil, err
-	}
-	return catalog.SupportedOperations(entity)
+	return stub.entityOperations(entity)
 }
 
 func (stub *stubDevices) PatchEntity(

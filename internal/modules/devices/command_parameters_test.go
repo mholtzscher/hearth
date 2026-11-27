@@ -47,10 +47,6 @@ func TestCommandParametersErrorsLocateRejectedFields(t *testing.T) {
 			name: "wrong type", operation: "set_target", parameters: `{"temperature":"21"}`,
 			want: []entitytypes.SchemaDiagnostic{{Code: entitytypes.DiagnosticTypeMismatch, Path: "/temperature"}},
 		},
-		{
-			name: "outside the Entity's bounds", operation: "set_target", parameters: `{"temperature":21}`,
-			want: []entitytypes.SchemaDiagnostic{{Code: DiagnosticOutsideSupport}},
-		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()

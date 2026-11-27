@@ -92,13 +92,8 @@ func (*stubDevices) PatchDevice(context.Context, devices.DeviceID, devices.Devic
 	panic("unexpected PatchDevice call")
 }
 
-// EntityOperations publishes what the built-in catalog enables for the Entity.
-func (stub *stubDevices) EntityOperations(entity devices.Entity) ([]devices.OperationContract, error) {
-	catalog, err := devices.NewBuiltinTypeCatalog()
-	if err != nil {
-		return nil, err
-	}
-	return catalog.SupportedOperations(entity)
+func (stub *stubDevices) EntityOperations(devices.Entity) ([]devices.OperationContract, error) {
+	return nil, nil
 }
 
 func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {

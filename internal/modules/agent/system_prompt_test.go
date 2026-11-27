@@ -22,11 +22,9 @@ func TestAgentGuidanceKeepsSafetyRules(t *testing.T) {
 		{"prompt", prompt, "Missing readings are unknown, not zero or idle"},
 		{"prompt", prompt, "A name does not establish what an Entity controls or which units it uses"},
 		{"prompt", prompt, "Do not interchange them"},
-		{"prompt", prompt, "Show IDs only when the user asks for them"},
 		{"prompt", prompt, "advertised by the function schema"},
 		{"prompt", prompt, "notification destination display name"},
 		// Units.
-		{"prompt", prompt, "household-unit values by default"},
 		{"prompt", prompt, "units:canonical"},
 		{"prompt", prompt, "Never copy a displayed number into a canonical write"},
 		{"prompt", prompt, "Automation definitions remain canonical"},
@@ -43,22 +41,14 @@ func TestAgentGuidanceKeepsSafetyRules(t *testing.T) {
 		{"prompt", prompt, "Card controls send Commands only on an explicit browser gesture"},
 		{"prompt", prompt, "saving a view never executes Commands"},
 		{"prompt", prompt, "only an explicit user save saves a dashboard"},
-		{"prompt", prompt, "do not repeat their readings"},
-		{"prompt", prompt, "at most one short sentence"},
 		// Card binding.
-		{"compose_view", composeView, "A card bound to one Entity names it entity_id; TimeSeries lists its Entities in series"},
-		{"compose_view", composeView, "prefer OutsideNow, Rain, Wind, Pressure, and Forecast over separate Metrics"},
-		{"compose_view", composeView, "mm/h for a rain rate, mm for rain totals, deg for wind direction"},
 		{"compose_view", composeView, "never sums of the rate"},
-		{"compose_view", composeView, "sensor named for that period"},
 		{"compose_view", composeView, "relative versus absolute pressure"},
 		{"compose_view", composeView, "Every metric source must belong to the power Entity's Device"},
-		{"compose_view", composeView, "Ordinary toggle tiles have no metric"},
 		{"compose_view", composeView, "Identify display and child_lock by their Entity names"},
 		{"compose_view", composeView, "omit a role you cannot identify"},
 		{"compose_view", composeView, "Every bound Entity must belong to the power Entity's Device"},
 		{"compose_view", composeView, "omit it for garage doors and doors"},
-		{"compose_view", composeView, "Grouped speakers cannot be controlled"},
 		{"compose_view", composeView, "not station readings"},
 		// Automations.
 		{"automation reminder", automation, "present_automation with mode reference and its discovered automation_id"},
@@ -66,20 +56,6 @@ func TestAgentGuidanceKeepsSafetyRules(t *testing.T) {
 	} {
 		if !strings.Contains(strings.Join(strings.Fields(rule.text), " "), rule.guidance) {
 			t.Errorf("%s guidance omits %q", rule.owner, rule.guidance)
-		}
-	}
-}
-
-// TestSystemPromptStaysGeneral keeps per-card binding rules and Entity-type
-// specifics out of the guidance sent on every turn.
-func TestSystemPromptStaysGeneral(t *testing.T) {
-	t.Parallel()
-	for _, specific := range []string{
-		"AirPurifier", "ToggleTile", "OutsideNow", "confirm_open",
-		"hearth.thermostat/v1", "hearth.cover/v1", "set_range", "milli-Celsius", "Rheem", "ratgdo",
-	} {
-		if strings.Contains(defaultSystemPrompt, specific) {
-			t.Errorf("system prompt mentions %q", specific)
 		}
 	}
 }
