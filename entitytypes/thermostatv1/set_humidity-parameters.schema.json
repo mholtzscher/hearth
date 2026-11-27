@@ -6,6 +6,6 @@
   "additionalProperties": false,
   "required": ["humidity"],
   "properties": {
-    "humidity": {"type": "number", "minimum": 0, "maximum": 100}
+    "humidity": {"description": "Target relative humidity in percent, within support/state humidity_minimum and humidity_maximum.", "type": "number", "minimum": 0, "maximum": 100}
   }
 }

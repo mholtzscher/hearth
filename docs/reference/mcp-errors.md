@@ -40,6 +40,10 @@ Validation does not insert output defaults, round numbers, or fill missing
 required results. An invalid success becomes `internal_error`.
 
 Collections return compact summaries and omit `next_cursor` on their last page.
+`get_entity` also returns `operations`: each operation the Entity's current
+support enables, with the JSON Schema its `execute_entity_command` parameters
+must satisfy. The schema comes from the Entity type contract, without its
+`$schema`, `$id`, or `title`.
 Detail tools expose retained evidence; actions return durable identities rather
 than HTTP response bodies. Each protocol owns its models and mappings.
 
@@ -67,7 +71,7 @@ parameter path: `missing_property`, `unknown_property` (with the schema's
 `allowed` parameter names), `type_mismatch`, or `constraint_violation`.
 `outside_support` means the parameters match the schema but fall outside the
 Entity's current support, such as its bounds or listed choices; read
-`get_entity` support to correct them. Diagnostics never repeat submitted keys or
+`get_entity` `support` to correct them. Diagnostics never repeat submitted keys or
 values, and no Command record is created.
 
 The unauthenticated endpoint shares HTTP's trusted-household boundary.

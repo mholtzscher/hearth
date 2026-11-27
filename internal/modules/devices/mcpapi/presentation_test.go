@@ -16,7 +16,9 @@ func TestMCPReadRepresentations(t *testing.T) {
 	view.Entity.TypeID = devices.EntityTypeColorxyV1
 	view.Entity.Support = []byte(`{}`)
 	stub := &stubDevices{
-		getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) { return view, nil },
+		// The fixture's minimal support is for unit presentation, not operations.
+		entityOperations: func(devices.Entity) ([]devices.OperationContract, error) { return nil, nil },
+		getEntity:        func(context.Context, devices.EntityID) (devices.EntityWithState, error) { return view, nil },
 		listEntities: func(context.Context, devices.ListEntitiesParams) (devices.Page[devices.EntityWithState], error) {
 			return devices.Page[devices.EntityWithState]{Items: []devices.EntityWithState{view}}, nil
 		},

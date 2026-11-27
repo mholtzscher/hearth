@@ -18,6 +18,7 @@ const (
 type stubDevices struct {
 	queryHistory                  func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
 	getEntity                     func(context.Context, devices.EntityID) (devices.EntityWithState, error)
+	entityOperations              func(devices.Entity) ([]devices.OperationContract, error)
 	patchEntity                   func(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
 	patchDevice                   func(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	listDevices                   func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
@@ -67,6 +68,19 @@ func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityI
 		panic("unexpected GetEntity call")
 	}
 	return stub.getEntity(ctx, entityID)
+}
+
+// EntityOperations defaults to the built-in catalog, so get_entity fixtures
+// publish the operations their Entity type and support actually enable.
+func (stub *stubDevices) EntityOperations(entity devices.Entity) ([]devices.OperationContract, error) {
+	if stub.entityOperations != nil {
+		return stub.entityOperations(entity)
+	}
+	catalog, err := devices.NewBuiltinTypeCatalog()
+	if err != nil {
+		return nil, err
+	}
+	return catalog.SupportedOperations(entity)
 }
 
 func (stub *stubDevices) PatchEntity(

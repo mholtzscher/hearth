@@ -74,3 +74,38 @@ func TestCommandParametersErrorsLocateRejectedFields(t *testing.T) {
 func equalDiagnostic(a, b entitytypes.SchemaDiagnostic) bool {
 	return a.Code == b.Code && a.Path == b.Path && slices.Equal(a.Allowed, b.Allowed)
 }
+
+func TestSupportedOperationsFollowEntitySupport(t *testing.T) {
+	t.Parallel()
+	catalog, err := NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	thermostat := Entity{ID: "ent_thermostat", TypeID: EntityTypeThermostatV1, Support: EntitySupport(
+		`{"state":{"modes":["heat"],"fan_modes":["Auto"],"temperature_minimum":7000,"temperature_maximum":32000,` +
+			`"humidity_minimum":10,"humidity_maximum":80},"operations":{"set_target":{},"set_mode":{}}}`,
+	)}
+	operations, err := catalog.SupportedOperations(thermostat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]OperationName, 0, len(operations))
+	for _, operation := range operations {
+		names = append(names, operation.Name)
+	}
+	if !slices.Equal(names, []OperationName{"set_mode", "set_target"}) {
+		t.Fatalf("operations = %v, want the two supported ones in name order", names)
+	}
+	if !strings.Contains(string(operations[1].ParametersSchema), "milli-Celsius") {
+		t.Fatalf("set_target schema lacks its unit: %s", operations[1].ParametersSchema)
+	}
+	operations[1].ParametersSchema[0] = 'x'
+	again, _ := catalog.SupportedOperations(thermostat)
+	if again[1].ParametersSchema[0] != '{' {
+		t.Fatal("SupportedOperations exposed the catalog's schema bytes")
+	}
+	thermostat.Support = EntitySupport(`{}`)
+	if _, err = catalog.SupportedOperations(thermostat); err == nil {
+		t.Fatal("invalid persisted support produced operations")
+	}
+}

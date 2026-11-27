@@ -11,6 +11,7 @@ type Devices interface {
 	PatchEntity(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
 	PatchDevice(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
+	EntityOperations(devices.Entity) ([]devices.OperationContract, error)
 	ExecuteCommand(
 		context.Context,
 		devices.CommandInput,

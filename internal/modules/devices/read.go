@@ -94,6 +94,12 @@ func (service *Service) GetEntity(ctx context.Context, id EntityID) (EntityWithS
 	return CopyEntityWithState(view), nil
 }
 
+// EntityOperations lists the operations the Entity's current support enables,
+// each with the parameter schema a Command must satisfy.
+func (service *Service) EntityOperations(entity Entity) ([]OperationContract, error) {
+	return service.catalog.SupportedOperations(entity)
+}
+
 func (service *Service) GetCommand(ctx context.Context, id CommandID) (CommandRecord, error) {
 	if _, err := ParseCommandID(string(id)); err != nil {
 		return CommandRecord{}, fmt.Errorf("parse command ID: %w", err)

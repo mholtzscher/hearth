@@ -111,3 +111,39 @@ func TestCommandParameterRejectionPublishesDiagnostics(t *testing.T) {
 		t.Fatalf("failure = %s\nwant = %s", result.Structured, want)
 	}
 }
+
+func TestGetEntityPublishesSupportedOperationSchemas(t *testing.T) {
+	t.Parallel()
+	view := apiEntityWithState(nil)
+	view.Entity.TypeID = devices.EntityTypeThermostatV1
+	view.Entity.Support = []byte(`{"state":{"modes":["heat"],"fan_modes":["Auto"],"temperature_minimum":7000,` +
+		`"temperature_maximum":32000,"humidity_minimum":10,"humidity_maximum":80},"operations":{"set_target":{}}}`)
+	server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
+	Register(server, &stubDevices{
+		getEntity: func(context.Context, devices.EntityID) (devices.EntityWithState, error) { return view, nil },
+	}, testPresenter())
+	result := callWire(t, server.HTTPHandler(), "get_entity", `{"entity_id":"`+string(apiEntityID)+`"}`)
+	if result.IsError {
+		t.Fatalf("result = %+v", result)
+	}
+	var detail struct {
+		Operations map[string]struct {
+			Parameters map[string]any `json:"parameters"`
+		} `json:"operations"`
+	}
+	if err := json.Unmarshal(result.Structured, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Operations) != 1 {
+		t.Fatalf("operations = %+v, want only set_target", detail.Operations)
+	}
+	parameters := detail.Operations["set_target"].Parameters
+	if !reflect.DeepEqual(parameters["required"], []any{"temperature"}) {
+		t.Fatalf("set_target parameters = %v", parameters)
+	}
+	for _, identification := range []string{"$schema", "$id", "title"} {
+		if _, present := parameters[identification]; present {
+			t.Fatalf("parameters keep %s: %v", identification, parameters)
+		}
+	}
+}

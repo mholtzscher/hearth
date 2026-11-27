@@ -6,6 +6,6 @@
   "additionalProperties": false,
   "required": ["mode"],
   "properties": {
-    "mode": {"type": "string", "enum": ["off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"]}
+    "mode": {"description": "One of support/state/modes. Mode is the setting; State activity separately reports what the system is doing.", "type": "string", "enum": ["off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"]}
   }
 }

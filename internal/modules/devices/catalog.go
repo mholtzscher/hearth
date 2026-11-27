@@ -72,8 +72,9 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 	default:
 		definition.build = func(state *entitytypes.JSONCodec[State], support *entitytypes.JSONCodec[Support]) erasedOperationDefinition {
 			erased := erasedOperationDefinition{
-				outcome:  outcome,
-				deadline: deadline,
+				outcome:          outcome,
+				deadline:         deadline,
+				parametersSchema: parameters.Schema(),
 				validateReference: func(rawSupport EntitySupport) error {
 					typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
 					if err != nil {
@@ -145,6 +146,7 @@ type EntityTypeDefinition struct {
 }
 
 type erasedOperationDefinition struct {
+	parametersSchema  json.RawMessage
 	validateReference func(EntitySupport) error
 	resolve           func(EntitySupport, CommandParameters) (CommandParameters, error)
 	deadline          time.Duration
@@ -398,6 +400,38 @@ func (catalog *TypeCatalog) validateCommandReference(entity Entity, operationNam
 		return err
 	}
 	return operation.validateReference(entity.Support)
+}
+
+// OperationContract names one operation an Entity supports and the JSON
+// Schema its Command parameters must satisfy.
+type OperationContract struct {
+	Name             OperationName
+	ParametersSchema json.RawMessage
+}
+
+// SupportedOperations lists, in name order, the operations the Entity's current
+// support enables. Invalid persisted support is an error, not an empty list.
+func (catalog *TypeCatalog) SupportedOperations(entity Entity) ([]OperationContract, error) {
+	definition, err := catalog.resolve(entity.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = definition.normalizeSupport(entity.Support); err != nil {
+		return nil, err
+	}
+	var supported []OperationContract
+	for _, name := range slices.Sorted(maps.Keys(definition.operations)) {
+		operation := definition.operations[name]
+		// Support already decoded, so a failure here means the Entity does not
+		// enable this operation.
+		if operation.validateReference(entity.Support) != nil {
+			continue
+		}
+		supported = append(supported, OperationContract{
+			Name: name, ParametersSchema: append(json.RawMessage(nil), operation.parametersSchema...),
+		})
+	}
+	return supported, nil
 }
 
 func (catalog *TypeCatalog) ResolveCommand(
