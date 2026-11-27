@@ -92,6 +92,10 @@ func (*stubDevices) PatchDevice(context.Context, devices.DeviceID, devices.Devic
 	panic("unexpected PatchDevice call")
 }
 
+func (stub *stubDevices) EntityOperations(devices.Entity) ([]devices.OperationContract, error) {
+	return nil, nil
+}
+
 func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
 	if stub.getEntity == nil {
 		panic("unexpected GetEntity call")

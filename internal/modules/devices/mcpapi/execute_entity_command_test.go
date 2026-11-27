@@ -3,8 +3,11 @@ package mcpapi //nolint:testpackage // Tests the registered Command receipt and 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"testing"
 
+	"github.com/mholtzscher/hearth/entitytypes"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
@@ -74,5 +77,70 @@ func assertInternalWireFailure(t *testing.T, result wireResult) {
 	}
 	if failure.Code != "internal_error" || failure.Message != "internal error" {
 		t.Fatalf("failure = %+v", failure)
+	}
+}
+
+func TestCommandParameterRejectionPublishesDiagnostics(t *testing.T) {
+	t.Parallel()
+	rejection := &devices.CommandParametersError{Diagnostics: []entitytypes.SchemaDiagnostic{
+		{Code: entitytypes.DiagnosticUnknownProperty, Allowed: []string{"temperature"}},
+		{Code: entitytypes.DiagnosticMissingProperty, Path: "/temperature"},
+	}}
+	server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
+	Register(server, &stubDevices{
+		executeCommand: func(context.Context, devices.CommandInput) (devices.CommandResult, error) {
+			return devices.CommandResult{}, fmt.Errorf("%w: %w", devices.ErrInvalidCommand, rejection)
+		},
+	}, testPresenter())
+	result := callWire(t, server.HTTPHandler(), "execute_entity_command",
+		`{"entity_id":"`+string(apiEntityID)+`","operation":"set_target","parameters":{"target_temperature":21000}}`)
+	if !result.IsError {
+		t.Fatalf("result = %+v", result)
+	}
+	const want = `{"failure_code":"invalid_request","message":"invalid command parameters","diagnostics":[` +
+		`{"code":"unknown_property","path":"","allowed":["temperature"]},` +
+		`{"code":"missing_property","path":"/temperature"}]}`
+	var got, expected any
+	if err := json.Unmarshal(result.Structured, &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(want), &expected); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("failure = %s\nwant = %s", result.Structured, want)
+	}
+}
+
+func TestGetEntityPublishesSupportedOperationSchemas(t *testing.T) {
+	t.Parallel()
+	view := apiEntityWithState(nil)
+	view.Entity.TypeID = devices.EntityTypeThermostatV1
+	view.Entity.Support = []byte(`{"state":{"modes":["heat"],"fan_modes":["Auto"],"temperature_minimum":7000,` +
+		`"temperature_maximum":32000,"humidity_minimum":10,"humidity_maximum":80},"operations":{"set_target":{}}}`)
+	server := mcptools.New(mcptools.Config{Name: "test", Version: "1.0.0"})
+	catalog, err := devices.NewBuiltinTypeCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	Register(server, &stubDevices{
+		getEntity:        func(context.Context, devices.EntityID) (devices.EntityWithState, error) { return view, nil },
+		entityOperations: catalog.SupportedOperations,
+	}, testPresenter())
+	result := callWire(t, server.HTTPHandler(), "get_entity", `{"entity_id":"`+string(apiEntityID)+`"}`)
+	if result.IsError {
+		t.Fatalf("result = %+v", result)
+	}
+	var detail struct {
+		Operations map[string]map[string]any `json:"operations"`
+	}
+	if err = json.Unmarshal(result.Structured, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Operations) != 1 {
+		t.Fatalf("operations = %+v, want only set_target", detail.Operations)
+	}
+	if parameters := detail.Operations["set_target"]; !reflect.DeepEqual(parameters["required"], []any{"temperature"}) {
+		t.Fatalf("set_target parameters = %v", parameters)
 	}
 }

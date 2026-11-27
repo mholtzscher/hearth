@@ -14,6 +14,7 @@ import (
 // JSONCodec validates JSON against an authoritative schema and converts it to T.
 type JSONCodec[T any] struct {
 	schemaID string
+	raw      json.RawMessage
 	schema   *jsonschema.Schema
 	validate func(T) error
 }
@@ -38,7 +39,20 @@ func CompileJSONCodec[T any](schemaID string, schema json.RawMessage, validate f
 	if err != nil {
 		return nil, fmt.Errorf("compile schema %q: %w", schemaID, err)
 	}
-	return &JSONCodec[T]{schemaID: schemaID, schema: compiled, validate: validate}, nil
+	return &JSONCodec[T]{
+		schemaID: schemaID,
+		raw:      append(json.RawMessage(nil), schema...),
+		schema:   compiled,
+		validate: validate,
+	}, nil
+}
+
+// Schema returns a copy of the authoritative JSON Schema the codec validates.
+func (codec *JSONCodec[T]) Schema() json.RawMessage {
+	if codec == nil {
+		return nil
+	}
+	return append(json.RawMessage(nil), codec.raw...)
 }
 
 // Decode validates one JSON value, decodes T, and returns its normalized JSON.
@@ -52,7 +66,7 @@ func (codec *JSONCodec[T]) Decode(raw json.RawMessage) (T, json.RawMessage, erro
 		return zero, nil, fmt.Errorf("decode %q: %w", codec.schemaID, err)
 	}
 	if schemaErr := codec.schema.Validate(value); schemaErr != nil {
-		return zero, nil, fmt.Errorf("validate %q: %w", codec.schemaID, schemaErr)
+		return zero, nil, fmt.Errorf("validate %q: %w", codec.schemaID, newSchemaViolation(codec.schema, schemaErr))
 	}
 
 	bindingRaw, err := json.Marshal(normalizeIntegralNumbers(value))

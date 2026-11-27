@@ -2,11 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-range-parameters",
   "title": "Hearth thermostat/v1 set_range parameters",
+  "description": "Set the paired heating (low) and cooling (high) targets. Send both, even in heat or cool mode. Does not change the mode.",
   "type": "object",
   "additionalProperties": false,
   "required": ["low", "high"],
   "properties": {
-    "low": {"type": "integer", "minimum": -273150, "maximum": 1000000},
-    "high": {"type": "integer", "minimum": -273150, "maximum": 1000000}
+    "low": {"description": "Heating target in integer milli-Celsius, such as 20000 for 20 °C.", "type": "integer", "minimum": -273150, "maximum": 1000000},
+    "high": {"description": "Cooling target in integer milli-Celsius, such as 24000 for 24 °C.", "type": "integer", "minimum": -273150, "maximum": 1000000}
   }
 }

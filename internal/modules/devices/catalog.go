@@ -2,6 +2,7 @@ package devices
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -12,6 +13,24 @@ import (
 )
 
 var operationNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+
+// CommandParametersError reports Command parameters that failed the operation's
+// schema. Its Diagnostics never echo submitted input, so a caller may publish
+// them; the wrapped cause stays private. It distinguishes parameter failures
+// from Entity support failures, which use the same schema error type.
+type CommandParametersError struct {
+	Diagnostics []entitytypes.SchemaDiagnostic
+	cause       error
+}
+
+func (err *CommandParametersError) Error() string {
+	if err.cause == nil {
+		return "invalid command parameters"
+	}
+	return err.cause.Error()
+}
+
+func (err *CommandParametersError) Unwrap() error { return err.cause }
 
 type OperationDefinition[State, Support any] struct {
 	name  OperationName
@@ -50,8 +69,9 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 	default:
 		definition.build = func(state *entitytypes.JSONCodec[State], support *entitytypes.JSONCodec[Support]) erasedOperationDefinition {
 			erased := erasedOperationDefinition{
-				outcome:  outcome,
-				deadline: deadline,
+				outcome:          outcome,
+				deadline:         deadline,
+				parametersSchema: parameters.Schema(),
 				validateReference: func(rawSupport EntitySupport) error {
 					typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
 					if err != nil {
@@ -73,7 +93,11 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 					}
 					typedParameters, normalized, err := parameters.Decode(json.RawMessage(rawParameters))
 					if err != nil {
-						return nil, fmt.Errorf("decode parameters for operation %q: %w", name, err)
+						err = fmt.Errorf("decode parameters for operation %q: %w", name, err)
+						if violation, ok := errors.AsType[*entitytypes.SchemaViolationError](err); ok {
+							return nil, &CommandParametersError{Diagnostics: violation.Diagnostics, cause: err}
+						}
+						return nil, err
 					}
 					if validationErr := validateParameters(
 						typedSupport, operationSupport, typedParameters,
@@ -116,6 +140,7 @@ type EntityTypeDefinition struct {
 }
 
 type erasedOperationDefinition struct {
+	parametersSchema  json.RawMessage
 	validateReference func(EntitySupport) error
 	resolve           func(EntitySupport, CommandParameters) (CommandParameters, error)
 	deadline          time.Duration
@@ -369,6 +394,38 @@ func (catalog *TypeCatalog) validateCommandReference(entity Entity, operationNam
 		return err
 	}
 	return operation.validateReference(entity.Support)
+}
+
+// OperationContract names one operation an Entity supports and the JSON
+// Schema its Command parameters must satisfy.
+type OperationContract struct {
+	Name             OperationName
+	ParametersSchema json.RawMessage
+}
+
+// SupportedOperations lists, in name order, the operations the Entity's current
+// support enables. Invalid persisted support is an error, not an empty list.
+func (catalog *TypeCatalog) SupportedOperations(entity Entity) ([]OperationContract, error) {
+	definition, err := catalog.resolve(entity.TypeID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = definition.normalizeSupport(entity.Support); err != nil {
+		return nil, err
+	}
+	var supported []OperationContract
+	for _, name := range slices.Sorted(maps.Keys(definition.operations)) {
+		operation := definition.operations[name]
+		// Support already decoded, so a failure here means the Entity does not
+		// enable this operation.
+		if operation.validateReference(entity.Support) != nil {
+			continue
+		}
+		supported = append(supported, OperationContract{
+			Name: name, ParametersSchema: append(json.RawMessage(nil), operation.parametersSchema...),
+		})
+	}
+	return supported, nil
 }
 
 func (catalog *TypeCatalog) ResolveCommand(

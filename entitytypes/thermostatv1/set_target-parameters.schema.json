@@ -2,10 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-target-parameters",
   "title": "Hearth thermostat/v1 set_target parameters",
+  "description": "Set the single target temperature. Does not change the mode.",
   "type": "object",
   "additionalProperties": false,
   "required": ["temperature"],
   "properties": {
-    "temperature": {"type": "integer", "minimum": -273150, "maximum": 1000000}
+    "temperature": {"description": "Target in integer milli-Celsius, such as 21000 for 21 °C, within support/state temperature_minimum and temperature_maximum.", "type": "integer", "minimum": -273150, "maximum": 1000000}
   }
 }

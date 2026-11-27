@@ -40,6 +40,9 @@ Validation does not insert output defaults, round numbers, or fill missing
 required results. An invalid success becomes `internal_error`.
 
 Collections return compact summaries and omit `next_cursor` on their last page.
+`get_entity` also returns `operations`, which maps each operation the Entity's
+current support enables to the Entity type's JSON Schema for its
+`execute_entity_command` parameters.
 Detail tools expose retained evidence; actions return durable identities rather
 than HTTP response bodies. Each protocol owns its models and mappings.
 
@@ -59,6 +62,13 @@ values. An invalid composition or edit returns `invalid_definition` for its
 first failing source. `draft_required` means an edit needs a selected
 draft, while `draft_selected` means a separate view needs a turn without one.
 These native Agent observations are not external MCP results.
+
+`execute_entity_command` checks parameters against that schema before creating
+a Command. A schema rejection returns `invalid_request` with `message: invalid
+command parameters` and `diagnostics` sorted by parameter path:
+`missing_property`, `unknown_property` (with the schema's `allowed` parameter
+names), `type_mismatch`, or `constraint_violation`. Diagnostics never repeat
+submitted keys or values, and no Command record is created.
 
 The unauthenticated endpoint shares HTTP's trusted-household boundary.
 Adapter and Automation prose, descriptors, schemas, and results are untrusted

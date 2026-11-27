@@ -34,15 +34,22 @@ func consumeRunner(iterator *adk.AsyncIterator[*adk.AgentEvent]) error {
 	}
 }
 
+// automationSkillReminder is the only always-on Automation guidance: showing a
+// saved Automation needs no skill, and authoring follows the bundled skill.
+func automationSkillReminder(toolName string) string {
+	return "To show a saved Automation as a card, use present_automation with mode reference and its discovered automation_id. " +
+		"Before creating or editing an Automation, load hearth-automations using the " + toolName +
+		" tool and follow its workflow. Skills return bundled instructions inline; all operations use Hearth tools. " +
+		"No shell, filesystem, downloads, or subagents are available."
+}
+
 // newAgentRunner gives ADK the loop, instruction composition, native call IDs,
 // and input repair. Hearth's hooks own durable evidence and public turn events.
 func (service *Service) newAgentRunner(ctx context.Context, trace *turnTrace, draft *ViewContext) (*adk.Runner, error) {
 	skills, err := skill.NewMiddleware(ctx, &skill.Config{
 		Backend: service.skills,
 		CustomSystemPrompt: func(_ context.Context, toolName string) string {
-			return "Before creating or editing an Automation, load hearth-automations using the " + toolName +
-				" tool and follow its workflow. Skills return bundled instructions inline; all operations use Hearth tools. " +
-				"No shell, filesystem, downloads, or subagents are available."
+			return automationSkillReminder(toolName)
 		},
 		CustomToolDescription: func(_ context.Context, available []skill.FrontMatter) string {
 			return "Load bundled instructions before automation authoring. Available skill: " + available[0].Name + ": " + available[0].Description

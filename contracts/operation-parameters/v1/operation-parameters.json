@@ -485,6 +485,7 @@
             ],
             "properties": {
               "fan_mode": {
+                "description": "Exactly one of support/state/fan_modes.",
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 128
@@ -504,6 +505,7 @@
             ],
             "properties": {
               "humidity": {
+                "description": "Target relative humidity in percent, within support/state humidity_minimum and humidity_maximum.",
                 "type": "number",
                 "minimum": 0,
                 "maximum": 100
@@ -523,6 +525,7 @@
             ],
             "properties": {
               "mode": {
+                "description": "One of support/state/modes. Mode is the setting; State activity separately reports what the system is doing.",
                 "type": "string",
                 "enum": [
                   "off",
@@ -542,6 +545,7 @@
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-range-parameters",
             "title": "Hearth thermostat/v1 set_range parameters",
+            "description": "Set the paired heating (low) and cooling (high) targets. Send both, even in heat or cool mode. Does not change the mode.",
             "type": "object",
             "additionalProperties": false,
             "required": [
@@ -550,11 +554,13 @@
             ],
             "properties": {
               "low": {
+                "description": "Heating target in integer milli-Celsius, such as 20000 for 20 °C.",
                 "type": "integer",
                 "minimum": -273150,
                 "maximum": 1000000
               },
               "high": {
+                "description": "Cooling target in integer milli-Celsius, such as 24000 for 24 °C.",
                 "type": "integer",
                 "minimum": -273150,
                 "maximum": 1000000
@@ -567,6 +573,7 @@
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": "urn:hearth:schema:entity-type:thermostat:v1:set-target-parameters",
             "title": "Hearth thermostat/v1 set_target parameters",
+            "description": "Set the single target temperature. Does not change the mode.",
             "type": "object",
             "additionalProperties": false,
             "required": [
@@ -574,6 +581,7 @@
             ],
             "properties": {
               "temperature": {
+                "description": "Target in integer milli-Celsius, such as 21000 for 21 °C, within support/state temperature_minimum and temperature_maximum.",
                 "type": "integer",
                 "minimum": -273150,
                 "maximum": 1000000
