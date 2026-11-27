@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/mholtzscher/hearth/compare/v0.30.0...v0.31.0) (2026-11-27)
+
+
+### Features
+
+* **agent:** shorten the system prompt and publish Command parameter schemas ([#450](https://github.com/mholtzscher/hearth/issues/450)) ([d5cf2e5](https://github.com/mholtzscher/hearth/commit/d5cf2e5310ee0dbec594bdf7455095f0c35cb1fe))
+
 ## [0.30.0](https://github.com/mholtzscher/hearth/compare/v0.29.0...v0.30.0) (2026-11-26)
 
 
