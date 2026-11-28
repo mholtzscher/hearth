@@ -266,8 +266,7 @@ const validStateTimeline = (
     ) ||
     new Set(
       rows.map((row) => `${row.source.entity_id}:${row.source.field ?? ""}`)
-    ).size !== rows.length ||
-    staticUnits(rows.map((row) => row.source)).size > 1
+    ).size !== rows.length
   ) {
     return false;
   }
@@ -338,7 +337,8 @@ const validRanking = (
     rows.some((row) => !quantityField(row.source)) ||
     new Set(
       rows.map((row) => `${row.source.entity_id}:${row.source.field ?? ""}`)
-    ).size !== rows.length
+    ).size !== rows.length ||
+    staticUnits(rows.map((row) => row.source)).size > 1
   ) {
     return false;
   }
