@@ -8,6 +8,7 @@ import type {
   SeriesData,
   SeriesWindow,
 } from "../../bindings/types";
+import { unitConversion } from "../../bindings/unit-conversion";
 import { DataCard } from "../data-card";
 import { Answer, Plot } from "../ranking/parts";
 import { cardStatus } from "../status";
@@ -37,10 +38,13 @@ const shownThresholds = (
   canonical: SeriesData,
   display: SeriesData
 ): { values: string[]; unit: string } => {
-  const same = canonical.unit !== undefined && canonical.unit === display.unit;
-  const affine: Affine | undefined = same
-    ? { scale: 1, offset: 0 }
-    : affineFromPairs(bucketPairs(canonical.buckets, display.buckets));
+  // Core's own conversion for the two units; the bucket pairs cover a unit
+  // pair this build does not know, and need values that vary to fix a line.
+  const affine: Affine | undefined =
+    (canonical.unit !== undefined && display.unit !== undefined
+      ? unitConversion(canonical.unit, display.unit)
+      : undefined) ??
+    affineFromPairs(bucketPairs(canonical.buckets, display.buckets));
   const digits = display.format.fraction_digits;
   const number = new Intl.NumberFormat(undefined, {
     maximumFractionDigits: affine ? digits : 6,

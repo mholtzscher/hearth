@@ -134,8 +134,13 @@ export const SteppedTarget: Story = {
     const chart = await canvas.findByRole("region", {
       name: "Hallway thermostat, average lines with minimum to maximum bands, and step lines of set values",
     });
-    await expect(chart).toHaveTextContent(/Heat to: latest .* changes over/u);
-    await expect(chart).toHaveTextContent(/Room: latest .* range/u);
+    // The two series read separately; wait for both summaries.
+    await waitFor(() =>
+      expect(chart).toHaveTextContent(/Heat to: latest .* changes over/u)
+    );
+    await waitFor(() =>
+      expect(chart).toHaveTextContent(/Room: latest .* range/u)
+    );
   },
 };
 /** Today from local midnight over the last 7 days' range for each time of day. */
