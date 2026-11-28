@@ -6,6 +6,9 @@ import { emptySnapshot } from "../data/cache";
 import type { ReadRequest, ReadSnapshot } from "../data/cache";
 import { useReads } from "../data/provider";
 import {
+  hourTotalsRequest,
+  hourTotalsStart,
+  readHourTotals,
   readTimeline,
   readWeekPattern,
   timelineRequest,
@@ -23,6 +26,7 @@ import type {
   MetricData,
   NumericAdapter,
   NumericSource,
+  PeriodTotalsData,
   ReadUnits,
   Resolved,
   SeriesData,
@@ -314,6 +318,22 @@ export const useWeekPattern = (
   return resolveHistorical(binding, snapshots[0], snapshots[1], (raw) => {
     const data = raw as { range: { to: string } };
     return { week: readWeekPattern(raw, start, new Date(data.range.to)) };
+  });
+};
+
+/** Seconds true per hour over the last 24 hours, in one-hour periods. */
+export const useHourTotals = (
+  binding: ReadingBinding
+): Resolved<{ current?: TextData; hours?: PeriodTotalsData }> => {
+  const now = useMinuteClock();
+  const start = hourTotalsStart(new Date(now));
+  const snapshots = useReads([
+    entityStateRequest(binding.source),
+    hourTotalsRequest(binding.source, start),
+  ]);
+  return resolveHistorical(binding, snapshots[0], snapshots[1], (raw) => {
+    const data = raw as { range: { to: string } };
+    return { hours: readHourTotals(raw, start, new Date(data.range.to)) };
   });
 };
 
