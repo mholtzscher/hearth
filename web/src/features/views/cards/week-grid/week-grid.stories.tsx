@@ -23,8 +23,7 @@ const canonicalUnit =
 
 /**
  * A week of three-hour history that warms toward the afternoon, with one
- * evening block and the whole of one day missing. The shared story handler
- * serves only 1, 5 and 30 minute buckets.
+ * evening block and the whole of one day missing.
  */
 const threeHourWeek = (gaps = true) =>
   http.post("/v1/entities/:id/state/history", async ({ request }) => {
