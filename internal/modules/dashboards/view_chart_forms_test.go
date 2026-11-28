@@ -9,6 +9,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 )
 
 const (
@@ -356,4 +357,69 @@ func TestEditViewRejectsWindowChangesItCannotMake(t *testing.T) {
 			require.Equal(t, "/changes/0/card_id", argument.Path)
 		})
 	}
+}
+
+func TestComposeViewConvertsTimeInRangeThresholdsToCanonical(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, id string
+		system   household.UnitSystem
+		display  string
+		want     string
+	}{
+		{"metric temperature", formTemperature, household.UnitSystemMetric, `[20.5,22]`, `[20500,22000]`},
+		{"us temperature", formTemperature, household.UnitSystemUS, `[68,71.6]`, `[20000,22000]`},
+		{"us humidity keeps its unit", formHumidity, household.UnitSystemUS, `[40,60.5]`, `[40,60.5]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var input dashboards.ComposeViewInput
+			require.NoError(t, json.Unmarshal([]byte(`{"title":"Forms","layout":{"type":"TimeInRange","entity_id":"`+
+				tc.id+`","window":"7d","thresholds":`+tc.display+`}}`), &input))
+			reader := chartFormReader()
+			service := dashboards.NewService(nil, reader, reader, dashboards.WithDisplayUnits(
+				devices.NewPresenter(tc.system, devices.TableConverter{}),
+			))
+			artifact, err := service.ComposeView(t.Context(), input)
+			require.NoError(t, err)
+			require.Contains(t, string(artifact.Definition), `"thresholds":`+tc.want)
+		})
+	}
+}
+
+func TestComposeViewRejectsThresholdsThatStopAscendingOnlyInDisplayUnits(t *testing.T) {
+	t.Parallel()
+	var input dashboards.ComposeViewInput
+	require.NoError(t, json.Unmarshal([]byte(`{"title":"Forms","layout":{"type":"TimeInRange","entity_id":"`+
+		formTemperature+`","window":"7d","thresholds":[22,20]}}`), &input))
+	reader := chartFormReader()
+	_, err := dashboards.NewService(nil, reader, reader, dashboards.WithDisplayUnits(
+		devices.NewPresenter(household.UnitSystemUS, devices.TableConverter{}),
+	)).ComposeView(t.Context(), input)
+	var argument dashboards.ViewArgumentError
+	require.ErrorAs(t, err, &argument)
+	require.Equal(t, "/layout/thresholds", argument.Path)
+	require.NotContains(t, err.Error(), "22")
+}
+
+func TestPortableThresholdsAreNotConvertedAgain(t *testing.T) {
+	t.Parallel()
+	raw := json.RawMessage(
+		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"card","elements":{"card":` +
+			`{"type":"TimeInRange","props":{"source":` + source(
+			formTemperature,
+			"hearth.temperature/v1",
+			"",
+			"",
+		) +
+			`,"window":"24h","thresholds":[20000,22000]}}}}}`,
+	)
+	d, err := dashboards.ParseDefinition(raw)
+	require.NoError(t, err)
+	reader := chartFormReader()
+	artifact, err := dashboards.NewService(nil, reader, reader, dashboards.WithDisplayUnits(
+		devices.NewPresenter(household.UnitSystemUS, devices.TableConverter{}),
+	)).PresentView(t.Context(), d)
+	require.NoError(t, err)
+	require.Contains(t, string(artifact.Definition), `"thresholds":[20000,22000]`)
 }

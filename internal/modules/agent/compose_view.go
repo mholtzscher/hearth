@@ -37,7 +37,7 @@ const composeViewDescription = "Present a live dashboard draft without saving or
 	"For AirPurifier, entity_id is its main power Entity. Use fan_mode for named modes and fan_level for numbered speeds. " +
 	"Use those exact keys, not power or mode. " +
 	"Grid requires columns. A card bound to one Entity names it entity_id; TimeSeries lists its Entities in series, and ReadingList, StateTimeline, and ToggleList in rows. An Entity is always a bare ID string. " +
-	"For a numeric question, TimeSeries shows change over time, Ranking compares current readings, WeekGrid shows the usual week, and TimeInRange shows time below, between, and above thresholds in the field's canonical unit. " +
+	"For a numeric question, TimeSeries shows change over time, Ranking compares current readings, WeekGrid shows the usual week, and TimeInRange shows time below, between, and above thresholds in the unit you see for that reading. " +
 	"TimeSeries compare typical answers whether today is unusual, and PeriodTotals shows on-time of a yes/no field per hour or day. " +
 	"Each card type's description says when to use it and how to bind it. " +
 	"For a weather station, prefer OutsideNow, Rain, Wind, Pressure, and Forecast over separate Metrics. " +

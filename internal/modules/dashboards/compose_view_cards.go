@@ -3,6 +3,7 @@ package dashboards
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"slices"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -291,8 +292,8 @@ func (p *weekGridProps) compile(c *cardCompiler) cardProps {
 	return props
 }
 
-// timeInRangeProps carries thresholds in the field's canonical unit: the
-// compiler has no household unit system to convert from.
+// timeInRangeProps carries thresholds in the household display unit; the
+// portable definition stores them in the field's canonical unit.
 type timeInRangeProps struct {
 	entityField
 
@@ -303,13 +304,40 @@ type timeInRangeProps struct {
 
 func (p *timeInRangeProps) compile(c *cardCompiler) cardProps {
 	props := labeledProps(p.Label)
-	props["source"] = c.scalar(p.entityField, "")
+	source := c.scalar(p.entityField, "")
+	props["source"] = source
 	props["window"] = p.Window
-	props["thresholds"] = p.Thresholds
-	if c.err == nil && !ascendingFinite(p.Thresholds) {
+	thresholds := p.Thresholds
+	if c.err == nil && c.view.units != nil {
+		thresholds = c.canonicalThresholds(source, p.Thresholds)
+	}
+	props["thresholds"] = thresholds
+	if c.err == nil && !ascendingFinite(thresholds) {
 		c.err = invalidViewArgument(c.path+"/thresholds", thresholdsReason)
 	}
 	return props
+}
+
+// thresholdPrecision rounds converted values to six decimals, hiding the
+// floating-point noise an inverted affine conversion leaves.
+const thresholdPrecision = 1e6
+
+func (c *cardCompiler) canonicalThresholds(source composedSource, display []float64) []float64 {
+	field, _ := devices.BuiltinStateField(source.EntityType, source.Field)
+	numeric, isNumeric := field.Value.(devices.NumericField)
+	if !isNumeric {
+		return display // The binding check rejects a non-numeric field.
+	}
+	canonical := make([]float64, len(display))
+	for i, value := range display {
+		converted, err := c.view.units.CanonicalValue(numeric, c.view.supports[source.EntityID], value)
+		if err != nil {
+			c.err = invalidViewArgument(c.path+"/thresholds", thresholdsReason)
+			return display
+		}
+		canonical[i] = math.Round(converted*thresholdPrecision) / thresholdPrecision
+	}
+	return canonical
 }
 
 type periodTotalsProps struct {

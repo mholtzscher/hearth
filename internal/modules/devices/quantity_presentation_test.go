@@ -285,3 +285,41 @@ func TestQuantitySingleValueExtentIsOmittedAcrossRepresentations(t *testing.T) {
 		}
 	}
 }
+
+func TestPresenterCanonicalValueInvertsDisplayConversion(t *testing.T) {
+	t.Parallel()
+	temperature, _ := devices.BuiltinStateField(devices.EntityTypeTemperatureV1, "")
+	humidity, _ := devices.BuiltinStateField(devices.EntityTypeRelativehumidityV1, "")
+	for _, test := range []struct {
+		name    string
+		system  household.UnitSystem
+		field   devices.StateField
+		display float64
+		want    float64
+	}{
+		{"metric temperature", household.UnitSystemMetric, temperature, 20.5, 20500},
+		{"us temperature", household.UnitSystemUS, temperature, 68, 20000},
+		{"us freezing", household.UnitSystemUS, temperature, 32, 0},
+		{"same unit", household.UnitSystemUS, humidity, 45.5, 45.5},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			presenter := devices.NewPresenter(test.system, devices.TableConverter{})
+			got, err := presenter.CanonicalValue(
+				test.field.Value.(devices.NumericField),
+				json.RawMessage(`{}`),
+				test.display,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if math.Abs(got-test.want) > 1e-6 {
+				t.Fatalf("canonical = %v, want %v", got, test.want)
+			}
+		})
+	}
+	if _, err := devices.NewPresenter(household.UnitSystemUS, devices.TableConverter{}).
+		CanonicalValue(temperature.Value.(devices.NumericField), json.RawMessage(`{}`), math.Inf(1)); err == nil {
+		t.Fatal("infinite display value accepted")
+	}
+}

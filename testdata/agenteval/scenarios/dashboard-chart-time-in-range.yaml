@@ -7,8 +7,9 @@ turns:
       Add a card for how much of the last week the Simulated light's
       temperature was below 20 °C, between 20 and 22 °C, and above 22 °C.
 
-# Thresholds are in the field's canonical unit. Temperature is stored in
-# milli-degrees Celsius, so 20 °C is 20000.
+# The Agent authors thresholds in the household display unit (the evaluation
+# household is metric); the artifact stores them in the canonical unit, and
+# temperature is stored in milli-degrees Celsius, so 20 °C is 20000.
 checks:
   - kind: view
     view:
@@ -27,10 +28,10 @@ max_requests: 10
 
 reference:
   - call: list_entities
-    arguments: '{"device_id": "{{device:simulated-light}}", "units": "canonical"}'
+    arguments: '{"device_id": "{{device:simulated-light}}"}'
   - call: tool_search
     arguments: '{"query": "select:compose_view"}'
   - call: compose_view
     arguments: |-
-      {"mode": "create", "title": "Comfort", "layout": {"type": "TimeInRange", "entity_id": "{{entity:simulated-light/temperature}}", "label": "Temperature", "window": "7d", "thresholds": [20000, 22000]}}
+      {"mode": "create", "title": "Comfort", "layout": {"type": "TimeInRange", "entity_id": "{{entity:simulated-light/temperature}}", "label": "Temperature", "window": "7d", "thresholds": [20, 22]}}
   - reply: ""
