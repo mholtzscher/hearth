@@ -47,9 +47,7 @@ export const Answer = ({
   children: ReactNode;
 }) => (
   <p className="text-label text-muted-foreground mb-4 flex flex-wrap items-baseline gap-x-2">
-    <span className="text-compact-reading text-foreground tabular-nums">
-      {value}
-    </span>
+    <span className="text-compact-reading text-foreground">{value}</span>
     <span>{children}</span>
   </p>
 );

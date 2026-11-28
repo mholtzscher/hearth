@@ -40,7 +40,7 @@ const Columns = () => (
               <span className="text-caption text-gray-6 pb-1">—</span>
             ) : (
               <>
-                <span className="text-caption text-foreground bg-card relative z-10 px-0.5 leading-tight tabular-nums">
+                <span className="text-caption text-foreground bg-card relative z-10 px-0.5 leading-tight">
                   {day.total.toFixed(1)}
                 </span>
                 <span
@@ -58,7 +58,7 @@ const Columns = () => (
         className="border-gray-6 absolute inset-x-0 border-t"
         style={{ bottom: `${(average / peak) * 84}%` }}
       >
-        <span className="text-caption text-muted-foreground bg-card absolute top-0 right-0 w-8 -translate-y-1/2 text-right leading-tight tabular-nums">
+        <span className="text-caption text-muted-foreground bg-card absolute top-0 right-0 w-8 -translate-y-1/2 text-right leading-tight">
           avg
           <br />
           {average.toFixed(1)}
@@ -87,7 +87,7 @@ const Ledger = () => (
     <span />
     <span className="text-caption text-muted-foreground relative h-5">
       <span
-        className="absolute -translate-x-1/2 whitespace-nowrap tabular-nums"
+        className="absolute -translate-x-1/2 whitespace-nowrap"
         style={{ left: `${(average / peak) * 100}%` }}
       >
         avg {average.toFixed(1)}
@@ -114,7 +114,7 @@ const Ledger = () => (
             />
           )}
         </span>
-        <span className="text-right whitespace-nowrap tabular-nums">
+        <span className="text-right whitespace-nowrap">
           {day.partial && (
             <span className="text-muted-foreground">so far </span>
           )}

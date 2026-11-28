@@ -7,8 +7,7 @@ import { Answer, ChartCard, Key, Plot, source } from "./parts";
 const rowClass =
   "grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)_3.25rem] items-center gap-x-3 @max-[420px]:grid-cols-[minmax(0,1fr)_auto]";
 const trackClass = "relative @max-[420px]:order-3 @max-[420px]:col-span-2";
-const valueClass =
-  "text-right tabular-nums data-[dimmed]:text-gray-8 whitespace-nowrap";
+const valueClass = "text-right data-[dimmed]:text-gray-8 whitespace-nowrap";
 
 const Name = ({ reading }: { reading: RankedReading }) => (
   <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
@@ -127,7 +126,7 @@ const Range = () => {
           <span className={`${trackClass} h-5`}>
             {ticks.map((tick) => (
               <span
-                className="absolute -translate-x-1/2 tabular-nums"
+                className="absolute -translate-x-1/2"
                 key={tick}
                 style={{ left: x(tick) }}
               >

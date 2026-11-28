@@ -7,16 +7,20 @@ import { forecastSchema } from "../cards/forecast/schema";
 import { mediaPlayerSchema } from "../cards/media-player/schema";
 import { metricSchema } from "../cards/metric/schema";
 import { outsideNowSchema } from "../cards/outside-now/schema";
+import { periodTotalsSchema } from "../cards/period-totals/schema";
 import { pressureSchema } from "../cards/pressure/schema";
 import { rainSchema } from "../cards/rain/schema";
+import { rankingSchema } from "../cards/ranking/schema";
 import { readingListSchema } from "../cards/reading-list/schema";
 import { stateTimelineSchema } from "../cards/state-timeline/schema";
 import { stateSchema } from "../cards/state/schema";
 import { headingSchema, noteSchema } from "../cards/text/schema";
 import { thermostatSchema } from "../cards/thermostat/schema";
+import { timeInRangeSchema } from "../cards/time-in-range/schema";
 import { timeSeriesSchema } from "../cards/time-series/schema";
 import { toggleListSchema } from "../cards/toggle-list/schema";
 import { toggleTileSchema } from "../cards/toggle-tile/schema";
+import { weekGridSchema } from "../cards/week-grid/schema";
 import { weekPatternSchema } from "../cards/week-pattern/schema";
 import { windSchema } from "../cards/wind/schema";
 import { stackSchema, gridSchema } from "../layout/schema";
@@ -55,6 +59,22 @@ export const elementSchemas = {
   WeekPattern: z.strictObject({
     type: z.literal("WeekPattern"),
     props: weekPatternSchema,
+  }),
+  WeekGrid: z.strictObject({
+    type: z.literal("WeekGrid"),
+    props: weekGridSchema,
+  }),
+  Ranking: z.strictObject({
+    type: z.literal("Ranking"),
+    props: rankingSchema,
+  }),
+  TimeInRange: z.strictObject({
+    type: z.literal("TimeInRange"),
+    props: timeInRangeSchema,
+  }),
+  PeriodTotals: z.strictObject({
+    type: z.literal("PeriodTotals"),
+    props: periodTotalsSchema,
   }),
   ToggleTile: z.strictObject({
     type: z.literal("ToggleTile"),
@@ -104,6 +124,10 @@ export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.Device,
   elementSchemas.StateTimeline,
   elementSchemas.WeekPattern,
+  elementSchemas.WeekGrid,
+  elementSchemas.Ranking,
+  elementSchemas.TimeInRange,
+  elementSchemas.PeriodTotals,
   elementSchemas.ToggleTile,
   elementSchemas.ToggleList,
   elementSchemas.OutsideNow,

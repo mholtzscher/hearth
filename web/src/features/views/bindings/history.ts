@@ -74,13 +74,16 @@ const windowRange = (window: SeriesWindow, to: Date) => {
   return { from: new Date(from), to };
 };
 
+/** The most buckets one history query returns (Core's HistoryMaxBuckets). */
+const MAX_BUCKETS = 1000;
+
 const readPairedSummary = (
   raw: unknown,
-  window: SeriesWindow,
+  validCount: (count: number) => boolean,
   canonicalUnit?: string
 ): HistorySeries => {
   const data = pairedSummary.parse(raw);
-  if (data.buckets.length !== windows[window].count) {
+  if (!validCount(data.buckets.length)) {
     throw new Error("Invalid series resolution");
   }
   const [first] = data.buckets;
@@ -130,10 +133,29 @@ const readPairedSummary = (
   };
 };
 
-export const historySeriesRequest = (
+/**
+ * A history read over a card-chosen range: fixed-length buckets aligned to the
+ * range's start, so a range that starts at local midnight keeps local clock times.
+ */
+export interface HistorySpan {
+  /** Names the span in the cache key; the range's start is added to it. */
+  name: string;
+  /** The range to read, ending no later than `to`. */
+  range: (to: Date) => { from: Date; to: Date };
+  /** A Go duration, such as "5m" or "3h". */
+  bucket: string;
+}
+
+const summaryRequest = (
   source: NumericSource,
-  window: SeriesWindow,
-  canonicalUnit?: string
+  key: string,
+  canonicalUnit: string | undefined,
+  plan: (to: Date) => {
+    from: Date;
+    to: Date;
+    bucket: string;
+    validCount: (count: number) => boolean;
+  }
 ): ReadRequest => {
   const field = quantityField(source);
   if (!field) {
@@ -145,12 +167,12 @@ export const historySeriesRequest = (
   const path = source.field ?? "";
   const nulls = field.presence === "sometimes" ? "gap" : "reject";
   return {
-    key: `entity-series:${source.entity_id}:${path}:${window}:${nulls}:paired`,
+    key: `entity-series:${source.entity_id}:${path}:${key}:${nulls}:paired`,
     kind: "series",
     load: (signal: AbortSignal, to: Date) => {
-      const range = windowRange(window, to);
+      const { from, to: until, bucket, validCount } = plan(to);
       const body = JSON.stringify({
-        range: { from: range.from.toISOString(), to: range.to.toISOString() },
+        range: { from: from.toISOString(), to: until.toISOString() },
         select_field: path,
         result: {
           kind: "summary",
@@ -160,17 +182,42 @@ export const historySeriesRequest = (
             max: { operation: "max" },
             mean: { operation: "sample_mean" },
           },
-          bucket: {
-            duration: windows[window].bucket,
-            alignment: "range_start",
-          },
+          bucket: { duration: bucket, alignment: "range_start" },
         },
       });
       return apiFetch(
         `/v1/entities/${encodeURIComponent(source.entity_id)}/state/history`,
         { method: "POST", body, signal },
-        (text) => readPairedSummary(JSON.parse(text), window, expectedUnit)
+        (text) => readPairedSummary(JSON.parse(text), validCount, expectedUnit)
       );
     },
   };
 };
+
+export const historySeriesRequest = (
+  source: NumericSource,
+  window: SeriesWindow,
+  canonicalUnit?: string
+): ReadRequest =>
+  summaryRequest(source, window, canonicalUnit, (to) => ({
+    ...windowRange(window, to),
+    bucket: windows[window].bucket,
+    validCount: (count) => count === windows[window].count,
+  }));
+
+/** The span's start is part of the key, so a new local day is a new read. */
+export const historySpanRequest = (
+  source: NumericSource,
+  span: HistorySpan,
+  canonicalUnit?: string
+): ReadRequest =>
+  summaryRequest(
+    source,
+    `${span.name}:${span.range(new Date()).from.toISOString()}`,
+    canonicalUnit,
+    (to) => ({
+      ...span.range(to),
+      bucket: span.bucket,
+      validCount: (count) => count >= 1 && count <= MAX_BUCKETS,
+    })
+  );

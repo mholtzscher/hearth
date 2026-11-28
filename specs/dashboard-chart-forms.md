@@ -1,6 +1,7 @@
 # Dashboard chart forms
 
-- **Status:** Draft, awaiting approval. Not implemented.
+- **Status:** Approved 2026-11-27 ("Implement it"). Implementation in progress.
+- **Checkpoint:** Playbook: mstack spec implementation. Branch `feat/dashboards-chart-forms`, worktree `/home/michael/code/worktrees/hearth/proto-web-chart-forms`, base `origin/main` d5cf2e5. Delivery: one PR, one commit per step (the six-PR plan below would need a stack, which was not requested). Step 0 done: schemas, catalog, renderer, editor and compatibility wiring with placeholder cards, `historySpanRequest` and `useNumericSpans`, regenerated contract; `web-test` 1261 passed. In progress: three workers in sibling worktrees (`-go`: D1–D7 Go side and `examples.json`; `-rank`: D3, D5 cards; `-week`: D4, D6 cards) while the root does D1 and D2 in `cards/time-series/`. Next: integrate the worktrees, D8 docs, delete `prototypes/`, `mise run validate`, review, PR.
 - **Type:** Feature plan
 - **Date:** 2026-11-27
 - **Effort:** 7–9 focused engineering days, medium confidence. Counter totals (energy, rain) are excluded; see Open questions.

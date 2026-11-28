@@ -90,8 +90,7 @@ const Legend = () => (
 
 const gridClass =
   "text-label grid grid-cols-[2.4rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-[3px] @max-[420px]:grid-cols-[2.2rem_minmax(0,1fr)]";
-const averageClass =
-  "text-right tabular-nums whitespace-nowrap @max-[420px]:hidden";
+const averageClass = "text-right whitespace-nowrap @max-[420px]:hidden";
 
 /** Hours: one shaded cell per hour, read through a five-step key. */
 const Hours = () => (
@@ -179,7 +178,7 @@ const Blocks = () => (
             {blocks(day).map((cell, block) => (
               <span
                 key={block}
-                className={`${cellClass} h-7 text-center leading-7 font-medium tabular-nums`}
+                className={`${cellClass} h-7 text-center leading-7 font-medium`}
                 {...cellData(cell)}
               >
                 {cell.value !== null && (

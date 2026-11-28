@@ -289,6 +289,11 @@
                           ],
                           "additionalProperties": false
                         }
+                      },
+                      "compare": {
+                        "type": "string",
+                        "const": "typical",
+                        "description": "Draw today from local midnight over the last 7 days' range for each time of day. Requires exactly one series with window 24h."
                       }
                     },
                     "required": [
@@ -576,6 +581,200 @@
                     },
                     "required": [
                       "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "WeekGrid"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "description": "A numeric State field.",
+                        "$ref": "#/$defs/NumericStateSource"
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Ranking"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "rows": {
+                        "minItems": 2,
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "$ref": "#/$defs/NumericStateSource"
+                            },
+                            "label": {
+                              "type": "string",
+                              "pattern": "^[\\s\\S]{1,120}$"
+                            }
+                          },
+                          "required": [
+                            "source"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "Distinct numeric State fields in one canonical unit."
+                      },
+                      "range": {
+                        "type": "string",
+                        "enum": [
+                          "1h",
+                          "6h",
+                          "24h",
+                          "7d"
+                        ],
+                        "description": "Also show each row's minimum and maximum over this window."
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "rows"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "TimeInRange"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "description": "A numeric State field.",
+                        "$ref": "#/$defs/NumericStateSource"
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "window": {
+                        "type": "string",
+                        "enum": [
+                          "1h",
+                          "6h",
+                          "24h",
+                          "7d"
+                        ]
+                      },
+                      "thresholds": {
+                        "minItems": 1,
+                        "maxItems": 2,
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "description": "One or two ascending thresholds in the field's canonical unit. One splits the window into below and above; two add the range between them."
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "window",
+                      "thresholds"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "PeriodTotals"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "description": "A yes/no State field. Text fields are rejected.",
+                        "$ref": "#/$defs/DiscreteStateSource"
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "words": {
+                        "$ref": "#/$defs/BooleanWords"
+                      },
+                      "period": {
+                        "type": "string",
+                        "enum": [
+                          "hour",
+                          "day"
+                        ],
+                        "description": "hour: the last 24 hours. day: the last 7 days."
+                      },
+                      "style": {
+                        "type": "string",
+                        "enum": [
+                          "columns",
+                          "ledger"
+                        ],
+                        "description": "columns: one labelled bar per period. ledger: one row per period, read like a table."
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "period",
+                      "style"
                     ],
                     "additionalProperties": false
                   }

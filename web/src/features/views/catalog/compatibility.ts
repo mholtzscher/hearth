@@ -266,7 +266,8 @@ const validStateTimeline = (
     ) ||
     new Set(
       rows.map((row) => `${row.source.entity_id}:${row.source.field ?? ""}`)
-    ).size !== rows.length
+    ).size !== rows.length ||
+    staticUnits(rows.map((row) => row.source)).size > 1
   ) {
     return false;
   }
@@ -287,12 +288,86 @@ const validWeekPattern = (
   return true;
 };
 
+const validWeekGrid = (
+  { props }: ElementOf<"WeekGrid">,
+  ids: Set<string>
+): boolean => {
+  if (!quantityField(props.source)) {
+    return false;
+  }
+  ids.add(props.source.entity_id);
+  return true;
+};
+
+const validTimeInRange = (
+  { props }: ElementOf<"TimeInRange">,
+  ids: Set<string>
+): boolean => {
+  const [low, high] = props.thresholds;
+  if (
+    !quantityField(props.source) ||
+    !props.thresholds.every(Number.isFinite) ||
+    (high !== undefined && high <= low)
+  ) {
+    return false;
+  }
+  ids.add(props.source.entity_id);
+  return true;
+};
+
+const validPeriodTotals = (
+  { props }: ElementOf<"PeriodTotals">,
+  ids: Set<string>
+): boolean => {
+  if (
+    textField(props.source)?.value_type !== "boolean" ||
+    !validWords(props.source, props.words)
+  ) {
+    return false;
+  }
+  ids.add(props.source.entity_id);
+  return true;
+};
+
+const validRanking = (
+  { props }: ElementOf<"Ranking">,
+  ids: Set<string>
+): boolean => {
+  const { rows } = props;
+  if (
+    rows.some((row) => !quantityField(row.source)) ||
+    new Set(
+      rows.map((row) => `${row.source.entity_id}:${row.source.field ?? ""}`)
+    ).size !== rows.length
+  ) {
+    return false;
+  }
+  for (const row of rows) {
+    ids.add(row.source.entity_id);
+  }
+  return true;
+};
+
+/**
+ * The canonical units the field catalog fixes for these sources. A unit that
+ * comes from an Entity's support is unknown here; presenting or saving the view
+ * checks it, and so does the card when it reads.
+ */
+const staticUnits = (
+  sources: { entity_id: string; entity_type: string; field?: string }[]
+): Set<string> =>
+  new Set(
+    sources.flatMap((source) => {
+      const unit = quantityField(source)?.quantity.unit;
+      return typeof unit === "string" ? [unit] : [];
+    })
+  );
+
 const validTimeSeries = (
   { props }: ElementOf<"TimeSeries">,
   ids: Set<string>
 ): boolean => {
   const { series } = props;
-  const types = series.map((item) => item.source.entity_type);
   if (
     series.some((item) => !quantityField(item.source)) ||
     new Set(
@@ -300,9 +375,10 @@ const validTimeSeries = (
         (item) => `${item.source.entity_id}:${item.source.field ?? ""}`
       )
     ).size !== series.length ||
-    new Set(series.map((item) => item.source.field ?? "")).size !== 1 ||
     new Set(series.map((item) => item.source.window)).size !== 1 ||
-    new Set(types).size !== 1
+    staticUnits(series.map((item) => item.source)).size > 1 ||
+    (props.compare !== undefined &&
+      (series.length !== 1 || series[0].source.window !== "24h"))
   ) {
     return false;
   }
@@ -310,6 +386,26 @@ const validTimeSeries = (
     ids.add(item.source.entity_id);
   }
   return true;
+};
+
+const validChartForm = (element: ViewElement, ids: Set<string>): boolean => {
+  switch (element.type) {
+    case "WeekGrid": {
+      return validWeekGrid(element, ids);
+    }
+    case "TimeInRange": {
+      return validTimeInRange(element, ids);
+    }
+    case "PeriodTotals": {
+      return validPeriodTotals(element, ids);
+    }
+    case "Ranking": {
+      return validRanking(element, ids);
+    }
+    default: {
+      return true;
+    }
+  }
 };
 
 const validReferences = (elements: ViewElement[]): boolean => {
@@ -369,6 +465,7 @@ const validReferences = (elements: ViewElement[]): boolean => {
         break;
       }
       default: {
+        valid = validChartForm(element, ids);
         break;
       }
     }

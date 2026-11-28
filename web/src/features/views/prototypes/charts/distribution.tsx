@@ -40,7 +40,7 @@ const Histogram = () => (
       <div className="relative h-44">
         {yScale.ticks.map((tick) => (
           <span
-            className="absolute right-0 translate-y-1/2 leading-none tabular-nums"
+            className="absolute right-0 translate-y-1/2 leading-none"
             key={tick}
             style={{ bottom: `${(tick / top) * 100}%` }}
           >
@@ -75,7 +75,7 @@ const Histogram = () => (
         {bins.map((bin, index) =>
           Number.isInteger(bin.from) ? (
             <span
-              className="absolute -translate-x-1/2 tabular-nums"
+              className="absolute -translate-x-1/2"
               key={bin.from}
               style={{ left: `${(index / binCount) * 100}%` }}
             >
@@ -138,12 +138,10 @@ const Bands = () => (
           <div className="contents" key={band.name}>
             <span className={`${band.mark} size-2.5 rounded-xs`} />
             <span>{band.name}</span>
-            <span className="text-muted-foreground text-right tabular-nums">
+            <span className="text-muted-foreground text-right">
               {band.count} h
             </span>
-            <span className="text-right tabular-nums">
-              {percent(band.share)}
-            </span>
+            <span className="text-right">{percent(band.share)}</span>
           </div>
         ))}
       </div>
