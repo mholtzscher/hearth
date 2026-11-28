@@ -25,15 +25,6 @@ const Draft = (args: ComponentProps<typeof RankingEditor>) => {
   );
 };
 
-const row = (number: number, label?: string) => ({
-  label,
-  source: {
-    kind: "entity-state" as const,
-    entity_id: entityId(number),
-    entity_type: "hearth.temperature/v1" as const,
-  },
-});
-
 const meta = {
   title: "Components/Editors/RankingEditor",
   component: RankingEditor,
@@ -48,7 +39,24 @@ const meta = {
   args: {
     value: {
       title: "Room temperatures",
-      rows: [row(101, "Outdoor"), row(114, "Bedroom")],
+      rows: [
+        {
+          label: "Outdoor",
+          source: {
+            kind: "entity-state",
+            entity_id: entityId(101),
+            entity_type: "hearth.temperature/v1",
+          },
+        },
+        {
+          label: "Bedroom",
+          source: {
+            kind: "entity-state",
+            entity_id: entityId(114),
+            entity_type: "hearth.temperature/v1",
+          },
+        },
+      ],
     },
     choices: createEntities(),
     onChange: fn(),
@@ -140,7 +148,32 @@ export const RemoveRow: Story = {
   args: {
     value: {
       title: "Room temperatures",
-      rows: [row(101, "Outdoor"), row(114, "Bedroom"), row(15, "Living room")],
+      rows: [
+        {
+          label: "Outdoor",
+          source: {
+            kind: "entity-state",
+            entity_id: entityId(101),
+            entity_type: "hearth.temperature/v1",
+          },
+        },
+        {
+          label: "Bedroom",
+          source: {
+            kind: "entity-state",
+            entity_id: entityId(114),
+            entity_type: "hearth.temperature/v1",
+          },
+        },
+        {
+          label: "Living room",
+          source: {
+            kind: "entity-state",
+            entity_id: entityId(15),
+            entity_type: "hearth.temperature/v1",
+          },
+        },
+      ],
     },
   },
   play: async ({ canvas, userEvent, args }) => {

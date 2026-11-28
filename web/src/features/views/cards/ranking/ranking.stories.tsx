@@ -7,30 +7,38 @@ import { entityScenario } from "../../../../../.storybook/msw-handlers";
 import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
 import { BoundRanking } from "./ranking";
 
-const rain = (number: number, label: string) => ({
-  label,
-  source: {
-    kind: "entity-state" as const,
-    entity_id: entityId(number),
-    entity_type: "hearth.numericsensor/v1" as const,
-  },
-});
-const temperature = (number: number, label: string) => ({
-  label,
-  source: {
-    kind: "entity-state" as const,
-    entity_id: entityId(number),
-    entity_type: "hearth.temperature/v1" as const,
-  },
-});
-
 const meta = {
   title: "Components/Cards/Ranking",
   component: BoundRanking,
   tags: ["ai-generated"],
   args: {
     title: "Rain totals",
-    rows: [rain(106, "Today"), rain(107, "Storm"), rain(108, "This week")],
+    rows: [
+      {
+        label: "Today",
+        source: {
+          kind: "entity-state",
+          entity_id: entityId(106),
+          entity_type: "hearth.numericsensor/v1",
+        },
+      },
+      {
+        label: "Storm",
+        source: {
+          kind: "entity-state",
+          entity_id: entityId(107),
+          entity_type: "hearth.numericsensor/v1",
+        },
+      },
+      {
+        label: "This week",
+        source: {
+          kind: "entity-state",
+          entity_id: entityId(108),
+          entity_type: "hearth.numericsensor/v1",
+        },
+      },
+    ],
   },
   parameters: {
     docs: {
@@ -65,9 +73,30 @@ export const RangePlot: Story = {
   args: {
     title: "Room temperatures",
     rows: [
-      temperature(15, "Living room"),
-      temperature(114, "Bedroom"),
-      temperature(101, "Outdoor"),
+      {
+        label: "Living room",
+        source: {
+          kind: "entity-state",
+          entity_id: entityId(15),
+          entity_type: "hearth.temperature/v1",
+        },
+      },
+      {
+        label: "Bedroom",
+        source: {
+          kind: "entity-state",
+          entity_id: entityId(114),
+          entity_type: "hearth.temperature/v1",
+        },
+      },
+      {
+        label: "Outdoor",
+        source: {
+          kind: "entity-state",
+          entity_id: entityId(101),
+          entity_type: "hearth.temperature/v1",
+        },
+      },
     ],
   },
   play: async ({ canvas }) => {
@@ -109,7 +138,24 @@ export const UnavailableRow: Story = {
 export const IncompatibleUnits: Story = {
   args: {
     title: "Mixed readings",
-    rows: [temperature(101, "Outdoor"), rain(106, "Rain today")],
+    rows: [
+      {
+        label: "Outdoor",
+        source: {
+          kind: "entity-state",
+          entity_id: entityId(101),
+          entity_type: "hearth.temperature/v1",
+        },
+      },
+      {
+        label: "Rain today",
+        source: {
+          kind: "entity-state",
+          entity_id: entityId(106),
+          entity_type: "hearth.numericsensor/v1",
+        },
+      },
+    ],
   },
   play: async ({ canvas }) => {
     await expect(await canvas.findByText(/incompatible units/u)).toBeVisible();
