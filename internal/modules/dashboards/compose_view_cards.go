@@ -1,6 +1,7 @@
 package dashboards
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 
@@ -39,7 +40,7 @@ func newComposeProps(kind string) composeProps {
 		return &windProps{}
 	case "Pressure":
 		return &pressureProps{}
-	case "Forecast":
+	case forecastNode:
 		return &forecastProps{}
 	case "AirPurifier":
 		return &airPurifierProps{}
@@ -49,6 +50,23 @@ func newComposeProps(kind string) composeProps {
 		return &thermostatProps{}
 	case "MediaPlayer":
 		return &mediaPlayerProps{}
+	default:
+		return newChartFormProps(kind)
+	}
+}
+
+// newChartFormProps returns the authoring input of the cards that answer one
+// question about numeric history or on-time.
+func newChartFormProps(kind string) composeProps {
+	switch kind {
+	case rankingNode:
+		return &rankingProps{}
+	case weekGridNode:
+		return &weekGridProps{}
+	case timeInRangeNode:
+		return &timeInRangeProps{}
+	case periodTotalsNode:
+		return &periodTotalsProps{}
 	default:
 		return nil
 	}
@@ -168,38 +186,143 @@ func (p labeledEntity) compileRoot(c *cardCompiler, types ...devices.EntityTypeI
 	return props
 }
 
+// seriesItem is one charted or ranked Entity field. Its own field, when set,
+// overrides the card's.
+type seriesItem struct {
+	entityField
+
+	Label string `json:"label"`
+}
+
 type timeSeriesProps struct {
-	Title  string          `json:"title"`
-	Series []labeledEntity `json:"series"`
-	Field  string          `json:"field"`
-	Window string          `json:"window"`
+	Title   string       `json:"title"`
+	Series  []seriesItem `json:"series"`
+	Field   string       `json:"field"`
+	Window  string       `json:"window"`
+	Compare string       `json:"compare"`
+}
+
+// chartedFields resolves each item to an Entity field and rejects a repeated
+// field or a second canonical unit, reporting at the item's authoring path.
+type chartedFields struct {
+	card string
+	rule chartRule
+	seen map[string]bool
+	unit string
+}
+
+func (f *chartedFields) add(c *cardCompiler, source composedSource, path string) {
+	if c.err != nil {
+		return
+	}
+	identity := string(source.EntityID) + ":" + source.Field
+	staticUnit := fixedUnit(string(source.EntityType), source.Field)
+	switch {
+	case f.seen[identity]:
+		c.err = invalidViewArgument(c.path+path+"/entity_id", "a "+f.card+" needs distinct Entity fields")
+	case f.unit != "" && staticUnit != "" && f.unit != staticUnit:
+		c.err = invalidViewArgument(c.path+path+"/entity_id", f.rule.unit)
+	}
+	f.seen[identity] = true
+	if staticUnit != "" {
+		f.unit = staticUnit
+	}
 }
 
 func (p *timeSeriesProps) compile(c *cardCompiler) cardProps {
 	series := make([]cardProps, 0, len(p.Series))
-	seen := make(map[devices.EntityID]bool, len(p.Series))
-	var chartType devices.EntityTypeID
+	fields := chartedFields{card: timeSeriesNode, rule: chartRules[timeSeriesNode], seen: map[string]bool{}}
 	for i, item := range p.Series {
-		path := fmt.Sprintf("/series/%d/entity_id", i)
-		source := c.root(item.EntityID, path)
+		path := fmt.Sprintf("/series/%d", i)
+		field := cmp.Or(item.Field, p.Field)
+		source := c.scalar(entityField{EntityID: item.EntityID, Field: field}, path)
 		if c.err != nil {
 			break
 		}
-		if seen[item.EntityID] || (i != 0 && chartType != source.EntityType) {
-			c.err = invalidViewArgument(c.path+path, "a TimeSeries needs distinct Entities of one type")
+		fields.add(c, source, path)
+		if c.err != nil {
 			break
 		}
-		if _, found := devices.BuiltinStateField(source.EntityType, p.Field); !found {
-			c.err = invalidViewArgument(c.path+"/field", "choose a State field shared by the chart's Entities")
-			break
-		}
-		chartType, seen[item.EntityID] = source.EntityType, true
-		source.Kind, source.Field, source.Window = seriesBindingKind, p.Field, p.Window
+		source.Kind, source.Window = seriesBindingKind, p.Window
 		props := labeledProps(item.Label)
 		props["source"] = source
 		series = append(series, props)
 	}
-	return cardProps{viewTitleProperty: p.Title, "series": series}
+	props := cardProps{viewTitleProperty: p.Title, "series": series}
+	if p.Compare != "" {
+		if c.err == nil && (len(p.Series) != 1 || p.Window != compareWindow) {
+			c.err = invalidViewArgument(c.path+"/compare", "compare needs exactly one series over a 24h window")
+		}
+		props["compare"] = p.Compare
+	}
+	return props
+}
+
+type rankingProps struct {
+	Title string       `json:"title"`
+	Rows  []seriesItem `json:"rows"`
+	Range string       `json:"range"`
+}
+
+func (p *rankingProps) compile(c *cardCompiler) cardProps {
+	rows := make([]cardProps, 0, len(p.Rows))
+	fields := chartedFields{card: rankingNode, rule: chartRules[rankingNode], seen: map[string]bool{}}
+	for i, item := range p.Rows {
+		path := fmt.Sprintf("/rows/%d", i)
+		source := c.scalar(item.entityField, path)
+		fields.add(c, source, path)
+		if c.err != nil {
+			break
+		}
+		props := labeledProps(item.Label)
+		props["source"] = source
+		rows = append(rows, props)
+	}
+	props := cardProps{viewTitleProperty: p.Title, rowsProperty: rows}
+	props.optionalText("range", p.Range)
+	return props
+}
+
+type weekGridProps struct{ readingRow }
+
+func (p *weekGridProps) compile(c *cardCompiler) cardProps {
+	props := labeledProps(p.Label)
+	props["source"] = c.scalar(p.entityField, "")
+	return props
+}
+
+// timeInRangeProps carries thresholds in the field's canonical unit: the
+// compiler has no household unit system to convert from.
+type timeInRangeProps struct {
+	entityField
+
+	Label      string    `json:"label"`
+	Window     string    `json:"window"`
+	Thresholds []float64 `json:"thresholds"`
+}
+
+func (p *timeInRangeProps) compile(c *cardCompiler) cardProps {
+	props := labeledProps(p.Label)
+	props["source"] = c.scalar(p.entityField, "")
+	props["window"] = p.Window
+	props["thresholds"] = p.Thresholds
+	if c.err == nil && !ascendingFinite(p.Thresholds) {
+		c.err = invalidViewArgument(c.path+"/thresholds", thresholdsReason)
+	}
+	return props
+}
+
+type periodTotalsProps struct {
+	readingRow
+
+	Period string `json:"period"`
+	Style  string `json:"style"`
+}
+
+func (p *periodTotalsProps) compile(c *cardCompiler) cardProps {
+	props := p.readingRow.compile(c)
+	props["period"], props["style"] = p.Period, p.Style
+	return props
 }
 
 type booleanWords struct {
@@ -238,7 +361,7 @@ func (p *readingListProps) compile(c *cardCompiler) cardProps {
 			break
 		}
 	}
-	return cardProps{viewTitleProperty: p.Title, "rows": rows}
+	return cardProps{viewTitleProperty: p.Title, rowsProperty: rows}
 }
 
 type stateTimelineProps struct {
@@ -315,7 +438,7 @@ func (p *toggleListProps) compile(c *cardCompiler) cardProps {
 		props["source"] = c.root(row.EntityID, fmt.Sprintf("/rows/%d/entity_id", i), devices.EntityTypePowerV1)
 		rows = append(rows, props)
 	}
-	props := cardProps{viewTitleProperty: p.Title, "rows": rows}
+	props := cardProps{viewTitleProperty: p.Title, rowsProperty: rows}
 	if p.AllOff {
 		props["all_off"] = true
 	}

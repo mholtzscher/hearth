@@ -20,6 +20,12 @@ const (
 	timeSeriesNode    = "TimeSeries"
 	stateTimelineNode = "StateTimeline"
 	toggleListNode    = "ToggleList"
+	forecastNode      = "Forecast"
+	rowsProperty      = "rows"
+	rankingNode       = "Ranking"
+	weekGridNode      = "WeekGrid"
+	timeInRangeNode   = "TimeInRange"
+	periodTotalsNode  = "PeriodTotals"
 )
 
 //nolint:gochecknoglobals // The embedded immutable schema is compiled once.

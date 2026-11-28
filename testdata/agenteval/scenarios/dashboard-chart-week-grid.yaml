@@ -1,0 +1,31 @@
+id: dashboard-chart-week-grid
+title: When the outdoor temperature is usually warm
+tags: [dashboard, create, chart]
+
+turns:
+  - text: >-
+      Show me when the Home temperature is usually warm, day by day over the
+      last week in three-hour blocks.
+
+checks:
+  - kind: view
+    view:
+      cards:
+        - type: WeekGrid
+          bindings:
+            source: {device: home, key: temperature}
+  - kind: view_without_rejections
+  - kind: reply_max_sentences
+    max: 1
+
+max_requests: 10
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:home}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
+    arguments: |-
+      {"mode": "create", "title": "Usual temperatures", "layout": {"type": "WeekGrid", "entity_id": "{{entity:home/temperature}}", "label": "Home temperature"}}
+  - reply: ""
