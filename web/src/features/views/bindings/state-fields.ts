@@ -174,3 +174,12 @@ export const readingFieldGuide = `Select any State field by JSON Pointer; omit f
         .join(", ")}`
   )
   .join("; ")}.`;
+
+/**
+ * Fields that are set, not measured. Such a field holds its last value until
+ * the next change, so a chart draws it as a step line.
+ */
+export const isHeldField = (entityType: string, field: string): boolean =>
+  entityType === "hearth.numericsetting/v1" ||
+  entityType === "hearth.brightness/v1" ||
+  (entityType === "hearth.thermostat/v1" && field.startsWith("/target_"));

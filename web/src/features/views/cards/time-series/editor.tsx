@@ -85,25 +85,29 @@ export const TimeSeriesEditor = ({
         Time window
         <NativeSelect
           size="auto"
-          value={window}
-          onChange={(event) =>
+          value={value.compare ?? window}
+          onChange={(event) => {
+            // Comparing with the usual range is a 24-hour, single-series chart.
+            const typical = event.target.value === "typical";
+            const next = typical ? "24h" : (event.target.value as SeriesWindow);
             onChange({
               ...value,
+              compare: typical ? "typical" : undefined,
               series: value.series.map((item) => ({
                 ...item,
-                source: {
-                  ...item.source,
-                  window: event.target.value as SeriesWindow,
-                },
+                source: { ...item.source, window: next },
               })),
-            })
-          }
+            });
+          }}
         >
           {windows.map(([windowValue, label]) => (
             <option key={windowValue} value={windowValue}>
               {label}
             </option>
           ))}
+          <option value="typical" disabled={value.series.length !== 1}>
+            Today against the last 7 days
+          </option>
         </NativeSelect>
       </EditorLabel>
       <fieldset>
@@ -152,7 +156,7 @@ export const TimeSeriesEditor = ({
           <NativeSelect
             size="auto"
             value=""
-            disabled={value.series.length >= 8}
+            disabled={value.series.length >= 8 || value.compare !== undefined}
             onChange={(event) => {
               if (event.target.value) {
                 onChange({
