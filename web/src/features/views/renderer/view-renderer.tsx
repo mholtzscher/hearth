@@ -11,15 +11,19 @@ import { BoundForecast } from "../cards/forecast/forecast";
 import { BoundMediaPlayer } from "../cards/media-player/media-player";
 import { BoundMetric } from "../cards/metric/metric";
 import { BoundOutsideNow } from "../cards/outside-now/outside-now";
+import { BoundPeriodTotals } from "../cards/period-totals/period-totals";
 import { BoundPressure } from "../cards/pressure/pressure";
 import { BoundRain } from "../cards/rain/rain";
+import { BoundRanking } from "../cards/ranking/ranking";
 import { BoundReadingList } from "../cards/reading-list/reading-list";
 import { BoundStateTimeline } from "../cards/state-timeline/state-timeline";
 import { BoundState } from "../cards/state/state";
 import { BoundThermostat } from "../cards/thermostat/thermostat";
+import { BoundTimeInRange } from "../cards/time-in-range/time-in-range";
 import { BoundTimeSeries } from "../cards/time-series/time-series";
 import { BoundToggleList } from "../cards/toggle-list/toggle-list";
 import { BoundToggleTile } from "../cards/toggle-tile/toggle-tile";
+import { BoundWeekGrid } from "../cards/week-grid/week-grid";
 import { BoundWeekPattern } from "../cards/week-pattern/week-pattern";
 import { BoundWind } from "../cards/wind/wind";
 import type { ViewElement } from "../catalog";
@@ -48,6 +52,9 @@ const cardDefaultTitles = {
   State: "State",
   Device: "Device",
   WeekPattern: "State",
+  WeekGrid: "Reading",
+  TimeInRange: "Reading",
+  PeriodTotals: "State",
   ToggleTile: "Power",
   AirPurifier: "Air purifier",
   Cover: "Cover",
@@ -126,7 +133,8 @@ const cardTitle = (node: CardElement): string => {
     node.type === "TimeSeries" ||
     node.type === "ReadingList" ||
     node.type === "StateTimeline" ||
-    node.type === "ToggleList"
+    node.type === "ToggleList" ||
+    node.type === "Ranking"
   ) {
     return node.props.title;
   }
@@ -187,6 +195,43 @@ class CardBoundary extends Component<CardBoundaryProps, CardBoundaryState> {
     );
   }
 }
+
+/** The chart-form cards, apart from the rest so each switch stays readable. */
+const renderChartCard = (node: CardElement, title: string) => {
+  switch (node.type) {
+    case "WeekGrid": {
+      return (
+        <CardBoundary resetKey={JSON.stringify(node.props)} title={title}>
+          <BoundWeekGrid {...node.props} />
+        </CardBoundary>
+      );
+    }
+    case "Ranking": {
+      return (
+        <CardBoundary resetKey={JSON.stringify(node.props)} title={title}>
+          <BoundRanking {...node.props} />
+        </CardBoundary>
+      );
+    }
+    case "TimeInRange": {
+      return (
+        <CardBoundary resetKey={JSON.stringify(node.props)} title={title}>
+          <BoundTimeInRange {...node.props} />
+        </CardBoundary>
+      );
+    }
+    case "PeriodTotals": {
+      return (
+        <CardBoundary resetKey={JSON.stringify(node.props)} title={title}>
+          <BoundPeriodTotals {...node.props} />
+        </CardBoundary>
+      );
+    }
+    default: {
+      return null;
+    }
+  }
+};
 
 const renderCard = (node: CardElement) => {
   const title = cardTitle(node);
@@ -318,7 +363,7 @@ const renderCard = (node: CardElement) => {
       );
     }
     default: {
-      return null;
+      return renderChartCard(node, title);
     }
   }
 };

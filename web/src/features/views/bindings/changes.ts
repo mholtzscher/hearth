@@ -4,6 +4,7 @@ import { apiFetch } from "../../../api/client";
 import type { ReadRequest } from "../data/cache";
 import type {
   EntitySource,
+  PeriodTotalsData,
   SeriesWindow,
   TimelineData,
   TimelineInterval,
@@ -127,11 +128,13 @@ export const weekStart = (now: Date): Date => {
   return start;
 };
 
-export const weekPatternRequest = (
+/** Hourly seconds-true summary of a yes/no field, validated against its range and bucket grid. */
+const hourlySummaryRequest = (
   source: EntitySource,
-  start: Date
+  start: Date,
+  options: { keyPrefix: string; duration: string; invalid: string }
 ): ReadRequest => ({
-  key: `entity-week:${source.entity_id}:${source.field ?? ""}:${start.toISOString()}`,
+  key: `${options.keyPrefix}:${source.entity_id}:${source.field ?? ""}:${start.toISOString()}`,
   kind: "series",
   load: (signal, to) => {
     const body = JSON.stringify({
@@ -139,7 +142,7 @@ export const weekPatternRequest = (
       select_field: source.field ?? "",
       result: {
         kind: "summary",
-        bucket: { duration: "1h", alignment: "range_start" },
+        bucket: { duration: options.duration, alignment: "range_start" },
       },
     });
     return apiFetch(
@@ -148,7 +151,7 @@ export const weekPatternRequest = (
       (text) => {
         const parsed = summary.safeParse(JSON.parse(text));
         if (!parsed.success) {
-          throw new Error("Invalid week pattern");
+          throw new Error(options.invalid);
         }
         const { data } = parsed;
         if (
@@ -157,7 +160,7 @@ export const weekPatternRequest = (
           !same(data.range.from, start) ||
           !same(data.range.to, to)
         ) {
-          throw new Error("Invalid week pattern");
+          throw new Error(options.invalid);
         }
         let cursor = start.getTime();
         for (const bucket of data.buckets) {
@@ -169,18 +172,78 @@ export const weekPatternRequest = (
             bucket.known_seconds > (end - cursor) / 1000 ||
             bucket.seconds_true > bucket.known_seconds
           ) {
-            throw new Error("Invalid week pattern");
+            throw new Error(options.invalid);
           }
           cursor = end;
         }
         if (cursor !== to.getTime()) {
-          throw new Error("Invalid week pattern");
+          throw new Error(options.invalid);
         }
         return data;
       }
     );
   },
 });
+
+export const weekPatternRequest = (
+  source: EntitySource,
+  start: Date
+): ReadRequest =>
+  hourlySummaryRequest(source, start, {
+    keyPrefix: "entity-week",
+    duration: "1h",
+    invalid: "Invalid week pattern",
+  });
+
+/** The start of the local hour 23 hours before the current one: 24 one-hour periods end at now. */
+export const hourTotalsStart = (now: Date): Date => {
+  const start = new Date(now);
+  start.setMinutes(0, 0, 0);
+  return new Date(start.getTime() - 23 * 3_600_000);
+};
+
+/** Seconds true in each of the last 24 hours, in one-hour periods from `start`. */
+export const hourTotalsRequest = (
+  source: EntitySource,
+  start: Date
+): ReadRequest =>
+  hourlySummaryRequest(source, start, {
+    keyPrefix: "entity-hours",
+    duration: "1h0m0s",
+    invalid: "Invalid hourly totals",
+  });
+
+/** One period per hour from `start`; an hour with no known seconds has no history, not zero. */
+export const readHourTotals = (
+  raw: unknown,
+  start: Date,
+  now: Date
+): PeriodTotalsData => {
+  const data = summary.parse(raw);
+  const periods = Array.from({ length: 24 }, (_, index) => {
+    const from = start.getTime() + index * 3_600_000;
+    return {
+      start: from,
+      end: from + 3_600_000,
+      seconds: null as number | null,
+      partial: from + 3_600_000 > now.getTime(),
+      gaps: false,
+    };
+  });
+  for (const bucket of data.buckets) {
+    const period =
+      periods[
+        Math.floor((millis(bucket.range.from) - start.getTime()) / 3_600_000)
+      ];
+    if (period && bucket.known_seconds > 0) {
+      period.seconds = bucket.seconds_true;
+      const elapsed =
+        (Math.min(period.end, now.getTime()) - period.start) / 1000;
+      period.gaps = bucket.known_seconds < elapsed - 1;
+    }
+  }
+  return { from: start.getTime(), to: now.getTime(), periods };
+};
 
 const valueKey = (interval: Extract<TimelineInterval, { kind: "value" }>) =>
   interval.truthy === null

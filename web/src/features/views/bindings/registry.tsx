@@ -6,6 +6,9 @@ import { emptySnapshot } from "../data/cache";
 import type { ReadRequest, ReadSnapshot } from "../data/cache";
 import { useReads } from "../data/provider";
 import {
+  hourTotalsRequest,
+  hourTotalsStart,
+  readHourTotals,
   readTimeline,
   readWeekPattern,
   timelineRequest,
@@ -13,8 +16,8 @@ import {
   weekStart,
 } from "./changes";
 import { entityMetadata, entityStateRequest, readEntity } from "./entity";
-import { readErrorMessage } from "./history";
-import type { HistorySeries } from "./history";
+import { historySpanRequest, readErrorMessage } from "./history";
+import type { HistorySeries, HistorySpan } from "./history";
 import { pairedQuantityAdapter } from "./paired";
 import { quantityAdapter } from "./quantity-adapter";
 import { quantityField, quantityTypes, textField } from "./state-fields";
@@ -23,6 +26,7 @@ import type {
   MetricData,
   NumericAdapter,
   NumericSource,
+  PeriodTotalsData,
   ReadUnits,
   Resolved,
   SeriesData,
@@ -239,6 +243,42 @@ export const useNumericReads = (
   });
 };
 
+/**
+ * History over card-chosen spans, in household units, each with its Entity's
+ * current State for status. Bucket counts follow the span, not a window.
+ */
+export const useNumericSpans = (
+  bindings: { source: NumericSource; span: HistorySpan }[]
+): Resolved<SeriesData>[] => {
+  const adapter = pairedQuantityAdapter("household");
+  const supported = bindings.map(({ source }) => !!quantityField(source));
+  const snapshots = useReads(
+    bindings.flatMap(({ source, span }, index) =>
+      supported[index]
+        ? [entityStateRequest(source), historySpanRequest(source, span)]
+        : []
+    )
+  );
+  const offsets = prefixOffsets(supported.map((ok) => (ok ? 2 : 0)));
+  return bindings.map(({ source }, index) => {
+    if (!supported[index]) {
+      return { status: "error", error: "Unsupported resource binding" };
+    }
+    const offset = offsets[index];
+    const result = resolve(
+      adapter,
+      source,
+      snapshots[offset],
+      snapshots[offset + 1],
+      "24h"
+    );
+    return {
+      ...result,
+      data: result.data && "buckets" in result.data ? result.data : undefined,
+    };
+  });
+};
+
 export const useNumericRead = (
   source: NumericSource,
   window?: SeriesWindow
@@ -278,6 +318,22 @@ export const useWeekPattern = (
   return resolveHistorical(binding, snapshots[0], snapshots[1], (raw) => {
     const data = raw as { range: { to: string } };
     return { week: readWeekPattern(raw, start, new Date(data.range.to)) };
+  });
+};
+
+/** Seconds true per hour over the last 24 hours, in one-hour periods. */
+export const useHourTotals = (
+  binding: ReadingBinding
+): Resolved<{ current?: TextData; hours?: PeriodTotalsData }> => {
+  const now = useMinuteClock();
+  const start = hourTotalsStart(new Date(now));
+  const snapshots = useReads([
+    entityStateRequest(binding.source),
+    hourTotalsRequest(binding.source, start),
+  ]);
+  return resolveHistorical(binding, snapshots[0], snapshots[1], (raw) => {
+    const data = raw as { range: { to: string } };
+    return { hours: readHourTotals(raw, start, new Date(data.range.to)) };
   });
 };
 

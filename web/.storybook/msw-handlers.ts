@@ -8,6 +8,7 @@ import type {
   EntityStateHistoryEntry,
   HealthTransition,
 } from "../src/api/types";
+import { isHeldField } from "../src/features/views/bindings/state-fields";
 import type { MediaPlayerState } from "../src/features/views/cards/media-player/data";
 import {
   createEntities,
@@ -30,6 +31,17 @@ import type { ThermostatState } from "./thermostat-fixtures";
 
 export { fixtureNow } from "./fixtures";
 const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
+// Core prints a bucket length as Go's Duration.String, such as "5m0s" or "3h0m0s".
+const goDurationPattern =
+  /^(?:(?<hours>\d+)h)?(?:(?<minutes>\d+)m)?(?<seconds>\d+)s$/u;
+const goDuration = (text: string): number => {
+  const { hours, minutes, seconds } =
+    goDurationPattern.exec(text)?.groups ?? {};
+  return (
+    (Number(hours ?? 0) * 3600 + Number(minutes ?? 0) * 60 + Number(seconds)) *
+    1000
+  );
+};
 const rangeSchema = z.object({
   from: z.string().datetime(),
   to: z.string().datetime(),
@@ -38,7 +50,7 @@ const historyQuery = z.object({
   range: rangeSchema,
   select_field: z.string(),
   result: z.object({
-    bucket: z.object({ duration: z.enum(["1m0s", "5m0s", "30m0s"]) }),
+    bucket: z.object({ duration: z.string().regex(goDurationPattern) }),
   }),
 });
 const changesQuery = z.object({
@@ -259,25 +271,34 @@ export const createCoreHandlers = (
       }
       const from = Date.parse(query.range.from);
       const to = Date.parse(query.range.to);
-      const step = { "1m0s": 60_000, "5m0s": 300_000, "30m0s": 1_800_000 }[
-        query.result.bucket.duration
-      ];
-      const base = Number(selected.state?.value);
+      const step = goDuration(query.result.bucket.duration);
+      const raw: unknown = selected.state?.value;
+      const base = Number(
+        query.select_field && raw !== null && typeof raw === "object"
+          ? (raw as Record<string, unknown>)[query.select_field.slice(1)]
+          : raw
+      );
+      // A set value holds, then jumps: flat buckets with a change every 40.
+      const held = isHeldField(selected.type, query.select_field);
       const buckets = Array.from(
         { length: Math.ceil((to - from) / step) },
         (_, index) => {
           const start = from + index * step;
           const pressure = selected.type === "hearth.pressure/v1";
-          const mean = pressure
+          const measured = pressure
             ? base + (Math.min((to - start) / 60_000, 180) / 180) * 3.1
             : base +
               Math.sin(index / 12) * Math.max(Math.abs(base) * 0.04, 0.2);
+          const mean = held
+            ? base + (Math.floor(index / 40) % 2) * 2
+            : measured;
+          const spread = held ? 0 : 0.1;
           const gap = index >= 70 && index < 76;
           return {
             range: { from: iso(start), to: iso(Math.min(start + step, to)) },
             metrics: {
-              min: gap ? null : mean - 0.1,
-              max: gap ? null : mean + 0.1,
+              min: gap ? null : mean - spread,
+              max: gap ? null : mean + spread,
               mean: gap ? null : mean,
             },
           };

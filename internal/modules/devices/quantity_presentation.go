@@ -97,6 +97,24 @@ func (presenter *Presenter) field(
 	return fieldPresentation{metadata: meta, conversion: conversion}, nil
 }
 
+// CanonicalValue converts a number written in the household display unit of
+// field to the field's canonical unit, inverting the conversion reads use.
+func (presenter *Presenter) CanonicalValue(
+	field NumericField,
+	support json.RawMessage,
+	display float64,
+) (float64, error) {
+	presentation, err := presenter.field(field, support, "")
+	if err != nil {
+		return 0, err
+	}
+	inverse, err := presentation.conversion.Inverse()
+	if err != nil {
+		return 0, err
+	}
+	return inverse.Apply(display)
+}
+
 func (presenter *Presenter) displayFormat(quantity ResolvedQuantity, valueType NumericValueType) QuantityMetadata {
 	// Existing chromaticity presentation is a scale convention, not a
 	// household preference or an inferred semantic kind.

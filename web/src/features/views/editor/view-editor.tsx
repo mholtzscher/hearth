@@ -14,17 +14,21 @@ import { forecastTypes } from "../cards/forecast/schema";
 import { MediaPlayerEditor } from "../cards/media-player/editor";
 import { MetricEditor } from "../cards/metric/editor";
 import { OutsideNowEditor } from "../cards/outside-now/editor";
+import { PeriodTotalsEditor } from "../cards/period-totals/editor";
 import { PressureEditor } from "../cards/pressure/editor";
 import { RainEditor } from "../cards/rain/editor";
+import { RankingEditor } from "../cards/ranking/editor";
 import { ReadingListEditor } from "../cards/reading-list/editor";
 import { StateTimelineEditor } from "../cards/state-timeline/editor";
 import { StateEditor } from "../cards/state/editor";
 import { headingSchema, noteSchema } from "../cards/text/schema";
 import { ThermostatEditor } from "../cards/thermostat/editor";
+import { TimeInRangeEditor } from "../cards/time-in-range/editor";
 import { TimeSeriesEditor } from "../cards/time-series/editor";
 import type { SensorChoice } from "../cards/time-series/editor";
 import { ToggleListEditor } from "../cards/toggle-list/editor";
 import { ToggleTileEditor } from "../cards/toggle-tile/editor";
+import { WeekGridEditor } from "../cards/week-grid/editor";
 import { WeekPatternEditor } from "../cards/week-pattern/editor";
 import { WindEditor } from "../cards/wind/editor";
 import { definitionSchema } from "../catalog";
@@ -134,6 +138,56 @@ const LayoutChildren = ({
     ))}
   </ol>
 );
+
+/** Editors for the chart-form cards. */
+const ChartElementEditor = ({
+  node,
+  choices,
+  onChange,
+}: {
+  node: CardElement;
+  choices: SensorChoice[];
+  onChange: (value: ViewElement) => void;
+}) => {
+  switch (node.type) {
+    case "WeekGrid": {
+      return (
+        <WeekGridEditor
+          value={node.props}
+          onChange={(props) => onChange({ ...node, props })}
+        />
+      );
+    }
+    case "Ranking": {
+      return (
+        <RankingEditor
+          value={node.props}
+          choices={choices}
+          onChange={(props) => onChange({ ...node, props })}
+        />
+      );
+    }
+    case "TimeInRange": {
+      return (
+        <TimeInRangeEditor
+          value={node.props}
+          onChange={(props) => onChange({ ...node, props })}
+        />
+      );
+    }
+    case "PeriodTotals": {
+      return (
+        <PeriodTotalsEditor
+          value={node.props}
+          onChange={(props) => onChange({ ...node, props })}
+        />
+      );
+    }
+    default: {
+      return null;
+    }
+  }
+};
 
 const CardElementEditor = ({
   node,
@@ -304,7 +358,9 @@ const CardElementEditor = ({
       );
     }
     default: {
-      return null;
+      return (
+        <ChartElementEditor node={node} choices={choices} onChange={onChange} />
+      );
     }
   }
 };

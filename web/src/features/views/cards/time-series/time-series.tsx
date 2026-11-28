@@ -11,6 +11,7 @@ import {
 
 import { ChartContainer } from "../../../../components/chart";
 import { useNumericReads } from "../../bindings/registry";
+import { isHeldField } from "../../bindings/state-fields";
 import type {
   NumericSource,
   Resolved,
@@ -29,6 +30,8 @@ import {
   timeLabel,
   timeTicks,
 } from "./scale";
+import { stepValues } from "./step";
+import { BoundTypicalDay } from "./typical-day";
 
 // Series colors come from the eight chart tokens; orange is never a series color.
 const colors = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `var(--chart-${n})`);
@@ -36,6 +39,8 @@ const colors = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `var(--chart-${n})`);
 interface TimeSeriesInput {
   label?: string;
   resource: Resolved<SeriesData>;
+  /** The field is set, not measured: draw a step line with a dot at each change. */
+  held?: boolean;
 }
 
 interface SeriesItem {
@@ -44,6 +49,8 @@ interface SeriesItem {
   data: SeriesData | undefined;
   status: CardStatus;
   dimmed: boolean;
+  /** Per-bucket held values for a step line; absent for a measured series. */
+  steps?: ReturnType<typeof stepValues>;
 }
 
 interface Arrival {
@@ -63,10 +70,27 @@ const windowWords = (data: SeriesData): string => {
   return hours === 1 ? "1 hour" : `${hours} hours`;
 };
 
+const stepSummary = (
+  label: string,
+  data: SeriesData,
+  steps: ReturnType<typeof stepValues>
+): string => {
+  const unit = data.format.unit_label ? ` ${data.format.unit_label}` : "";
+  const latest = steps.findLast((step) => step.value !== null)?.value;
+  if (latest === undefined || latest === null) {
+    return `${label}: no samples over the last ${windowWords(data)}.`;
+  }
+  const changes = steps.filter((step) => step.changed).length;
+  return `${label}: latest ${latest.toFixed(data.format.fraction_digits)}${unit}, ${changes} ${changes === 1 ? "change" : "changes"} over the last ${windowWords(data)}.`;
+};
+
 /** One sentence per series, so the plot has a text equivalent that names the trend rather than the ticks. */
-const seriesSummary = (label: string, data: SeriesData | undefined): string => {
+const seriesSummary = ({ label, data, steps }: SeriesItem): string => {
   if (!data) {
     return `${label}: no readings yet.`;
+  }
+  if (steps) {
+    return stepSummary(label, data, steps);
   }
   const digits = data.format.fraction_digits;
   const unit = data.format.unit_label ? ` ${data.format.unit_label}` : "";
@@ -130,17 +154,28 @@ const seriesItems = (
       status,
       // A series whose Entity is unavailable or disabled is drawn dashed without its band.
       dimmed: status.value === "dimmed",
+      steps:
+        item.held && item.resource.data
+          ? stepValues(item.resource.data.buckets)
+          : undefined,
     };
   });
 
 const seriesPoints = (first: SeriesData | undefined, items: SeriesItem[]) =>
   first?.buckets.map((bucket, index) => {
-    const point: Record<string, number | string | number[] | null> = {
+    const point: Record<string, number | string | number[] | boolean | null> = {
       time: Date.parse(bucket.start),
       end: bucket.end,
     };
     for (const [i, item] of items.entries()) {
       const b = item.data?.buckets[index];
+      const step = item.steps?.[index];
+      if (step) {
+        point[`mean${i}`] = step.value;
+        point[`band${i}`] = null;
+        point[`changed${i}`] = step.changed;
+        continue;
+      }
       point[`mean${i}`] = b?.mean ?? null;
       point[`band${i}`] =
         b && b.min !== null && b.max !== null ? [b.min, b.max] : null;
@@ -151,9 +186,13 @@ const seriesPoints = (first: SeriesData | undefined, items: SeriesItem[]) =>
 const seriesValues = (items: SeriesItem[]) =>
   items.flatMap(
     (item) =>
+      item.steps?.flatMap((step) =>
+        step.value === null ? [] : [step.value]
+      ) ??
       item.data?.buckets.flatMap((b) =>
         [b.min, b.max, b.mean].filter((v): v is number => v !== null)
-      ) ?? []
+      ) ??
+      []
   );
 
 const plotScale = (first: SeriesData | undefined, items: SeriesItem[]) => {
@@ -172,11 +211,13 @@ const SeriesMethod = ({
   from,
   to,
   bucketMinutes,
+  stepped,
 }: {
   first?: SeriesData;
   from: number;
   to: number;
   bucketMinutes: number;
+  stepped: boolean;
 }) => (
   <>
     <p>
@@ -187,6 +228,12 @@ const SeriesMethod = ({
       interval; the shaded band spans their minimum and maximum. Gaps mean no
       samples or a reported absent field.
     </p>
+    {stepped && (
+      <p>
+        A stepped line holds each set value until the next change. A change is
+        drawn at the start of the interval it happened in.
+      </p>
+    )}
     {first && (
       <p>
         {new Date(from).toLocaleString()} to {new Date(to).toLocaleString()}
@@ -238,6 +285,52 @@ const seriesSources = (items: SeriesItem[], series: TimeSeriesInput[]) => {
   return sources;
 };
 
+const tooltipReading = (
+  item: SeriesItem,
+  index: number,
+  digits: number | undefined,
+  unit: string
+): string => {
+  if (item.steps) {
+    const held = item.steps[index]?.value;
+    return held === null || held === undefined
+      ? "no samples"
+      : `${held.toFixed(digits)}${unit}`;
+  }
+  const b = item.data?.buckets[index];
+  return b?.mean === null || b?.mean === undefined
+    ? "no samples"
+    : `avg ${b.mean.toFixed(digits)}${unit} (${b.min?.toFixed(digits)}–${b.max?.toFixed(digits)})`;
+};
+
+/** A step line's dot marks a change; a held value between changes draws none. */
+const ChangeDot = ({
+  cx,
+  cy,
+  payload,
+  flag,
+  color,
+  opacity,
+}: {
+  cx?: number;
+  cy?: number;
+  payload?: Record<string, unknown>;
+  flag: string;
+  color: string;
+  opacity: number;
+}) =>
+  payload?.[flag] === true ? (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={3}
+      fill={color}
+      fillOpacity={opacity}
+      stroke="var(--card)"
+      strokeWidth={1.5}
+    />
+  ) : null;
+
 const SeriesTooltip = ({
   active,
   label,
@@ -270,15 +363,11 @@ const SeriesTooltip = ({
         })}
       </p>
       {items.map((item, i) => {
-        const b = item.data?.buckets[index];
         const digits = item.data?.format.fraction_digits;
         const itemUnit = item.data?.format.unit_label
           ? ` ${item.data.format.unit_label}`
           : "";
-        const reading =
-          b?.mean === null || b?.mean === undefined
-            ? "no samples"
-            : `avg ${b.mean.toFixed(digits)}${itemUnit} (${b.min?.toFixed(digits)}–${b.max?.toFixed(digits)})`;
+        const reading = tooltipReading(item, index, digits, itemUnit);
         return (
           <p key={i}>
             <span
@@ -293,6 +382,17 @@ const SeriesTooltip = ({
       })}
     </div>
   );
+};
+
+/** Names what is drawn: a step line has no band, and a chart may mix both. */
+const plotWords = (items: SeriesItem[]): string => {
+  const stepped = items.filter((item) => item.steps).length;
+  if (stepped === 0) {
+    return "average line with minimum to maximum band";
+  }
+  return stepped === items.length
+    ? "step line of each set value"
+    : "average lines with minimum to maximum bands, and step lines of set values";
 };
 
 export const TimeSeries = ({
@@ -340,6 +440,7 @@ export const TimeSeries = ({
         from={from}
         to={to}
         bucketMinutes={bucketMinutes}
+        stepped={items.some((item) => item.steps)}
       />
     );
   return (
@@ -384,12 +485,12 @@ export const TimeSeries = ({
       {first ? (
         <section
           className="overflow-x-auto rounded-md"
-          aria-label={`${title}, average line with minimum to maximum band`}
+          aria-label={`${title}, ${plotWords(items)}`}
         >
           <ul className="sr-only">
             {items.map((item, i) => (
               <li key={i}>
-                {seriesSummary(item.label, item.data)}
+                {seriesSummary(item)}
                 {item.dimmed ? " Unavailable." : ""}
               </li>
             ))}
@@ -438,7 +539,7 @@ export const TimeSeries = ({
                 }
               />
               {items.map((item, i) =>
-                item.dimmed ? null : (
+                item.dimmed || item.steps ? null : (
                   <Area
                     key={`band${i}`}
                     type="linear"
@@ -454,18 +555,28 @@ export const TimeSeries = ({
               {items.map((item, i) => (
                 <Line
                   key={`line${i}`}
-                  type="linear"
+                  type={item.steps ? "stepAfter" : "linear"}
                   dataKey={`mean${i}`}
                   stroke={item.color}
                   strokeWidth={2}
                   strokeDasharray={item.dimmed ? "4 4" : undefined}
                   strokeOpacity={item.dimmed ? 0.6 : 1}
-                  dot={{
-                    r: 2,
-                    strokeWidth: 0,
-                    fill: item.color,
-                    fillOpacity: item.dimmed ? 0.6 : 1,
-                  }}
+                  dot={
+                    item.steps ? (
+                      <ChangeDot
+                        flag={`changed${i}`}
+                        color={item.color}
+                        opacity={item.dimmed ? 0.6 : 1}
+                      />
+                    ) : (
+                      {
+                        r: 2,
+                        strokeWidth: 0,
+                        fill: item.color,
+                        fillOpacity: item.dimmed ? 0.6 : 1,
+                      }
+                    )
+                  }
                   connectNulls={false}
                   isAnimationActive={false}
                 />
@@ -484,7 +595,7 @@ export const TimeSeries = ({
   );
 };
 
-export const BoundTimeSeries = ({
+const BoundSeries = ({
   title,
   series,
 }: {
@@ -509,6 +620,10 @@ export const BoundTimeSeries = ({
       title={title}
       series={results.map((result, index) => ({
         label: series[index].label,
+        held: isHeldField(
+          series[index].source.entity_type,
+          series[index].source.field ?? ""
+        ),
         resource: {
           ...result,
           data:
@@ -518,3 +633,23 @@ export const BoundTimeSeries = ({
     />
   );
 };
+
+/** `compare` replaces the rolling window with today against the last 7 days. */
+export const BoundTimeSeries = ({
+  title,
+  series,
+  compare,
+}: {
+  title: string;
+  series: {
+    source: NumericSource & { window: SeriesWindow };
+    label?: string;
+  }[];
+  /** Today against the last 7 days; the card then reads only the first series. */
+  compare?: "typical";
+}) =>
+  compare === "typical" ? (
+    <BoundTypicalDay title={title} series={series[0]} />
+  ) : (
+    <BoundSeries title={title} series={series} />
+  );

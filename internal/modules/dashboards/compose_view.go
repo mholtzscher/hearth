@@ -84,8 +84,9 @@ func invalidViewArgument(path, reason string) error {
 
 func (s *Service) ComposeView(ctx context.Context, input ComposeViewInput) (Artifact, error) {
 	compiler := viewCompiler{
-		ctx: ctx, reader: s.entities,
+		ctx: ctx, reader: s.entities, units: s.units,
 		nodes: make(map[string]viewNode), entityTypes: make(map[devices.EntityID]devices.EntityTypeID),
+		supports:  make(map[devices.EntityID]json.RawMessage),
 		resources: make(map[string]struct{}),
 	}
 	root, err := compiler.add(input.Layout, "/layout", 1)
@@ -104,6 +105,8 @@ func (s *Service) ComposeView(ctx context.Context, input ComposeViewInput) (Arti
 type viewCompiler struct {
 	ctx         context.Context
 	reader      EntityReader
+	units       DisplayUnits
+	supports    map[devices.EntityID]json.RawMessage
 	nodes       map[string]viewNode
 	entityTypes map[devices.EntityID]devices.EntityTypeID
 	resources   map[string]struct{}
@@ -186,5 +189,6 @@ func (c *viewCompiler) entityType(id devices.EntityID, path string) (devices.Ent
 		return "", err
 	}
 	c.entityTypes[id] = entity.Entity.TypeID
+	c.supports[id] = json.RawMessage(entity.Entity.Support)
 	return entity.Entity.TypeID, nil
 }

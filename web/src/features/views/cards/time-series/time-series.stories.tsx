@@ -3,6 +3,7 @@ import { http, HttpResponse } from "msw";
 import { expect, waitFor } from "storybook/test";
 
 import { entityId } from "../../../../../.storybook/fixtures";
+import { expectNoHorizontalOverflow } from "../../../../../.storybook/play";
 import { BoundTimeSeries } from "./time-series";
 
 const meta = {
@@ -102,5 +103,66 @@ export const InspectReading: Story = {
       },
     });
     await expect(await canvas.findByText(/Outdoor avg/u)).toBeInTheDocument();
+  },
+};
+/** A set value is a step line with a dot at each change; the measured room keeps its band. */
+export const SteppedTarget: Story = {
+  args: {
+    title: "Hallway thermostat",
+    series: [
+      {
+        label: "Heat to",
+        source: {
+          entity_id: entityId(501),
+          entity_type: "hearth.thermostat/v1",
+          field: "/target_temperature_low",
+          window: "24h",
+        },
+      },
+      {
+        label: "Room",
+        source: {
+          entity_id: entityId(501),
+          entity_type: "hearth.thermostat/v1",
+          field: "/current_temperature",
+          window: "24h",
+        },
+      },
+    ],
+  },
+  play: async ({ canvas }) => {
+    const chart = await canvas.findByRole("region", {
+      name: "Hallway thermostat, average lines with minimum to maximum bands, and step lines of set values",
+    });
+    // The two series read separately; wait for both summaries.
+    await waitFor(() =>
+      expect(chart).toHaveTextContent(/Heat to: latest .* changes over/u)
+    );
+    await waitFor(() =>
+      expect(chart).toHaveTextContent(/Room: latest .* range/u)
+    );
+  },
+};
+/** Today from local midnight over the last 7 days' range for each time of day. */
+export const AgainstTypical: Story = {
+  args: { ...OneSeries.args, title: "Outdoor temperature", compare: "typical" },
+  play: async ({ canvas }) => {
+    const chart = await canvas.findByRole("region", {
+      name: /^Outdoor temperature, today against the last 7 days/u,
+    });
+    await expect(chart).toHaveTextContent("Today: latest");
+    // The 7-day read settles after today's; the band and its key arrive with it.
+    await expect(
+      await canvas.findByText("Usual range, last 7 days")
+    ).toBeInTheDocument();
+    await expect(chart).toHaveTextContent("Usual range at this time");
+  },
+};
+export const AgainstTypicalPhone: Story = {
+  args: AgainstTypical.args,
+  globals: { viewport: { value: "phone", isRotated: false } },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("region", { name: /today against/u });
+    await expectNoHorizontalOverflow(canvasElement);
   },
 };

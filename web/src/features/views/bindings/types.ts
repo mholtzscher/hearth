@@ -123,3 +123,18 @@ export interface WeekPatternData {
   to: number;
   days: { start: number; hours: WeekCell[] }[];
 }
+/** One period's seconds true. `seconds` is null when the period has no history, which is not zero. */
+export interface PeriodTotal {
+  start: number;
+  end: number;
+  seconds: number | null;
+  /** The current period, still being counted. */
+  partial: boolean;
+  /** Part of the period has no history. */
+  gaps: boolean;
+}
+export interface PeriodTotalsData {
+  from: number;
+  to: number;
+  periods: PeriodTotal[];
+}

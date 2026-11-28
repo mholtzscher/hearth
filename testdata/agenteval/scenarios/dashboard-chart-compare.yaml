@@ -1,0 +1,34 @@
+id: dashboard-chart-compare
+title: Today's outdoor temperature against the usual range
+tags: [dashboard, create, chart]
+
+turns:
+  - text: >-
+      Add a chart that shows whether today's Home temperature is unusual,
+      compared with the past week.
+
+checks:
+  - kind: view
+    view:
+      cards:
+        - type: TimeSeries
+          bindings:
+            series/0/source: {device: home, key: temperature}
+          props:
+            compare: typical
+            series/0/source/window: 24h
+  - kind: view_without_rejections
+  - kind: reply_max_sentences
+    max: 1
+
+max_requests: 10
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:home}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
+    arguments: |-
+      {"mode": "create", "title": "Is today unusual?", "layout": {"type": "TimeSeries", "title": "Home temperature today", "window": "24h", "compare": "typical", "series": [{"entity_id": "{{entity:home/temperature}}"}]}}
+  - reply: ""

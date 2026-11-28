@@ -1050,6 +1050,41 @@ and over 30 minutes true). Future hours are outlined, and hours with no known
 value are dashed. Each day states its changes into true and its time true; that
 summary hides below a 420px card. A key names the levels.
 
+#### Chart forms
+
+Every chart-form card leads with its answer in words: a compact reading and the
+sentence it belongs to, such as `6.3 kWh` "today so far" or `38%` "of the last
+7 days between 21 and 22 °C". The drawing supports that sentence.
+
+- **Step lines.** A value that is set, not measured (a thermostat target,
+  brightness, a numeric setting), holds until the next change. Its line is a
+  2px step in its series color with a 3px dot at each change and no band. A
+  measured series on the same chart keeps its sloped line and band.
+- **Today against the usual range.** Today's line is the 2px ink line on a
+  midnight-to-midnight axis and ends at its latest sample. The usual range is a
+  neutral band (`--chart-6` at 30%) with a 1px `gray-6` line for its average.
+  The answer says whether today is above, below, or within the range, and since
+  when.
+- **Bars** grow from zero in ink (`--chart-1`), with 4px corners. A bar is
+  labelled with its value, or the row states it at the right. The current,
+  incomplete period is tinted (`--chart-1` at 28% over `gray-1`) with a 1px ink
+  outline and the words "so far". A period with no history shows `—` or
+  "No history", never a zero-height bar. An average is a 1px rule labelled
+  `avg`, never a dashed line: dashes mean unavailable.
+- **Range plots** are for readings where zero does not mean none, such as
+  temperature. Each row is a 10px ink dot on a shared scale with a 4px `gray-5`
+  bar spanning its minimum and maximum, 1px `gray-3` gridlines, and a key that
+  names the dot and the bar.
+- **Blocks** print their value on the five-step neutral ramp: light text on the
+  three dark steps and `gray-0` text on the two light ones. A block with no
+  samples is dashed, and a block still to come is outlined, as in Week pattern.
+- **Ranges of time** are one 14px bar split by 2px gaps, with a row per range
+  naming it and stating its hours and share. Below the range is dusk blue
+  (`--chart-4`), inside it ink, and above it pale gold (`--chart-5`).
+
+An unavailable or disabled row keeps its last value in `gray-8` with a hollow
+mark and its status words.
+
 #### Weather
 
 Weather cards (Outside now, Rain, Wind, and Pressure) lead with one reading at

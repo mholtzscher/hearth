@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,6 +37,8 @@ const composeViewDescription = "Present a live dashboard draft without saving or
 	"For AirPurifier, entity_id is its main power Entity. Use fan_mode for named modes and fan_level for numbered speeds. " +
 	"Use those exact keys, not power or mode. " +
 	"Grid requires columns. A card bound to one Entity names it entity_id; TimeSeries lists its Entities in series, and ReadingList, StateTimeline, and ToggleList in rows. An Entity is always a bare ID string. " +
+	"For a numeric question, TimeSeries shows change over time, Ranking compares current readings, WeekGrid shows the usual week, and TimeInRange shows time below, between, and above thresholds in the unit you see for that reading. " +
+	"TimeSeries compare typical answers whether today is unusual, and PeriodTotals shows on-time of a yes/no field per hour or day. " +
 	"Each card type's description says when to use it and how to bind it. " +
 	"For a weather station, prefer OutsideNow, Rain, Wind, Pressure, and Forecast over separate Metrics. " +
 	"A weather slot that takes a hearth.numericsensor/v1 Entity requires its discovered unit: mm/h for a rain rate, mm for rain totals, deg for wind direction. " +
@@ -132,13 +135,20 @@ func (t composeViewTool) InvokableRun(ctx context.Context, arguments string, _ .
 	return t.create(ctx, raw)
 }
 
+// maxExactInteger is the largest magnitude a float64 holds as an exact integer.
+const maxExactInteger = 1 << 53
+
 func normalizeComposeIntegers(value any) any {
 	switch item := value.(type) {
 	case json.Number:
-		// The closed schema admits only bounded whole numbers (columns and
-		// periods), including spellings such as 8.0. Decode these as Go ints.
+		// Columns and periods are bounded whole numbers, including spellings
+		// such as 8.0; decode those as Go ints. Any other number, such as a
+		// TimeInRange threshold of 20.5, keeps its fractional value.
 		if n, err := item.Float64(); err == nil {
-			return int(n)
+			if n == math.Trunc(n) && math.Abs(n) < maxExactInteger {
+				return int(n)
+			}
+			return n
 		}
 	case map[string]any:
 		for key, child := range item {

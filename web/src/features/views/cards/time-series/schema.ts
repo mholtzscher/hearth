@@ -14,4 +14,10 @@ export const timeSeriesSchema = z.strictObject({
     )
     .min(1)
     .max(8),
+  compare: z
+    .literal("typical")
+    .describe(
+      "Draw today from local midnight over the last 7 days' range for each time of day. Requires exactly one series with window 24h."
+    )
+    .optional(),
 });

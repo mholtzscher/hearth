@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
@@ -22,6 +23,10 @@ type binding struct {
 	WithWords  bool   `json:"-"`
 	// BooleanOnly rejects text fields: a WeekPattern measures time true.
 	BooleanOnly bool `json:"-"`
+	// BooleanReason is the fixed rejection when BooleanOnly is violated.
+	BooleanReason string `json:"-"`
+	// ChartReason is the fixed rejection when a chart's series disagree on unit.
+	ChartReason string `json:"-"`
 	// SameDeviceAs ties a reading or control to its card's power Entity.
 	SameDeviceAs string `json:"-"`
 	// SameDeviceReason is the fixed rejection when SameDeviceAs is violated.
@@ -64,13 +69,17 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		"Device":          deviceBindings,
 		stateTimelineNode: timelineBindings,
 		"WeekPattern":     weekPatternBindings,
+		rankingNode:       rankingBindings,
+		weekGridNode:      weekGridBindings,
+		timeInRangeNode:   timeInRangeBindings,
+		periodTotalsNode:  periodTotalsBindings,
 		"ToggleTile":      toggleTileBindings,
 		toggleListNode:    toggleListBindings,
 		"OutsideNow":      outsideNowBindings,
 		"Rain":            rainBindings,
 		"Wind":            windBindings,
 		"Pressure":        pressureBindings,
-		"Forecast":        forecastBindings,
+		forecastNode:      forecastBindings,
 		"AirPurifier":     airPurifierBindings,
 		"Cover":           coverBindings,
 		"Thermostat":      thermostatBindings,
@@ -88,9 +97,8 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 			return nil, err
 		}
 		// A chart has one axis; unit compatibility is checked against the Entities below.
-		chartIDs := map[string]bool{}
+		axis := chartAxis{identities: map[string]bool{}}
 		rowIDs := map[string]bool{}
-		window, entityType, field := "", "", ""
 		for _, b := range bindings {
 			if b.Kind == deviceBindingKind {
 				if _, idErr := devices.ParseDeviceID(b.DeviceID); idErr != nil {
@@ -107,17 +115,10 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 				return nil, invalidDefinition("entity_id must be a canonical Entity ID")
 			}
 			ids[b.EntityID] = true
-			if node.Type == timeSeriesNode {
-				identity := b.EntityID + ":" + b.Field
-				if chartIDs[identity] || (window != "" && window != b.Window) ||
-					(entityType != "" && (entityType != b.EntityType || field != b.Field)) {
-					return nil, invalidDefinition(
-						"a TimeSeries charts distinct Entities of one entity_type and field over one window",
-					)
+			if rule, charted := chartRules[node.Type]; charted {
+				if chartErr := axis.add(&b, key, rule); chartErr != nil {
+					return nil, chartErr
 				}
-				chartIDs[identity] = true
-				window, entityType, field = b.Window, b.EntityType, b.Field
-				b.Chart = key
 			}
 			if node.Type == stateTimelineNode {
 				identity := b.EntityID + ":" + b.Field
@@ -139,6 +140,60 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		return nil, invalidDefinition("a view references at most 16 distinct Entities and Devices")
 	}
 	return all, nil
+}
+
+// chartRule holds the fixed rejections of a card that draws several fields on
+// one axis: one for a shape or static unit violation, one for a unit that only
+// the Entities' support reveals.
+type chartRule struct{ shape, unit string }
+
+//nolint:gochecknoglobals // Immutable rejection reasons keyed by card type.
+var chartRules = map[string]chartRule{
+	timeSeriesNode: {
+		shape: "a TimeSeries charts distinct Entity fields in one unit over one window",
+		unit:  "a TimeSeries charts series that share one unit",
+	},
+	rankingNode: {
+		shape: "a Ranking compares distinct Entity fields in one unit",
+		unit:  "a Ranking compares readings that share one unit",
+	},
+}
+
+// chartAxis tracks the fields one chart has drawn so far.
+type chartAxis struct {
+	identities   map[string]bool
+	window, unit string
+}
+
+func (a *chartAxis) add(b *binding, key string, rule chartRule) error {
+	identity := b.EntityID + ":" + b.Field
+	unit := fixedUnit(b.EntityType, b.Field)
+	if a.identities[identity] || (a.window != "" && a.window != b.Window) ||
+		(a.unit != "" && unit != "" && a.unit != unit) {
+		return invalidDefinition(rule.shape)
+	}
+	a.identities[identity], a.window = true, b.Window
+	if unit != "" {
+		a.unit = unit
+	}
+	b.Chart, b.ChartReason = key, rule.unit
+	return nil
+}
+
+// fixedUnit returns the canonical unit a built-in numeric field declares
+// itself. Generic sensors take theirs from the Entity's support, so they have
+// none here and are compared against the Entity at present and save time.
+func fixedUnit(entityType, path string) string {
+	field, found := devices.BuiltinStateField(devices.EntityTypeID(entityType), path)
+	if !found {
+		return ""
+	}
+	numeric, isNumeric := field.Value.(devices.NumericField)
+	if !isNumeric {
+		return ""
+	}
+	fixed, _ := numeric.Unit.(devices.FixedUnit)
+	return fixed.Code
 }
 
 func metricBindings(raw json.RawMessage) ([]binding, error) {
@@ -288,6 +343,9 @@ func validateFieldBinding(b binding) error {
 		return invalidDefinition("ToggleTile metrics and details need numeric State fields")
 	}
 	if b.BooleanOnly && !isBoolean {
+		if b.BooleanReason != "" {
+			return invalidDefinition(b.BooleanReason)
+		}
 		return invalidDefinition("WeekPattern needs a yes/no field")
 	}
 	if ((b.ValueKind == numericValueKind || b.Kind == seriesBindingKind) && !isNumeric) ||
@@ -305,11 +363,14 @@ func validateFieldBinding(b binding) error {
 	return nil
 }
 
+const compareWindow = "24h"
+
 func seriesBindings(raw json.RawMessage) ([]binding, error) {
 	var props struct {
 		Series []struct {
 			Source binding `json:"source"`
 		} `json:"series"`
+		Compare string `json:"compare"`
 	}
 	if err := json.Unmarshal(raw, &props); err != nil {
 		return nil, err
@@ -318,7 +379,77 @@ func seriesBindings(raw json.RawMessage) ([]binding, error) {
 	for _, item := range props.Series {
 		result = append(result, item.Source)
 	}
+	if props.Compare != "" && (len(result) != 1 || result[0].Window != compareWindow) {
+		return nil, invalidDefinition("compare needs exactly one series over a 24h window")
+	}
 	return result, nil
+}
+
+func rankingBindings(raw json.RawMessage) ([]binding, error) {
+	var props struct {
+		Rows []struct {
+			Source binding `json:"source"`
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return nil, err
+	}
+	result := make([]binding, 0, len(props.Rows))
+	for _, row := range props.Rows {
+		row.Source.ValueKind = numericValueKind
+		result = append(result, row.Source)
+	}
+	return result, nil
+}
+
+func weekGridBindings(raw json.RawMessage) ([]binding, error) {
+	var props struct {
+		Source binding `json:"source"`
+	}
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return nil, err
+	}
+	props.Source.ValueKind = numericValueKind
+	return []binding{props.Source}, nil
+}
+
+func timeInRangeBindings(raw json.RawMessage) ([]binding, error) {
+	var props struct {
+		Source     binding   `json:"source"`
+		Thresholds []float64 `json:"thresholds"`
+	}
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return nil, invalidDefinition(thresholdsReason)
+	}
+	if !ascendingFinite(props.Thresholds) {
+		return nil, invalidDefinition(thresholdsReason)
+	}
+	props.Source.ValueKind = numericValueKind
+	return []binding{props.Source}, nil
+}
+
+const thresholdsReason = "TimeInRange thresholds must be finite and strictly ascending"
+
+func ascendingFinite(values []float64) bool {
+	for i, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) || (i > 0 && value <= values[i-1]) {
+			return false
+		}
+	}
+	return true
+}
+
+func periodTotalsBindings(raw json.RawMessage) ([]binding, error) {
+	var props struct {
+		Source binding         `json:"source"`
+		Words  json.RawMessage `json:"words"`
+	}
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return nil, err
+	}
+	props.Source.ValueKind, props.Source.WithWords, props.Source.BooleanOnly = textValueKind, len(props.Words) > 0, true
+	props.Source.BooleanReason = "PeriodTotals needs a yes/no field"
+	return []binding{props.Source}, nil
 }
 
 func validateBindingResources(
@@ -373,7 +504,7 @@ func validateEntityBindings(ctx context.Context, reader EntityReader, bindings [
 		}
 		if b.Chart != "" {
 			if previous, exists := axes[b.Chart]; exists && previous != unit {
-				return invalidDefinition("a TimeSeries charts series that share one unit")
+				return invalidDefinition(b.ChartReason)
 			}
 			axes[b.Chart] = unit
 		}

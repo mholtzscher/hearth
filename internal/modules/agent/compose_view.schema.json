@@ -24,6 +24,14 @@
       "type": "object", "required": ["entity_id"], "additionalProperties": false,
       "properties": {"entity_id": {"$ref": "#/$defs/entity"}, "label": {"$ref": "#/$defs/label"}}
     },
+    "series_item": {
+      "type": "object", "required": ["entity_id"], "additionalProperties": false,
+      "properties": {
+        "entity_id": {"$ref": "#/$defs/entity"},
+        "field": {"$ref": "#/$defs/field", "description": "Overrides the card's field for this item."},
+        "label": {"$ref": "#/$defs/label"}
+      }
+    },
     "words": {
       "description": "Custom text for Boolean fields only.",
       "type": "object", "required": ["true", "false"], "additionalProperties": false,
@@ -82,11 +90,48 @@
         },
         {
           "type": "object", "required": ["type", "title", "series", "window"], "additionalProperties": false,
-          "description": "Numeric history for up to 8 Entities over one window.",
+          "description": "Numeric history for up to 8 Entity fields over one window, on one axis. Use it to see how readings changed over time. Held settings such as a thermostat target draw as steps, so a target and a room temperature can share a chart.",
           "properties": {
             "type": {"const": "TimeSeries"}, "title": {"$ref": "#/$defs/label"},
-            "series": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/entity_label"}, "description": "Distinct Entities of the same type and unit. The numeric field and window apply to all series."},
-            "field": {"$ref": "#/$defs/field"}, "window": {"$ref": "#/$defs/window"}
+            "series": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/series_item"}, "description": "Distinct Entity fields in one canonical unit; the Entities may have different types. The same Entity may appear twice with different fields. An item's field overrides the card's field; a scalar-root Entity cannot override it, so when fields differ give every series its own field and omit the card's."},
+            "field": {"$ref": "#/$defs/field"}, "window": {"$ref": "#/$defs/window"},
+            "compare": {"const": "typical", "description": "Draw today from midnight over the last 7 days' range for each time of day, to answer whether today is unusual. Needs exactly one series and window 24h."}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "title", "rows"], "additionalProperties": false,
+          "description": "Current readings of 2–12 Entities sorted from highest to lowest, to answer which is warmest or which draws most. Hearth chooses the drawing; there is no style key.",
+          "properties": {
+            "type": {"const": "Ranking"}, "title": {"$ref": "#/$defs/label"},
+            "rows": {"type": "array", "minItems": 2, "maxItems": 12, "items": {"$ref": "#/$defs/series_item"}, "description": "Distinct numeric Entity fields in one canonical unit; the Entities may have different types."},
+            "range": {"$ref": "#/$defs/window", "description": "Also show each row's minimum and maximum over this window."}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "entity_id"], "additionalProperties": false,
+          "description": "When one numeric field is usually high or low: its mean in three-hour blocks for each of the last 7 days. For when a yes/no field was true, use WeekPattern.",
+          "properties": {
+            "type": {"const": "WeekGrid"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Entity with a numeric State field."},
+            "field": {"$ref": "#/$defs/field"}, "label": {"$ref": "#/$defs/label"}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "entity_id", "window", "thresholds"], "additionalProperties": false,
+          "description": "How much of a window a numeric field spent below, between, and above one or two thresholds, to answer how much of the time it was in range.",
+          "properties": {
+            "type": {"const": "TimeInRange"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Entity with a numeric State field."},
+            "field": {"$ref": "#/$defs/field"}, "label": {"$ref": "#/$defs/label"}, "window": {"$ref": "#/$defs/window"},
+            "thresholds": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "number"}, "description": "One or two strictly ascending thresholds, in the unit you see for this reading, such as 20 and 22 for °C. Hearth stores them in the field's canonical unit."}
+          }
+        },
+        {
+          "type": "object", "required": ["type", "entity_id", "period", "style"], "additionalProperties": false,
+          "description": "How long a yes/no field was true in each hour of the last 24 hours (period hour) or each of the last 7 days (period day), such as how long the heater ran. For a Boolean field only.",
+          "properties": {
+            "type": {"const": "PeriodTotals"}, "entity_id": {"$ref": "#/$defs/entity", "description": "Entity with a Boolean State field."},
+            "field": {"$ref": "#/$defs/field"}, "label": {"$ref": "#/$defs/label"}, "words": {"$ref": "#/$defs/words"},
+            "period": {"enum": ["hour", "day"]},
+            "style": {"enum": ["columns", "ledger"], "description": "columns: one labelled bar per period. ledger: one row per period, read like a table."}
           }
         },
         {
@@ -242,6 +287,7 @@
         },
         {
           "type": "object", "required": ["op", "card_id", "window"], "additionalProperties": false,
+          "description": "Sets a TimeSeries or TimeInRange window, or a Ranking range. A TimeSeries with compare keeps its 24h window.",
           "properties": {"op": {"const": "set_chart_window"}, "card_id": {"$ref": "#/$defs/key"}, "window": {"$ref": "#/$defs/window"}}
         }
       ]

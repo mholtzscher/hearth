@@ -393,6 +393,39 @@ export const catalogExamples = {
       source: source(601, "hearth.mediaplayer/v1"),
     },
   },
+  WeekGrid: {
+    type: "WeekGrid",
+    props: { label: "Outdoor temperature", source: temperature(101) },
+  },
+  Ranking: {
+    type: "Ranking",
+    props: {
+      title: "Temperatures",
+      rows: [
+        { label: "Outdoor", source: temperature(101) },
+        { label: "Bedroom", source: temperature(114) },
+      ],
+    },
+  },
+  TimeInRange: {
+    type: "TimeInRange",
+    props: {
+      label: "Bedroom temperature",
+      source: temperature(114),
+      window: "7d",
+      thresholds: [20_000, 22_000],
+    },
+  },
+  PeriodTotals: {
+    type: "PeriodTotals",
+    props: {
+      label: "Front door",
+      source: door,
+      words: { true: "Open", false: "Closed" },
+      period: "day",
+      style: "ledger",
+    },
+  },
   StateTimeline: {
     type: "StateTimeline",
     props: {

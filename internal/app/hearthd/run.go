@@ -363,7 +363,10 @@ func runWithOptions(
 	// Build the MCP catalog first, then the required agent from it, then HTTP:
 	// the agent bridges the shared catalog and takes private view authoring
 	// directly from Dashboards.
-	dashboardService := dashboards.NewService(dashboardssqlite.NewRepository(database), service, service)
+	dashboardService := dashboards.NewService(
+		dashboardssqlite.NewRepository(database), service, service,
+		dashboards.WithDisplayUnits(newDevicesPresenter(householdSettings)),
+	)
 	mcpServer := newMCPServer(
 		service,
 		automationService,
