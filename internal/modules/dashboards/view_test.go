@@ -154,7 +154,7 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 	const (
 		schema   = "does not match the view schema"
 		graph    = "root and every child must name an existing element, each used once, at most 8 levels deep"
-		series   = "a TimeSeries charts distinct Entities of one entity_type and field over one window"
+		series   = "a TimeSeries charts distinct Entity fields in one unit over one window"
 		kind     = "Metric and TimeSeries need a numeric field; State and StateTimeline need a yes/no or text field"
 		rowTwice = "a StateTimeline shows each Entity field once"
 		weekBool = "WeekPattern needs a yes/no field"
@@ -225,6 +225,16 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		"media-player-field":               schema,
 		"media-player-unknown-layout":      schema,
 		"media-player-missing-source":      schema,
+		"ranking-one-row":                  schema,
+		"ranking-duplicate-field":          "a Ranking compares distinct Entity fields in one unit",
+		"time-series-compare-two-series":   "compare needs exactly one series over a 24h window",
+		"time-series-compare-window":       "compare needs exactly one series over a 24h window",
+		"time-in-range-descending":         "TimeInRange thresholds must be finite and strictly ascending",
+		"time-in-range-equal-thresholds":   "TimeInRange thresholds must be finite and strictly ascending",
+		"time-in-range-three-thresholds":   schema,
+		"period-totals-text-field":         "PeriodTotals needs a yes/no field",
+		"period-totals-numeric-field":      schema,
+		"week-grid-boolean-field":          schema,
 	}
 	var examples []struct {
 		Name       string          `json:"name"`

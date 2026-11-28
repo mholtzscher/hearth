@@ -1,0 +1,43 @@
+id: dashboard-chart-ranking
+title: Rank three temperatures from warmest to coolest
+tags: [dashboard, create, chart]
+
+turns:
+  - text: >-
+      Add a card that ranks these from warmest to coolest: the Home
+      temperature, then the Simulated light temperature, then the Hallway
+      thermostat's current temperature.
+
+checks:
+  - kind: view
+    view:
+      cards:
+        - type: Ranking
+          bindings:
+            rows/0/source: {device: home, key: temperature}
+            rows/1/source: {device: simulated-light, key: temperature}
+            rows/2/source: {device: hallway-thermostat, key: thermostat}
+          props:
+            rows/2/source/field: /current_temperature
+  - kind: view_without_rejections
+  - kind: reply_max_sentences
+    max: 1
+
+max_requests: 10
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:home}}"}'
+  - call: list_entities
+    arguments: '{"device_id": "{{device:simulated-light}}"}'
+  - call: list_entities
+    arguments: '{"device_id": "{{device:hallway-thermostat}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
+    arguments: |-
+      {"mode": "create", "title": "Warmest place", "layout": {"type": "Ranking", "title": "Temperatures", "rows": [
+        {"entity_id": "{{entity:home/temperature}}", "label": "Home"},
+        {"entity_id": "{{entity:simulated-light/temperature}}", "label": "Simulated light"},
+        {"entity_id": "{{entity:hallway-thermostat/thermostat}}", "field": "/current_temperature", "label": "Hallway"}]}}
+  - reply: ""

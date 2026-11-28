@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
@@ -115,7 +117,7 @@ func (edit *setForecastPeriods) target() editTarget {
 }
 
 func (edit *setForecastPeriods) apply(_ *Definition, graph *viewGraph, path string) error {
-	return graph.editCard(edit.CardID, "Forecast", path, func(props rawViewProps) error {
+	return graph.editCard(edit.CardID, []string{forecastNode}, path, func(_ string, props rawViewProps) error {
 		var source struct {
 			EntityType devices.EntityTypeID `json:"entity_type"`
 		}
@@ -139,7 +141,17 @@ func (edit *setChartWindow) target() editTarget {
 }
 
 func (edit *setChartWindow) apply(_ *Definition, graph *viewGraph, path string) error {
-	return graph.editCard(edit.CardID, timeSeriesNode, path, func(props rawViewProps) error {
+	kinds := []string{timeSeriesNode, timeInRangeNode, rankingNode}
+	return graph.editCard(edit.CardID, kinds, path, func(kind string, props rawViewProps) error {
+		switch kind {
+		case timeInRangeNode:
+			return props.set("window", edit.Window)
+		case rankingNode:
+			return props.set("range", edit.Window)
+		}
+		if _, compared := props["compare"]; compared {
+			return invalidViewArgument(path+"/card_id", "a TimeSeries with compare keeps its 24h window")
+		}
 		var series []rawViewProps
 		if err := json.Unmarshal(props["series"], &series); err != nil {
 			return err
@@ -170,16 +182,18 @@ func (p rawViewProps) set(key string, value any) error {
 	return err
 }
 
-func (g *viewGraph) editCard(id, kind, path string, apply func(rawViewProps) error) error {
+func (g *viewGraph) editCard(id string, kinds []string, path string, apply func(string, rawViewProps) error) error {
 	card, found := g.Elements[id]
-	if !found || card.Type != kind {
-		return invalidViewArgument(path+"/card_id", "choose a "+kind+" card key from the selected draft")
+	if !found || !slices.Contains(kinds, card.Type) {
+		return invalidViewArgument(
+			path+"/card_id", "choose a "+strings.Join(kinds, " or ")+" card key from the selected draft",
+		)
 	}
 	var props rawViewProps
 	if err := json.Unmarshal(card.Props, &props); err != nil {
 		return err
 	}
-	if err := apply(props); err != nil {
+	if err := apply(card.Type, props); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(props)

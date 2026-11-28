@@ -17,14 +17,35 @@ type EntityReader interface {
 type DeviceReader interface {
 	GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
 }
+
+// DisplayUnits converts numbers the Agent reads in household display units to
+// a field's canonical unit. *devices.Presenter implements it.
+type DisplayUnits interface {
+	CanonicalValue(field devices.NumericField, support json.RawMessage, display float64) (float64, error)
+}
+
 type Service struct {
 	repo     Repository
 	entities EntityReader
 	devices  DeviceReader
+	units    DisplayUnits
 }
 
-func NewService(repo Repository, entities EntityReader, deviceReader DeviceReader) *Service {
-	return &Service{repo: repo, entities: entities, devices: deviceReader}
+// Option configures a Service.
+type Option func(*Service)
+
+// WithDisplayUnits makes ComposeView read TimeInRange thresholds in household
+// display units. Without it they are taken as canonical.
+func WithDisplayUnits(units DisplayUnits) Option {
+	return func(s *Service) { s.units = units }
+}
+
+func NewService(repo Repository, entities EntityReader, deviceReader DeviceReader, options ...Option) *Service {
+	s := &Service{repo: repo, entities: entities, devices: deviceReader}
+	for _, option := range options {
+		option(s)
+	}
+	return s
 }
 
 func (s *Service) PresentView(ctx context.Context, d Definition) (Artifact, error) {

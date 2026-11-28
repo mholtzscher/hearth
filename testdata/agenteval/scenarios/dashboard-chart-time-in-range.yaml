@@ -1,0 +1,37 @@
+id: dashboard-chart-time-in-range
+title: Share of the week a temperature spent between two thresholds
+tags: [dashboard, create, chart]
+
+turns:
+  - text: >-
+      Add a card for how much of the last week the Simulated light's
+      temperature was below 20 °C, between 20 and 22 °C, and above 22 °C.
+
+# The Agent authors thresholds in the household display unit (the evaluation
+# household is metric); the artifact stores them in the canonical unit, and
+# temperature is stored in milli-degrees Celsius, so 20 °C is 20000.
+checks:
+  - kind: view
+    view:
+      cards:
+        - type: TimeInRange
+          bindings:
+            source: {device: simulated-light, key: temperature}
+          props:
+            window: 7d
+            thresholds: [20000, 22000]
+  - kind: view_without_rejections
+  - kind: reply_max_sentences
+    max: 1
+
+max_requests: 10
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:simulated-light}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
+    arguments: |-
+      {"mode": "create", "title": "Comfort", "layout": {"type": "TimeInRange", "entity_id": "{{entity:simulated-light/temperature}}", "label": "Temperature", "window": "7d", "thresholds": [20, 22]}}
+  - reply: ""

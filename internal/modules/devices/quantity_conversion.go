@@ -41,6 +41,15 @@ func (conversion Affine) Apply(value float64) (float64, error) {
 	return result, nil
 }
 
+// Inverse returns the conversion that undoes this one. The scale is positive,
+// so ordering is preserved in both directions.
+func (conversion Affine) Inverse() (Affine, error) {
+	if !finite(conversion.Scale) || conversion.Scale <= 0 || !finite(conversion.Offset) {
+		return Affine{}, errors.New("invalid affine conversion")
+	}
+	return Affine{Scale: 1 / conversion.Scale, Offset: -conversion.Offset / conversion.Scale}, nil
+}
+
 // TableConverter implements the bounded display pairs from UCUM definitions.
 // It does not replace Adapter ingestion factors or normalization policies.
 type TableConverter struct{}

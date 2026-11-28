@@ -1,0 +1,34 @@
+id: dashboard-chart-period-totals
+title: Hours a light was on each day as columns
+tags: [dashboard, create, chart]
+
+turns:
+  - text: >-
+      Show how long the Simulated light was on each day this past week, as
+      bars.
+
+checks:
+  - kind: view
+    view:
+      cards:
+        - type: PeriodTotals
+          bindings:
+            source: {device: simulated-light, key: power}
+          props:
+            period: day
+            style: columns
+  - kind: view_without_rejections
+  - kind: reply_max_sentences
+    max: 1
+
+max_requests: 10
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:simulated-light}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
+    arguments: |-
+      {"mode": "create", "title": "Light on-time", "layout": {"type": "PeriodTotals", "entity_id": "{{entity:simulated-light/power}}", "label": "Simulated light", "period": "day", "style": "columns"}}
+  - reply: ""

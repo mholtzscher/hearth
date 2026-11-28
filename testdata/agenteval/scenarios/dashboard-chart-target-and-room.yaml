@@ -1,0 +1,40 @@
+id: dashboard-chart-target-and-room
+title: Thermostat target and room temperature on one chart
+tags: [dashboard, create, chart]
+
+turns:
+  - text: >-
+      Chart the Hallway thermostat's target temperature and then its current
+      temperature together over the last 24 hours.
+
+# One Entity appears twice, each time with its own field. Both readings are
+# in one canonical unit, so they share an axis.
+checks:
+  - kind: view
+    view:
+      cards:
+        - type: TimeSeries
+          bindings:
+            series/0/source: {device: hallway-thermostat, key: thermostat}
+            series/1/source: {device: hallway-thermostat, key: thermostat}
+          props:
+            series/0/source/field: /target_temperature
+            series/1/source/field: /current_temperature
+            series/0/source/window: 24h
+  - kind: view_without_rejections
+  - kind: reply_max_sentences
+    max: 1
+
+max_requests: 10
+
+reference:
+  - call: list_entities
+    arguments: '{"device_id": "{{device:hallway-thermostat}}"}'
+  - call: tool_search
+    arguments: '{"query": "select:compose_view"}'
+  - call: compose_view
+    arguments: |-
+      {"mode": "create", "title": "Hallway heating", "layout": {"type": "TimeSeries", "title": "Target and room temperature", "window": "24h", "series": [
+        {"entity_id": "{{entity:hallway-thermostat/thermostat}}", "field": "/target_temperature", "label": "Target"},
+        {"entity_id": "{{entity:hallway-thermostat/thermostat}}", "field": "/current_temperature", "label": "Room"}]}}
+  - reply: ""

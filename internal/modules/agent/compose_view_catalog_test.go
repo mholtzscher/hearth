@@ -243,15 +243,11 @@ func authoringTree(node portableTreeNode) map[string]any {
 			flattenSource(row.(map[string]any))
 		}
 	case "TimeSeries":
-		for _, row := range args["series"].([]any) {
-			entry := row.(map[string]any)
-			source := entry["source"].(map[string]any)
-			args["window"] = source["window"]
-			if field, ok := source["field"]; ok {
-				args["field"] = field
-			}
-			flattenSource(entry)
-		}
+		flattenSeries(args, "series")
+	case "Ranking":
+		flattenRows(args)
+	case "WeekGrid", "TimeInRange", "PeriodTotals":
+		flattenField(args)
 	case "AirPurifier":
 		flattenRoles(args)
 		args["entity_id"] = args["power"]
@@ -282,6 +278,30 @@ func renameWeatherRoles(cardType string, args map[string]any) {
 		if value, ok := args[from]; ok {
 			args[to] = value
 			delete(args, from)
+		}
+	}
+}
+
+// flattenSeries lifts each series source beside its label. The chart's window
+// comes from the sources; a field shared by every item moves to the card, and
+// differing fields stay on their items.
+func flattenSeries(args map[string]any, key string) {
+	rows := args[key].([]any)
+	fields := map[any]bool{}
+	for _, row := range rows {
+		source := row.(map[string]any)["source"].(map[string]any)
+		args["window"] = source["window"]
+		fields[source["field"]] = true
+	}
+	for _, row := range rows {
+		entry := row.(map[string]any)
+		field, hasField := entry["source"].(map[string]any)["field"]
+		flattenField(entry)
+		if len(fields) == 1 {
+			delete(entry, "field")
+			if hasField {
+				args["field"] = field
+			}
 		}
 	}
 }
