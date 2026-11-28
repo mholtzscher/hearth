@@ -213,8 +213,11 @@ TimeInRange binds one numeric field with a `window` and one or two ascending
 mean falls in each range and states each range's hours and share of the buckets
 that have samples. One threshold gives "Below T" and "T and above"; two add the
 range between them, which includes both ends. Range names use the household
-unit, so changing the unit system changes labels and never shares. The browser
-editor enters thresholds in the canonical unit and names it.
+unit, so changing the unit system changes labels and never shares. The Agent
+writes thresholds in the household unit it reads, and `compose_view` converts
+them to the canonical unit; a definition presented or saved directly is already
+canonical. The browser editor enters thresholds in the canonical unit and names
+it.
 
 PeriodTotals binds one yes/no field with optional label and words, a `period`,
 and a `style`. `day` shows time true for each of the last 7 local days; `hour`

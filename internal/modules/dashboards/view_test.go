@@ -227,6 +227,7 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		"media-player-missing-source":      schema,
 		"ranking-one-row":                  schema,
 		"ranking-duplicate-field":          "a Ranking compares distinct Entity fields in one unit",
+		"ranking-mixed-units":              "a Ranking compares distinct Entity fields in one unit",
 		"time-series-compare-two-series":   "compare needs exactly one series over a 24h window",
 		"time-series-compare-window":       "compare needs exactly one series over a 24h window",
 		"time-in-range-descending":         "TimeInRange thresholds must be finite and strictly ascending",
