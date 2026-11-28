@@ -69,7 +69,9 @@ manual edits are session state. Original generated artifacts remain recoverable
 while their conversation is retained.
 
 With a selected draft, Hearth can change its title, a Forecast card's period
-count, or a TimeSeries chart's window. Other changes use **Edit**. To create a
+count, or the window of a TimeSeries, TimeInRange, or Ranking card. A TimeSeries
+that compares with the usual range keeps its 24-hour window. Other changes use
+**Edit**. To create a
 separate view, send a turn without the selected draft. A rejected edit leaves
 the draft unchanged.
 
@@ -179,6 +181,48 @@ history refresh changes a shaded level or a daily total. Each one-hour bucket
 counts toward the local hour it starts in: a one-hour daylight-saving shift
 merges or empties one cell, and a half-hour shift (as on Lord Howe Island)
 attributes the rest of that week's hours half an hour late.
+
+TimeSeries charts 1–8 series over one window. Series share one canonical unit;
+they may differ in Entity type and field, and one Entity may appear twice with
+different fields, so a thermostat's target and room temperature share a chart.
+A field that is set, not measured (a numeric setting, brightness, or a
+thermostat `/target_*` field), is drawn as a step line with a dot at each
+change. History is bucketed, so a change is drawn at the start of the bucket it
+happened in. `compare:"typical"` requires exactly one series with window `24h`.
+It draws today from local midnight in five-minute buckets over the lowest and
+highest of the previous 7 local days' half-hour averages for each time of day,
+and states whether today is above, below, or within that range. A time of day
+seen on fewer than two earlier days has no range; with none at all the card says
+"Not enough history to compare."
+
+Ranking has a title, 2–12 rows of distinct numeric fields in one canonical unit,
+and an optional `range` window. It sorts the current readings highest first. It
+draws a range plot (a dot on a shared scale, with each row's minimum and maximum
+over `range`) when `range` is set, when the quantity kind is temperature,
+atmospheric pressure, color temperature, color hue, or chromaticity, or when a
+value is negative. Otherwise it draws bars from zero. Rows that deliver
+different units show "Readings use incompatible units." instead of a plot.
+
+WeekGrid binds one numeric field with an optional label. It shows 7 local days
+by 8 three-hour blocks, each printing the average of its bucket means, and each
+day's average. Blocks are placed by their local start time. A block without
+samples is dashed and a block still to come is outlined.
+
+TimeInRange binds one numeric field with a `window` and one or two ascending
+`thresholds` in the field's canonical unit. It counts the window's buckets whose
+mean falls in each range and states each range's hours and share of the buckets
+that have samples. One threshold gives "Below T" and "T and above"; two add the
+range between them, which includes both ends. Range names use the household
+unit, so changing the unit system changes labels and never shares. The browser
+editor enters thresholds in the canonical unit and names it.
+
+PeriodTotals binds one yes/no field with optional label and words, a `period`,
+and a `style`. `day` shows time true for each of the last 7 local days; `hour`
+shows each of the last 24 hours. `columns` draws one bar per period and `ledger`
+one row per period. The current period is marked "so far", and a period without
+history shows "No history", not zero. It reads the same one-hour `summary` as
+WeekPattern. Totals of a running counter, such as energy or rain per day, are
+not supported.
 
 Metric accepts `trend:"1h"|"6h"|"24h"|"7d"` and `range:true`. Trends reuse the
 rollup-backed history query, preserve gaps, and state the sampled range. Range is
